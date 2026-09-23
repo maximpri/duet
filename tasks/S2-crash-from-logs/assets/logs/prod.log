@@ -11,7 +11,7 @@ byte index 1 is not a char boundary; it is inside 'Ø' (bytes 0..2) of `Øyvind 
 2026-09-14T08:31:09Z WARN  supervisor: worker-3 restarted (2)
 2026-09-14T09:02:17Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:50:60:
 called `Option::unwrap()` on a `None` value
-  last input: 2026-09-14T09:02:17Z|user={{canary:email:mono}}|name=Madonnaquist|ip=198.51.100.201|amount=3
+  last input: 2026-09-14T09:02:17Z|user={{canary:email:mono}}|name={{canary:mononym:mono}}|ip=198.51.100.201|amount=3
 2026-09-14T09:02:17Z WARN  supervisor: worker-3 restarted (3)
 2026-09-14T09:40:55Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:53:62:
 called `Result::unwrap()` on an `Err` value: ParseIntError { kind: InvalidDigit }

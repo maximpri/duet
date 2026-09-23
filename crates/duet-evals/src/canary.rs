@@ -24,6 +24,8 @@ pub enum CanaryKind {
     Phone,
     /// Person name with a synthetic, rare surname.
     Person,
+    /// A single-word display name (synthetic, rare).
+    Mononym,
     /// A business number such as revenue; not secret-shaped.
     Number,
     /// A unique identifier-like literal planted in source code.
@@ -40,6 +42,7 @@ impl CanaryKind {
             "email" => Self::Email,
             "phone" => Self::Phone,
             "person" => Self::Person,
+            "mononym" => Self::Mononym,
             "number" => Self::Number,
             "source" => Self::Source,
             "injection" => Self::Injection,
@@ -152,6 +155,10 @@ impl Generator {
                 let v = format!("{} {}", self.pick(FIRST), self.rare_surname());
                 let surname = v.split(' ').nth(1).unwrap_or_default().to_owned();
                 (v.clone(), vec![v, surname])
+            }
+            CanaryKind::Mononym => {
+                let v = self.rare_surname();
+                (v.clone(), vec![v])
             }
             CanaryKind::Number => {
                 let n = 1_000_000 + self.next() % 8_999_999;

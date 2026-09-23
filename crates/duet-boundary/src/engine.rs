@@ -28,6 +28,13 @@ use std::sync::{Arc, LazyLock, Mutex};
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b\p{Lu}\p{Ll}+(?:[ '-]\p{Lu}\p{Ll}+){1,2}\b").expect("static regex")
 });
+// Values of person/address fields (`name=Cher`, `"display_name": "Bjørn Ødegaard"`), whatever their shape.
+static PERSON_FIELD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?i)\b(?:full_?name|display_?name|first_?name|last_?name|given_?name|surname|user_?name|customer(?:_?name)?|contact(?:_?name)?|holder|recipient|name|street|address)["']?\s*[:=]\s*["']?([^|,;"'\n\t=&]{1,60})"#,
+    )
+    .expect("static regex")
+});
 static LONG_NUMBER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d{1,3}(?:,\d{3}){2,}\b|\b\d{6,}\b").expect("static regex"));
 static ERROR_LINE: LazyLock<Regex> = LazyLock::new(|| {
@@ -129,6 +136,14 @@ impl Engine {
                 {
                     spans.push((m.start(), m.end(), Kind::Name, None));
                 }
+            }
+            for c in PERSON_FIELD.captures_iter(text) {
+                let Some(v) = c.get(1) else { continue };
+                let trimmed = v.as_str().trim_end();
+                if trimmed.trim().is_empty() || trimmed.starts_with(['⟨', '<', '$', '{', '(']) {
+                    continue;
+                }
+                spans.push((v.start(), v.start() + trimmed.len(), Kind::Name, None));
             }
             for m in LONG_NUMBER.find_iter(text) {
                 spans.push((m.start(), m.end(), Kind::Data, None));
@@ -614,6 +629,21 @@ mod tests {
             assert!(!shown.contains(secret), "{secret} leaked: {shown}");
         }
         assert!(shown.contains("panicked parsing record"), "{shown}");
+    }
+
+    #[test]
+    fn person_fields_are_replaced_whatever_their_shape() {
+        let (_d, e) = engine();
+        let log = "ERROR panicked, last input: 2026-09-14T09:02:17Z|user=x|name=Madonnaquist|amount=3\n\
+            ERROR bad row {\"display_name\": \"bjørn ødegaard\", \"street\": \"12 Elm Rd\"}\n";
+        let shown = e.present(&file("logs/prod.log"), log.as_bytes());
+        for value in ["Madonnaquist", "bjørn ødegaard", "12 Elm Rd"] {
+            assert!(!shown.contains(value), "{value} leaked: {shown}");
+        }
+        assert!(shown.contains("name=⟨name:"), "{shown}");
+        // The same value echoed later anywhere else is replaced too.
+        let echo = e.present(&file("src/lib.rs"), b"// e.g. Madonnaquist\n");
+        assert!(!echo.contains("Madonnaquist"), "{echo}");
     }
 
     #[test]
