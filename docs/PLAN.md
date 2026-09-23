@@ -55,6 +55,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Local model stays oMLX `omlx-coding` (Qwen 3.8 27B): micro-eval accuracy, evidence, digest recall, schema 1.00, 0 leaks. First-read prefill ~175 tok/s is expected and accepted; prefill is reported, not gated (operator) |
 | 2026-09-23 | Cost gate reference confirmed: hybrid vs the orchestrator alone (`duet-passthrough`, same frontier model, currently `glm-5.3-flash`), paired; not vs Pi or another model (operator) |
 | 2026-09-23 | The ratatui TUI (all screens, including Run and Audit) stays in M6, after the privacy and cost gates (operator) |
+| 2026-09-23 | duet-boundary budget raised from ~3.2K to ~5K production lines (it absorbed M4 bulky offload and M4.5 IP levels; measured ~4.55K); further growth needs another decision (operator) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -71,7 +72,7 @@ $1.40/M). No fallback frontier is needed.
 | `crates/duet-sandbox` | Seatbelt/bwrap, env allowlist, process-tree control | ~1.0K |
 | `crates/duet-git` | Private store, single git helper | ~0.6K |
 | `crates/duet-config` | Settings registry, scopes, tighten-only rule, `duet config` | ~0.8K |
-| `crates/duet-boundary` | Security engine | ~3.2K |
+| `crates/duet-boundary` | Security engine (incl. bulky offload and IP levels) | ~5K |
 | `crates/duet-agent` | Frontier loop, tools, transcript, context manager, ledger | ~3.0K |
 | `crates/duet-cli` | CLI commands, setup | ~1.0K |
 | `crates/duet-tui` | Registry-generated screens, run and audit views | ~2.5K |
