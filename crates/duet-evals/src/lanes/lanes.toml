@@ -10,7 +10,7 @@ name = "duet-passthrough"
 kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
+model = "glm-5.3-flash"
 argv = ["{duet_bin}", "run", "--mode", "passthrough", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
@@ -20,7 +20,7 @@ name = "duet-hybrid"
 kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
+model = "glm-5.3-flash"
 argv = ["{duet_bin}", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
@@ -32,7 +32,7 @@ name = "duet-local-only"
 kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
+model = "glm-5.3-flash"
 argv = ["{duet_bin}", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["OMLX_API_KEY"]
 allow_hosts = ["192.168.50.132:8080"]
@@ -41,7 +41,7 @@ allow_hosts = ["192.168.50.132:8080"]
 name = "pi-glm"
 kind = "external"
 upstream = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
+model = "glm-5.3-flash"
 argv = ["pi", "--offline", "--print", "--mode", "json", "--provider", "zai-proxy",
         "--model", "{model}", "--thinking", "medium", "--no-extensions", "--no-skills",
         "--no-prompt-templates", "--no-context-files", "--no-approve",

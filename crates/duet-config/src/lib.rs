@@ -89,7 +89,7 @@ pub const REGISTRY: &[Setting] = &[
     s!(
         "frontier.model",
         Str,
-        r#""glm-5.3""#,
+        r#""glm-5.3-flash""#,
         Owner,
         Any,
         true,

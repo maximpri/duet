@@ -183,6 +183,30 @@ pub struct RunRecord {
     /// Frontier plus electricity; `None` if any frontier model is unpriced.
     pub total_cost_usd: Option<f64>,
     pub error: Option<String>,
+    /// Set when infrastructure (not the agent) decided the outcome, e.g. the provider
+    /// refused every request. Invalid runs are excluded from every statistic.
+    #[serde(default)]
+    pub invalid: Option<String>,
+    /// Whether the provider rate-limited or quota-limited the run.
+    #[serde(default)]
+    pub rate_limited: bool,
+}
+
+/// Classifies a run from the provider statuses the proxy saw, in order.
+pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
+    let limited = statuses.iter().any(|s| *s == 429);
+    let ok = statuses.iter().filter(|s| (200..300).contains(*s)).count();
+    let invalid = match statuses.last() {
+        None => Some("the agent made no frontier request".to_owned()),
+        Some(_) if ok == 0 => Some(format!(
+            "no frontier request succeeded (statuses {statuses:?})"
+        )),
+        Some(last) if !(200..300).contains(last) => {
+            Some(format!("the final frontier request failed with {last}"))
+        }
+        _ => None,
+    };
+    (invalid, limited)
 }
 
 pub struct RunConfig<'a> {
@@ -248,7 +272,16 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         electricity_usd: 0.0,
         total_cost_usd: None,
         error: None,
+        invalid: None,
+        rate_limited: false,
     };
+    let statuses: Vec<u16> = leakproxy::read_requests(&proxy_dir)?
+        .iter()
+        .map(|r| r.status)
+        .collect();
+    let (invalid, limited) = infra_verdict(&statuses);
+    record.invalid = invalid;
+    record.rate_limited = limited;
     match outcome {
         Ok(o) => {
             record.exit_code = o.exit_code;
@@ -496,5 +529,63 @@ mod tests {
             .status()
             .unwrap();
         assert!(!net.success(), "direct outbound network must be blocked");
+    }
+}
+
+#[cfg(test)]
+mod infra_tests {
+    use super::infra_verdict;
+
+    #[test]
+    fn classifies_infrastructure_outcomes() {
+        assert_eq!(
+            infra_verdict(&[200, 200, 429, 200]).0,
+            None,
+            "recovered rate limit is valid"
+        );
+        assert!(infra_verdict(&[200, 200, 429, 200]).1);
+        assert!(infra_verdict(&[429, 429, 429]).0.is_some());
+        assert!(
+            infra_verdict(&[200, 200, 429, 429]).0.is_some(),
+            "final request failed"
+        );
+        assert!(infra_verdict(&[]).0.is_some());
+        assert!(infra_verdict(&[200, 503, 200]).0.is_none());
+    }
+}
+
+/// Blocks until the lane's provider accepts a minimal request again (after a
+/// quota or rate limit), probing every five minutes, for at most `max_wait`.
+pub async fn wait_until_available(lane: &Lane, max_wait: Duration) -> bool {
+    let started = Instant::now();
+    let key = lane
+        .env_passthrough
+        .iter()
+        .find_map(|k| std::env::var(k).ok());
+    let client = reqwest::Client::new();
+    loop {
+        let mut req = client
+            .post(format!(
+                "{}/chat/completions",
+                lane.upstream.trim_end_matches('/')
+            ))
+            .json(&serde_json::json!({"model": lane.model, "max_tokens": 1,
+                                      "messages": [{"role": "user", "content": "ping"}]}));
+        if let Some(k) = &key {
+            req = req.bearer_auth(k);
+        }
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                return true;
+            }
+        }
+        if started.elapsed() >= max_wait {
+            return false;
+        }
+        eprintln!(
+            "provider for lane {} is unavailable; waiting 5 minutes",
+            lane.name
+        );
+        tokio::time::sleep(Duration::from_secs(300)).await;
     }
 }

@@ -67,7 +67,7 @@ fn pass_rate(r: &RunRecord) -> f64 {
 
 pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
     let mut by_lane: BTreeMap<&str, Vec<&RunRecord>> = BTreeMap::new();
-    for r in records {
+    for r in records.iter().filter(|r| r.invalid.is_none()) {
         by_lane.entry(&r.lane).or_default().push(r);
     }
     by_lane
@@ -133,11 +133,13 @@ pub fn gate(
     let key = |r: &RunRecord| (r.task.clone(), r.seed);
     let refs: BTreeMap<_, &RunRecord> = records
         .iter()
+        .filter(|r| r.invalid.is_none())
         .filter(|r| r.lane == reference)
         .map(|r| (key(r), r))
         .collect();
     let pairs: Vec<(&RunRecord, &RunRecord)> = records
         .iter()
+        .filter(|r| r.invalid.is_none())
         .filter(|r| r.lane == candidate)
         .filter_map(|c| refs.get(&key(c)).map(|r| (c, *r)))
         .collect();
@@ -190,8 +192,28 @@ pub fn gate(
     })
 }
 
-pub fn render_markdown(summaries: &[LaneSummary], verdicts: &[GateVerdict]) -> String {
+pub fn render_markdown(
+    summaries: &[LaneSummary],
+    verdicts: &[GateVerdict],
+    invalid: &[&RunRecord],
+) -> String {
     let mut s = String::from("# Evaluation report\n\n## Lanes\n\n");
+    if !invalid.is_empty() {
+        let _ = writeln!(
+            s,
+            "{} invalid run(s) excluded (infrastructure decided the outcome):\n",
+            invalid.len()
+        );
+        for r in invalid {
+            let _ = writeln!(
+                s,
+                "- {}: {}",
+                r.run_id,
+                r.invalid.as_deref().unwrap_or_default()
+            );
+        }
+        s.push('\n');
+    }
     s.push_str("| Lane | Kind | Runs | Hidden pass rate | Success | Leaks (runs) | Leaks by kind | Sink violations | Mean cost | Mean wall |\n");
     s.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for l in summaries {
@@ -299,6 +321,8 @@ mod tests {
             electricity_usd: 0.0,
             total_cost_usd: Some(cost),
             error: None,
+            invalid: None,
+            rate_limited: false,
         }
     }
 
@@ -313,7 +337,7 @@ mod tests {
         let v = gate(&rs, &BTreeMap::new(), "hybrid", "pass").unwrap();
         assert!(v.quality_non_inferior && v.privacy_pass);
         assert_eq!(v.cost_strictly_lower, Some(true));
-        let md = render_markdown(&summarize(&rs), &[v]);
+        let md = render_markdown(&summarize(&rs), &[v], &[]);
         assert!(md.contains("hybrid vs pass") && md.contains("PASS"));
     }
 

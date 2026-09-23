@@ -209,16 +209,50 @@ async fn main() -> Result<()> {
                 for &seed in &seeds {
                     for name in &lane_names {
                         let lane = lanes::find_lane(&all_lanes, name)?;
-                        let rec = lanes::run_one(lanes::RunConfig {
-                            package: &t,
-                            lane,
-                            seed,
-                            out_dir: &out,
-                            prices: &prices,
-                            sandbox: !no_sandbox,
-                            local_watts,
-                        })
-                        .await?;
+                        let run_dir = out.join(format!("{}-{}-s{seed}", t.spec.id, lane.name));
+                        if let Ok(text) = fs::read_to_string(run_dir.join("run.json")) {
+                            let prev: lanes::RunRecord = serde_json::from_str(&text)?;
+                            if prev.invalid.is_none() {
+                                println!("{:<28} done earlier; skipped", prev.run_id);
+                                continue;
+                            }
+                        }
+                        let mut attempt = 0;
+                        let rec = loop {
+                            if run_dir.exists() {
+                                let stamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)?
+                                    .as_secs();
+                                fs::rename(
+                                    &run_dir,
+                                    run_dir.with_extension(format!("invalid-{stamp}")),
+                                )?;
+                            }
+                            let rec = lanes::run_one(lanes::RunConfig {
+                                package: &t,
+                                lane,
+                                seed,
+                                out_dir: &out,
+                                prices: &prices,
+                                sandbox: !no_sandbox,
+                                local_watts,
+                            })
+                            .await?;
+                            attempt += 1;
+                            if rec.invalid.is_some() && rec.rate_limited && attempt < 3 {
+                                eprintln!(
+                                    "{}: invalid ({}); waiting for the provider",
+                                    rec.run_id,
+                                    rec.invalid.as_deref().unwrap_or_default()
+                                );
+                                if lanes::wait_until_available(lane, Duration::from_secs(6 * 3600))
+                                    .await
+                                {
+                                    continue;
+                                }
+                            }
+                            break rec;
+                        };
                         println!(
                             "{:<28} pass {:>5.1}%  leaks {}  cost {}  {:.0}s{}",
                             rec.run_id,
@@ -262,7 +296,9 @@ async fn main() -> Result<()> {
                     None => eprintln!("no paired runs for {g}"),
                 }
             }
-            let md = report::render_markdown(&summaries, &verdicts);
+            let invalid: Vec<&lanes::RunRecord> =
+                records.iter().filter(|r| r.invalid.is_some()).collect();
+            let md = report::render_markdown(&summaries, &verdicts, &invalid);
             fs::write(batch.join("report.md"), &md)?;
             fs::write(
                 batch.join("verdicts.json"),

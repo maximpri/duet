@@ -43,6 +43,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Sensitive by default: secrets, `.env`, PII, data files/DBs, logs, command output; source code Open unless marked |
 | 2026-09-23 | Cost gate: strictly cheaper than frontier-only |
 | 2026-09-23 | Frontier: z.ai `glm-5.3` (flagship; configurable). Eval judge: Claude via Anthropic API |
+| 2026-09-23 | Frontier switched to `glm-5.3-flash` (operator, after the coding-plan 5-hour quota was hit); earlier `glm-5.3` pilot data is not comparable and is kept only as reference |
 | 2026-09-23 | New repository `/Users/maximp/OpenCode/duet_v2`; v1 frozen |
 | 2026-09-23 | Pi, Claude Code, Codex allowed only as black-box evaluation lanes |
 | 2026-09-23 | Rust only; fully novel; GPL-3.0 |
@@ -319,7 +320,7 @@ with `duet-eval report --final`.
 
 | Role | Server | Endpoint | Model | Auth |
 |---|---|---|---|---|
-| Frontier | z.ai coding API (OpenAI-compatible Chat Completions) | `https://api.z.ai/api/coding/paas/v4` | `glm-5.3` (flagship; v1 used `glm-5.3-flash`) | bearer, `ZAI_API_KEY` |
+| Frontier | z.ai coding API (OpenAI-compatible Chat Completions) | `https://api.z.ai/api/coding/paas/v4` | `glm-5.3-flash` (switched from `glm-5.3` on 2026-09-23) | bearer, `ZAI_API_KEY` |
 | Local | oMLX on a LAN host (OpenAI-compatible) | `http://192.168.50.132:8080/v1` | `omlx-coding` (also `:mechanical`, `:semantic`); 65,536-token context | bearer, `OMLX_API_KEY` |
 
 Consequences for the design:
