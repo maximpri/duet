@@ -147,8 +147,10 @@ The local model is called only by the boundary, never by the loop directly, and 
 | Digest | new SensitiveData / PublicBulky handle | `{summary, key_lines[], counts, errors[], confidence}` |
 | Answer | `ask_local(handle, question)` | `{answer, evidence_lines[], unanswerable}` |
 | PII flag | data file or log classification | `{spans[]}` |
-| Implement | edit to a Protected body (M4.5) | patch for that body only, validated by host-run tests |
+| Implement | `edit_protected(path, spec, tests?, command?)` | `{code}`: the whole new protected file, written by the host and validated by host-run checks |
 
+All roles share one output schema (servers may key their prompt cache by schema); each role checks
+its own required fields.
 Temperature 0; constrained JSON where the backend supports it; one retry, then `unanswerable`.
 Every local output is redacted and passes the overlap filter before it can enter a View, and is
 wrapped as `{"local_answer", "source"}`.

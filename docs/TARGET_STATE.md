@@ -115,6 +115,7 @@ Dependency direction: `fs`, `sandbox`, `git`, `config` ← `provider` ← `bound
   | `run_command(argv)` | Sandboxed; output sensitive by default (handle + digest) unless the command is on the raw-output allowlist |
   | `ask_local(handle, question)` | Local model answers from raw content in a fixed schema |
   | `read_raw(handle, start?, end?)` | Raw ranges of public-bulky handles only |
+  | `edit_protected(path, spec, tests?, command?)` | Only when IP levels are configured: the local model implements the spec in a protected file; the host writes it and runs the checks; pass/fail and recognised result lines return |
   | `finish(summary)` | Host runs the task's declared checks; results return through the boundary; the frontier may continue up to `max_finish_attempts` |
 - **Loop rules.** Tool errors return as results. A length-truncated response never executes tool
   calls. A tool call is never separated from its result. Long outputs spill to files referenced in
