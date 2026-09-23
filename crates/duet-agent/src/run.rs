@@ -3,15 +3,17 @@
 
 use crate::context::{estimate, mask_if_needed};
 use crate::journal::WriteJournal;
+use crate::ledger::Ledger;
 use crate::prompt::system_prompt;
 use crate::tools::{self, Ctx, Outcome};
 use crate::transcript::{Entry, Transcript};
 use duet_boundary::GatedFrontier;
-use duet_boundary::model::{Item, Request, StopReason, ToolSpec, Usage};
-use duet_boundary::view::Presenter;
+use duet_boundary::model::{Item, Request, StopReason, ToolCall, ToolSpec, Usage};
+use duet_boundary::view::{Presenter, ViewClass};
 use duet_git::Git;
 use duet_sandbox::SandboxKind;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -52,6 +54,9 @@ pub struct RunStats {
     pub tool_calls: u64,
     pub masked_results: u64,
     pub wall_seconds: f64,
+    /// Where the frontier input went, by how tool results were shown (see `ledger`).
+    #[serde(default)]
+    pub ledger: Ledger,
 }
 
 const MAX_TEXT_ONLY_TURNS: u32 = 3;
@@ -101,6 +106,7 @@ pub async fn run(
         Err(reason) => Terminal::Failed { reason },
     };
     stats.wall_seconds = started.elapsed().as_secs_f64();
+    stats.ledger.finish();
     if let Ok(t) = Transcript::open(&cfg.run_dir) {
         let _ = t.append(&Entry::End {
             terminal: terminal.clone(),
@@ -121,19 +127,55 @@ async fn drive(
     started: Instant,
 ) -> Result<Terminal, String> {
     let transcript = Transcript::open(&cfg.run_dir).map_err(|e| e.to_string())?;
+    let name = cfg
+        .workspace
+        .file_name()
+        .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
+    let system = system_prompt(&name, &cfg.checks);
     let mut items: Vec<Item> = Vec::new();
+    // How each tool result was shown, by call id (for the ledger).
+    let mut classes: HashMap<String, ViewClass> = HashMap::new();
     if resume {
         let restored =
             WriteJournal::recover(&cfg.run_dir, &cfg.workspace).map_err(|e| e.to_string())?;
         if !restored.is_empty() {
             eprintln!("rolled back {} interrupted write(s)", restored.len());
         }
-        for e in Transcript::read(&cfg.run_dir).map_err(|e| e.to_string())? {
+        let entries = Transcript::read(&cfg.run_dir).map_err(|e| e.to_string())?;
+        for e in &entries {
+            if let Entry::Shown { call_id, class } = e {
+                classes.insert(call_id.clone(), *class);
+            }
+        }
+        // The ledger is rebuilt from the transcript; masking done before the
+        // interruption is not replayed, so carried tokens are an upper bound.
+        let mut calls: HashMap<String, ToolCall> = HashMap::new();
+        for e in entries {
             match e {
-                Entry::Item { item } => items.push(item),
+                Entry::Item { item } => {
+                    match &item {
+                        Item::Assistant { tool_calls, .. } => {
+                            for c in tool_calls {
+                                calls.insert(c.id.clone(), c.clone());
+                            }
+                        }
+                        Item::ToolResult { call_id, content } => {
+                            if let Some(c) = calls.get(call_id) {
+                                let class = classes.get(call_id).copied();
+                                stats
+                                    .ledger
+                                    .on_result(c, content, class.unwrap_or(ViewClass::Raw));
+                            }
+                        }
+                        Item::User { .. } => {}
+                    }
+                    items.push(item);
+                }
                 Entry::Usage {
                     usage, cost_usd, ..
                 } => {
+                    stats.ledger.on_request(&items, &system, &classes);
+                    stats.ledger.on_usage(&usage, &*cfg.price);
                     add(&mut stats.usage, &usage);
                     stats.cost_usd += cost_usd;
                     stats.turns += 1;
@@ -170,11 +212,6 @@ async fn drive(
         items.push(first);
     }
 
-    let name = cfg
-        .workspace
-        .file_name()
-        .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
-    let system = system_prompt(&name, &cfg.checks);
     let specs: Vec<ToolSpec> = tools::specs_with(presenter.extra_tools());
     let mut journal = WriteJournal::open(&cfg.run_dir).map_err(|e| e.to_string())?;
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
@@ -221,6 +258,8 @@ async fn drive(
         stats.turns += 1;
         stats.cost_usd += cost;
         add(&mut stats.usage, &response.usage);
+        stats.ledger.on_request(&request.items, &system, &classes);
+        stats.ledger.on_usage(&response.usage, &*cfg.price);
         let _ = transcript.append(&Entry::Usage {
             turn: stats.turns,
             usage: response.usage,
@@ -297,6 +336,8 @@ async fn drive(
                 network: cfg.network,
                 checks: &cfg.checks,
             };
+            // Only what this call shows counts for it.
+            let _ = presenter.take_view_class();
             let content = if finished.is_some() {
                 "not run: the task was already finished".to_owned()
             } else if call.arguments.is_empty() && call.raw_arguments.trim() != "{}" {
@@ -325,6 +366,9 @@ async fn drive(
                     }
                 }
             };
+            let class = presenter.take_view_class().unwrap_or(ViewClass::Raw);
+            stats.ledger.on_result(call, &content, class);
+            classes.insert(call.id.clone(), class);
             let result = Item::ToolResult {
                 call_id: call.id.clone(),
                 content,
@@ -334,6 +378,10 @@ async fn drive(
                     item: result.clone(),
                 })
                 .map_err(|e| e.to_string())?;
+            let _ = transcript.append(&Entry::Shown {
+                call_id: call.id.clone(),
+                class,
+            });
             items.push(result);
         }
         if let Some(summary) = finished {

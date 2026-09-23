@@ -280,6 +280,7 @@ name = "duet-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "clap",
  "duet-agent",
  "duet-boundary",
@@ -288,8 +289,10 @@ dependencies = [
  "duet-git",
  "duet-provider",
  "duet-sandbox",
+ "futures-util",
  "serde",
  "serde_json",
+ "tempfile",
  "time",
  "tokio",
  "toml",

@@ -28,6 +28,11 @@ toml.workspace = true
 uuid.workspace = true
 time.workspace = true
 
+[dev-dependencies]
+tempfile = "3"
+bytes = "1"
+futures-util.workspace = true
+
 [[bin]]
 name = "duet"
 path = "src/main.rs"

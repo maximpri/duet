@@ -3,6 +3,7 @@
 
 pub mod context;
 pub mod journal;
+pub mod ledger;
 pub mod prompt;
 pub mod run;
 pub mod tools;

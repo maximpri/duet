@@ -289,8 +289,10 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
             flag.store(true, Ordering::SeqCst);
         }
     });
-    let (terminal, stats) =
+    let (terminal, mut stats) =
         duet_agent::run(&run_cfg, &frontier, presenter, &git, resume, &interrupted).await;
+    // Local model work of this invocation (a resumed run reports only its own).
+    stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
     let summary = serde_json::json!({
         "run_id": manifest.run_id,
         "terminal": terminal,

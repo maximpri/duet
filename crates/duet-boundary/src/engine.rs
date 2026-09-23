@@ -623,6 +623,11 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
         Ok(self.clean_public(&mut st, &chunk, &info.source))
     }
 
+    /// What the local model did since the last call (`None` without a local model).
+    pub fn take_local_stats(&self) -> Option<crate::local::CallStats> {
+        self.local.as_ref().map(LocalReader::take_stats)
+    }
+
     /// The outbound filter and check backed by this engine.
     pub fn outbound(self: &Arc<Self>) -> (Box<dyn OutboundFilter>, Box<dyn OutboundCheck>) {
         (

@@ -39,7 +39,7 @@ pub struct Answer {
 }
 
 /// What the local model did since the last `take_stats` (for measurement).
-#[derive(Debug, Clone, Default, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CallStats {
     pub calls: u32,
     pub input_tokens: u64,

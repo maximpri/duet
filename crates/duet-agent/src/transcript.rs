@@ -29,6 +29,11 @@ pub enum Entry {
         tokens_before: u64,
         tokens_after: u64,
     },
+    /// How a tool result was shown to the frontier (for the cost ledger).
+    Shown {
+        call_id: String,
+        class: duet_boundary::view::ViewClass,
+    },
     End {
         terminal: crate::run::Terminal,
     },
