@@ -54,9 +54,9 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Commands cannot read sensitive paths (OS sandbox); a command that must read them runs with `sensitive_data`, its output is held locally and the files it writes become sensitive. Value-based sanitizing of command output cannot stop derived or re-encoded data (hybrid batch, 3 of 5 leaking runs) |
 | 2026-09-23 | Local model stays oMLX `omlx-coding` (Qwen 3.8 27B): micro-eval accuracy, evidence, digest recall, schema 1.00, 0 leaks. First-read prefill ~175 tok/s is expected and accepted; prefill is reported, not gated (operator) |
 | 2026-09-23 | Cost gate reference confirmed: hybrid vs the orchestrator alone (`duet-passthrough`, same frontier model, currently `glm-5.3-flash`), paired; not vs Pi or another model (operator) |
+| 2026-09-23 | The ratatui TUI (all screens, including Run and Audit) stays in M6, after the privacy and cost gates (operator) |
 
-Open decisions: evaluation budget cap (set after the first pilot runs); whether Run/Audit TUI
-screens move up to M3.
+Open decisions: evaluation budget cap (set after the first pilot runs).
 
 Resolved 2026-09-23: GLM prompt caching works on the z.ai coding endpoint. `glm-5.3` with a
 28,546-token prompt sent twice reported `cached_tokens` 0 then 28,544 (cache read $0.26/M vs input
