@@ -80,6 +80,17 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
+    /// Measure the configured local model in its reading roles (accuracy, schema, leaks, prefill).
+    LocalEval {
+        /// Fixture sizes in log lines (800 lines is about 16K tokens).
+        #[arg(long, value_delimiter = ',', default_value = "40,300,800")]
+        sizes: Vec<usize>,
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+        /// Write the full report (per-fixture outcomes) here as JSON.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -411,6 +422,43 @@ async fn main() -> Result<()> {
         Cmd::Purge { run_id, all } => {
             let cfg = load_config(&ws)?;
             purge(&ws, run_id.as_deref(), all, cfg.int("data.retention_days")?)?;
+        }
+        Cmd::LocalEval { sizes, seed, out } => {
+            let cfg = load_config(&ws)?;
+            let reader = LocalReader::new(local_provider(&cfg)?);
+            let fixtures = duet_boundary::local_eval::fixtures(seed, &sizes);
+            let report = duet_boundary::local_eval::run(&reader, &fixtures, |o| {
+                eprintln!(
+                    "{:<22} {} {} {:>6.1}s{}",
+                    o.name,
+                    if o.correct { "correct" } else { "WRONG  " },
+                    if o.digest_mentions {
+                        "digest-ok"
+                    } else {
+                        "digest-miss"
+                    },
+                    o.answer_seconds,
+                    if o.leaked.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  LEAKED {}", o.leaked.len())
+                    }
+                );
+            })
+            .await;
+            println!(
+                "accuracy {:.2}  evidence {:.2}  digest recall {:.2}  schema {:.2}  leaks {}  prefill ~{:.0} tok/s  => {}",
+                report.accuracy,
+                report.evidence_recall,
+                report.digest_recall,
+                report.schema_valid,
+                report.leaks,
+                report.prefill_tok_s,
+                if report.pass { "PASS" } else { "FAIL" }
+            );
+            if let Some(p) = out {
+                std::fs::write(p, serde_json::to_vec_pretty(&report)?)?;
+            }
         }
     }
     Ok(())

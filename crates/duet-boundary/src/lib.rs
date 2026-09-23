@@ -10,6 +10,7 @@ pub mod engine;
 pub mod gate;
 pub mod handles;
 pub mod local;
+pub mod local_eval;
 pub mod overlap;
 pub mod policy;
 pub mod vault;
