@@ -54,6 +54,10 @@ pub struct Engine {
 }
 
 pub const MAX_KEY_LINES: usize = 12;
+/// Command output up to this size is shown sanitized instead of summarized.
+pub const INLINE_OUTPUT_CHARS: usize = 6000;
+/// Sensitive files larger than this are not pre-indexed.
+pub const PRIME_MAX_BYTES: usize = 2 * 1024 * 1024;
 
 impl Engine {
     pub fn open(
@@ -76,6 +80,32 @@ impl Engine {
                 overlap: OverlapIndex::default(),
             }),
         }))
+    }
+
+    /// Indexes every sensitive file before the run starts: its values seed the
+    /// vault and its text seeds the copied-span index, so later echoes of that
+    /// content (`cat`, test output, logs) are replaced wherever they appear.
+    pub fn prime(&self, workspace: &Path, files: &[String]) -> usize {
+        let mut primed = 0;
+        for f in files {
+            let path = Path::new(f);
+            if !self.policy.is_sensitive_path(path) {
+                continue;
+            }
+            let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) else {
+                continue;
+            };
+            let text = String::from_utf8_lossy(&bytes);
+            let mut st = self.lock();
+            st.overlap.add_sensitive(&text);
+            if is_secret_bearing(path) {
+                let _ = self.tokenized_view(&mut st, f, &text);
+            } else {
+                let _ = self.sanitize(&mut st, &text, f, true);
+            }
+            primed += 1;
+        }
+        primed
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -224,6 +254,18 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         out
     }
 
+    /// Command output: small output is shown with known values, detected
+    /// secrets/PII and copied sensitive text replaced (no local call); large
+    /// output goes to a handle with a summary.
+    fn command_view(&self, label: &str, text: &str) -> String {
+        if text.len() > INLINE_OUTPUT_CHARS {
+            return self.handle_view(label, text, false);
+        }
+        let mut st = self.lock();
+        let s = self.sanitize(&mut st, text, label, false);
+        st.overlap.redact(&s).0
+    }
+
     /// Local-model output: sanitized as sensitive text, then copied spans removed.
     fn clean_local(&self, st: &mut State, text: &str, origin: &str) -> String {
         let s = self.sanitize(st, text, origin, true);
@@ -344,10 +386,10 @@ impl Presenter for Engine {
                 if self.policy.command_output_sensitive
                     && !self.policy.command_is_raw_ok(command) =>
             {
-                self.handle_view(&format!("output of `{command}`"), &text, false)
+                self.command_view(&format!("output of `{command}`"), &text)
             }
             Source::Checks if self.policy.command_output_sensitive => {
-                self.handle_view("check output", &text, false)
+                self.command_view("check output", &text)
             }
             Source::Search { .. } => self.search_view(&text),
             _ => {
@@ -472,7 +514,12 @@ impl OutboundCheck for NoKnownValues {
     }
 
     fn check(&self, body: &Value) -> Result<(), String> {
-        let text = body.to_string();
+        // The model's own messages are excluded: text it generated cannot disclose anything.
+        let mut outbound = body.clone();
+        if let Some(msgs) = outbound.get_mut("messages").and_then(Value::as_array_mut) {
+            msgs.retain(|m| m.get("role").and_then(Value::as_str) != Some("assistant"));
+        }
+        let text = outbound.to_string();
         let st = self.0.lock();
         for (value, entry) in st.vault.values() {
             if value.len() >= 6
@@ -590,8 +637,20 @@ mod tests {
             out.as_bytes(),
         );
         assert!(
-            shown.contains("ask_local") && !shown.contains(EMAIL),
+            !shown.contains(EMAIL) && shown.contains("failed to connect as"),
             "{shown}"
+        );
+        let big = format!("ERROR {EMAIL}\n{}", "noise line\n".repeat(1000));
+        let handled = e.present(
+            &Source::Command {
+                command: "cargo test".into(),
+                exit_code: Some(1),
+            },
+            big.as_bytes(),
+        );
+        assert!(
+            handled.contains("ask_local") && !handled.contains(EMAIL),
+            "{handled}"
         );
         let raw = e.present(
             &Source::Command {
@@ -688,5 +747,79 @@ mod tests {
         );
         let token = "⟨email:email#1⟩";
         assert!(a.contains(token) && b.contains(token), "{a}\n{b}");
+    }
+}
+
+#[cfg(test)]
+mod prime_tests {
+    use super::*;
+
+    #[test]
+    fn primed_values_are_replaced_in_any_later_output() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::write(ws.join(".env"), "API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n").unwrap();
+        std::fs::write(
+            ws.join("data/customers.csv"),
+            "id,name,email,balance\n1,Priya Tolvenrin,priya.t@mailbox-9.net,4812339\n",
+        )
+        .unwrap();
+        let policy = Policy {
+            sensitive_globs: vec![".env*".into(), "data/**".into()],
+            command_output_sensitive: true,
+            detect_secrets: true,
+            detect_pii: true,
+            detect_entropy: true,
+            ..Policy::default()
+        };
+        let e = Engine::open(&d.path().join("run"), policy, None).unwrap();
+        let files = [
+            ".env".to_string(),
+            "data/customers.csv".to_string(),
+            "src/lib.rs".to_string(),
+        ];
+        assert_eq!(e.prime(&ws, &files), 2);
+        let out = "API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n1,Priya Tolvenrin,priya.t@mailbox-9.net,4812339\ntest result: ok. 1772361000\n";
+        let src = Source::Command {
+            command: "cat .env data/customers.csv".into(),
+            exit_code: Some(0),
+        };
+        let shown = e.present(&src, out.as_bytes());
+        for secret in [
+            "Qx7pL2mN9vR4tY8wZ3kD",
+            "Priya Tolvenrin",
+            "priya.t@mailbox-9.net",
+            "4812339",
+        ] {
+            assert!(!shown.contains(secret), "{secret} leaked: {shown}");
+        }
+        assert!(
+            shown.contains("1772361000"),
+            "ordinary numbers stay visible: {shown}"
+        );
+    }
+
+    #[test]
+    fn final_check_ignores_the_models_own_messages() {
+        let d = tempfile::tempdir().unwrap();
+        let policy = Policy {
+            detect_secrets: true,
+            sensitive_globs: vec![".env*".into()],
+            ..Policy::default()
+        };
+        let e = Engine::open(d.path(), policy, None).unwrap();
+        e.present(
+            &Source::File {
+                path: ".env".into(),
+            },
+            b"API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n",
+        );
+        let (_, check) = e.outbound();
+        let own =
+            json!({"messages": [{"role": "assistant", "content": "I guess Qx7pL2mN9vR4tY8wZ3kD"}]});
+        assert!(check.check(&own).is_ok());
+        let tool = json!({"messages": [{"role": "tool", "content": "Qx7pL2mN9vR4tY8wZ3kD"}]});
+        assert!(check.check(&tool).is_err());
     }
 }

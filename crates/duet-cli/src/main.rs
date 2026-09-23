@@ -234,6 +234,11 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         ),
         Mode::LocalOnly => (local_provider(&cfg)?, String::new()),
     };
+    if let Some(e) = &engine {
+        let files = git.list_files(&ws).unwrap_or_default();
+        let primed = e.prime(&ws, &files);
+        eprintln!("security engine: indexed {primed} sensitive file(s)");
+    }
     let frontier = gated(&ws, &manifest.run_id, driver, engine.as_ref())?;
     let price = duet_provider::price::builtin(&price_model);
     if price.is_none() && !price_model.is_empty() {
