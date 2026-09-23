@@ -90,6 +90,9 @@ fn group(digits: &str) -> String {
     out
 }
 
+/// Directories never scanned for sensitive files (build output, dependencies, state).
+const COMMAND_SCAN_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
+
 /// Words that look like names in title case but are not personal data.
 const NAME_STOPWORDS: &[&str] = &[
     "Result", "Option", "Error", "String", "Vec", "Some", "None", "Ok", "Err", "Self", "Warn",
@@ -110,6 +113,10 @@ pub struct Engine {
     detectors: Detectors,
     local: Option<LocalReader>,
     state: Mutex<State>,
+    /// Files created or changed by commands that could read sensitive data.
+    derived: Mutex<std::collections::HashSet<std::path::PathBuf>>,
+    /// Where `derived` is persisted, so a resumed run keeps it.
+    derived_file: std::path::PathBuf,
 }
 
 pub const MAX_KEY_LINES: usize = 12;
@@ -133,6 +140,13 @@ impl Engine {
             policy,
             detectors,
             local,
+            derived: Mutex::new(
+                std::fs::read(run_dir.join("derived.json"))
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default(),
+            ),
+            derived_file: run_dir.join("derived.json"),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
                 handles: HandleStore::open(&run_dir.join("handles"))?,
@@ -153,7 +167,7 @@ impl Engine {
             st.public_words.extend(words(objective));
             for f in files {
                 let path = Path::new(f);
-                if self.policy.is_sensitive_path(path) {
+                if self.is_sensitive(path) {
                     continue;
                 }
                 if let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) {
@@ -165,7 +179,7 @@ impl Engine {
         let mut primed = 0;
         for f in files {
             let path = Path::new(f);
-            if !self.policy.is_sensitive_path(path) {
+            if !self.is_sensitive(path) {
                 continue;
             }
             let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) else {
@@ -182,6 +196,16 @@ impl Engine {
             primed += 1;
         }
         primed
+    }
+
+    /// Sensitive by policy, or derived from sensitive data by a command.
+    fn is_sensitive(&self, path: &Path) -> bool {
+        self.policy.is_sensitive_path(path)
+            || self
+                .derived
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains(path)
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -380,7 +404,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         let mut out = String::new();
         for line in text.lines() {
             let path = line.split(':').next().unwrap_or_default();
-            if !path.is_empty() && self.policy.is_sensitive_path(Path::new(path)) {
+            if !path.is_empty() && self.is_sensitive(Path::new(path)) {
                 let loc: String = line.splitn(3, ':').take(2).collect::<Vec<_>>().join(":");
                 out.push_str(&format!(
                     "{loc}: [match in sensitive content; read_file gives a summary]\n"
@@ -470,7 +494,7 @@ impl Presenter for Engine {
     fn present(&self, source: &Source, bytes: &[u8]) -> String {
         let text = String::from_utf8_lossy(bytes);
         match source {
-            Source::File { path } if self.policy.is_sensitive_path(path) => {
+            Source::File { path } if self.is_sensitive(path) => {
                 let label = path.display().to_string();
                 if is_secret_bearing(path) {
                     let mut st = self.lock();
@@ -491,6 +515,14 @@ impl Presenter for Engine {
             {
                 self.command_view(&format!("output of `{command}`"), &text)
             }
+            Source::SensitiveCommand { command, .. } => {
+                let label = format!("output of `{command}` (ran with sensitive data)");
+                {
+                    let mut st = self.lock();
+                    st.overlap.add_sensitive(&text);
+                }
+                self.handle_view(&label, &text, false)
+            }
             Source::Checks if self.policy.command_output_sensitive => {
                 self.command_view("check output", &text)
             }
@@ -502,8 +534,84 @@ impl Presenter for Engine {
         }
     }
 
+    fn hidden_from_commands(&self, workspace: &Path) -> Vec<std::path::PathBuf> {
+        let mut out: Vec<std::path::PathBuf> = self
+            .policy
+            .sensitive_globs
+            .iter()
+            .chain(&self.policy.protected_paths)
+            .filter_map(|g| g.strip_suffix("/**"))
+            .filter(|dir| !dir.contains(['*', '?', '[']))
+            .map(|dir| workspace.join(dir))
+            .filter(|p| p.is_dir())
+            .collect();
+        let mut stack = vec![std::path::PathBuf::new()];
+        while let Some(rel) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let child = rel.join(&name);
+                let abs = workspace.join(&child);
+                if out.iter().any(|d| abs.starts_with(d)) {
+                    continue;
+                }
+                match entry.file_type() {
+                    Ok(t) if t.is_dir() => {
+                        if !COMMAND_SCAN_SKIP.contains(&name.to_string_lossy().as_ref()) {
+                            stack.push(child);
+                        }
+                    }
+                    Ok(t) if t.is_file() && self.is_sensitive(&child) => out.push(abs),
+                    _ => {}
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    fn mark_sensitive(&self, workspace: &Path, paths: &[std::path::PathBuf]) {
+        for rel in paths {
+            if self.is_sensitive(rel) {
+                continue;
+            }
+            {
+                let mut derived = self
+                    .derived
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                derived.insert(rel.clone());
+                let _ = duet_fs::private::write_private(
+                    &self.derived_file,
+                    &serde_json::to_vec(&*derived).unwrap_or_default(),
+                );
+            }
+            if let Ok(bytes) = duet_fs::read_file(workspace, rel, PRIME_MAX_BYTES as u64) {
+                let text = String::from_utf8_lossy(&bytes);
+                let mut st = self.lock();
+                st.overlap.add_sensitive(&text);
+                let _ = self.sanitize(&mut st, &text, &rel.display().to_string(), true);
+            }
+        }
+    }
+
     fn extra_tools(&self) -> Vec<ToolSpec> {
         vec![
+            ToolSpec {
+                name: "run_command".into(),
+                description: "Run a shell command in the repository root (sandboxed: no network, writes limited to the \
+repository). Sensitive files (data, logs, secrets) are unreadable to commands. To run something that must read them \
+(e.g. the program on the real data), set sensitive_data: the output then stays on this machine and you get a summary \
+and a handle for ask_local, and files the command writes become sensitive too. Prefer synthetic fixtures for tests."
+                    .into(),
+                parameters: json!({"type": "object", "properties": {
+                    "command": {"type": "string"},
+                    "timeout_seconds": {"type": "integer", "minimum": 1},
+                    "sensitive_data": {"type": "boolean", "description": "Allow the command to read sensitive files."}
+                }, "required": ["command"]}),
+            },
             ToolSpec {
                 name: "ask_local".into(),
                 description: "Ask the local model a question about content held under a handle (sensitive files, logs, \
@@ -540,7 +648,7 @@ command output). It reads the raw content on this machine and answers without re
 
     fn resolve_for_write(&self, path: &Path, text: &str) -> Result<String, String> {
         let st = self.lock();
-        let sink = self.policy.is_secret_sink(path) || self.policy.is_sensitive_path(path);
+        let sink = self.policy.is_secret_sink(path) || self.is_sensitive(path);
         for token in Vault::tokens_in(text) {
             match st.vault.value_of(&token) {
                 None => {

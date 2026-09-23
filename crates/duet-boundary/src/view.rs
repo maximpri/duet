@@ -21,6 +21,12 @@ pub enum Source {
         command: String,
         exit_code: Option<i32>,
     },
+    /// A command the model ran with access to sensitive files: its output is
+    /// derived from them, so it is sensitive whatever it looks like.
+    SensitiveCommand {
+        command: String,
+        exit_code: Option<i32>,
+    },
     Diff,
     Checks,
     Other {
@@ -36,6 +42,13 @@ pub trait Presenter: Send + Sync {
     fn path_visible(&self, _path: &std::path::Path) -> bool {
         true
     }
+    /// Workspace paths ordinary commands may not read (enforced by the sandbox).
+    fn hidden_from_commands(&self, _workspace: &std::path::Path) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    /// Files a sensitive command created or changed: they hold derived data from now on.
+    /// `paths` are relative to `workspace`.
+    fn mark_sensitive(&self, _workspace: &std::path::Path, _paths: &[PathBuf]) {}
     /// Additional tools this presenter offers (e.g. `ask_local`); fixed for a run.
     fn extra_tools(&self) -> Vec<crate::model::ToolSpec> {
         Vec::new()

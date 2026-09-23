@@ -2,7 +2,7 @@
 //! Command sandbox (Seatbelt on macOS, bubblewrap on Linux), environment
 //! allowlist and process-tree control.
 //!
-//! Commands may read the filesystem, write only inside the workspace and the
+//! Commands may read the filesystem (except paths the caller denies), write only inside the workspace and the
 //! run's scratch directory, never write `.git` or `.duet` at any depth, and have
 //! no network unless the run allows it. Resolution fails closed: without a
 //! sandbox binary at its fixed absolute path, no command runs.
@@ -101,6 +101,9 @@ pub struct Spec {
     /// Where the full combined output goes when it exceeds the cap.
     pub spill_file: Option<PathBuf>,
     pub extra_env: Vec<(String, String)>,
+    /// Absolute paths the command may not read (directories: everything under them).
+    /// Used to keep sensitive files out of commands whose output the frontier sees.
+    pub deny_read: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +167,15 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         // Apple's toolchain helper caches here regardless of TMPDIR; allow only its cache files.
         "(allow file-write* (regex #\"^/private/var/folders/[^/]+/[^/]+/T/xcrun_db\"))".to_owned(),
     ];
+    // Later rules win: these override the blanket read allowance above.
+    for p in &spec.deny_read {
+        let q = quote(p)?;
+        rules.push(if p.is_dir() {
+            format!("(deny file-read* (subpath {q}))")
+        } else {
+            format!("(deny file-read* (literal {q}))")
+        });
+    }
     let services: Vec<String> = MACH_SERVICES
         .iter()
         .map(|s| format!("(global-name \"{s}\")"))
@@ -207,6 +219,17 @@ pub fn bwrap_args(spec: &Spec) -> Vec<OsString> {
                 OsString::from("--ro-bind"),
                 p.clone().into_os_string(),
                 p.into_os_string(),
+            ]);
+        }
+    }
+    for p in &spec.deny_read {
+        if p.is_dir() {
+            a.extend([OsString::from("--tmpfs"), p.clone().into_os_string()]);
+        } else if p.exists() {
+            a.extend([
+                OsString::from("--ro-bind"),
+                OsString::from("/dev/null"),
+                p.clone().into_os_string(),
             ]);
         }
     }
@@ -384,6 +407,7 @@ mod tests {
             output_cap: 4096,
             spill_file: Some(ws.parent().unwrap().join("spill.txt")),
             extra_env: vec![],
+            deny_read: Vec::new(),
         }
     }
 
@@ -405,6 +429,37 @@ mod tests {
         )
         .await
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn denied_paths_cannot_be_read_by_any_means() {
+        let (_d, ws) = setup();
+        std::fs::create_dir_all(ws.join("data/nested")).unwrap();
+        std::fs::write(ws.join("data/nested/c.csv"), "id,balance\n1,8977066\n").unwrap();
+        std::fs::write(ws.join("data/unnamed.csv"), "x\n").unwrap();
+        std::fs::write(ws.join(".env"), "TOKEN=Qx7pL2mN9vR4\n").unwrap();
+        std::fs::write(ws.join("src.txt"), "public\n").unwrap();
+        let mut s = spec(&ws);
+        s.deny_read = vec![ws.join("data"), ws.join(".env")];
+        let script = "cat data/nested/c.csv; od -c .env; ls data; cp .env copy.txt; cat src.txt";
+        let o = run(
+            SandboxKind::Seatbelt,
+            &s,
+            &["/bin/sh".into(), "-c".into(), script.into()],
+            &ws,
+        )
+        .await
+        .unwrap();
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&o.stdout),
+            String::from_utf8_lossy(&o.stderr)
+        );
+        for secret in ["8977066", "Qx7p", "unnamed"] {
+            assert!(!all.contains(secret), "{secret} readable: {all}");
+        }
+        assert!(all.contains("public"), "{all}");
+        assert!(!ws.join("copy.txt").exists());
     }
 
     #[tokio::test]
@@ -567,6 +622,7 @@ mod toolchain_tests {
             output_cap: 64 * 1024,
             spill_file: None,
             extra_env: vec![],
+            deny_read: Vec::new(),
         }
     }
 
@@ -644,6 +700,7 @@ mod linker_tests {
             output_cap: 64 * 1024,
             spill_file: None,
             extra_env: vec![],
+            deny_read: Vec::new(),
         };
         let o = run(
             SandboxKind::Seatbelt,

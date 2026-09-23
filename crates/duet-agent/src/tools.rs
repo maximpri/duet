@@ -53,8 +53,10 @@ fn fs_err(e: FsError) -> String {
 }
 
 /// The tool specifications (built-in plus the presenter's), sorted by name.
+/// Built-in tools plus the presenter's; a presenter tool replaces a built-in of the same name.
 pub fn specs_with(extra: Vec<ToolSpec>) -> Vec<ToolSpec> {
     let mut all = specs();
+    all.retain(|s| !extra.iter().any(|e| e.name == s.name));
     all.extend(extra);
     all.sort_by(|a, b| a.name.cmp(&b.name));
     all
@@ -420,10 +422,13 @@ fn write_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, St
     ))
 }
 
+/// Runs `command` in the sandbox. Unless `sensitive_data`, the paths the
+/// presenter hides are unreadable to it (enforced by the kernel).
 async fn sandboxed(
     ctx: &Ctx<'_>,
     command: &str,
     timeout: Duration,
+    sensitive_data: bool,
 ) -> Result<duet_sandbox::Output, String> {
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
@@ -439,6 +444,11 @@ async fn sandboxed(
             ("CARGO_TERM_COLOR".into(), "never".into()),
             ("NO_COLOR".into(), "1".into()),
         ],
+        deny_read: if sensitive_data {
+            Vec::new()
+        } else {
+            ctx.presenter.hidden_from_commands(ctx.workspace)
+        },
     };
     duet_sandbox::run(
         ctx.sandbox,
@@ -484,12 +494,62 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         .and_then(Value::as_u64)
         .map_or(ctx.command_timeout, Duration::from_secs)
         .min(ctx.command_timeout);
-    let o = sandboxed(ctx, command, timeout).await?;
-    let source = Source::Command {
-        command: command.to_owned(),
-        exit_code: o.exit_code,
+    let sensitive_data = args
+        .get("sensitive_data")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let before = sensitive_data.then(|| snapshot(ctx.workspace));
+    let o = sandboxed(ctx, command, timeout, sensitive_data).await?;
+    let source = if let Some(before) = before {
+        let after = snapshot(ctx.workspace);
+        let changed: Vec<PathBuf> = after
+            .iter()
+            .filter(|(p, stamp)| before.get(*p) != Some(stamp))
+            .map(|(p, _)| p.clone())
+            .collect();
+        ctx.presenter.mark_sensitive(ctx.workspace, &changed);
+        Source::SensitiveCommand {
+            command: command.to_owned(),
+            exit_code: o.exit_code,
+        }
+    } else {
+        Source::Command {
+            command: command.to_owned(),
+            exit_code: o.exit_code,
+        }
     };
     Ok(ctx.presenter.present(&source, &render_output(&o)))
+}
+
+/// Directories whose files are build output or dependencies, not data.
+const SNAPSHOT_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
+
+/// Modification time and size of every workspace file outside build output.
+fn snapshot(workspace: &Path) -> std::collections::BTreeMap<PathBuf, (std::time::SystemTime, u64)> {
+    let mut out = std::collections::BTreeMap::new();
+    let mut stack = vec![PathBuf::new()];
+    while let Some(rel) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let child = rel.join(&name);
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => {
+                    if !SNAPSHOT_SKIP.contains(&name.to_string_lossy().as_ref()) {
+                        stack.push(child);
+                    }
+                }
+                Ok(m) if m.is_file() => {
+                    let modified = m.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    out.insert(child, (modified, m.len()));
+                }
+                _ => {}
+            }
+        }
+    }
+    out
 }
 
 async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
@@ -501,7 +561,7 @@ async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
     let mut report = Vec::new();
     let mut failed = false;
     for check in ctx.checks {
-        match sandboxed(ctx, check, ctx.command_timeout).await {
+        match sandboxed(ctx, check, ctx.command_timeout, false).await {
             Ok(o) => {
                 let passed = o.exit_code == Some(0) && !o.timed_out;
                 failed |= !passed;
@@ -565,5 +625,94 @@ mod tests {
         assert!(missing.unwrap_err().contains("not found"));
         let dup = apply_edits("x\nx\n", &[json!({"old": "x", "new": "y"})]);
         assert!(dup.unwrap_err().contains("2 times"));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod sensitive_command_tests {
+    use super::*;
+    use duet_boundary::engine::Engine;
+    use duet_boundary::policy::Policy;
+
+    const BALANCE: &str = "8977066";
+
+    async fn call(ctx: &mut Ctx<'_>, name: &str, args: Value) -> String {
+        let Value::Object(args) = args else {
+            unreachable!()
+        };
+        match dispatch(ctx, name, &args).await {
+            Outcome::Result(s) | Outcome::Error(s) => s,
+            other => format!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn commands_cannot_read_sensitive_files_unless_their_output_stays_local() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = d.path().canonicalize().unwrap().join("run");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(ws.join(".duet")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(
+            ws.join("data/orders.csv"),
+            format!("id,total\n1,{BALANCE}\n"),
+        )
+        .unwrap();
+        std::fs::write(ws.join("app.log"), "INFO ok\n").unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into(), "*.log".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        let git = Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: SandboxKind::Seatbelt,
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(30),
+            network: false,
+            checks: &[],
+        };
+
+        // Any encoding of the data is out of reach of an ordinary command.
+        let plain = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "od -c data/orders.csv; cat app.log; ls data"}),
+        )
+        .await;
+        assert!(plain.contains("Operation not permitted"), "{plain}");
+        assert!(!plain.contains("  8   9   7"), "{plain}");
+        assert!(!plain.contains("orders.csv\n"), "listing hidden: {plain}");
+
+        // With sensitive_data the command reads it, but the output is held locally
+        // and what the command wrote becomes sensitive.
+        let held = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "cut -d, -f2 data/orders.csv > totals.txt; cat totals.txt", "sensitive_data": true}),
+        )
+        .await;
+        assert!(!held.contains(BALANCE), "{held}");
+        assert!(held.contains("ask_local"), "{held}");
+        let derived = call(&mut ctx, "read_file", json!({"path": "totals.txt"})).await;
+        assert!(!derived.contains(BALANCE), "{derived}");
+        let after = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "cat totals.txt"}),
+        )
+        .await;
+        assert!(
+            !after.contains(BALANCE) && after.contains("Operation not permitted"),
+            "{after}"
+        );
     }
 }

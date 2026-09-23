@@ -12,7 +12,9 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Secrets and credentials (`.env*`, keys, tokens, connection strings, secrets detected in any file) | Sensitive | Placeholders such as `⟨secret:DB_URL#1⟩` |
 | Personal data (email, phone, card, national IDs, IBAN, IP, names in data files) | Sensitive | Placeholders, or a handle with a local summary |
 | Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
-| Logs (`logs/**`, `*.log`) and command output | Sensitive | Handle + local summary |
+| Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
+| Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
+| Other command output | Scanned | Shown with detected and known values replaced (large output: handle + summary) |
 | Git history (`git log`, `git show`, `git diff`) | Sensitive | Handle + local summary; a public-only `diff` tool |
 | Source code marked Interface-only | Protected | Signatures, types and doc comments; bodies withheld |
 | Source code marked Sealed | Protected | Existence only |
@@ -48,6 +50,10 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
    it.
 2. **Transformation** into placeholders, handles and summaries before content enters the
    frontier's context.
+   **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
+   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. A command that
+   must read them is run with `sensitive_data`; its output is then held locally like a data file, and
+   every file it creates or changes is treated as sensitive from then on.
 3. **One outbound gate**, the only code path to the frontier: known values are re-tokenized, the
    payload is re-scanned, copied spans of sensitive content (≈24+ tokens) are removed, and nothing
    is sent while any check fails.
@@ -70,6 +76,8 @@ the provider records every request. A release requires zero canaries in outbound
   measure what gets through.
 - The copied-span filter works at roughly 24 tokens; shorter fragments of sensitive text can pass.
 - Summaries and answers written by the local model are derived from sensitive content by design.
+- Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
+  as derived data (they are build output); a program that stores derived data there escapes that rule.
 
 ## Reporting a vulnerability
 
