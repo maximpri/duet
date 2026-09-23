@@ -5,6 +5,7 @@
 //! placeholders, handles and the local roles arrive in M3.
 
 pub mod audit;
+pub mod detect;
 pub mod gate;
 pub mod view;
 
