@@ -52,7 +52,15 @@ fn fs_err(e: FsError) -> String {
     e.to_string()
 }
 
-/// The tool specifications, sorted by name.
+/// The tool specifications (built-in plus the presenter's), sorted by name.
+pub fn specs_with(extra: Vec<ToolSpec>) -> Vec<ToolSpec> {
+    let mut all = specs();
+    all.extend(extra);
+    all.sort_by(|a, b| a.name.cmp(&b.name));
+    all
+}
+
+/// The built-in tool specifications, sorted by name.
 pub fn specs() -> Vec<ToolSpec> {
     let t = |name: &str, description: &str, parameters: Value| ToolSpec {
         name: name.to_owned(),
@@ -140,7 +148,10 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
         "write_file" => write_file(ctx, args),
         "run_command" => run_command(ctx, args).await,
         "finish" => return finish(ctx, args).await,
-        other => Err(format!("unknown tool `{other}`")),
+        other => match ctx.presenter.call_tool(other, args) {
+            Some(r) => r,
+            None => Err(format!("unknown tool `{other}`")),
+        },
     };
     match result {
         Ok(text) => Outcome::Result(text),
@@ -299,13 +310,24 @@ fn diff(ctx: &Ctx<'_>) -> Result<String, String> {
     Ok(ctx.presenter.present(&Source::Diff, text.as_bytes()))
 }
 
+#[cfg(test)]
 fn apply_edits(original: &str, edits: &[Value]) -> Result<String, String> {
+    apply_edits_with(original, edits, &|s| s.to_owned())
+}
+
+/// Applies edits; `unmask` turns placeholders in `old` anchors back into real text.
+fn apply_edits_with(
+    original: &str,
+    edits: &[Value],
+    unmask: &dyn Fn(&str) -> String,
+) -> Result<String, String> {
     let mut text = original.to_owned();
     for (i, e) in edits.iter().enumerate() {
         let old = e
             .get("old")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("edit {i}: missing `old`"))?;
+        let old = &unmask(old);
         let new = e
             .get("new")
             .and_then(Value::as_str)
@@ -363,7 +385,10 @@ fn edit_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, Str
     let bytes = duet_fs::read_file(ctx.workspace, &rel, MAX_READ_BYTES).map_err(fs_err)?;
     let original =
         String::from_utf8(bytes.clone()).map_err(|_| "file is not valid UTF-8".to_owned())?;
-    let updated = apply_edits(&original, edits)?;
+    let presenter = ctx.presenter;
+    let updated = apply_edits_with(&original, edits, &|s| presenter.detokenize(s))?;
+    // Placeholders in the new text are resolved locally (and checked against secret sinks).
+    let updated = presenter.resolve_for_write(&rel, &updated)?;
     let pre = Precondition::Sha256(duet_fs::sha256_hex(&bytes));
     ctx.journal
         .write(ctx.workspace, &rel, updated.as_bytes(), &pre)
@@ -383,6 +408,7 @@ fn write_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, St
     let existed = duet_fs::read_optional(ctx.workspace, &rel, MAX_READ_BYTES)
         .map_err(fs_err)?
         .is_some();
+    let content = ctx.presenter.resolve_for_write(&rel, content)?;
     ctx.journal
         .write(ctx.workspace, &rel, content.as_bytes(), &Precondition::Any)
         .map_err(fs_err)?;

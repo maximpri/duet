@@ -6,8 +6,12 @@
 
 pub mod audit;
 pub mod detect;
+pub mod engine;
 pub mod gate;
+pub mod handles;
+pub mod local;
 pub mod overlap;
+pub mod policy;
 pub mod vault;
 pub mod view;
 

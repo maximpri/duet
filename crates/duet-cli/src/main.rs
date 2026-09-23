@@ -6,6 +6,9 @@ use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
 use duet_agent::{RunConfig, Terminal};
 use duet_boundary::audit::{AuditLog, Verification, verify};
+use duet_boundary::engine::Engine;
+use duet_boundary::local::LocalReader;
+use duet_boundary::policy::Policy;
 use duet_boundary::view::PassThrough;
 use duet_boundary::{GatedFrontier, OutboundGate};
 use duet_config::Config;
@@ -171,9 +174,33 @@ fn local_provider(cfg: &Config) -> Result<ChatProvider> {
     Ok(ChatProvider::with_reqwest(pc)?)
 }
 
-fn gated(ws: &Path, run_id: &str, provider: ChatProvider) -> Result<GatedFrontier> {
+fn gated(
+    ws: &Path,
+    run_id: &str,
+    provider: ChatProvider,
+    engine: Option<&Arc<Engine>>,
+) -> Result<GatedFrontier> {
     let audit = AuditLog::open(&ws.join(".duet/audit").join(format!("{run_id}.jsonl")))?;
-    Ok(OutboundGate::new(audit).wrap(provider))
+    let mut gate = OutboundGate::new(audit);
+    if let Some(e) = engine {
+        let (filter, check) = e.outbound();
+        gate = gate.with_filter(filter).with_check(check);
+    }
+    Ok(gate.wrap(provider))
+}
+
+fn policy(cfg: &Config) -> Result<Policy> {
+    Ok(Policy {
+        sensitive_globs: cfg.list("sensitivity.globs")?,
+        protected_paths: cfg.list("sensitivity.protected_paths")?,
+        command_output_sensitive: cfg.bool("sensitivity.command_output_sensitive")?,
+        raw_ok_commands: cfg.list("sensitivity.raw_ok_commands")?,
+        secret_sinks: cfg.list("sensitivity.secret_sinks")?,
+        detect_secrets: cfg.bool("sensitivity.detect_secrets")?,
+        detect_pii: cfg.bool("sensitivity.detect_pii")?,
+        detect_entropy: cfg.bool("sensitivity.detect_entropy")?,
+        bulky_tokens: cfg.int("sensitivity.bulky_tokens")? as usize,
+    })
 }
 
 async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32> {
@@ -192,17 +219,22 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     let _ = git.exclude_state_dir(&ws);
     let sandbox = duet_sandbox::detect()?;
 
+    let engine = match manifest.mode {
+        Mode::Hybrid => Some(Engine::open(
+            &run_dir,
+            policy(&cfg)?,
+            Some(LocalReader::new(local_provider(&cfg)?)),
+        )?),
+        _ => None,
+    };
     let (driver, price_model) = match manifest.mode {
-        Mode::Passthrough => (
+        Mode::Passthrough | Mode::Hybrid => (
             frontier_provider(&cfg, &manifest.frontier_url, &manifest.frontier_model)?,
             manifest.frontier_model.clone(),
         ),
         Mode::LocalOnly => (local_provider(&cfg)?, String::new()),
-        Mode::Hybrid => bail!(
-            "hybrid mode arrives with the security engine (milestone M3); use --mode passthrough"
-        ),
     };
-    let frontier = gated(&ws, &manifest.run_id, driver)?;
+    let frontier = gated(&ws, &manifest.run_id, driver, engine.as_ref())?;
     let price = duet_provider::price::builtin(&price_model);
     if price.is_none() && !price_model.is_empty() {
         eprintln!(
@@ -227,7 +259,11 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         max_output_tokens: 32_768,
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
     };
-    let presenter = PassThrough { max_bytes: 60_000 };
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let presenter: &dyn duet_boundary::view::Presenter = match &engine {
+        Some(e) => e.as_ref(),
+        None => &passthrough,
+    };
     let interrupted = Arc::new(AtomicBool::new(false));
     let flag = interrupted.clone();
     tokio::spawn(async move {
@@ -237,7 +273,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         }
     });
     let (terminal, stats) =
-        duet_agent::run(&run_cfg, &frontier, &presenter, &git, resume, &interrupted).await;
+        duet_agent::run(&run_cfg, &frontier, presenter, &git, resume, &interrupted).await;
     let summary = serde_json::json!({
         "run_id": manifest.run_id,
         "terminal": terminal,

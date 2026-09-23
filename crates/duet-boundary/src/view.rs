@@ -23,6 +23,9 @@ pub enum Source {
     },
     Diff,
     Checks,
+    Other {
+        label: String,
+    },
 }
 
 pub trait Presenter: Send + Sync {
@@ -32,6 +35,32 @@ pub trait Presenter: Send + Sync {
     /// (used to hide protected paths from listings and searches).
     fn path_visible(&self, _path: &std::path::Path) -> bool {
         true
+    }
+    /// Additional tools this presenter offers (e.g. `ask_local`); fixed for a run.
+    fn extra_tools(&self) -> Vec<crate::model::ToolSpec> {
+        Vec::new()
+    }
+    /// Handles a call to one of `extra_tools`. `None` if the name is not ours.
+    fn call_tool(
+        &self,
+        _name: &str,
+        _args: &serde_json::Map<String, serde_json::Value>,
+    ) -> Option<Result<String, String>> {
+        None
+    }
+    /// Replaces placeholders the frontier copied from what it was shown, so edit
+    /// anchors match the real file.
+    fn detokenize(&self, text: &str) -> String {
+        text.to_owned()
+    }
+    /// Content about to be written to `path`, with placeholders resolved locally.
+    /// `Err` explains why a placeholder may not be written there.
+    fn resolve_for_write(&self, _path: &std::path::Path, text: &str) -> Result<String, String> {
+        Ok(text.to_owned())
+    }
+    /// The task text as it may be shown to the frontier.
+    fn sanitize_objective(&self, text: &str) -> String {
+        text.to_owned()
     }
 }
 

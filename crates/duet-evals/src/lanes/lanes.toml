@@ -24,8 +24,19 @@ model = "glm-5.3-flash"
 argv = ["{duet_bin}", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
-# The local model host is on the LAN; the sandbox must allow it for this lane.
+# The local model host is on the LAN.
 allow_hosts = ["192.168.50.132:8080"]
+[lane.env]
+DUET_CONFIG_HOME = "{run_dir}/duet-config"
+[[lane.files]]
+path = "{run_dir}/duet-config/config.toml"
+content = '''
+[local]
+base_url = "http://192.168.50.132:8080/v1"
+model = "omlx-coding"
+api_key_env = "OMLX_API_KEY"
+allowlist = ["192.168.50.132:8080"]
+'''
 
 [[lane]]
 name = "duet-local-only"
@@ -36,6 +47,17 @@ model = "glm-5.3-flash"
 argv = ["{duet_bin}", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["OMLX_API_KEY"]
 allow_hosts = ["192.168.50.132:8080"]
+[lane.env]
+DUET_CONFIG_HOME = "{run_dir}/duet-config"
+[[lane.files]]
+path = "{run_dir}/duet-config/config.toml"
+content = '''
+[local]
+base_url = "http://192.168.50.132:8080/v1"
+model = "omlx-coding"
+api_key_env = "OMLX_API_KEY"
+allowlist = ["192.168.50.132:8080"]
+'''
 
 [[lane]]
 name = "pi-glm"

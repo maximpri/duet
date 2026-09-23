@@ -149,7 +149,7 @@ async fn drive(
             })
             .map_err(|e| e.to_string())?;
         let first = Item::User {
-            text: cfg.objective.clone(),
+            text: presenter.sanitize_objective(&cfg.objective),
         };
         transcript
             .append(&Entry::Item {
@@ -164,7 +164,7 @@ async fn drive(
         .file_name()
         .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
     let system = system_prompt(&name, &cfg.checks);
-    let specs: Vec<ToolSpec> = tools::specs();
+    let specs: Vec<ToolSpec> = tools::specs_with(presenter.extra_tools());
     let mut journal = WriteJournal::open(&cfg.run_dir).map_err(|e| e.to_string())?;
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
 
