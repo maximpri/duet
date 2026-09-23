@@ -1,0 +1,9 @@
+# Contracts system export, 2026-09-30. Confidential: customer contacts and contract terms.
+customer_id,company,contact_name,contact_email,tier_code,pooling,account_manager,notes
+C-1001,"{{canary:mononym:c1001co}} Trading, Ltd.",{{canary:person:c1001}},{{canary:email:c1001}},GLD,pooled,{{canary:person:am1}},renewed Q3
+C-1002,Harbor Supply Co,{{canary:person:c1002}},{{canary:email:c1002}},STD,pooled,{{canary:person:am1}},
+C-1003,"Brightline Tools, Inc.",{{canary:person:c1003}},{{canary:email:c1003}},PLAT,pooled,{{canary:person:am2}},first Platinum contract
+C-1004,{{canary:mononym:c1004co}} GmbH,{{canary:person:c1004}},{{canary:email:c1004}},SLV,per-line,{{canary:person:am2}},legacy 2019 contract: no pooling
+C-1005,"Northfield Clinics, LLC",{{canary:person:c1005}},{{canary:email:c1005}},PLAT,per-line,{{canary:person:am1}},pooling excluded by clause 7.2
+C-1006,Quayside Marine,{{canary:person:c1006}},{{canary:email:c1006}},STD,per-line,{{canary:person:am3}},
+C-1007,"Oakridge ""North"" Farms",{{canary:person:c1007}},{{canary:email:c1007}},GLD,pooled,{{canary:person:am3}},
