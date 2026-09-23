@@ -22,6 +22,10 @@ pub struct Entry {
     pub kind: Kind,
     /// Where the value was first seen (a workspace path or a source label).
     pub origin: String,
+    /// Another spelling of a value already in the vault (a surname, digits without
+    /// separators): replaced by that value's token, never produced by detokenizing.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub alias: bool,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -90,10 +94,29 @@ impl Vault {
                 token: token.clone(),
                 kind,
                 origin: origin.to_owned(),
+                alias: false,
             },
         );
         self.persist()?;
         Ok(token)
+    }
+
+    /// Makes `spelling` another form of `value` (which must already have a token).
+    pub fn alias(&mut self, spelling: &str, value: &str) -> Result<(), FsError> {
+        if spelling == value || self.by_value.contains_key(spelling) {
+            return Ok(());
+        }
+        let Some(entry) = self.by_value.get(value).cloned() else {
+            return Ok(());
+        };
+        self.by_value.insert(
+            spelling.to_owned(),
+            Entry {
+                alias: true,
+                ..entry
+            },
+        );
+        self.persist()
     }
 
     pub fn len(&self) -> usize {
@@ -128,7 +151,7 @@ impl Vault {
     pub fn value_of(&self, token: &str) -> Option<(&str, &Entry)> {
         self.by_value
             .iter()
-            .find(|(_, e)| e.token == token)
+            .find(|(_, e)| e.token == token && !e.alias)
             .map(|(v, e)| (v.as_str(), e))
     }
 

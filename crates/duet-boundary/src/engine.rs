@@ -26,7 +26,7 @@ use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b\p{Lu}\p{Ll}+(?:[ '-]\p{Lu}\p{Ll}+){1,2}\b").expect("static regex")
+    Regex::new(r"\b\p{Lu}\p{Ll}+(?:[ '-]\p{Lu}\p{Ll}+)+\b").expect("static regex")
 });
 // Values of person/address fields (`name=Cher`, `"display_name": "Bjørn Ødegaard"`), whatever their shape.
 static PERSON_FIELD: LazyLock<Regex> = LazyLock::new(|| {
@@ -41,6 +41,55 @@ static ERROR_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(error|panic|panicked|exception|traceback|failed|failure|fatal|warn|warning|invalid|unwrap|denied|timeout)\b")
         .expect("static regex")
 });
+static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\p{L}+").expect("static regex"));
+static TERM: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[\p{L}\p{N}_]+").expect("static regex"));
+
+fn words(text: &str) -> impl Iterator<Item = String> + '_ {
+    TERM.find_iter(text).map(|m| m.as_str().to_lowercase())
+}
+
+/// Other forms the same value takes once code touches it: a person's surname
+/// alone; a number without or with digit grouping, or read as minor units.
+fn other_spellings(value: &str, kind: Kind) -> Vec<String> {
+    match kind {
+        Kind::Name => {
+            let parts: Vec<&str> = WORD.find_iter(value).map(|m| m.as_str()).collect();
+            match parts.last() {
+                Some(last) if parts.len() >= 2 && last.chars().count() >= 4 => {
+                    vec![(*last).to_owned()]
+                }
+                _ => Vec::new(),
+            }
+        }
+        Kind::Data if value.bytes().all(|b| b.is_ascii_digit() || b == b',') => {
+            let digits: String = value.chars().filter(char::is_ascii_digit).collect();
+            if digits.len() < 6 {
+                return Vec::new();
+            }
+            let (units, cents) = digits.split_at(digits.len() - 2);
+            vec![
+                digits.clone(),
+                group(&digits),
+                format!("{units}.{cents}"),
+                format!("{}.{cents}", group(units)),
+            ]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn group(digits: &str) -> String {
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// Words that look like names in title case but are not personal data.
 const NAME_STOPWORDS: &[&str] = &[
     "Result", "Option", "Error", "String", "Vec", "Some", "None", "Ok", "Err", "Self", "Warn",
@@ -51,6 +100,9 @@ struct State {
     vault: Vault,
     handles: HandleStore,
     overlap: OverlapIndex,
+    /// Lower-cased words of public files and the task: a single word found
+    /// here is never treated as identifying on its own.
+    public_words: std::collections::HashSet<String>,
 }
 
 pub struct Engine {
@@ -85,6 +137,7 @@ impl Engine {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
                 handles: HandleStore::open(&run_dir.join("handles"))?,
                 overlap: OverlapIndex::default(),
+                public_words: Default::default(),
             }),
         }))
     }
@@ -92,7 +145,23 @@ impl Engine {
     /// Indexes every sensitive file before the run starts: its values seed the
     /// vault and its text seeds the copied-span index, so later echoes of that
     /// content (`cat`, test output, logs) are replaced wherever they appear.
-    pub fn prime(&self, workspace: &Path, files: &[String]) -> usize {
+    /// Public files and the task text are read first: their words decide which
+    /// single words (a surname, a reformatted number) may count as identifying.
+    pub fn prime(&self, workspace: &Path, files: &[String], objective: &str) -> usize {
+        {
+            let mut st = self.lock();
+            st.public_words.extend(words(objective));
+            for f in files {
+                let path = Path::new(f);
+                if self.policy.is_sensitive_path(path) {
+                    continue;
+                }
+                if let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) {
+                    st.public_words
+                        .extend(words(&String::from_utf8_lossy(&bytes)));
+                }
+            }
+        }
         let mut primed = 0;
         for f in files {
             let path = Path::new(f);
@@ -130,12 +199,24 @@ impl Engine {
             .collect();
         if sensitive {
             for m in NAME.find_iter(text) {
-                if !NAME_STOPWORDS
-                    .iter()
-                    .any(|w| m.as_str().split(' ').any(|p| p == *w))
-                {
-                    spans.push((m.start(), m.end(), Kind::Name, None));
+                // A stop word splits the run; each remaining run of 2+ words is a name.
+                let mut run: Option<(usize, usize, usize)> = None; // (start, end, words)
+                let mut flush = |run: &mut Option<(usize, usize, usize)>| {
+                    if let Some((s, e, n)) = run.take()
+                        && n >= 2
+                    {
+                        spans.push((s, e, Kind::Name, None));
+                    }
+                };
+                for w in WORD.find_iter(m.as_str()) {
+                    let (s, e) = (m.start() + w.start(), m.start() + w.end());
+                    if NAME_STOPWORDS.contains(&w.as_str()) {
+                        flush(&mut run);
+                    } else {
+                        run = Some(run.map_or((s, e, 1), |(rs, _, n)| (rs, e, n + 1)));
+                    }
                 }
+                flush(&mut run);
             }
             for c in PERSON_FIELD.captures_iter(text) {
                 let Some(v) = c.get(1) else { continue };
@@ -161,6 +242,13 @@ impl Engine {
                 .vault
                 .token_for(value, kind, label.as_deref(), origin)
                 .unwrap_or_else(|_| format!("⟨{}⟩", kind.tag()));
+            if sensitive {
+                for spelling in other_spellings(value, kind) {
+                    if !st.public_words.contains(&spelling.to_lowercase()) {
+                        let _ = st.vault.alias(&spelling, value);
+                    }
+                }
+            }
             out.push_str(&text[last..start]);
             out.push_str(&token);
             last = end;
@@ -490,7 +578,10 @@ in {} read it at runtime instead (for example from the environment variable {key
     }
 }
 
-/// Outbound filter: sanitizes every user item and tool result again (idempotent).
+/// Outbound filter: sanitizes every item again (idempotent). The model's own
+/// messages get known values replaced too: it can reconstruct a value it never
+/// saw verbatim (from character codes, a reformatted number), and history must
+/// not carry that value back out.
 struct Sanitize(Arc<Engine>);
 
 impl OutboundFilter for Sanitize {
@@ -505,7 +596,36 @@ impl OutboundFilter for Sanitize {
             let text = match item {
                 Item::User { text } => text,
                 Item::ToolResult { content, .. } => content,
-                Item::Assistant { .. } => continue,
+                Item::Assistant {
+                    text,
+                    reasoning,
+                    tool_calls,
+                } => {
+                    let mut replaced = 0;
+                    for t in std::iter::once(text)
+                        .chain(reasoning.iter_mut())
+                        .chain(tool_calls.iter_mut().map(|c| &mut c.raw_arguments))
+                    {
+                        let (cleaned, n) = st.vault.tokenize(t);
+                        if n > 0 {
+                            *t = cleaned;
+                            replaced += n;
+                        }
+                    }
+                    for call in tool_calls.iter_mut() {
+                        if let Ok(serde_json::Value::Object(args)) =
+                            serde_json::from_str(&call.raw_arguments)
+                        {
+                            call.arguments = args;
+                        }
+                    }
+                    if replaced > 0 {
+                        notes.push(format!(
+                            "replaced {replaced} known value(s) in the model's own message"
+                        ));
+                    }
+                    continue;
+                }
             };
             let cleaned = self.0.sanitize(&mut st, text, "outbound", false);
             let (cleaned, spans) = st.overlap.redact(&cleaned);
@@ -529,12 +649,7 @@ impl OutboundCheck for NoKnownValues {
     }
 
     fn check(&self, body: &Value) -> Result<(), String> {
-        // The model's own messages are excluded: text it generated cannot disclose anything.
-        let mut outbound = body.clone();
-        if let Some(msgs) = outbound.get_mut("messages").and_then(Value::as_array_mut) {
-            msgs.retain(|m| m.get("role").and_then(Value::as_str) != Some("assistant"));
-        }
-        let text = outbound.to_string();
+        let text = body.to_string();
         let st = self.0.lock();
         for (value, entry) in st.vault.values() {
             if value.len() >= 6
@@ -809,7 +924,7 @@ mod prime_tests {
             "data/customers.csv".to_string(),
             "src/lib.rs".to_string(),
         ];
-        assert_eq!(e.prime(&ws, &files), 2);
+        assert_eq!(e.prime(&ws, &files, ""), 2);
         let out = "API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n1,Priya Tolvenrin,priya.t@mailbox-9.net,4812339\ntest result: ok. 1772361000\n";
         let src = Source::Command {
             command: "cat .env data/customers.csv".into(),
@@ -831,7 +946,9 @@ mod prime_tests {
     }
 
     #[test]
-    fn final_check_ignores_the_models_own_messages() {
+    fn the_models_own_messages_are_sanitized_too() {
+        // The model can rebuild a value it never saw verbatim (from character
+        // codes, a reformatted number); its history must not carry it out.
         let d = tempfile::tempdir().unwrap();
         let policy = Policy {
             detect_secrets: true,
@@ -845,11 +962,102 @@ mod prime_tests {
             },
             b"API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n",
         );
-        let (_, check) = e.outbound();
+        let (filter, check) = e.outbound();
         let own =
             json!({"messages": [{"role": "assistant", "content": "I guess Qx7pL2mN9vR4tY8wZ3kD"}]});
-        assert!(check.check(&own).is_ok());
-        let tool = json!({"messages": [{"role": "tool", "content": "Qx7pL2mN9vR4tY8wZ3kD"}]});
-        assert!(check.check(&tool).is_err());
+        assert!(check.check(&own).is_err());
+        let mut req = Request {
+            items: vec![Item::Assistant {
+                text: "decoded: Qx7pL2mN9vR4tY8wZ3kD".into(),
+                reasoning: Some("the codes spell Qx7pL2mN9vR4tY8wZ3kD".into()),
+                tool_calls: vec![crate::model::ToolCall {
+                    id: "c1".into(),
+                    name: "write_file".into(),
+                    arguments: Map::new(),
+                    raw_arguments: r#"{"path":"a.txt","content":"Qx7pL2mN9vR4tY8wZ3kD"}"#.into(),
+                }],
+            }],
+            ..Request::default()
+        };
+        assert!(!filter.apply(&mut req).is_empty());
+        let body = serde_json::to_value(&req.items).unwrap();
+        assert!(!body.to_string().contains("Qx7pL2mN9vR4tY8wZ3kD"), "{body}");
+        assert!(check.check(&body).is_ok());
+        let Item::Assistant { tool_calls, .. } = &req.items[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            tool_calls[0].arguments["content"], "⟨secret:API_TOKEN#1⟩",
+            "parsed arguments follow the sanitized raw arguments"
+        );
+    }
+
+    fn primed_engine(files: &[(&str, &str)], objective: &str) -> (tempfile::TempDir, Arc<Engine>) {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        for (path, text) in files {
+            let p = ws.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let e = Engine::open(&d.path().join("run"), policy, None).unwrap();
+        let names: Vec<String> = files.iter().map(|(p, _)| p.to_string()).collect();
+        e.prime(&ws, &names, objective);
+        (d, e)
+    }
+
+    #[test]
+    fn surnames_are_replaced_alone_unless_the_word_is_public() {
+        let (_d, e) = primed_engine(
+            &[
+                (
+                    "data/bank.csv",
+                    "Buchungsdatum;Verwendungszweck\n03.08.2026;Miete August Jonas Zetharsko\n04.08.2026;Error Priya Tolvenrin\n",
+                ),
+                ("src/lib.rs", "// parses bank statements\n"),
+            ],
+            "Fix the August month-end reconciliation.",
+        );
+        let shown = e.present(
+            &Source::File {
+                path: "src/notes.rs".into(),
+            },
+            b"// Zetharsko paid; Tolvenrin too; closes in August\n",
+        );
+        assert!(
+            !shown.contains("Zetharsko") && !shown.contains("Tolvenrin"),
+            "{shown}"
+        );
+        assert!(shown.contains("August"), "public words stay: {shown}");
+    }
+
+    #[test]
+    fn numbers_are_replaced_in_their_other_spellings() {
+        let (_d, e) = primed_engine(
+            &[(
+                "data/customers.csv",
+                "id,currency,balance_minor\nC-1066,JPY,\"2,038,382\"\nC-1001,EUR,5186126\n",
+            )],
+            "",
+        );
+        let out =
+            "C-1066 2038382\nC-1001 51861.26 51,861.26 5,186,126\ntests: 12 passed in 0.31s\n";
+        let shown = e.present(
+            &Source::Command {
+                command: "cargo run".into(),
+                exit_code: Some(0),
+            },
+            out.as_bytes(),
+        );
+        for v in ["2038382", "51861.26", "51,861.26", "5,186,126"] {
+            assert!(!shown.contains(v), "{v} leaked: {shown}");
+        }
+        assert!(shown.contains("12 passed in 0.31s"), "{shown}");
     }
 }
