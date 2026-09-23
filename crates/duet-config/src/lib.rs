@@ -96,6 +96,15 @@ pub const REGISTRY: &[Setting] = &[
         "Frontier model id."
     ),
     s!(
+        "frontier.reasoning_effort",
+        Choice(&["default", "low", "medium", "high"]),
+        r#""medium""#,
+        Owner,
+        Any,
+        false,
+        "Reasoning effort requested from the frontier (`default` sends none and lets the provider choose)."
+    ),
+    s!(
         "frontier.api_key_env",
         Str,
         r#""ZAI_API_KEY""#,

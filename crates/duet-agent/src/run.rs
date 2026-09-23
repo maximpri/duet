@@ -38,6 +38,8 @@ pub struct RunConfig {
     pub context_window: u64,
     pub mask_at: f64,
     pub max_output_tokens: u32,
+    /// Sent as `reasoning_effort` unless `None`.
+    pub reasoning_effort: Option<String>,
     /// Prices a response's usage in dollars.
     pub price: Box<dyn Fn(&Usage) -> f64 + Send + Sync>,
 }
@@ -54,6 +56,15 @@ pub struct RunStats {
 
 const MAX_TEXT_ONLY_TURNS: u32 = 3;
 const MAX_LENGTH_STOPS: u32 = 3;
+
+/// Provider-specific request fields for the configured reasoning effort.
+fn reasoning_extra(effort: Option<&str>) -> serde_json::Map<String, serde_json::Value> {
+    let mut extra = serde_json::Map::new();
+    if let Some(e) = effort {
+        extra.insert("reasoning_effort".into(), e.into());
+    }
+    extra
+}
 
 fn add(a: &mut Usage, b: &Usage) {
     a.input += b.input;
@@ -199,6 +210,7 @@ async fn drive(
             items: items.clone(),
             tools: specs.clone(),
             max_output_tokens: Some(cfg.max_output_tokens),
+            extra: reasoning_extra(cfg.reasoning_effort.as_deref()),
             ..Request::default()
         };
         let (response, interventions) = frontier
