@@ -336,3 +336,17 @@ Prerequisites:
 - Anthropic API key (judge; `claude-code` lane through the proxy via `ANTHROPIC_BASE_URL`).
 - OpenAI API key for the `codex` lane (API-key mode so traffic can pass through the proxy).
 - A local model server (Ollama, LM Studio, llama.cpp, vLLM or oMLX) on loopback.
+
+## 10. Progress
+
+| Date | Milestone | Status |
+|---|---|---|
+| 2026-09-23 | M0.1–M0.3 | Done (`e53c700`). Harness `duet-eval` (33 tests); dogfood tasks S0–S2, M1–M3, L1 all pass `duet-eval check`. |
+| 2026-09-23 | M0.4 | GLM caching verified; prices verified. Pi+GLM pilot running. Claude Code/Codex lanes and the judge wait for `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`. First measurement: Pi+GLM on S1 passed 9/9 hidden tests and sent all three planted secrets to the provider in 13 of 14 requests. |
+| 2026-09-23 | M1 | Chat Completions provider done: stable request prefix, streaming assembly, retries without usage poisoning, mid-stream error retry, terminal length/filter stops, Retry-After, first-byte and idle deadlines, loopback/allowlist enforcement for the local role, text tool-call recovery, context-window probes, built-in prices (27 tests). Live: GLM tool round trip with cache hits; oMLX tool call with prefix reuse (repeat 11.1 s vs 20.8 s cold on a 4K prompt). |
+
+Scope changes, with reasons:
+- **Anthropic Messages and Responses dialects move to M6.** The frontier (z.ai GLM) and the local
+  server (oMLX) both speak Chat Completions, so no gate depends on the other dialects.
+- **The local-model micro-evaluation moves to M3.** It measures the digest and answer roles, whose
+  prompts and schemas are written in M3; it runs before Gate 2.
