@@ -1,6 +1,6 @@
 # Duet v2 — Implementation Plan
 
-Status: approved 2026-09-23, not started. Target state: [TARGET_STATE.md](TARGET_STATE.md).
+Status: approved 2026-09-23; in progress (M3). Progress: §10. Target state: [TARGET_STATE.md](TARGET_STATE.md).
 
 ## 1. Why v2
 
@@ -50,6 +50,8 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | IP levels (Open / Interface-only / Sealed) included in v2 |
 | 2026-09-23 | Everything configurable via a registry-driven TUI |
 | 2026-09-23 | Judge runs through the logged-in Claude CLI (subscription) instead of an API key; Codex CLI available as an alternative backend |
+| 2026-09-23 | Quality gates are decided by the judge (lower bound of the paired difference > −2/30). Hidden pass rate is reported; a pass-rate gap counts only when the candidate is behind on a majority of tasks. Reason: all-or-nothing tasks make the −5 pp pass-rate margin need hundreds of pairs (operator, after Gate 1) |
+| 2026-09-23 | Commands cannot read sensitive paths (OS sandbox); a command that must read them runs with `sensitive_data`, its output is held locally and the files it writes become sensitive. Value-based sanitizing of command output cannot stop derived or re-encoded data (hybrid batch, 3 of 5 leaking runs) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs); whether Run/Audit TUI
 screens move up to M3.

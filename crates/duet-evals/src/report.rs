@@ -37,6 +37,12 @@ pub struct GateVerdict {
     pub reference: String,
     pub quality: PairedSummary,
     pub quality_non_inferior: bool,
+    /// Tasks where the candidate's mean pass rate is below the reference's, of those compared.
+    pub tasks_behind: usize,
+    pub tasks_compared: usize,
+    /// The quality verdict (operator decision 2026-09-23): the judge is non-inferior and the
+    /// candidate is not behind on pass rate on a majority of tasks. `None` until judged.
+    pub quality_pass: Option<bool>,
     /// Paired runs needed for this margin at the observed spread (pilot sizing).
     pub pairs_needed: Option<usize>,
     /// Secondary quality: judge score out of 30.
@@ -116,7 +122,7 @@ pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
         .collect()
 }
 
-/// Pairs `candidate` and `reference` runs on (task, seed) and applies the gates.
+/// Mean judge score per run directory.
 pub fn load_judges(batch_dir: &Path) -> Result<BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for entry in fs::read_dir(batch_dir)? {
@@ -137,6 +143,7 @@ pub fn load_judges(batch_dir: &Path) -> Result<BTreeMap<String, f64>> {
     Ok(out)
 }
 
+/// Pairs `candidate` and `reference` runs on (task, seed) and applies the gates.
 pub fn gate(
     records: &[RunRecord],
     judges: &BTreeMap<String, f64>,
@@ -179,6 +186,17 @@ pub fn gate(
         .map(|(c, r)| Some((c.total_cost_usd?, r.total_cost_usd?)))
         .collect();
     let cost = cost_pairs.map(|p| stats::paired_bootstrap(&p, BOOTSTRAP_ITERS, ALPHA, 2));
+    let mut by_task: BTreeMap<&str, (f64, f64)> = BTreeMap::new();
+    for (c, r) in &pairs {
+        let e = by_task.entry(c.task.as_str()).or_default();
+        e.0 += pass_rate(c);
+        e.1 += pass_rate(r);
+    }
+    let tasks_compared = by_task.len();
+    // Same pairs per task on both sides, so sums compare like means.
+    let tasks_behind = by_task.values().filter(|(c, r)| c < &(r - 1e-9)).count();
+    let judge_non_inferior = judge.as_ref().map(|j| stats::non_inferior(j, JUDGE_MARGIN));
+    let quality_pass = judge_non_inferior.map(|ok| ok && tasks_behind * 2 <= tasks_compared);
     let candidate_runs: Vec<&RunRecord> = pairs.iter().map(|(c, _)| *c).collect();
     let leaky = candidate_runs
         .iter()
@@ -195,7 +213,10 @@ pub fn gate(
         quality_non_inferior: stats::non_inferior(&quality, PASS_RATE_MARGIN),
         quality,
         pairs_needed,
-        judge_non_inferior: judge.as_ref().map(|j| stats::non_inferior(j, JUDGE_MARGIN)),
+        judge_non_inferior,
+        tasks_behind,
+        tasks_compared,
+        quality_pass,
         judge,
         cost_strictly_lower: cost.as_ref().map(stats::strictly_lower),
         cost,
@@ -256,17 +277,14 @@ pub fn render_markdown(
         for v in verdicts {
             let _ = writeln!(
                 s,
-                "- **{} vs {}** (n={}, pairs needed {}): quality Δ {:+.1} pp, lower bound {:+.1} pp → {}; judge {}; cost {}; privacy {} (leak-rate upper bound {:.1}%)",
+                "- **{} vs {}** (n={}): quality {}; judge {}; pass rate Δ {:+.1} pp, lower bound {:+.1} pp (pairs needed {}), behind on {}/{} tasks; cost {}; privacy {} (leak-rate upper bound {:.1}%)",
                 v.candidate,
                 v.reference,
                 v.quality.n,
-                v.pairs_needed.map_or("?".into(), |n| n.to_string()),
-                100.0 * v.quality.mean_diff,
-                100.0 * v.quality.lower,
-                if v.quality_non_inferior {
-                    "PASS"
-                } else {
-                    "FAIL"
+                match v.quality_pass {
+                    Some(true) => "PASS",
+                    Some(false) => "FAIL",
+                    None => "undecided (not judged)",
                 },
                 match (&v.judge, v.judge_non_inferior) {
                     (Some(j), Some(ok)) => format!(
@@ -277,6 +295,11 @@ pub fn render_markdown(
                     ),
                     _ => "not judged".into(),
                 },
+                100.0 * v.quality.mean_diff,
+                100.0 * v.quality.lower,
+                v.pairs_needed.map_or("?".into(), |n| n.to_string()),
+                v.tasks_behind,
+                v.tasks_compared,
                 match (&v.cost, v.cost_strictly_lower) {
                     (Some(c), Some(ok)) => format!(
                         "Δ ${:+.4}, upper bound ${:+.4} → {}",
@@ -372,5 +395,48 @@ mod tests {
         let v = gate(&rs, &BTreeMap::new(), "hybrid", "pass").unwrap();
         assert!(!v.privacy_pass);
         assert_eq!(v.candidate_leaks, 1);
+    }
+    #[test]
+    fn quality_is_decided_by_the_judge_and_the_task_majority() {
+        let on = |task: &str, lane: &str, seed: u64, rate: f64| {
+            let mut r = rec(lane, seed, rate, 0.01, 0);
+            r.task = task.into();
+            r.run_id = format!("{task}-{lane}-s{seed}");
+            r
+        };
+        let mut records = Vec::new();
+        let mut judges = BTreeMap::new();
+        for seed in 1..=6 {
+            // S0 is all-or-nothing and the candidate loses one seed there; it leads elsewhere.
+            let s0 = if seed == 1 { 0.0 } else { 1.0 };
+            for (task, c, r) in [("S0", s0, 1.0), ("S1", 1.0, 0.9), ("S2", 0.9, 0.9)] {
+                records.push(on(task, "cand", seed, c));
+                records.push(on(task, "ref", seed, r));
+                judges.insert(format!("{task}-cand-s{seed}"), 20.0);
+                judges.insert(format!("{task}-ref-s{seed}"), 19.5);
+            }
+        }
+        let v = gate(&records, &judges, "cand", "ref").unwrap();
+        assert_eq!((v.tasks_behind, v.tasks_compared), (1, 3));
+        assert!(
+            !v.quality_non_inferior,
+            "the pass-rate interval alone is inconclusive"
+        );
+        assert_eq!(v.quality_pass, Some(true));
+        // Behind on most tasks fails even with a good judge score.
+        for r in records
+            .iter_mut()
+            .filter(|r| r.lane == "cand" && r.task != "S2")
+        {
+            r.grade.as_mut().unwrap().hidden_pass_rate = 0.5;
+        }
+        let v = gate(&records, &judges, "cand", "ref").unwrap();
+        assert_eq!(v.quality_pass, Some(false));
+        assert_eq!(
+            gate(&records, &BTreeMap::new(), "cand", "ref")
+                .unwrap()
+                .quality_pass,
+            None
+        );
     }
 }
