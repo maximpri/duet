@@ -21,6 +21,8 @@ pub enum Kind {
     Ip,
     Name,
     Data,
+    /// A fragment of protected source code (a literal or distinctive token).
+    Code,
 }
 
 impl Kind {
@@ -35,6 +37,7 @@ impl Kind {
             Kind::Ip => "ip",
             Kind::Name => "name",
             Kind::Data => "data",
+            Kind::Code => "code",
         }
     }
 }
