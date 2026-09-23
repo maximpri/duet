@@ -116,6 +116,9 @@ struct State {
     sensitive_files: Vec<String>,
     /// Protected source (IP levels).
     ip: protected::IpState,
+    /// Detector matches the frontier wrote itself (never replaced unless the
+    /// same value is also in the vault).
+    authored: std::collections::HashSet<String>,
 }
 
 pub struct Engine {
@@ -174,6 +177,7 @@ impl Engine {
                 public_words: Default::default(),
                 sensitive_files: Vec::new(),
                 ip: protected::IpState::open(run_dir),
+                authored: Default::default(),
             }),
         }))
     }
@@ -286,6 +290,13 @@ impl Engine {
                 continue;
             }
             let value = &text[start..end];
+            // The frontier wrote this value itself (test data, an example): it
+            // discloses nothing, and replacing it would rewrite the model's own
+            // history. A value that also came from sensitive content is in the
+            // vault and is always replaced.
+            if st.authored.contains(value) && !st.vault.contains(value) {
+                continue;
+            }
             let token = st
                 .vault
                 .token_for(value, kind, label.as_deref(), origin)
@@ -871,6 +882,16 @@ at most {MAX_RAW_LINES} lines per call)."
         self.lock().vault.detokenize(text).0
     }
 
+    fn note_authored(&self, text: &str) {
+        let mut st = self.lock();
+        for f in scan(text, self.detectors) {
+            let value = &text[f.start..f.end];
+            if !st.vault.contains(value) {
+                st.authored.insert(value.to_owned());
+            }
+        }
+    }
+
     fn resolve_for_write(&self, path: &Path, text: &str) -> Result<String, String> {
         self.ip_guard_write(path)?;
         let st = self.lock();
@@ -1414,6 +1435,37 @@ mod prime_tests {
             "{task}"
         );
         assert!(task.contains("sensitive_data"), "{task}");
+    }
+
+    #[test]
+    fn values_the_frontier_wrote_are_shown_as_written() {
+        let (_d, e) = primed_engine(
+            &[(
+                "data/customers.csv",
+                "id,email\n1,priya.tolvenrin@mailbox-9.net\n",
+            )],
+            "",
+        );
+        // Test data the model wrote, including a real value it reconstructed.
+        e.note_authored(
+            "let csv = \"1,kim.berg@mailbox-2.net\\n2,priya.tolvenrin@mailbox-9.net\";",
+        );
+        let shown = e.present(
+            &Source::File {
+                path: "tests/export.rs".into(),
+                ranged: false,
+            },
+            b"1,kim.berg@mailbox-2.net\n2,priya.tolvenrin@mailbox-9.net\nexample: a@b.test\n",
+        );
+        assert!(shown.contains("kim.berg@mailbox-2.net"), "{shown}");
+        assert!(
+            shown.contains("a@b.test"),
+            "reserved domains are examples: {shown}"
+        );
+        assert!(
+            !shown.contains("priya.tolvenrin"),
+            "a sensitive value stays replaced even if the model wrote it: {shown}"
+        );
     }
 
     #[test]

@@ -124,6 +124,9 @@ the provider records every request. A release requires zero canaries in outbound
   measure what gets through.
 - The copied-span filter works at roughly 24 tokens; shorter fragments of sensitive text can pass.
 - Summaries and answers written by the local model are derived from sensitive content by design.
+- Values the frontier wrote itself (test data, examples) are shown as written, and addresses at
+  reserved example domains (`example.com`, `*.test`, ...) are not treated as personal data. A value
+  that also appears in sensitive content stays replaced wherever it appears.
 - Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
   as derived data (they are build output); a program that stores derived data there escapes that rule.
 

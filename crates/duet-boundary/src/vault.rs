@@ -119,6 +119,11 @@ impl Vault {
         self.persist()
     }
 
+    /// Whether `value` (or a spelling of it) is a known sensitive value.
+    pub fn contains(&self, value: &str) -> bool {
+        self.by_value.contains_key(value)
+    }
+
     pub fn len(&self) -> usize {
         self.by_value.len()
     }

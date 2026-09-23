@@ -393,6 +393,11 @@ fn edit_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, Str
     let original =
         String::from_utf8(bytes.clone()).map_err(|_| "file is not valid UTF-8".to_owned())?;
     let presenter = ctx.presenter;
+    for edit in edits {
+        if let Some(new) = edit.get("new").and_then(Value::as_str) {
+            presenter.note_authored(new);
+        }
+    }
     let updated = apply_edits_with(&original, edits, &|s| presenter.detokenize(s))?;
     // Placeholders in the new text are resolved locally (and checked against secret sinks).
     let updated = presenter.resolve_for_write(&rel, &updated)?;
@@ -415,6 +420,7 @@ fn write_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, St
     let existed = duet_fs::read_optional(ctx.workspace, &rel, MAX_READ_BYTES)
         .map_err(fs_err)?
         .is_some();
+    ctx.presenter.note_authored(content);
     let content = ctx.presenter.resolve_for_write(&rel, content)?;
     ctx.journal
         .write(ctx.workspace, &rel, content.as_bytes(), &Precondition::Any)

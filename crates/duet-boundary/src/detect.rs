@@ -197,6 +197,19 @@ fn looks_random(s: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase() && s.len() == 40)
 }
 
+/// Addresses at domains reserved for documentation and testing (RFC 2606 /
+/// RFC 6761) cannot belong to anyone; code and tests use them as examples.
+fn reserved_example_domain(email: &str) -> bool {
+    let Some((_, domain)) = email.rsplit_once('@') else {
+        return false;
+    };
+    let d = domain.to_ascii_lowercase();
+    ["example.com", "example.org", "example.net"].contains(&d.as_str())
+        || [".test", ".example", ".invalid", ".localhost"]
+            .iter()
+            .any(|tld| d.ends_with(tld) || d == tld[1..])
+}
+
 /// All findings in `text`, sorted by start, with overlaps resolved in favour of the longer span.
 pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
     let mut out = Vec::new();
@@ -246,7 +259,9 @@ pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
     }
     if d.pii {
         for m in EMAIL.find_iter(text) {
-            push(Kind::Email, m, None);
+            if !reserved_example_domain(m.as_str()) {
+                push(Kind::Email, m, None);
+            }
         }
         for m in PHONE.find_iter(text) {
             push(Kind::Phone, m, None);

@@ -121,6 +121,9 @@ pub trait Presenter: Send + Sync {
     /// Files a sensitive command created or changed: they hold derived data from now on.
     /// `paths` are relative to `workspace`.
     fn mark_sensitive(&self, _workspace: &std::path::Path, _paths: &[PathBuf]) {}
+    /// Text the frontier itself wrote into a file (`write_file` content, an
+    /// edit's new text), before placeholders are resolved.
+    fn note_authored(&self, _text: &str) {}
     /// Additional tools this presenter offers (e.g. `ask_local`); fixed for a run.
     fn extra_tools(&self) -> Vec<crate::model::ToolSpec> {
         Vec::new()
