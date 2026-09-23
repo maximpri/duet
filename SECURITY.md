@@ -15,6 +15,7 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
 | Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
 | Other command output | Scanned | Shown with detected and known values replaced (large output: handle + summary) |
+| Large public results (files, allowlisted command output, searches, listings) | Public | Handle + first lines and outline; ranges on request (`read_raw`), scanned like any public content |
 | Git history (`git log`, `git show`, `git diff`) | Sensitive | Handle + local summary; a public-only `diff` tool |
 | Source code marked Interface-only | Protected | Signatures, types and doc comments; bodies withheld |
 | Source code marked Sealed | Protected | Existence only |

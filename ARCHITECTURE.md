@@ -131,7 +131,7 @@ Layers run independently; the result is the most restrictive class any layer ass
 | PublicSmall | raw bytes |
 | SecretBearing | tokenized copy: structure intact, values → placeholders |
 | SensitiveData | handle + digest (deterministic prepass: size, exit code, error lines; local summary; redaction) |
-| PublicBulky | handle + digest; `read_raw` ranges allowed |
+| PublicBulky | over `sensitivity.bulky_tokens` (chars/3): handle + first 40 lines + deterministic outline (declarations; error/warning lines and last 20 lines of output; counts per directory/file for listings and searches) + local summary of files and output; `read_raw` ranges (source line numbers, ≤500 lines, scanned) |
 | Protected(InterfaceOnly) | tree-sitter skeleton; bodies → `⟨body:hN⟩` |
 | Protected(Sealed) | existence only |
 
@@ -177,10 +177,15 @@ the tool returns an error explaining the rule.
 - Transcript is append-only and is the source of every request, so the provider prefix stays
   stable across turns.
 - Token accounting uses the provider's native count where available, estimate otherwise.
-- Above ~70% of the frontier window, all tool results older than the most recent K turns are
-  replaced at once by stubs `[masked: hN, 3.1K tokens — ask_local / read_raw]`. Tool calls and
-  their results are never separated. Masking happens rarely and in batches so caches are
-  invalidated rarely.
+- Above ~70% of the frontier window, tool results are replaced at once, whole turns at a time
+  (oldest first, the last 4 turns kept, results under 400 characters kept), by stubs naming the
+  call and any handle: `[masked: run_command `cargo test` → h7, ~3100 tokens removed to save
+  context; h7 is still available (...)]`. Tool calls and their results are never separated.
+  Masking happens rarely and in batches so caches are invalidated rarely.
+- The run's cost ledger (`summary.json` `stats.ledger`) charges every tool result, for each
+  request that carries it, to the class it was shown as (raw, tokenized, handle summary, local
+  answer, bulky handle), and counts `ask_local` calls and questions, `sensitive_data` commands,
+  sandbox denials and local busy seconds; the method is documented in `duet-agent/src/ledger.rs`.
 
 ## 7. State on disk
 
