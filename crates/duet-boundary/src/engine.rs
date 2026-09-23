@@ -106,6 +106,8 @@ struct State {
     /// Lower-cased words of public files and the task: a single word found
     /// here is never treated as identifying on its own.
     public_words: std::collections::HashSet<String>,
+    /// Sensitive files found when priming, for the note added to the task.
+    sensitive_files: Vec<String>,
 }
 
 pub struct Engine {
@@ -122,6 +124,10 @@ pub struct Engine {
 pub const MAX_KEY_LINES: usize = 12;
 /// Command output up to this size is shown sanitized instead of summarized.
 pub const INLINE_OUTPUT_CHARS: usize = 6000;
+/// Questions answered per `ask_local` call.
+pub const MAX_QUESTIONS: usize = 6;
+/// Sensitive paths named in the task note; beyond this the note lists their directories.
+const LISTED_PATHS: usize = 20;
 /// Sensitive files larger than this are not pre-indexed.
 pub const PRIME_MAX_BYTES: usize = 2 * 1024 * 1024;
 
@@ -152,6 +158,7 @@ impl Engine {
                 handles: HandleStore::open(&run_dir.join("handles"))?,
                 overlap: OverlapIndex::default(),
                 public_words: Default::default(),
+                sensitive_files: Vec::new(),
             }),
         }))
     }
@@ -187,6 +194,7 @@ impl Engine {
             };
             let text = String::from_utf8_lossy(&bytes);
             let mut st = self.lock();
+            st.sensitive_files.push(f.clone());
             st.overlap.add_sensitive(&text);
             if is_secret_bearing(path) {
                 let _ = self.tokenized_view(&mut st, f, &text);
@@ -422,27 +430,50 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             .get("handle")
             .and_then(Value::as_str)
             .ok_or("missing `handle`")?;
-        let question = args
-            .get("question")
-            .and_then(Value::as_str)
-            .ok_or("missing `question`")?;
+        // Several questions in one call cost one frontier turn, and the local
+        // server reuses the processed content between them.
+        let questions: Vec<&str> = match args.get("questions").and_then(Value::as_array) {
+            Some(qs) => qs.iter().filter_map(Value::as_str).collect(),
+            None => args
+                .get("question")
+                .and_then(Value::as_str)
+                .into_iter()
+                .collect(),
+        };
+        if questions.is_empty() {
+            return Err("give `questions` (a list) or `question`".into());
+        }
         let (info, bytes) = self
             .lock()
             .handles
             .get(id)
             .ok_or_else(|| format!("unknown handle {id}"))?;
         let local = self.local.as_ref().ok_or("no local model is configured")?;
-        let q = self.detokenize(question);
         let text = String::from_utf8_lossy(&bytes);
-        let a = Self::block_on(local.answer(&info.source, &text, &q))
-            .map_err(|e| format!("local model: {}", e.message))?;
-        let mut st = self.lock();
-        let answer = self.clean_local(&mut st, &a.answer, &info.source);
-        Ok(if a.unanswerable {
-            format!("The local model could not answer from {id}. {answer}")
-        } else {
-            format!("{answer}\n(evidence lines: {:?})", a.evidence_lines)
-        })
+        let mut out = Vec::new();
+        for (i, question) in questions.iter().take(MAX_QUESTIONS).enumerate() {
+            let q = self.detokenize(question);
+            let a = Self::block_on(local.answer(&info.source, &text, &q))
+                .map_err(|e| format!("local model: {}", e.message))?;
+            let mut st = self.lock();
+            let answer = self.clean_local(&mut st, &a.answer, &info.source);
+            let body = if a.unanswerable {
+                format!("The local model could not answer from {id}. {answer}")
+            } else {
+                format!("{answer}\n(evidence lines: {:?})", a.evidence_lines)
+            };
+            out.push(if questions.len() > 1 {
+                format!("{}. {body}", i + 1)
+            } else {
+                body
+            });
+        }
+        if questions.len() > MAX_QUESTIONS {
+            out.push(format!(
+                "(only the first {MAX_QUESTIONS} questions were answered)"
+            ));
+        }
+        Ok(out.join("\n\n"))
     }
 
     fn read_raw(&self, args: &Map<String, Value>) -> Result<String, String> {
@@ -614,13 +645,16 @@ and a handle for ask_local, and files the command writes become sensitive too. P
             },
             ToolSpec {
                 name: "ask_local".into(),
-                description: "Ask the local model a question about content held under a handle (sensitive files, logs, \
-command output). It reads the raw content on this machine and answers without revealing sensitive values."
+                description: "Ask the local model about content held under a handle (sensitive files, logs, \
+command output). It reads the raw content on this machine and answers without revealing sensitive values. \
+Put everything you need to know about one handle in a single call."
                     .into(),
                 parameters: json!({"type": "object", "properties": {
                     "handle": {"type": "string", "description": "A handle such as h3."},
-                    "question": {"type": "string"}
-                }, "required": ["handle", "question"]}),
+                    "questions": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_QUESTIONS,
+                        "description": "One or more questions, answered in order."},
+                    "question": {"type": "string", "description": "A single question (alternative to questions)."}
+                }, "required": ["handle"]}),
             },
             ToolSpec {
                 name: "read_raw".into(),
@@ -680,9 +714,31 @@ in {} read it at runtime instead (for example from the environment variable {key
         Ok(st.vault.detokenize(text).0)
     }
 
+    /// The task, sanitized, with a note naming the sensitive paths, so the model
+    /// reaches for summaries and `sensitive_data` instead of hitting denials.
     fn sanitize_objective(&self, text: &str) -> String {
         let mut st = self.lock();
-        self.sanitize(&mut st, text, "task", false)
+        let mut out = self.sanitize(&mut st, text, "task", false);
+        if !st.sensitive_files.is_empty() {
+            let mut paths = st.sensitive_files.clone();
+            if paths.len() > LISTED_PATHS {
+                paths = paths
+                    .iter()
+                    .map(|p| match p.rsplit_once('/') {
+                        Some((dir, _)) => format!("{dir}/"),
+                        None => p.clone(),
+                    })
+                    .collect();
+                paths.dedup();
+                paths.truncate(LISTED_PATHS);
+            }
+            out.push_str(&format!(
+                "\n\nSensitive in this repository (commands cannot read these; read_file gives a summary and a \
+handle for ask_local; run_command with sensitive_data runs programs on them): {}",
+                paths.join(", ")
+            ));
+        }
+        out
     }
 }
 
@@ -1143,6 +1199,24 @@ mod prime_tests {
             "{shown}"
         );
         assert!(shown.contains("August"), "public words stay: {shown}");
+    }
+
+    #[test]
+    fn the_task_names_the_sensitive_paths() {
+        let (_d, e) = primed_engine(
+            &[
+                ("data/customers.csv", "id\n1\n"),
+                ("src/lib.rs", "// code\n"),
+            ],
+            "",
+        );
+        let task = e.sanitize_objective("Fix the export.");
+        assert!(task.starts_with("Fix the export."), "{task}");
+        assert!(
+            task.contains("data/customers.csv") && !task.contains("src/lib.rs"),
+            "{task}"
+        );
+        assert!(task.contains("sensitive_data"), "{task}");
     }
 
     #[test]
