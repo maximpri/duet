@@ -196,9 +196,13 @@ fn read_file(ctx: &Ctx<'_>, args: &Map<String, Value>) -> Result<String, String>
         start.min(total.max(1)),
         end
     );
-    let body = ctx
-        .presenter
-        .present(&Source::File { path: rel }, numbered.as_bytes());
+    let body = ctx.presenter.present(
+        &Source::File {
+            path: rel,
+            ranged: args.contains_key("start_line") || args.contains_key("end_line"),
+        },
+        numbered.as_bytes(),
+    );
     Ok(format!("{header}{body}"))
 }
 

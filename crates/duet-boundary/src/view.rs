@@ -6,12 +6,15 @@
 //! the security engine replaces this with classification, placeholders and
 //! handles.
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     File {
         path: PathBuf,
+        /// The model asked for a line range (a deliberate read of those lines).
+        ranged: bool,
     },
     FileList,
     Search {
@@ -34,9 +37,40 @@ pub enum Source {
     },
 }
 
+/// The form in which a tool result reached the frontier (for the cost ledger).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewClass {
+    /// The content itself (public, scanned).
+    Raw,
+    /// Structure kept, values replaced by placeholders.
+    Tokenized,
+    /// Sensitive content held locally: handle, error lines, local summary.
+    HandleSummary,
+    /// An `ask_local` answer.
+    LocalAnswer,
+    /// Public but bulky content held locally: handle, head, outline.
+    BulkyHandle,
+}
+
+impl ViewClass {
+    pub const ALL: [ViewClass; 5] = [
+        ViewClass::Raw,
+        ViewClass::Tokenized,
+        ViewClass::HandleSummary,
+        ViewClass::LocalAnswer,
+        ViewClass::BulkyHandle,
+    ];
+}
+
 pub trait Presenter: Send + Sync {
     /// Text shown to the frontier for `bytes` produced by `source`.
     fn present(&self, source: &Source, bytes: &[u8]) -> String;
+    /// How the latest `present` or `call_tool` result was shown, once; `None`
+    /// when nothing was recorded (the content was shown as it is).
+    fn take_view_class(&self) -> Option<ViewClass> {
+        None
+    }
     /// Whether the frontier may see this path's name and content at all
     /// (used to hide protected paths from listings and searches).
     fn path_visible(&self, _path: &std::path::Path) -> bool {

@@ -7,9 +7,13 @@
 //! - Sensitive data, logs and command output: stored under a handle; the
 //!   frontier gets error lines (sanitized) and a local-model summary, and can
 //!   ask the local model questions.
+//! - Public but bulky results (over `bulky_tokens`): stored under a handle;
+//!   the frontier gets the first lines and an outline, and reads ranges with
+//!   `read_raw`.
 //! - Writes: placeholders are resolved locally, and secrets may only land in
 //!   secret files.
 
+use crate::bulky::{self, Shape};
 use crate::detect::{Detectors, Kind, scan};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
@@ -18,7 +22,7 @@ use crate::model::{Item, Request, ToolSpec};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
 use crate::vault::Vault;
-use crate::view::{Presenter, Source};
+use crate::view::{Presenter, Source, ViewClass};
 use duet_fs::FsError;
 use regex::Regex;
 use serde_json::{Map, Value, json};
@@ -119,6 +123,8 @@ pub struct Engine {
     derived: Mutex<std::collections::HashSet<std::path::PathBuf>>,
     /// Where `derived` is persisted, so a resumed run keeps it.
     derived_file: std::path::PathBuf,
+    /// How the latest result was shown (for the cost ledger).
+    last_class: Mutex<Option<ViewClass>>,
 }
 
 pub const MAX_KEY_LINES: usize = 12;
@@ -126,6 +132,9 @@ pub const MAX_KEY_LINES: usize = 12;
 pub const INLINE_OUTPUT_CHARS: usize = 6000;
 /// Questions answered per `ask_local` call.
 pub const MAX_QUESTIONS: usize = 6;
+/// Lines `read_raw` returns when no end is given, and at most per call.
+pub const DEFAULT_RAW_LINES: usize = 200;
+pub const MAX_RAW_LINES: usize = 500;
 /// Sensitive paths named in the task note; beyond this the note lists their directories.
 const LISTED_PATHS: usize = 20;
 /// Sensitive files larger than this are not pre-indexed.
@@ -153,6 +162,7 @@ impl Engine {
                     .unwrap_or_default(),
             ),
             derived_file: run_dir.join("derived.json"),
+            last_class: Mutex::new(None),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
                 handles: HandleStore::open(&run_dir.join("handles"))?,
@@ -321,11 +331,12 @@ impl Engine {
     }
 
     /// Sensitive content: handle, sanitized error lines, local summary.
-    fn handle_view(&self, source_label: &str, text: &str, public: bool) -> String {
+    fn handle_view(&self, source_label: &str, text: &str) -> String {
+        self.set_class(ViewClass::HandleSummary);
         let handle = {
             let mut st = self.lock();
             st.overlap.add_sensitive(text);
-            match st.handles.put(text.as_bytes(), source_label, public) {
+            match st.handles.put(text.as_bytes(), source_label) {
                 Ok(h) => h,
                 Err(e) => return format!("[content withheld: could not store it locally: {e}]"),
             }
@@ -394,7 +405,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
     /// output goes to a handle with a summary.
     fn command_view(&self, label: &str, text: &str) -> String {
         if text.len() > INLINE_OUTPUT_CHARS {
-            return self.handle_view(label, text, false);
+            return self.handle_view(label, text);
         }
         let mut st = self.lock();
         let s = self.sanitize(&mut st, text, label, false);
@@ -405,6 +416,85 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
     fn clean_local(&self, st: &mut State, text: &str, origin: &str) -> String {
         let s = self.sanitize(st, text, origin, true);
         st.overlap.redact(&s).0
+    }
+
+    /// Public text as it may be shown: detected values replaced, copied
+    /// sensitive spans removed.
+    fn clean_public(&self, st: &mut State, text: &str, origin: &str) -> String {
+        let s = self.sanitize(st, text, origin, false);
+        st.overlap.redact(&s).0
+    }
+
+    fn set_class(&self, class: ViewClass) {
+        *self
+            .last_class
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(class);
+    }
+
+    fn offload(&self, text: &str) -> bool {
+        bulky::is_bulky(text, self.policy.bulky_tokens)
+    }
+
+    /// Public but bulky content (`PublicBulky`): kept whole under a handle the
+    /// frontier may read ranges of; it gets a deterministic head and outline,
+    /// plus a local summary of files and command output when a local model is
+    /// configured. `text` from `read_file` is numbered; the handle keeps plain
+    /// lines and the file's own line numbers.
+    fn bulky_view(&self, label: &str, text: &str, shape: Shape) -> String {
+        let (first, body) = match shape {
+            Shape::Source => {
+                bulky::strip_line_numbers(text).unwrap_or_else(|| (1, text.to_owned()))
+            }
+            _ => (1, text.to_owned()),
+        };
+        let stored = self
+            .lock()
+            .handles
+            .put_public(body.as_bytes(), label, first);
+        let Ok(handle) = stored else {
+            // Nowhere to keep it: show it whole, as a small public result.
+            let mut st = self.lock();
+            return self.clean_public(&mut st, text, label);
+        };
+        self.set_class(ViewClass::BulkyHandle);
+        let digest = match (shape, &self.local) {
+            (Shape::Source | Shape::Output, Some(l)) => {
+                Some(Self::block_on(l.digest(label, &body)))
+            }
+            _ => None,
+        };
+        let id = &handle.id;
+        let last = first + body.lines().count().saturating_sub(1);
+        let also = if shape == Shape::Source {
+            " (or read_file with start_line/end_line)"
+        } else {
+            ""
+        };
+        let mut out = format!(
+            "{id} ({label}): lines {first}-{last}, about {} tokens; public, but too long to show whole. \
+Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also}.\n",
+            bulky::tokens(&body)
+        );
+        let mut st = self.lock();
+        out.push_str(&self.clean_public(&mut st, &bulky::preview(&body, first, shape), label));
+        match digest {
+            Some(Ok(d)) => {
+                out.push_str(&format!(
+                    "Summary by the local model: {}\n",
+                    self.clean_public(&mut st, &d.summary, label)
+                ));
+                for f in &d.facts {
+                    out.push_str(&format!("- {}\n", self.clean_public(&mut st, f, label)));
+                }
+            }
+            Some(Err(e)) => out.push_str(&format!(
+                "[local summary unavailable: {}]\n",
+                e.message.chars().take(160).collect::<String>()
+            )),
+            None => {}
+        }
+        out
     }
 
     fn search_view(&self, text: &str) -> String {
@@ -492,24 +582,45 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             ));
         }
         let text = String::from_utf8_lossy(&bytes);
+        let lines: Vec<&str> = text.lines().collect();
+        let first = info.first_line;
+        if lines.is_empty() {
+            return Err(format!("{id} is empty"));
+        }
+        let last = first + lines.len() - 1;
         let start = args
             .get("start_line")
             .and_then(Value::as_u64)
-            .unwrap_or(1)
-            .max(1) as usize;
-        let end = args
+            .map_or(first, |s| s as usize)
+            .max(first);
+        if start > last {
+            return Err(format!("{id} holds lines {first}-{last}"));
+        }
+        let requested_end = args
             .get("end_line")
             .and_then(Value::as_u64)
-            .map_or(start + 199, |e| e as usize);
-        let chunk: String = text
-            .lines()
-            .enumerate()
-            .skip(start - 1)
-            .take(end.saturating_sub(start) + 1)
-            .map(|(i, l)| format!("{:>6}  {l}\n", i + 1))
-            .collect();
+            .map_or(start + DEFAULT_RAW_LINES - 1, |e| e as usize);
+        if requested_end < start {
+            return Err(format!(
+                "end_line {requested_end} is before start_line {start}"
+            ));
+        }
+        let end = requested_end.min(last).min(start + MAX_RAW_LINES - 1);
+        let mut chunk = format!(
+            "{id} ({}), lines {start}-{end} of {first}-{last}:\n",
+            info.source
+        );
+        for (i, l) in lines[start - first..=end - first].iter().enumerate() {
+            chunk.push_str(&format!("{:>6}  {l}\n", start + i));
+        }
+        if end < requested_end.min(last) {
+            chunk.push_str(&format!(
+                "[at most {MAX_RAW_LINES} lines per call; continue from line {}]\n",
+                end + 1
+            ));
+        }
         let mut st = self.lock();
-        Ok(self.sanitize(&mut st, &chunk, &info.source, false))
+        Ok(self.clean_public(&mut st, &chunk, &info.source))
     }
 
     /// The outbound filter and check backed by this engine.
@@ -524,21 +635,34 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
 impl Presenter for Engine {
     fn present(&self, source: &Source, bytes: &[u8]) -> String {
         let text = String::from_utf8_lossy(bytes);
+        self.set_class(ViewClass::Raw);
         match source {
-            Source::File { path } if self.is_sensitive(path) => {
+            Source::File { path, .. } if self.is_sensitive(path) => {
                 let label = path.display().to_string();
                 if is_secret_bearing(path) {
+                    self.set_class(ViewClass::Tokenized);
                     let mut st = self.lock();
                     st.overlap.add_sensitive(&text);
                     self.tokenized_view(&mut st, &label, &text)
                 } else {
-                    self.handle_view(&label, &text, false)
+                    self.handle_view(&label, &text)
                 }
             }
-            Source::File { path } => {
+            Source::File { path, ranged } => {
+                let label = path.display().to_string();
+                self.lock().overlap.add_public(&text);
+                // A range the model asked for is shown unless it is longer
+                // than one `read_raw` call returns.
+                let offload = if *ranged {
+                    text.lines().count() > MAX_RAW_LINES
+                } else {
+                    self.offload(&text)
+                };
+                if offload {
+                    return self.bulky_view(&label, &text, Shape::Source);
+                }
                 let mut st = self.lock();
-                st.overlap.add_public(&text);
-                self.sanitize(&mut st, &text, &path.display().to_string(), false)
+                self.sanitize(&mut st, &text, &label, false)
             }
             Source::Command { command, .. } | Source::Other { label: command }
                 if self.policy.command_output_sensitive
@@ -552,12 +676,33 @@ impl Presenter for Engine {
                     let mut st = self.lock();
                     st.overlap.add_sensitive(&text);
                 }
-                self.handle_view(&label, &text, false)
+                self.handle_view(&label, &text)
             }
             Source::Checks if self.policy.command_output_sensitive => {
                 self.command_view("check output", &text)
             }
-            Source::Search { .. } => self.search_view(&text),
+            // Public command output (allowlisted commands, or all output when
+            // command output is not treated as sensitive).
+            Source::Command { command, .. } | Source::Other { label: command }
+                if self.offload(&text) =>
+            {
+                self.bulky_view(&format!("output of `{command}`"), &text, Shape::Output)
+            }
+            Source::Checks if self.offload(&text) => {
+                self.bulky_view("check output", &text, Shape::Output)
+            }
+            Source::FileList if self.offload(&text) => {
+                self.bulky_view("file list", &text, Shape::Listing)
+            }
+            // Matches in sensitive files are masked first; only that view is kept.
+            Source::Search { pattern } => {
+                let view = self.search_view(&text);
+                if self.offload(&view) {
+                    self.bulky_view(&format!("search for `{pattern}`"), &view, Shape::Matches)
+                } else {
+                    view
+                }
+            }
             _ => {
                 let mut st = self.lock();
                 self.sanitize(&mut st, &text, "tool output", false)
@@ -658,7 +803,10 @@ Put everything you need to know about one handle in a single call."
             },
             ToolSpec {
                 name: "read_raw".into(),
-                description: "Read a line range of a large public result held under a handle.".into(),
+                description: format!(
+                    "Read a line range of a large public result held under a handle (line numbers as shown; \
+at most {MAX_RAW_LINES} lines per call)."
+                ),
                 parameters: json!({"type": "object", "properties": {
                     "handle": {"type": "string"},
                     "start_line": {"type": "integer", "minimum": 1},
@@ -669,11 +817,22 @@ Put everything you need to know about one handle in a single call."
     }
 
     fn call_tool(&self, name: &str, args: &Map<String, Value>) -> Option<Result<String, String>> {
-        match name {
-            "ask_local" => Some(self.ask_local(args)),
-            "read_raw" => Some(self.read_raw(args)),
-            _ => None,
+        let (result, class) = match name {
+            "ask_local" => (self.ask_local(args), ViewClass::LocalAnswer),
+            "read_raw" => (self.read_raw(args), ViewClass::Raw),
+            _ => return None,
+        };
+        if result.is_ok() {
+            self.set_class(class);
         }
+        Some(result)
+    }
+
+    fn take_view_class(&self) -> Option<ViewClass> {
+        self.last_class
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     fn detokenize(&self, text: &str) -> String {
@@ -873,6 +1032,7 @@ mod tests {
     fn file(path: &str) -> Source {
         Source::File {
             path: PathBuf::from(path),
+            ranged: false,
         }
     }
 
@@ -1123,6 +1283,7 @@ mod prime_tests {
         e.present(
             &Source::File {
                 path: ".env".into(),
+                ranged: false,
             },
             b"API_TOKEN=Qx7pL2mN9vR4tY8wZ3kD\n",
         );
@@ -1191,6 +1352,7 @@ mod prime_tests {
         let shown = e.present(
             &Source::File {
                 path: "src/notes.rs".into(),
+                ranged: false,
             },
             b"// Zetharsko paid; Tolvenrin too; closes in August\n",
         );

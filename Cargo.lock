@@ -260,8 +260,10 @@ dependencies = [
 name = "duet-boundary"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "duet-fs",
  "duet-provider",
+ "futures-util",
  "hex",
  "regex",
  "serde",
