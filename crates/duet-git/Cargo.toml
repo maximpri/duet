@@ -12,3 +12,8 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+thiserror.workspace = true
+duet-fs.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -255,6 +255,12 @@ version = "0.1.0"
 [[package]]
 name = "duet-config"
 version = "0.1.0"
+dependencies = [
+ "duet-fs",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
 
 [[package]]
 name = "duet-evals"
@@ -281,10 +287,22 @@ dependencies = [
 [[package]]
 name = "duet-fs"
 version = "0.1.0"
+dependencies = [
+ "hex",
+ "rustix 0.38.44",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "duet-git"
 version = "0.1.0"
+dependencies = [
+ "duet-fs",
+ "tempfile",
+ "thiserror",
+]
 
 [[package]]
 name = "duet-provider"
@@ -306,6 +324,12 @@ dependencies = [
 [[package]]
 name = "duet-sandbox"
 version = "0.1.0"
+dependencies = [
+ "rustix 0.38.44",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "duet-tui"
@@ -719,6 +743,12 @@ checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
 name = "linux-raw-sys"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
+
+[[package]]
+name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
@@ -1001,6 +1031,19 @@ checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
 name = "rustix"
+version = "0.38.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdb5bc1ae2baa591800df16c9ca78619bf65c0488b41b96ccec5d11220d8c154"
+dependencies = [
+ "bitflags",
+ "errno",
+ "libc",
+ "linux-raw-sys 0.4.15",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rustix"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "891efababe418670775f199f0d233d84843c227a0949a883ce15b37c78d6629d"
@@ -1008,7 +1051,7 @@ dependencies = [
  "bitflags",
  "errno",
  "libc",
- "linux-raw-sys",
+ "linux-raw-sys 0.12.1",
  "windows-sys 0.61.2",
 ]
 
@@ -1231,7 +1274,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.4.3",
  "once_cell",
- "rustix",
+ "rustix 1.1.5",
  "windows-sys 0.61.2",
 ]
 

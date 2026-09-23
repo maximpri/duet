@@ -12,3 +12,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+tokio.workspace = true
+thiserror.workspace = true
+rustix.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
