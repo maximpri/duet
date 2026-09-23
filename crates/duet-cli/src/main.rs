@@ -429,7 +429,7 @@ async fn main() -> Result<()> {
             let fixtures = duet_boundary::local_eval::fixtures(seed, &sizes);
             let report = duet_boundary::local_eval::run(&reader, &fixtures, |o| {
                 eprintln!(
-                    "{:<22} {} {} {:>6.1}s{}",
+                    "{:<22} {} {} {:>6.1}s  answer: {} call(s) {} in / {} cached / {} out  digest: {:.0}s {} call(s) {} cached / {} out{}",
                     o.name,
                     if o.correct { "correct" } else { "WRONG  " },
                     if o.digest_mentions {
@@ -438,6 +438,14 @@ async fn main() -> Result<()> {
                         "digest-miss"
                     },
                     o.answer_seconds,
+                    o.answer_calls.calls,
+                    o.answer_calls.input_tokens,
+                    o.answer_calls.cached_tokens,
+                    o.answer_calls.output_tokens,
+                    o.digest_calls.seconds,
+                    o.digest_calls.calls,
+                    o.digest_calls.cached_tokens,
+                    o.digest_calls.output_tokens,
                     if o.leaked.is_empty() {
                         String::new()
                     } else {
@@ -447,13 +455,14 @@ async fn main() -> Result<()> {
             })
             .await;
             println!(
-                "accuracy {:.2}  evidence {:.2}  digest recall {:.2}  schema {:.2}  leaks {}  prefill ~{:.0} tok/s  => {}",
+                "accuracy {:.2}  evidence {:.2}  digest recall {:.2}  schema {:.2}  leaks {}  prefill {:.0} tok/s  digest cache reuse {:.0}%  => {}",
                 report.accuracy,
                 report.evidence_recall,
                 report.digest_recall,
                 report.schema_valid,
                 report.leaks,
                 report.prefill_tok_s,
+                100.0 * report.digest_cache_reuse,
                 if report.pass { "PASS" } else { "FAIL" }
             );
             if let Some(p) = out {

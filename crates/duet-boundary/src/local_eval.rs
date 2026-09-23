@@ -6,7 +6,7 @@
 //! fixture has an exact expected answer, so scoring needs no judge. The same
 //! run measures schema validity and prefill speed on the largest fixtures.
 
-use crate::local::{Answer, Digest, LocalReader};
+use crate::local::{Answer, CallStats, Digest, LocalReader};
 use serde::Serialize;
 use std::time::Instant;
 
@@ -43,6 +43,8 @@ pub struct Outcome {
     pub digest_mentions: bool,
     pub answer_seconds: f64,
     pub answer: String,
+    pub answer_calls: CallStats,
+    pub digest_calls: CallStats,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -53,8 +55,11 @@ pub struct Report {
     pub schema_valid: f64,
     pub digest_recall: f64,
     pub leaks: usize,
-    /// Estimated prompt tokens per second on the largest fixtures (chars / 4 over answer time).
+    /// Uncached prompt tokens per second on the largest fixtures' answer calls (server-reported
+    /// tokens over wall time; answers are a few dozen tokens, so prefill dominates).
     pub prefill_tok_s: f64,
+    /// Share of the digest prompts the server reused from the answer call on the same content.
+    pub digest_cache_reuse: f64,
     pub pass: bool,
     pub outcomes: Vec<Outcome>,
 }
@@ -287,12 +292,15 @@ pub async fn run(
             chars: f.text.len(),
             ..Outcome::default()
         };
+        let _ = reader.take_stats();
         let started = Instant::now();
         let answer = reader
             .answer("logs/service.log", &f.text, &f.question)
             .await;
         o.answer_seconds = started.elapsed().as_secs_f64();
+        o.answer_calls = reader.take_stats();
         let digest: Option<Digest> = reader.digest("logs/service.log", &f.text).await.ok();
+        o.digest_calls = reader.take_stats();
         if let Ok(a) = &answer {
             o.schema_ok = true;
             (o.correct, o.evidence_hit) = score_answer(f, a);
@@ -330,10 +338,21 @@ pub fn summarize(outcomes: Vec<Outcome>) -> Report {
     let prefill_tok_s = if big.is_empty() {
         0.0
     } else {
-        big.iter()
-            .map(|o| o.chars as f64 / 4.0 / o.answer_seconds)
-            .sum::<f64>()
-            / big.len() as f64
+        let tokens: u64 = big
+            .iter()
+            .map(|o| o.answer_calls.input_tokens - o.answer_calls.cached_tokens)
+            .sum();
+        tokens as f64 / big.iter().map(|o| o.answer_seconds).sum::<f64>()
+    };
+    let digest_input: u64 = outcomes.iter().map(|o| o.digest_calls.input_tokens).sum();
+    let digest_cache_reuse = if digest_input == 0 {
+        0.0
+    } else {
+        outcomes
+            .iter()
+            .map(|o| o.digest_calls.cached_tokens)
+            .sum::<u64>() as f64
+            / digest_input as f64
     };
     let accuracy = rate(|o| o.correct);
     let evidence_recall = rate(|o| o.evidence_hit);
@@ -352,6 +371,7 @@ pub fn summarize(outcomes: Vec<Outcome>) -> Report {
         digest_recall,
         leaks,
         prefill_tok_s,
+        digest_cache_reuse,
         outcomes,
     }
 }
