@@ -194,7 +194,7 @@ pub struct RunRecord {
 
 /// Classifies a run from the provider statuses the proxy saw, in order.
 pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
-    let limited = statuses.iter().any(|s| *s == 429);
+    let limited = statuses.contains(&429);
     let ok = statuses.iter().filter(|s| (200..300).contains(*s)).count();
     let invalid = match statuses.last() {
         None => Some("the agent made no frontier request".to_owned()),
@@ -574,10 +574,10 @@ pub async fn wait_until_available(lane: &Lane, max_wait: Duration) -> bool {
         if let Some(k) = &key {
             req = req.bearer_auth(k);
         }
-        if let Ok(resp) = req.send().await {
-            if resp.status().is_success() {
-                return true;
-            }
+        if let Ok(resp) = req.send().await
+            && resp.status().is_success()
+        {
+            return true;
         }
         if started.elapsed() >= max_wait {
             return false;
