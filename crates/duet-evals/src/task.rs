@@ -266,6 +266,26 @@ pub fn walk_files(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Loads the package whose `id` is `id`. Other packages are only scanned for
+/// their id, so a package this binary cannot parse (e.g. one added by a newer
+/// harness while a batch runs) does not stop the batch.
+pub fn load_one(tasks_dir: &Path, id: &str) -> Result<TaskPackage> {
+    for entry in fs::read_dir(tasks_dir)? {
+        let path = entry?.path();
+        let Ok(text) = fs::read_to_string(path.join("task.toml")) else {
+            continue;
+        };
+        let declared = text
+            .parse::<toml::Table>()
+            .ok()
+            .and_then(|t| t.get("id").and_then(|v| v.as_str()).map(str::to_owned));
+        if declared.as_deref() == Some(id) {
+            return TaskPackage::load(&path);
+        }
+    }
+    anyhow::bail!("no task {id} under {}", tasks_dir.display())
+}
+
 /// Loads every package under `tasks_dir`, sorted by id.
 pub fn load_all(tasks_dir: &Path) -> Result<Vec<TaskPackage>> {
     let mut out = Vec::new();
@@ -322,6 +342,21 @@ allowed = [".env"]
 mod tests {
     use super::*;
     use tests_support::fixture;
+
+    #[test]
+    fn one_task_loads_beside_a_package_this_binary_cannot_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        fixture(&dir.path().join("T0-fixture"));
+        fs::create_dir_all(dir.path().join("T9-future")).unwrap();
+        fs::write(
+            dir.path().join("T9-future/task.toml"),
+            "id = \"T9\"\nhidden_tests = [[\"a\"], 7]\n",
+        )
+        .unwrap();
+        assert!(load_all(dir.path()).is_err());
+        assert_eq!(load_one(dir.path(), "T0").unwrap().spec.id, "T0");
+        assert!(load_one(dir.path(), "T5").is_err());
+    }
 
     #[test]
     fn loads_validates_and_seals() {

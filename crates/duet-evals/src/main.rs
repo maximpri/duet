@@ -111,10 +111,7 @@ fn parse_seeds(spec: &str) -> Result<Vec<u64>> {
 }
 
 fn load_task(tasks: &Path, id: &str) -> Result<task::TaskPackage> {
-    task::load_all(tasks)?
-        .into_iter()
-        .find(|t| t.spec.id == id)
-        .with_context(|| format!("no task {id} under {}", tasks.display()))
+    task::load_one(tasks, id)
 }
 
 #[tokio::main]
@@ -205,8 +202,13 @@ async fn main() -> Result<()> {
             let prices = cost::PriceTable::load(&prices)?;
             let seeds = parse_seeds(&seeds)?;
             fs::create_dir_all(&out)?;
-            for id in &task_ids {
-                let t = load_task(&cli.tasks, id)?;
+            // Every requested task spec is loaded before the first run, and other
+            // packages are never parsed, so adding a task mid-batch cannot stop it.
+            let packages = task_ids
+                .iter()
+                .map(|id| load_task(&cli.tasks, id))
+                .collect::<Result<Vec<_>>>()?;
+            for t in &packages {
                 for &seed in &seeds {
                     for name in &lane_names {
                         let lane = lanes::find_lane(&all_lanes, name)?;
@@ -230,7 +232,7 @@ async fn main() -> Result<()> {
                                 )?;
                             }
                             let rec = lanes::run_one(lanes::RunConfig {
-                                package: &t,
+                                package: t,
                                 lane,
                                 seed,
                                 out_dir: &out,
