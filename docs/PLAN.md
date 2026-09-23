@@ -265,8 +265,8 @@ with `duet-eval report --final`.
 
 - **TUI (`duet-tui`):** registry-generated screens — Models, Sensitivity, IP levels, Limits, Data,
   Audit, Run; confirmation, policy diff and audit on any loosening; value origins shown; owner-only
-  keys never written to project config; snapshot tests per screen. (Run and Audit screens may move
-  to M3 on request.)
+  keys never written to project config; snapshot tests per screen. (Run and Audit included; operator kept
+  the whole TUI in M6.)
 - Setup and presets for Ollama, LM Studio, llama.cpp, vLLM, oMLX, z.ai, Anthropic, OpenAI; no-config
   bootstrap detecting local servers on default ports; `duet doctor` with cache-reuse check.
 - One live smoke test per local backend.
