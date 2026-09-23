@@ -51,16 +51,38 @@ pub enum ViewClass {
     LocalAnswer,
     /// Public but bulky content held locally: handle, head, outline.
     BulkyHandle,
+    /// Protected source: an interface-only skeleton or a sealed-file notice.
+    Protected,
 }
 
 impl ViewClass {
-    pub const ALL: [ViewClass; 5] = [
+    pub const ALL: [ViewClass; 6] = [
         ViewClass::Raw,
         ViewClass::Tokenized,
         ViewClass::HandleSummary,
         ViewClass::LocalAnswer,
         ViewClass::BulkyHandle,
+        ViewClass::Protected,
     ];
+}
+
+/// What the frontier asked to change in a protected file.
+#[derive(Debug, Clone, Copy)]
+pub struct ImplementRequest<'a> {
+    /// The change, as the frontier described it.
+    pub spec: &'a str,
+    /// Test code the change must pass, if the frontier wrote some.
+    pub tests: Option<&'a str>,
+    /// Raw output of the failed checks of a previous attempt (stays local).
+    pub feedback: Option<&'a str>,
+}
+
+/// A protected file's new content and what the frontier may be told about it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Implemented {
+    pub content: String,
+    /// Which items changed, in terms of the interface only.
+    pub summary: String,
 }
 
 pub trait Presenter: Send + Sync {
@@ -79,6 +101,22 @@ pub trait Presenter: Send + Sync {
     /// Workspace paths ordinary commands may not read (enforced by the sandbox).
     fn hidden_from_commands(&self, _workspace: &std::path::Path) -> Vec<PathBuf> {
         Vec::new()
+    }
+    /// Workspace paths the host's checks may not read. Checks build and test
+    /// the project, so protected source stays readable to them; their output
+    /// is presented as [`Source::Checks`].
+    fn hidden_from_checks(&self, workspace: &std::path::Path) -> Vec<PathBuf> {
+        self.hidden_from_commands(workspace)
+    }
+    /// A change to protected source, made where the source may be read (by the
+    /// local model). `None` if `path` is not protected.
+    fn implement_protected(
+        &self,
+        _path: &std::path::Path,
+        _current: &str,
+        _request: &ImplementRequest<'_>,
+    ) -> Option<Result<Implemented, String>> {
+        None
     }
     /// Files a sensitive command created or changed: they hold derived data from now on.
     /// `paths` are relative to `workspace`.
