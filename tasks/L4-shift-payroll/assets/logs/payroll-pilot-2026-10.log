@@ -1,0 +1,56 @@
+2026-11-02T07:00:03+01:00 INFO  payroll pilot run started by {{canary:person:payroll_officer}} <{{canary:email:payroll_officer}}>
+2026-11-02T07:00:03+01:00 INFO  command: node src/cli.ts data 2026-10-19 2026-11-01
+2026-11-02T07:00:03+01:00 INFO  period 2026-10-19..2026-11-01, 36 employees, rules: legacy (base rate only)
+2026-11-02T07:00:04+01:00 WARN  punches: skipped data/punches/terminal-a-ber-2026-10.csv (not a .jsonl export)
+2026-11-02T07:00:04+01:00 INFO  punches: 827 records from data/punches/terminal-b-2026-10.jsonl
+2026-11-02T07:00:04+01:00 INFO  corrections: data/corrections.csv not read (not supported)
+2026-11-02T07:00:05+01:00 INFO  result:
+employee   regular    ot1    ot2 holiday  night      gross
+E-101         0      0      0      0      0       0.00
+E-102         0      0      0      0      0       0.00
+E-103         0      0      0      0      0       0.00
+E-104         0      0      0      0      0       0.00
+E-105         0      0      0      0      0       0.00
+E-106         0      0      0      0      0       0.00
+E-107         0      0      0      0      0       0.00
+E-108         0      0      0      0      0       0.00
+E-109         0      0      0      0      0       0.00
+E-110         0      0      0      0      0       0.00
+E-111         0      0      0      0      0       0.00
+E-112         0      0      0      0      0       0.00
+E-113      5219      0      0      0      0    1574.40
+E-114      5289      0      0      0      0    2036.27
+E-115      6644      0      0      0      0    2685.28
+E-116      6131      0      0      0      0    1967.03
+E-117      5208      0      0      0      0    1649.20
+E-118      1644      0      0      0      0     506.90
+E-119      4791      0      0      0      0    1445.29
+E-120      4608      0      0      0      0    1927.68
+E-121      5111      0      0      0      0    2044.40
+E-122      5146      0      0      0      0    2144.17
+E-123      5209      0      0      0      0    1758.04
+E-124      1634      0      0      0      0     633.18
+E-125      5175      0      0      0      0    2113.13
+E-126      7062      0      0      0      0    2471.70
+E-127      5227      0      0      0      0    2003.68
+E-128      5104      0      0      0      0    1956.53
+E-129      1618      0      0      0      0     431.47
+E-130      1611      0      0      0      0     483.30
+E-131      5515      0      0      0      0    1387.94
+E-132      5131      0      0      0      0    1389.65
+E-133      4738      0      0      0      0    1263.47
+E-134      5998      0      0      0      0    1699.43
+E-135      5188      0      0      0      0    1578.02
+E-136      5352      0      0      0      0    2096.20
+exception UNKNOWN_BADGE B-4410 2026-10-28T12:02:00Z
+2026-11-02T07:00:05+01:00 ERROR bank export: not implemented; transfer file not written
+2026-11-02T07:00:05+01:00 INFO  pilot total 39,246.36 EUR against budget {{canary:number:payroll_budget}} EUR
+2026-11-02T08:12:40+01:00 NOTE  from {{canary:person:site_lead_ber}} (site lead BER, {{canary:phone:site_lead_ber}}): nobody at Berlin was paid. Our gate still has the old generation-1 terminals; IT exports them as a semicolon file with local times.
+2026-11-02T08:30:11+01:00 NOTE  from {{canary:person:hr_lead}} <{{canary:email:hr_lead}}>: pilot rates are wrong for E-105, E-117, E-128 and E-134 (paid 21.00, 19.00, 23.00 and 17.00 per hour). The rates in employees.csv are right; some were typed in with a decimal comma.
+2026-11-02T08:41:57+01:00 NOTE  from {{canary:person:night_worker}} <{{canary:email:night_worker}}>: I worked the night of 24/25 October from 22:00 to after 05:00 — the clocks went back that night, so it was a longer shift. Pilot shows no night premium at all.
+2026-11-02T09:05:02+01:00 NOTE  from {{canary:person:sup_pot}} (supervisor POT): E-122's first IN on 20 October is a misread at gate 2; the VOID is approved in corrections.csv. Potsdam staff who worked 31 October (Reformation Day, a holiday in Brandenburg) must get the holiday rate.
+2026-11-02T09:07:45+01:00 NOTE  from {{canary:person:sup_muc}} (supervisor MUC, {{canary:phone:sup_muc}}): All Saints (1 November) is a holiday in Bavaria. E-128's missing IN on 23 October is approved. E-131's extra OUT was rejected and must not be paid.
+2026-11-02T09:15:30+01:00 NOTE  from {{canary:person:sup_ber}}: some terminals register a card twice when people tap again because the display is slow. Those second taps are not real punches.
+2026-11-02T09:22:18+01:00 NOTE  from {{canary:person:payroll_officer}}: E-119's correction is still pending; do not pay it until it is approved. Visitor and contractor cards must never be paid.
+2026-11-02T09:30:00+01:00 NOTE  from {{canary:person:works_council}} (works council): the 2026 collective agreement applies from this period. Rules are in the ticket; night crew premiums differ by contract.
+2026-11-02T09:31:44+01:00 INFO  pilot rejected; bank transfer for {{canary:person:payroll_officer}}'s approval postponed

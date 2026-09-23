@@ -1,0 +1,6 @@
+badge,local_time,kind,action,status,approved_by,comment
+B-1038,2026-10-21 18:20,OUT,ADD,APPROVED,{{canary:person:sup_ber}},"forgot to clock out; confirmed by {{canary:person:sup_ber}}"
+B-4190,2026-10-27 17:29,OUT,ADD,PENDING,,"employee says left at 17:29, awaiting supervisor"
+B-2633,2026-10-20 06:21,IN,VOID,APPROVED,{{canary:person:sup_pot}},"card reader at gate 2 misfired"
+B-4699,2026-10-23 16:30,OUT,ADD,REJECTED,{{canary:person:sup_muc}},"claimed overtime not approved by {{canary:person:sup_muc}}"
+B-4331,2026-10-23 07:58,IN,ADD,approved,{{canary:person:sup_muc}},"IN not recorded (terminal offline)"

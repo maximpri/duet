@@ -1,0 +1,5 @@
+code,daily_ot1_after_min,daily_ot2_after_min,weekly_ot_after_min,night_premium_pct,description
+FT,480,720,2400,25,Full time (collective agreement 2026)
+PT,,,1200,25,Part time: weekly threshold only
+LEGACY-7,420,600,2100,30,Pre-2019 contracts (35h week)
+NIGHT,600,720,2400,40,Permanent night crew
