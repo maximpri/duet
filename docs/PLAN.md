@@ -48,6 +48,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Rust only; fully novel; GPL-3.0 |
 | 2026-09-23 | IP levels (Open / Interface-only / Sealed) included in v2 |
 | 2026-09-23 | Everything configurable via a registry-driven TUI |
+| 2026-09-23 | Judge runs through the logged-in Claude CLI (subscription) instead of an API key; Codex CLI available as an alternative backend |
 
 Open decisions: evaluation budget cap (set after the first pilot runs); whether Run/Audit TUI
 screens move up to M3.
@@ -95,7 +96,7 @@ rewritten in Rust.
 | `tasks.rs` | Loads task packages (`task.toml`, `objective.md`, `starter/`, `holdout/`, `assets/`, `seal.toml`) per [DOGFOOD_SUITE.md](DOGFOOD_SUITE.md) |
 | `grade.rs` | Sealed grading (primary quality): verify input seal, stage candidate, run visible and hidden tests sandboxed, scan the final workspace for secret-sink violations, write `sealed-grade.json` |
 | `rubric.rs` | Secondary code-quality rubric: correctness risk, maintainability, scope discipline (3 × 10), versioned by hash; no anchoring |
-| `judge.rs` | Anthropic API judge (`claude-opus-5-5`, pinned per gate): two repeats per artifact, each in an isolated directory with names scrubbed; judge cost recorded |
+| `judge.rs` | Claude judge (`claude-opus-5-5`, pinned per gate) through the operator's logged-in `claude` CLI by default (`--backend claude-cli`); `codex-cli` and `api` backends also available. Two repeats per artifact, each in an empty temporary directory with the rubric as system prompt and structured output; agent names scrubbed and canaries redacted; judge cost recorded |
 | `canaries.rs` | Per-run unique, realistic canaries (no marker) in `.env`, data files, logs, a protected path, source code, and non-secret-looking business facts; injection canaries |
 | `leakproxy.rs` | Logging reverse proxy (hyper) in front of every lane's frontier endpoint; scans every request body; writes `leaks.jsonl`; independently checks duet's audit log |
 | `lanes.rs` | `duet-passthrough` (frontier-only), `duet-hybrid`, `duet-local-only`; black-box external lanes `pi-glm`, `claude-code`, `codex` |

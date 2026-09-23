@@ -161,6 +161,8 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         format!("(allow file-write* (subpath {ws}))"),
         format!("(allow file-write* (subpath {scratch}))"),
         format!("(deny file-write* (regex #\"{reserved}\"))"),
+        // Apple's toolchain helper caches here regardless of TMPDIR; allow only its cache files.
+        "(allow file-write* (regex #\"^/private/var/folders/[^/]+/[^/]+/T/xcrun_db\"))".to_owned(),
     ];
     let services: Vec<String> = MACH_SERVICES
         .iter()
@@ -616,5 +618,43 @@ mod toolchain_tests {
             "{}",
             String::from_utf8_lossy(&node.stderr)
         );
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod linker_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn builds_produce_no_xcrun_cache_errors() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        std::fs::create_dir_all(ws.join("src")).unwrap();
+        std::fs::write(
+            ws.join("Cargo.toml"),
+            "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        std::fs::write(ws.join("src/main.rs"), "fn main() {}\n").unwrap();
+        let spec = Spec {
+            workspace: ws.clone(),
+            scratch: d.path().join("scratch"),
+            network: false,
+            timeout: Duration::from_secs(240),
+            output_cap: 64 * 1024,
+            spill_file: None,
+            extra_env: vec![],
+        };
+        let o = run(
+            SandboxKind::Seatbelt,
+            &spec,
+            &["cargo".into(), "build".into(), "--offline".into()],
+            &ws,
+        )
+        .await
+        .unwrap();
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(o.exit_code, Some(0), "{err}");
+        assert!(!err.contains("couldn't create cache file"), "{err}");
     }
 }

@@ -76,6 +76,9 @@ enum Cmd {
     /// Judge the code quality of every run in a batch.
     Judge {
         batch: PathBuf,
+        /// Judge backend: a logged-in assistant CLI (see lanes/judge_cli.rs) or `api` (ANTHROPIC_API_KEY).
+        #[arg(long, default_value = "claude-cli")]
+        backend: String,
         #[arg(long, default_value = "claude-opus-5-5")]
         model: String,
         #[arg(long, default_value_t = 2)]
@@ -234,9 +237,16 @@ async fn main() -> Result<()> {
         }
         Cmd::Judge {
             batch,
+            backend,
             model,
             repeats,
-        } => judge_batch(&cli.tasks, &batch, &model, repeats).await?,
+        } => {
+            let backend = match backend.as_str() {
+                "api" => judge::Backend::Api(judge::JudgeClient::from_env(&model)?),
+                cli => judge::Backend::External(lanes::judge_cli::JudgeCli::parse(cli, &model)?),
+            };
+            judge_batch(&cli.tasks, &batch, &backend, repeats).await?
+        }
         Cmd::Report { batch, gate } => {
             let records = report::load_records(&batch)?;
             ensure!(!records.is_empty(), "no runs in {}", batch.display());
@@ -340,8 +350,12 @@ fn check_task(t: &task::TaskPackage) -> Result<()> {
     Ok(())
 }
 
-async fn judge_batch(tasks: &Path, batch: &Path, model: &str, repeats: usize) -> Result<()> {
-    let client = judge::JudgeClient::from_env(model)?;
+async fn judge_batch(
+    tasks: &Path,
+    batch: &Path,
+    client: &judge::Backend,
+    repeats: usize,
+) -> Result<()> {
     for rec in report::load_records(batch)? {
         let run_dir = batch.join(&rec.run_id);
         let out = run_dir.join("judge.json");

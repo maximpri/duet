@@ -61,10 +61,14 @@ impl Scores {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Judgement {
     pub rubric_version: String,
+    pub backend: String,
     pub model: String,
     pub repeats: Vec<Scores>,
     pub mean_total: f64,
     pub usage: Usage,
+    /// List-price cost reported by the CLI backends (the API backend prices `usage`).
+    #[serde(default)]
+    pub cost_usd: f64,
 }
 
 use crate::lanes::IDENTIFYING_NAMES as SCRUB;
@@ -129,17 +133,38 @@ pub fn diff(baseline: &Path, candidate: &Path) -> Result<String> {
         .into_iter()
         .filter(|chunk| {
             let head = chunk.lines().next().unwrap_or_default();
-            !["/target/", "/.git/", "/node_modules/"]
-                .iter()
-                .any(|p| head.contains(p))
+            ![
+                "/target/",
+                "/.git/",
+                "/node_modules/",
+                "/.duet/",
+                "Cargo.lock",
+                "package-lock.json",
+            ]
+            .iter()
+            .any(|p| head.contains(p))
         })
         .collect();
     let base = baseline.to_string_lossy();
     let cand = candidate.to_string_lossy();
-    Ok(keep
+    let text = keep
         .concat()
         .replace(base.as_ref(), "a")
-        .replace(cand.as_ref(), "b"))
+        .replace(cand.as_ref(), "b");
+    const MAX_DIFF_CHARS: usize = 200_000;
+    if text.len() > MAX_DIFF_CHARS {
+        let mut cut = MAX_DIFF_CHARS;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        return Ok(format!(
+            "{}\n[diff truncated: {} of {} characters shown]\n",
+            &text[..cut],
+            cut,
+            text.len()
+        ));
+    }
+    Ok(text)
 }
 
 fn split_file_diffs(text: &str) -> Vec<&str> {
@@ -180,10 +205,12 @@ impl JudgeClient {
             scores.iter().map(|s| f64::from(s.total())).sum::<f64>() / scores.len() as f64;
         Ok(Judgement {
             rubric_version: rubric_version(),
+            backend: "api".into(),
             model: self.model.clone(),
             repeats: scores,
             mean_total,
             usage,
+            cost_usd: 0.0,
         })
     }
 
@@ -260,6 +287,88 @@ pub fn parse_judge_response(text: &str) -> Result<(Scores, Usage)> {
     );
     let usage = usage_from_response(text).unwrap_or_default();
     Ok((scores, usage))
+}
+
+/// Which judge implementation to use.
+pub enum Backend {
+    /// Anthropic API with `ANTHROPIC_API_KEY`.
+    Api(JudgeClient),
+    /// A logged-in command-line assistant (see `lanes::judge_cli`).
+    External(crate::lanes::judge_cli::JudgeCli),
+}
+
+pub fn scores_schema() -> serde_json::Value {
+    let axis = json!({"type": "integer", "minimum": 0, "maximum": 10});
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["correctness_risk", "maintainability", "scope_discipline", "deductions"],
+        "properties": {
+            "correctness_risk": axis,
+            "maintainability": axis,
+            "scope_discipline": axis,
+            "deductions": {"type": "array", "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["axis", "location", "reason"],
+                "properties": {
+                    "axis": {"type": "string"},
+                    "location": {"type": "string"},
+                    "reason": {"type": "string"}
+                }
+            }}
+        }
+    })
+}
+
+pub fn prompt_text(objective: &str, diff: &str) -> String {
+    format!(
+        "<objective>\n{objective}\n</objective>\n\n<diff>\n{diff}\n</diff>\n\nReturn only the scores object."
+    )
+}
+
+impl Backend {
+    pub fn describe(&self) -> (String, String) {
+        match self {
+            Backend::Api(c) => ("api".into(), c.model.clone()),
+            Backend::External(e) => e.describe(),
+        }
+    }
+
+    pub async fn judge(&self, objective: &str, diff: &str, repeats: usize) -> Result<Judgement> {
+        if let Backend::Api(c) = self {
+            let mut j = c.judge(objective, diff, repeats).await?;
+            j.backend = "api".into();
+            return Ok(j);
+        }
+        ensure!(repeats > 0, "need at least one repeat");
+        let mut scores = Vec::new();
+        let mut cost = 0.0;
+        for _ in 0..repeats {
+            let (s, c) = match self {
+                Backend::External(e) => e.once(objective, diff).await?,
+                Backend::Api(_) => unreachable!(),
+            };
+            ensure!(
+                s.correctness_risk <= 10 && s.maintainability <= 10 && s.scope_discipline <= 10,
+                "judge score out of range"
+            );
+            scores.push(s);
+            cost += c;
+        }
+        let (backend, model) = self.describe();
+        let mean_total =
+            scores.iter().map(|s| f64::from(s.total())).sum::<f64>() / scores.len() as f64;
+        Ok(Judgement {
+            rubric_version: rubric_version(),
+            backend,
+            model,
+            repeats: scores,
+            mean_total,
+            usage: Usage::default(),
+            cost_usd: cost,
+        })
+    }
 }
 
 #[cfg(test)]

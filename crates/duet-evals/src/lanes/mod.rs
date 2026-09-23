@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
+pub mod judge_cli;
+
 pub const LANES_TOML: &str = include_str!("lanes.toml");
 
 /// Words that could reveal which agent or model produced a change; the judge
