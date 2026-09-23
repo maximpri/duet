@@ -8,6 +8,7 @@ mod grade;
 mod judge;
 mod lanes;
 mod leakproxy;
+mod ledger;
 mod report;
 mod stats;
 mod task;

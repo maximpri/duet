@@ -29,6 +29,59 @@ pub struct LaneSummary {
     pub mean_cost_usd: Option<f64>,
     pub mean_wall_seconds: f64,
     pub errors: usize,
+    /// Means over the lane's runs that reported a Duet ledger.
+    pub ledger: Option<LedgerMeans>,
+}
+
+/// Per-run means of Duet's cost ledger for one lane.
+#[derive(Debug, Default, Serialize)]
+pub struct LedgerMeans {
+    pub runs: usize,
+    pub turns: f64,
+    pub request_tokens: f64,
+    /// Estimated input tokens carried by tool results, per class.
+    pub carried_tokens: BTreeMap<String, f64>,
+    pub ask_local_calls: f64,
+    pub ask_local_questions: f64,
+    pub sensitive_data_commands: f64,
+    pub sandbox_denials: f64,
+    pub local_busy_seconds: f64,
+    pub input_usd: f64,
+    pub output_usd: f64,
+}
+
+fn ledger_means(rs: &[&RunRecord]) -> Option<LedgerMeans> {
+    let ls: Vec<_> = rs.iter().filter_map(|r| r.duet_ledger.as_ref()).collect();
+    if ls.is_empty() {
+        return None;
+    }
+    let n = ls.len() as f64;
+    let mean =
+        |f: &dyn Fn(&crate::ledger::DuetLedger) -> f64| ls.iter().map(|l| f(l)).sum::<f64>() / n;
+    let mut m = LedgerMeans {
+        runs: ls.len(),
+        turns: mean(&|l| l.turns as f64),
+        request_tokens: mean(&|l| l.request_tokens as f64),
+        ask_local_calls: mean(&|l| l.ask_local_calls as f64),
+        ask_local_questions: mean(&|l| l.ask_local_questions as f64),
+        sensitive_data_commands: mean(&|l| l.sensitive_data_commands as f64),
+        sandbox_denials: mean(&|l| l.sandbox_denials as f64),
+        local_busy_seconds: mean(&|l| l.local_busy_seconds),
+        input_usd: mean(&|l| l.input_usd),
+        output_usd: mean(&|l| l.output_usd),
+        ..LedgerMeans::default()
+    };
+    for (class, _) in crate::ledger::CLASSES {
+        m.carried_tokens.insert(
+            (*class).to_owned(),
+            mean(&|l| l.carried_tokens.get(*class).copied().unwrap_or(0) as f64),
+        );
+    }
+    Some(m)
+}
+
+fn kilo(tokens: f64) -> String {
+    format!("{:.1}K", tokens / 1000.0)
 }
 
 #[derive(Debug, Serialize)]
@@ -117,6 +170,7 @@ pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
                 mean_cost_usd: costs.map(|c| c.iter().sum::<f64>() / n),
                 mean_wall_seconds: rs.iter().map(|r| r.wall_seconds).sum::<f64>() / n,
                 errors: rs.iter().filter(|r| r.error.is_some()).count(),
+                ledger: ledger_means(&rs),
             }
         })
         .collect()
@@ -272,6 +326,48 @@ pub fn render_markdown(
             l.mean_wall_seconds
         );
     }
+    if summaries.iter().any(|l| l.ledger.is_some()) {
+        s.push_str(
+            "\n## Duet cost ledger\n\nMeans per run, from each run's own summary. Tokens are estimates of frontier \
+input: the size of each tool result summed over every request that carried it, by how it was shown.\n\n",
+        );
+        s.push_str("| Lane | Runs | Turns | Request tokens |");
+        for (_, label) in crate::ledger::CLASSES {
+            let _ = write!(s, " {label} |");
+        }
+        s.push_str(" ask_local (questions) | sensitive_data | Denials | Local busy | Frontier in / out |\n|---|---|---|---|");
+        s.push_str(&"---|".repeat(crate::ledger::CLASSES.len()));
+        s.push_str("---|---|---|---|---|\n");
+        for l in summaries {
+            let Some(m) = &l.ledger else { continue };
+            let _ = write!(
+                s,
+                "| {} | {} | {:.1} | {} |",
+                l.lane,
+                m.runs,
+                m.turns,
+                kilo(m.request_tokens)
+            );
+            for (class, _) in crate::ledger::CLASSES {
+                let _ = write!(
+                    s,
+                    " {} |",
+                    kilo(m.carried_tokens.get(*class).copied().unwrap_or(0.0))
+                );
+            }
+            let _ = writeln!(
+                s,
+                " {:.1} ({:.1}) | {:.1} | {:.1} | {:.0}s | ${:.4} / ${:.4} |",
+                m.ask_local_calls,
+                m.ask_local_questions,
+                m.sensitive_data_commands,
+                m.sandbox_denials,
+                m.local_busy_seconds,
+                m.input_usd,
+                m.output_usd
+            );
+        }
+    }
     if !verdicts.is_empty() {
         s.push_str("\n## Gates\n\n");
         for v in verdicts {
@@ -371,7 +467,54 @@ mod tests {
             error: None,
             invalid: None,
             rate_limited: false,
+            duet_ledger: None,
         }
+    }
+
+    #[test]
+    fn lanes_with_a_ledger_get_a_cost_breakdown() {
+        let mut rs = vec![
+            rec("hybrid", 1, 1.0, 0.02, 0),
+            rec("hybrid", 2, 1.0, 0.04, 0),
+        ];
+        rs.push(rec("external", 1, 1.0, 0.03, 0));
+        for (r, bulky) in rs.iter_mut().zip([4000, 6000]) {
+            r.duet_ledger = Some(crate::ledger::DuetLedger {
+                turns: 10,
+                carried_tokens: [
+                    ("raw".to_owned(), 20_000),
+                    ("bulky_handle".to_owned(), bulky),
+                ]
+                .into(),
+                request_tokens: 50_000,
+                ask_local_calls: 2,
+                ask_local_questions: 3,
+                sandbox_denials: 1,
+                local_busy_seconds: 30.0,
+                input_usd: 0.01,
+                ..Default::default()
+            });
+        }
+        let summaries = summarize(&rs);
+        let hybrid = summaries.iter().find(|l| l.lane == "hybrid").unwrap();
+        let m = hybrid.ledger.as_ref().unwrap();
+        assert_eq!(m.runs, 2);
+        assert!((m.carried_tokens["bulky_handle"] - 5000.0).abs() < 1e-9);
+        assert!(
+            summaries
+                .iter()
+                .find(|l| l.lane == "external")
+                .unwrap()
+                .ledger
+                .is_none()
+        );
+        let md = render_markdown(&summaries, &[], &[]);
+        assert!(md.contains("## Duet cost ledger"), "{md}");
+        assert!(
+            md.contains("| hybrid | 2 | 10.0 | 50.0K | 20.0K | 0.0K | 0.0K | 0.0K | 5.0K | 2.0 (3.0) | 0.0 | 1.0 | 30s | $0.0100 / $0.0000 |"),
+            "{md}"
+        );
+        assert!(!md.contains("| external | 1 | 10.0"), "{md}");
     }
 
     #[test]

@@ -11,6 +11,7 @@ use crate::canary::Manifest;
 use crate::cost::{PriceTable, Usage, usage_from_proxy_log};
 use crate::grade::{GradeReport, grade};
 use crate::leakproxy::{self, LeakRecord};
+use crate::ledger::DuetLedger;
 use crate::task::TaskPackage;
 use crate::workspace;
 use anyhow::{Context, Result, bail, ensure};
@@ -190,6 +191,9 @@ pub struct RunRecord {
     /// Whether the provider rate-limited or quota-limited the run.
     #[serde(default)]
     pub rate_limited: bool,
+    /// Duet's own cost ledger (Duet lanes that wrote a run summary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duet_ledger: Option<DuetLedger>,
 }
 
 /// Classifies a run from the provider statuses the proxy saw, in order.
@@ -274,6 +278,10 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         error: None,
         invalid: None,
         rate_limited: false,
+        duet_ledger: match cfg.lane.kind {
+            LaneKind::Duet => crate::ledger::read(&ws),
+            LaneKind::External => None,
+        },
     };
     let statuses: Vec<u16> = leakproxy::read_requests(&proxy_dir)?
         .iter()
