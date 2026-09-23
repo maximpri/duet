@@ -72,6 +72,14 @@ pub struct Lane {
     /// Non-loopback `host:port` endpoints the sandbox may reach directly.
     #[serde(default)]
     pub allow_hosts: Vec<String>,
+    /// Wrap the lane in the harness sandbox. Duet lanes set this to false: macOS
+    /// cannot nest sandboxes, and Duet sandboxes its own commands.
+    #[serde(default = "yes")]
+    pub sandbox: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Lane {
@@ -108,6 +116,7 @@ struct Vars<'a> {
     proxy_url: &'a str,
     objective: &'a str,
     model: &'a str,
+    duet_bin: &'a str,
 }
 
 fn expand(template: &str, v: &Vars<'_>) -> String {
@@ -117,6 +126,7 @@ fn expand(template: &str, v: &Vars<'_>) -> String {
         .replace("{proxy_url}", v.proxy_url)
         .replace("{objective}", v.objective)
         .replace("{model}", v.model)
+        .replace("{duet_bin}", v.duet_bin)
 }
 
 /// Seatbelt profile: everything allowed except writes outside the run and
@@ -296,12 +306,20 @@ async fn launch(
     proxy_url: &str,
 ) -> Result<LaunchOutcome> {
     let lane = cfg.lane;
+    // The duet binary built alongside this harness (never a `duet` found elsewhere).
+    let duet_bin = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|d| d.join("duet")))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .context("the duet binary is not built next to duet-eval (cargo build -p duet-cli)")?;
     let vars = Vars {
         workspace: ws,
         run_dir,
         proxy_url,
         objective: &cfg.package.objective,
         model: &lane.model,
+        duet_bin: &duet_bin,
     };
     for f in &lane.files {
         let path = PathBuf::from(expand(&f.path, &vars));
@@ -316,7 +334,7 @@ async fn launch(
         bail!("lane {}: program {program} is not installed", lane.name);
     }
 
-    let mut command = if cfg.sandbox {
+    let mut command = if cfg.sandbox && lane.sandbox {
         let profile = sandbox_profile(&[run_dir], &lane.allow_hosts);
         let profile_path = run_dir.join("sandbox.sb");
         fs::write(&profile_path, profile)?;
@@ -417,6 +435,7 @@ mod tests {
             proxy_url: "http://127.0.0.1:9",
             objective: "fix it",
             model: "m",
+            duet_bin: "/bin/duet",
         };
         assert_eq!(
             expand("{run_dir}/x {proxy_url} {model} {objective}", &v),

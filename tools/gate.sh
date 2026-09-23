@@ -31,6 +31,13 @@ if [ -n "$missing" ]; then
     exit 1
 fi
 
+step "privacy by construction"
+# The agent must never be able to construct an ungated provider.
+if grep -q "duet-provider" crates/duet-agent/Cargo.toml; then
+    echo "duet-agent must not depend on duet-provider (use the gate)" >&2
+    exit 1
+fi
+
 step "provenance"
 # Duet contains no code, formats or names from other coding agents. The only
 # allowlisted place is the evaluation lane adapters, which launch them as

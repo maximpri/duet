@@ -297,6 +297,27 @@ pub const REGISTRY: &[Setting] = &[
         "Timeout for each sandboxed command."
     ),
     s!(
+        "checks.commands",
+        List,
+        "[]",
+        Project,
+        Any,
+        false,
+        "Commands the host runs (sandboxed) when the frontier calls finish; all must pass."
+    ),
+    s!(
+        "context.window_tokens",
+        Int {
+            min: 8_000,
+            max: 2_000_000
+        },
+        "200000",
+        Owner,
+        Any,
+        false,
+        "Frontier context window used for masking decisions."
+    ),
+    s!(
         "context.mask_at",
         Float {
             min: 0.3,

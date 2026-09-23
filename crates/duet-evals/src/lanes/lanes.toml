@@ -8,18 +8,20 @@
 [[lane]]
 name = "duet-passthrough"
 kind = "duet"
+sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
-argv = ["duet", "run", "--mode", "passthrough", "--frontier-url", "{proxy_url}",
+argv = ["{duet_bin}", "run", "--mode", "passthrough", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
 
 [[lane]]
 name = "duet-hybrid"
 kind = "duet"
+sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
-argv = ["duet", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
+argv = ["{duet_bin}", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
 # The local model host is on the LAN; the sandbox must allow it for this lane.
@@ -28,9 +30,10 @@ allow_hosts = ["192.168.50.132:8080"]
 [[lane]]
 name = "duet-local-only"
 kind = "duet"
+sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
-argv = ["duet", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
+argv = ["{duet_bin}", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["OMLX_API_KEY"]
 allow_hosts = ["192.168.50.132:8080"]
 

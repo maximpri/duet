@@ -44,6 +44,12 @@ enum Cmd {
         seed: u64,
         dest: PathBuf,
     },
+    /// Grade an existing workspace prepared with `prepare <task> <seed>`.
+    Grade {
+        task: String,
+        seed: u64,
+        workspace: PathBuf,
+    },
     /// Run lanes over tasks and seeds.
     Run {
         #[arg(long, value_delimiter = ',')]
@@ -149,6 +155,37 @@ async fn main() -> Result<()> {
                 dest.display(),
                 p.manifest.canaries.len()
             );
+        }
+        Cmd::Grade {
+            task,
+            seed,
+            workspace,
+        } => {
+            let t = load_task(&cli.tasks, &task)?;
+            let mut g = canary::Generator::new(&t.spec.id, seed);
+            // Re-render the task files to regenerate the same canaries as `prepare`.
+            for layer in ["starter", "assets"] {
+                let base = t.root.join(layer);
+                if base.is_dir() {
+                    for f in task::walk_files(&base)? {
+                        if let Ok(text) = fs::read_to_string(&f) {
+                            g.render(&text)?;
+                        }
+                    }
+                }
+            }
+            let manifest = g.manifest("grade", seed);
+            let scratch =
+                std::env::temp_dir().join(format!("duet-eval-grade-{}", std::process::id()));
+            let report = grade::grade(
+                &t,
+                &workspace,
+                &manifest,
+                &scratch,
+                Duration::from_secs(900),
+            )?;
+            let _ = fs::remove_dir_all(&scratch);
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Cmd::Run {
             lanes: lane_names,

@@ -229,7 +229,7 @@ pub fn walk_files(root: &Path) -> Result<Vec<PathBuf>> {
             let ty = entry.file_type()?;
             if ty.is_dir() {
                 let name = entry.file_name();
-                if name == "target" || name == "node_modules" || name == ".git" {
+                if name == "target" || name == "node_modules" || name == ".git" || name == ".duet" {
                     continue;
                 }
                 stack.push(path);

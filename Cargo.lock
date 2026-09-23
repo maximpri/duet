@@ -243,14 +243,56 @@ dependencies = [
 [[package]]
 name = "duet-agent"
 version = "0.1.0"
+dependencies = [
+ "duet-boundary",
+ "duet-fs",
+ "duet-git",
+ "duet-sandbox",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "duet-boundary"
 version = "0.1.0"
+dependencies = [
+ "duet-fs",
+ "duet-provider",
+ "hex",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "time",
+ "tokio",
+]
 
 [[package]]
 name = "duet-cli"
 version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "duet-agent",
+ "duet-boundary",
+ "duet-config",
+ "duet-fs",
+ "duet-git",
+ "duet-provider",
+ "duet-sandbox",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "toml",
+ "uuid",
+]
 
 [[package]]
 name = "duet-config"
@@ -1546,6 +1588,17 @@ name = "utf8parse"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
+
+[[package]]
+name = "uuid"
+version = "1.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
+dependencies = [
+ "getrandom 0.4.3",
+ "js-sys",
+ "wasm-bindgen",
+]
 
 [[package]]
 name = "version_check"
