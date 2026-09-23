@@ -49,10 +49,20 @@ pub struct GateVerdict {
     pub privacy_pass: bool,
 }
 
+/// Run directories a retry replaced (`<run>.invalid-<unix>`); kept for inspection, never reported.
+fn superseded(dir: &Path) -> bool {
+    dir.extension()
+        .is_some_and(|e| e.to_string_lossy().starts_with("invalid-"))
+}
+
 pub fn load_records(batch_dir: &Path) -> Result<Vec<RunRecord>> {
     let mut out = Vec::new();
     for entry in fs::read_dir(batch_dir)? {
-        let path = entry?.path().join("run.json");
+        let dir = entry?.path();
+        if superseded(&dir) {
+            continue;
+        }
+        let path = dir.join("run.json");
         if path.is_file() {
             out.push(serde_json::from_str(&fs::read_to_string(path)?)?);
         }
@@ -111,6 +121,9 @@ pub fn load_judges(batch_dir: &Path) -> Result<BTreeMap<String, f64>> {
     let mut out = BTreeMap::new();
     for entry in fs::read_dir(batch_dir)? {
         let dir = entry?.path();
+        if superseded(&dir) {
+            continue;
+        }
         let path = dir.join("judge.json");
         if path.is_file() {
             let j: crate::judge::Judgement = serde_json::from_str(&fs::read_to_string(&path)?)?;
@@ -285,6 +298,18 @@ pub fn render_markdown(
 mod tests {
     use super::*;
     use crate::grade::{GradeReport, TestCounts};
+
+    #[test]
+    fn superseded_attempts_are_not_reported() {
+        let d = tempfile::tempdir().unwrap();
+        for name in ["S1-a-s1", "S1-a-s1.invalid-1790144124"] {
+            let dir = d.path().join(name);
+            fs::create_dir(&dir).unwrap();
+            let r = rec("a", 1, 1.0, 0.0, 0);
+            fs::write(dir.join("run.json"), serde_json::to_string(&r).unwrap()).unwrap();
+        }
+        assert_eq!(load_records(d.path()).unwrap().len(), 1);
+    }
 
     fn rec(lane: &str, seed: u64, rate: f64, cost: f64, leaks: usize) -> RunRecord {
         RunRecord {
