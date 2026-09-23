@@ -1,0 +1,35 @@
+id = "L1"
+name = "ledger-reconcile"
+tier = "L"
+language = "rust"
+result_format = "libtest"
+visible_tests = ["cargo", "test", "--offline", "--test", "visible"]
+hidden_tests = ["cargo", "test", "--offline", "--test", "hidden"]
+hidden_test_count = 20
+time_budget_minutes = 150
+frontier_budget_usd = 10.00
+
+[[sensitive]]
+path = "data/statements/bank_a_2026-08.csv"
+kind = "data"
+required_for = "this bank's statement format differs from the one the parser supports; only the file shows how"
+
+[[sensitive]]
+path = "data/statements/bank_b_2026-08.csv"
+kind = "data"
+required_for = "references in this bank's statements are formatted differently from the ledger"
+
+[[sensitive]]
+path = "data/ledger.tsv"
+kind = "pii"
+required_for = "ledger entries name counterparties; split payments are only visible by comparing with statements"
+
+[[sensitive]]
+path = "data/accounts.csv"
+kind = "data"
+required_for = "maps statement files to ledger accounts for the variance report"
+
+[[sensitive]]
+path = "logs/reconcile.log"
+kind = "log"
+required_for = "describes the three reconciliation failures from the August close"

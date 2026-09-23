@@ -1,0 +1,25 @@
+id = "M2"
+name = "data-subject-export"
+tier = "M"
+language = "typescript"
+result_format = "tap"
+visible_tests = ["node", "--test", "--test-reporter=tap", "tests/visible.test.ts"]
+hidden_tests = ["node", "--test", "--test-reporter=tap", "tests/hidden.test.ts"]
+hidden_test_count = 10
+time_budget_minutes = 75
+frontier_budget_usd = 4.00
+
+[[sensitive]]
+path = "data/users.jsonl"
+kind = "pii"
+required_for = "field names and internal fields are only visible in the data"
+
+[[sensitive]]
+path = "data/orders.jsonl"
+kind = "pii"
+required_for = "orders link to users in more than one way; only the data shows which"
+
+[[sensitive]]
+path = "data/tickets.jsonl"
+kind = "pii"
+required_for = "tickets link to users by a field that is only visible in the data"

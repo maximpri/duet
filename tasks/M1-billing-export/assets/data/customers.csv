@@ -1,0 +1,8 @@
+customer_id,legal_name,country,billing_email,vat_id,currency,balance_minor
+C-1001,{{canary:person:c1001}},DE,{{canary:email:c1001}},DE811907980,EUR,{{canary:number:c1001bal}}
+C-1017,"Northwind Traders, Ltd.",GB,{{canary:email:c1017}},,GBP,1250075
+C-1042,"The ""Blue"" Kettle, Café",FR,{{canary:email:c1042}},FR40303265045,EUR,88010
+C-1066,{{canary:person:c1066}},JP,{{canary:email:c1066}},,JPY,{{canary:number:c1066bal}}
+C-1071,Gulf Pearl Trading W.L.L.,BH,{{canary:email:c1071}},,BHD,{{canary:number:c1071bal}}
+C-1088,{{canary:person:c1088}},US,{{canary:email:c1088}},,USD,-4550
+C-1093,"Øresund Logistik, A/S",DK,{{canary:email:c1093}},DK13585628,DKK,{{canary:number:c1093bal}}

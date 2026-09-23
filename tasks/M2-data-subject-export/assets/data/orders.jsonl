@@ -1,0 +1,5 @@
+{"order_id":"o-5001","customer_ref":"u:1001","placed_at":"2021-05-01T09:00:00Z","total_cents":{{canary:number:o5001}},"_fraud_flag":false}
+{"order_id":"o-5002","customer_ref":"u:1002","placed_at":"2021-06-11T14:22:00Z","total_cents":1999}
+{"order_id":"o-7310","user_id":"u-1001","placed_at":"2024-02-12T18:45:00Z","total_cents":4550,"shipping":{"city":"Lyon","_carrier_cost":312}}
+{"order_id":"o-7311","user_id":"u-1003","placed_at":"2024-02-13T08:10:00Z","total_cents":1200}
+{"order_id":"o-6020","user_id":"u-1001","placed_at":"2023-11-30T20:00:00Z","total_cents":899}

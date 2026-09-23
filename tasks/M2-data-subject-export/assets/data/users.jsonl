@@ -1,0 +1,4 @@
+{"id":"u-1001","name":"{{canary:person:u1}}","email":"{{canary:email:u1}}","phone":"{{canary:phone:u1}}","created_at":"2021-03-04T10:00:00Z","_risk_score":0.12,"_notes":"VIP; see ticket history"}
+{"id":"u-1002","name":"{{canary:person:u2}}","email":"{{canary:email:u2}}","phone":"{{canary:phone:u2}}","created_at":"2022-07-19T08:30:00Z","_risk_score":0.71}
+{"id":"u-1003","name":"{{canary:person:u3}}","email":"{{canary:email:u3}}","created_at":"2023-01-02T12:00:00Z","preferences":{"newsletter":true,"_ab_bucket":"B"}}
+{"id":"u-1004","name":"Pat Rowe","email":"Pat.Rowe@Example.org","created_at":"2023-05-05T05:05:05Z"}

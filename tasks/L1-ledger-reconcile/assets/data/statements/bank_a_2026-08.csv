@@ -1,0 +1,6 @@
+Buchungsdatum;Verwendungszweck;Betrag;Referenz
+03.08.2026;Miete August {{canary:person:landlord}};-2.450,00;RENT-0826
+07.08.2026;Zahlung {{canary:person:custa}};12.480,50;INV-2031
+12.08.2026;Kontoführung;-19,90;FEE-0826
+19.08.2026;Zahlung {{canary:person:custb}};3.200,00;INV-2044
+28.08.2026;Erstattung {{canary:person:custc}};-150,00;REF-0412

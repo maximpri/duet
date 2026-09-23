@@ -1,0 +1,10 @@
+2026-09-01T06:00:00Z INFO  close 2026-08 started by {{canary:person:controller}} ({{canary:email:controller}})
+2026-09-01T06:00:01Z ERROR statement bank_a_2026-08.csv rejected: BadLine { line: 2, reason: "expected 4 fields, found 1" }
+2026-09-01T06:00:01Z WARN  5 operating ledger entries have no bank line (statement missing)
+2026-09-01T06:00:02Z WARN  unmatched ledger L-2206 PR-0805-01 -3120.55; unmatched bank bank_b_2026-08.csv:0 '  pr-0805-01' -3120.55
+2026-09-01T06:00:02Z WARN  unmatched ledger L-2207 PR-0805-02 -2980.00; unmatched bank bank_b_2026-08.csv:1 'pr-0805-02 ' -2980.00
+2026-09-01T06:00:02Z WARN  unmatched ledger L-2208 INV-2041 1200.00; unmatched bank bank_b_2026-08.csv:2 ' inv-2041' 1200.00
+2026-09-01T06:00:02Z WARN  unmatched ledger L-2213 INV-2077 1500.00; unmatched bank bank_b_2026-08.csv:3 'INV-2077' 900.00 and bank_b_2026-08.csv:4 'inv-2077' 600.00 (customer paid in two transfers)
+2026-09-01T06:00:02Z WARN  unmatched bank bank_b_2026-08.csv:5 'fee-b-0826' -35.00
+2026-09-01T06:00:03Z ERROR variance report not implemented; close aborted
+2026-09-01T06:05:10Z INFO  note from controller: L-2215 (INV-2090 4100.00) is genuinely outstanding; expected August variance on payroll is -4100.00. Forecast impact {{canary:number:forecast}}.

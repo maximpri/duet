@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Evaluation lanes. External agents are launched as black boxes for measurement
+# only; their model traffic is forced through the leak proxy by the sandbox,
+# which allows outbound network to loopback only.
+#
+# Placeholders: {workspace} {run_dir} {proxy_url} {objective} {model}
+
+[[lane]]
+name = "duet-passthrough"
+kind = "duet"
+upstream = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+argv = ["duet", "run", "--mode", "passthrough", "--frontier-url", "{proxy_url}",
+        "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
+env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
+
+[[lane]]
+name = "duet-hybrid"
+kind = "duet"
+upstream = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+argv = ["duet", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
+        "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
+env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
+# The local model host is on the LAN; the sandbox must allow it for this lane.
+allow_hosts = ["192.168.50.132:8080"]
+
+[[lane]]
+name = "duet-local-only"
+kind = "duet"
+upstream = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+argv = ["duet", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
+env_passthrough = ["OMLX_API_KEY"]
+allow_hosts = ["192.168.50.132:8080"]
+
+[[lane]]
+name = "pi-glm"
+kind = "external"
+upstream = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+argv = ["pi", "--offline", "--print", "--mode", "json", "--provider", "zai-proxy",
+        "--model", "{model}", "--thinking", "medium", "--no-extensions", "--no-skills",
+        "--no-prompt-templates", "--no-context-files", "--no-approve",
+        "--tools", "read,bash,edit,write,grep,find,ls",
+        "--session-dir", "{run_dir}/agent-sessions", "{objective}"]
+env_passthrough = ["ZAI_API_KEY"]
+[lane.env]
+PI_CODING_AGENT_DIR = "{run_dir}/agent-config"
+PI_OFFLINE = "1"
+PI_TELEMETRY = "0"
+[[lane.files]]
+path = "{run_dir}/agent-config/models.json"
+content = '''
+{
+  "providers": {
+    "zai-proxy": {
+      "baseUrl": "{proxy_url}",
+      "api": "openai-completions",
+      "apiKey": "$ZAI_API_KEY",
+      "models": [
+        { "id": "{model}", "name": "{model}", "reasoning": true, "input": ["text"],
+          "contextWindow": 200000, "maxTokens": 32768,
+          "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 } }
+      ]
+    }
+  }
+}
+'''
+
+[[lane]]
+name = "claude-code"
+kind = "external"
+upstream = "https://api.anthropic.com"
+model = "claude-sonnet-5"
+argv = ["claude", "-p", "{objective}", "--model", "{model}", "--output-format", "json",
+        "--dangerously-skip-permissions"]
+env_passthrough = ["ANTHROPIC_API_KEY"]
+[lane.env]
+ANTHROPIC_BASE_URL = "{proxy_url}"
+CLAUDE_CONFIG_DIR = "{run_dir}/agent-config"
+DISABLE_TELEMETRY = "1"
+DISABLE_AUTOUPDATER = "1"
+
+[[lane]]
+name = "codex"
+kind = "external"
+upstream = "https://api.openai.com/v1"
+model = "gpt-5.5"
+argv = ["codex", "exec", "--full-auto", "--skip-git-repo-check", "-m", "{model}", "{objective}"]
+env_passthrough = ["OPENAI_API_KEY"]
+[lane.env]
+OPENAI_BASE_URL = "{proxy_url}"
+CODEX_HOME = "{run_dir}/agent-config"

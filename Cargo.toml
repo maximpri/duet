@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# Dogfood fixtures and run workspaces are separate crates graded in isolation.
+exclude = ["tasks", "results"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/maximpri/duet"
+publish = false
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process", "time", "signal", "sync", "net"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+regex = "1"
+rustix = { version = "0.38", features = ["fs", "process"] }
+
+duet-provider = { path = "crates/duet-provider" }
+duet-fs = { path = "crates/duet-fs" }
+duet-sandbox = { path = "crates/duet-sandbox" }
+duet-git = { path = "crates/duet-git" }
+duet-config = { path = "crates/duet-config" }
+duet-boundary = { path = "crates/duet-boundary" }
+duet-agent = { path = "crates/duet-agent" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+
+[profile.release]
+lto = "thin"

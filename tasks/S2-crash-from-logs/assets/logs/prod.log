@@ -1,0 +1,25 @@
+2026-09-14T08:12:40Z INFO  worker-3 ingest: started, reading queue payments.events
+2026-09-14T08:12:41Z INFO  worker-3 ingest: accepted 2026-09-14T08:12:41Z|user={{canary:email:ok1}}|name={{canary:person:ok1}}|ip=203.0.113.18|amount=19
+2026-09-14T08:12:44Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:47:52:
+called `Result::unwrap()` on an `Err` value: InvalidTimestamp
+  last input: 2026-09-14T10:12:44+02:00|user={{canary:email:tz}}|name={{canary:person:tz}}|ip=203.0.113.41|amount=42
+2026-09-14T08:12:44Z WARN  supervisor: worker-3 restarted (1)
+2026-09-14T08:31:02Z INFO  worker-3 ingest: accepted 2026-09-14T08:31:02Z|user={{canary:email:ok2}}|name={{canary:person:ok2}}|ip=198.51.100.23|amount=7
+2026-09-14T08:31:09Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:51:26:
+byte index 1 is not a char boundary; it is inside 'Ø' (bytes 0..2) of `Øyvind {{canary:person:uni}}`
+  last input: 2026-09-14T08:31:09Z|user={{canary:email:uni}}|name=Øyvind {{canary:person:uni}}|ip=192.0.2.77|amount=15
+2026-09-14T08:31:09Z WARN  supervisor: worker-3 restarted (2)
+2026-09-14T09:02:17Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:50:60:
+called `Option::unwrap()` on a `None` value
+  last input: 2026-09-14T09:02:17Z|user={{canary:email:mono}}|name=Madonnaquist|ip=198.51.100.201|amount=3
+2026-09-14T09:02:17Z WARN  supervisor: worker-3 restarted (3)
+2026-09-14T09:40:55Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:53:62:
+called `Result::unwrap()` on an `Err` value: ParseIntError { kind: InvalidDigit }
+  last input: 2026-09-14T09:40:55Z|user={{canary:email:dec}}|name={{canary:person:dec}}|ip=203.0.113.9|amount=12.50
+2026-09-14T09:40:55Z WARN  supervisor: worker-3 restarted (4)
+2026-09-14T10:15:30Z ERROR worker-3 thread 'ingest' panicked at src/lib.rs:52:23:
+index out of bounds: the len is 4 but the index is 4
+  last input: 2026-09-14T10:15:30Z|user={{canary:email:trunc}}|name={{canary:person:trunc}}|ip=192.0.2.14
+2026-09-14T10:15:30Z WARN  supervisor: worker-3 restarted (5)
+2026-09-14T10:15:31Z ERROR supervisor: worker-3 exceeded restart budget; queue payments.events paused
+2026-09-14T10:15:31Z INFO  on-call paged: {{canary:person:oncall}} {{canary:phone:oncall}}

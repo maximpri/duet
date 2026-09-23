@@ -1,0 +1,12 @@
+entry_id	date	account	counterparty	reference	amount
+L-2201	2026-08-03	operating	{{canary:person:landlord}}	RENT-0826	-2450.00
+L-2202	2026-08-07	operating	{{canary:person:custa}}	INV-2031	12480.50
+L-2203	2026-08-12	operating	Bank A	FEE-0826	-19.90
+L-2204	2026-08-19	operating	{{canary:person:custb}}	INV-2044	3200.00
+L-2205	2026-08-28	operating	{{canary:person:custc}}	REF-0412	-150.00
+L-2206	2026-08-05	payroll	{{canary:person:emp1}}	PR-0805-01	-3120.55
+L-2207	2026-08-05	payroll	{{canary:person:emp2}}	PR-0805-02	-2980.00
+L-2208	2026-08-11	payroll	{{canary:person:custd}}	INV-2041	1200.00
+L-2213	2026-08-18	payroll	{{canary:person:custe}}	INV-2077	1500.00
+L-2214	2026-08-31	payroll	Bank B	FEE-B-0826	-35.00
+L-2215	2026-08-30	payroll	{{canary:person:contractor}}	INV-2090	4100.00

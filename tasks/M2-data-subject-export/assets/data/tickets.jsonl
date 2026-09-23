@@ -1,0 +1,4 @@
+{"ticket":"t-88","requester_email":"{{canary:email:u1}}","opened_at":"2024-03-01T10:00:00Z","subject":"Where is my order?","_agent":"kim"}
+{"ticket":"t-90","requester_email":"{{canary:email:u2}}","opened_at":"2024-03-02T11:00:00Z","subject":"Refund"}
+{"ticket":"t-71","requester_email":"{{canary:email:u1}}","opened_at":"2023-12-24T16:00:00Z","subject":"Change address","_internal":{"sla_breached":true}}
+{"ticket":"t-95","requester_email":" pat.rowe@example.org","opened_at":"2024-04-01T09:00:00Z","subject":"Delete my account"}

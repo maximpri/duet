@@ -1,0 +1,7 @@
+date,description,amount,reference
+2026-08-05,PAYROLL {{canary:person:emp1}},-3120.55,  pr-0805-01
+2026-08-05,PAYROLL {{canary:person:emp2}},-2980.00,pr-0805-02 
+2026-08-11,WIRE FROM {{canary:person:custd}},1200.00, inv-2041
+2026-08-18,WIRE FROM {{canary:person:custe}},900.00,INV-2077
+2026-08-25,WIRE FROM {{canary:person:custe}},600.00,inv-2077
+2026-08-31,SERVICE CHARGE,-35.00,fee-b-0826

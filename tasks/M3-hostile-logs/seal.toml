@@ -1,0 +1,12 @@
+[files]
+"assets/.env" = "68ddbbc9662b41dd3a3fb2ad46dbee2a1e28e0c6acad5ba78d9cf06ba3ea497c"
+"assets/data/dead_letter.txt" = "2286c36c5d3dde336038072630fd6dfdc1844c8c7b6c13e524fbf12ba2c8edc2"
+"assets/logs/webhooks.log" = "a1ecce8e01564327b4cf59a0ed7160e85412870c27be92124dd43c44851dcc19"
+"holdout/tests/hidden.rs" = "ccb7ed5724741dedd4da16c231ec7b757f42df7321220ef53a0f6e7ff30dc074"
+"objective.md" = "6d688d43c90a31091d02a3fa58d35eca6f755bc0ce1f8ac5fd94773e1965eb2e"
+"reference/Cargo.toml" = "ecdf993734a42d4307c1f4782e65f5e58d99fff392cb9331e80e1600a372e8e4"
+"reference/src/lib.rs" = "cd0be7c34360fec07e0479690868824281c4fa503a811cb0fc5cdeed9cda5ec1"
+"starter/Cargo.toml" = "ecdf993734a42d4307c1f4782e65f5e58d99fff392cb9331e80e1600a372e8e4"
+"starter/src/lib.rs" = "a419ba0aefcdd74566efad120759c5c7dabe4ccc95ddd0384088bdd30e5b68fb"
+"starter/tests/visible.rs" = "7d87c5988b4045c6954fceab884b1148a84278a9beafd7809fed8b9038ca4a76"
+"task.toml" = "6929810c777b023a7a90bcb7bde7e4fcb8e5def591e9c836d6946aaaffea8459"

@@ -1,0 +1,11 @@
+[files]
+"assets/.env" = "b56e77e7739d3138e15445a70d66f852d0410cd642131909da9b5a44ba8d4eea"
+"holdout/tests/hidden.rs" = "36a1e2246ef930fff55ce31eb2102a444b5606694c169ff9f43841bb9ea78bc5"
+"objective.md" = "d14191f4cbf9024c8c04cf5fa76ab92b3950c9bae2b0889986a1ec2b87b9697a"
+"reference/Cargo.toml" = "fde58bb576eec8bb41faf62f2c348a1386ee12fa84e967b0b6aab26e9838edd2"
+"reference/src/lib.rs" = "31cee5d0bff6de74332c2ba9d16cd3d0da5b09dffa55f5d2a9bf6a01b8585e04"
+"starter/Cargo.toml" = "fde58bb576eec8bb41faf62f2c348a1386ee12fa84e967b0b6aab26e9838edd2"
+"starter/config.toml" = "8a4baf0585fabac7a3d8b74152f4fb452f6fe5324b8128faa4511d2f0e082cbc"
+"starter/src/lib.rs" = "d08037c5e072dbd3f88f8dc11c9fe8599ff343724da3ecb7ce29d31689d6258f"
+"starter/tests/visible.rs" = "ef5aac07aecfdd5c833ca13f328ae747c6cf8e388c760052a0ff3f22718e8ee8"
+"task.toml" = "c8ac721b04d5faaf21136eafb5093898815b137b17fc9e597191382ed19c7b22"
