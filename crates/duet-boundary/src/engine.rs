@@ -29,6 +29,8 @@ use serde_json::{Map, Value, json};
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
+mod protected;
+
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b\p{Lu}\p{Ll}+(?:[ '-]\p{Lu}\p{Ll}+)+\b").expect("static regex")
 });
@@ -112,6 +114,8 @@ struct State {
     public_words: std::collections::HashSet<String>,
     /// Sensitive files found when priming, for the note added to the task.
     sensitive_files: Vec<String>,
+    /// Protected source (IP levels).
+    ip: protected::IpState,
 }
 
 pub struct Engine {
@@ -169,6 +173,7 @@ impl Engine {
                 overlap: OverlapIndex::default(),
                 public_words: Default::default(),
                 sensitive_files: Vec::new(),
+                ip: protected::IpState::open(run_dir),
             }),
         }))
     }
@@ -178,7 +183,8 @@ impl Engine {
     /// content (`cat`, test output, logs) are replaced wherever they appear.
     /// Public files and the task text are read first: their words decide which
     /// single words (a surname, a reformatted number) may count as identifying.
-    pub fn prime(&self, workspace: &Path, files: &[String], objective: &str) -> usize {
+    pub fn prime(&self, workspace: &Path, all_files: &[String], objective: &str) -> usize {
+        let files = &self.ip_split(all_files);
         {
             let mut st = self.lock();
             st.public_words.extend(words(objective));
@@ -213,7 +219,7 @@ impl Engine {
             }
             primed += 1;
         }
-        primed
+        primed + self.ip_prime(workspace, all_files)
     }
 
     /// Sensitive by policy, or derived from sensitive data by a command.
@@ -641,6 +647,10 @@ impl Presenter for Engine {
     fn present(&self, source: &Source, bytes: &[u8]) -> String {
         let text = String::from_utf8_lossy(bytes);
         self.set_class(ViewClass::Raw);
+        if let Some(view) = self.ip_present(source, &text) {
+            return view;
+        }
+        let text = self.ip_prefilter(source, &text).map_or(text, Into::into);
         match source {
             Source::File { path, .. } if self.is_sensitive(path) => {
                 let label = path.display().to_string();
@@ -749,8 +759,23 @@ impl Presenter for Engine {
                 }
             }
         }
+        out.extend(self.ip_hidden(workspace));
         out.sort();
+        out.dedup();
         out
+    }
+
+    fn hidden_from_checks(&self, workspace: &Path) -> Vec<std::path::PathBuf> {
+        self.ip_hidden_from_checks(self.hidden_from_commands(workspace), workspace)
+    }
+
+    fn implement_protected(
+        &self,
+        path: &Path,
+        current: &str,
+        request: &crate::view::ImplementRequest<'_>,
+    ) -> Option<Result<crate::view::Implemented, String>> {
+        self.ip_implement(path, current, request)
     }
 
     fn mark_sensitive(&self, workspace: &Path, paths: &[std::path::PathBuf]) {
@@ -779,7 +804,7 @@ impl Presenter for Engine {
     }
 
     fn extra_tools(&self) -> Vec<ToolSpec> {
-        vec![
+        let mut tools = vec![
             ToolSpec {
                 name: "run_command".into(),
                 description: "Run a shell command in the repository root (sandboxed: no network, writes limited to the \
@@ -818,7 +843,9 @@ at most {MAX_RAW_LINES} lines per call)."
                     "end_line": {"type": "integer", "minimum": 1}
                 }, "required": ["handle"]}),
             },
-        ]
+        ];
+        tools.extend(self.ip_tools());
+        tools
     }
 
     fn call_tool(&self, name: &str, args: &Map<String, Value>) -> Option<Result<String, String>> {
@@ -845,6 +872,7 @@ at most {MAX_RAW_LINES} lines per call)."
     }
 
     fn resolve_for_write(&self, path: &Path, text: &str) -> Result<String, String> {
+        self.ip_guard_write(path)?;
         let st = self.lock();
         let sink = self.policy.is_secret_sink(path) || self.is_sensitive(path);
         for token in Vault::tokens_in(text) {
@@ -902,6 +930,7 @@ handle for ask_local; run_command with sensitive_data runs programs on them): {}
                 paths.join(", ")
             ));
         }
+        out.push_str(&Self::ip_note(&st));
         out
     }
 }
@@ -957,6 +986,7 @@ impl OutboundFilter for Sanitize {
             };
             let cleaned = self.0.sanitize(&mut st, text, "outbound", false);
             let (cleaned, spans) = st.overlap.redact(&cleaned);
+            let (cleaned, _) = Engine::ip_redact(&mut st, &cleaned);
             if cleaned != *text {
                 notes.push(format!(
                     "replaced sensitive content ({spans} copied span(s))"

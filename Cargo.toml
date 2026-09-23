@@ -28,6 +28,11 @@ uuid = { version = "1", features = ["v4"] }
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 regex = "1"
 rustix = { version = "0.38", features = ["fs", "process"] }
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.25"
+aho-corasick = "1"
 
 duet-provider = { path = "crates/duet-provider" }
 duet-fs = { path = "crates/duet-fs" }

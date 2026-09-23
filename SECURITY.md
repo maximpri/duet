@@ -55,6 +55,7 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
    sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. A command that
    must read them is run with `sensitive_data`; its output is then held locally like a data file, and
    every file it creates or changes is treated as sensitive from then on.
+   **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
 3. **One outbound gate**, the only code path to the frontier: known values are re-tokenized, the
    payload is re-scanned, copied spans of sensitive content (≈24+ tokens) are removed, and nothing
    is sent while any check fails.
@@ -63,6 +64,52 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 5. **Write-back rules**: secrets are resolved locally and only into places where secrets belong.
 6. **Local data hygiene**: raw handles, transcripts and the placeholder vault are mode 0600 under
    `.duet/runs/`, deleted after the retention period or by `duet purge`.
+
+## Protected source (IP levels)
+
+Source files matched by `ip.interface_only` are shown to the frontier as a skeleton: signatures,
+type definitions, doc comments and public constants, parsed with tree-sitter (Rust, TypeScript,
+Python). Function bodies, private constant values, top-level statements and ordinary comments are
+replaced by handles (`⟨body:h7⟩`) the local model can answer questions about. A file that does not
+parse cleanly, or is in another language, is treated as sealed. Files matched by `ip.sealed` show
+existence only. Listings mark both; searches report locations only; `diff` omits their changes; the
+frontier cannot write them with `edit_file` or `write_file`.
+
+**Command access.** The project must still build and its tests must still run, and they read the
+protected files. Duet therefore separates three kinds of process:
+
+| Process | May read protected source | May read sensitive data | What the frontier gets |
+|---|---|---|---|
+| `run_command` (ordinary) | no (OS sandbox) | no | output, scanned |
+| `run_command` with `sensitive_data` | yes | yes | a handle and the **recognised result lines** only |
+| Checks (`finish`, `edit_protected`) | yes | no | the **recognised result lines** only |
+
+Recognised result lines are a fixed set of shapes: exit status, test outcomes and summaries
+(libtest, TAP, jest- and pytest-style), compiler diagnostic headers and locations, panic
+locations with their message line, and assertion `left`/`right` values, each length-capped. Every
+other line is withheld and stays available to `ask_local`. Before anything is sent, every line
+that contains a distinctive line of protected code (a compiler snippet, a quoted body) is replaced,
+string literals and distinctive tokens of protected bodies are replaced by placeholders wherever
+they appear, and the copied-span filter covers protected bodies.
+
+**Protected edits.** `edit_protected(path, spec, tests?, command?)`: the frontier describes the
+change and may supply test code (written to an open file). The local model rewrites the protected
+file on this machine; the host writes it through the guarded write path and runs the command as a
+check. The frontier receives pass/fail, the recognised result lines and which items changed (by
+name). On failure the local model gets the raw check output and one more attempt.
+
+Limits of this design:
+
+- Program behaviour is observable: tests the frontier writes can probe what protected code
+  computes, and assertion values, panic messages and compiler messages (which name identifiers
+  and types) cross. A frontier that deliberately writes code to re-encode protected source into
+  those channels (for example, a failing assertion whose value is an encoded slice of the file) can
+  extract it a few bytes per run. The design stops accidental disclosure by an honest-but-curious
+  frontier; it does not stop a deliberately adversarial one.
+- Line redaction needs a whole distinctive line (at least 16 characters and 3 words); fragments of
+  a line pass unless they contain a protected literal or form a ≥24-token copied span.
+- Local answers about protected bodies can paraphrase the logic.
+- The skeleton itself (names, signatures, doc comments, public constants) is disclosed by design.
 
 ## Verification
 

@@ -5,6 +5,7 @@ pub mod context;
 pub mod journal;
 pub mod ledger;
 pub mod prompt;
+pub mod protected;
 pub mod run;
 pub mod tools;
 pub mod transcript;

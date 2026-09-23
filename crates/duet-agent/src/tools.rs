@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+pub(crate) const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_LIST: usize = 2000;
 const MAX_MATCHES: usize = 200;
 
@@ -42,13 +42,13 @@ pub enum Outcome {
     ChecksFailed(String),
 }
 
-fn string_arg<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
+pub(crate) fn string_arg<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| format!("missing string argument `{key}`"))
 }
 
-fn fs_err(e: FsError) -> String {
+pub(crate) fn fs_err(e: FsError) -> String {
     e.to_string()
 }
 
@@ -150,6 +150,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
         "write_file" => write_file(ctx, args),
         "run_command" => run_command(ctx, args).await,
         "finish" => return finish(ctx, args).await,
+        "edit_protected" => crate::protected::edit_protected(ctx, args).await,
         other => match ctx.presenter.call_tool(other, args) {
             Some(r) => r,
             None => Err(format!("unknown tool `{other}`")),
@@ -426,13 +427,24 @@ fn write_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, St
     ))
 }
 
-/// Runs `command` in the sandbox. Unless `sensitive_data`, the paths the
-/// presenter hides are unreadable to it (enforced by the kernel).
-async fn sandboxed(
+/// What a sandboxed command may read of the paths the presenter protects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Access {
+    /// Nothing the presenter hides (enforced by the kernel).
+    Ordinary,
+    /// The host's checks: everything except sensitive data (protected source
+    /// must compile); their output is presented as check output.
+    Checks,
+    /// Everything; the output is held locally.
+    SensitiveData,
+}
+
+/// Runs `command` in the sandbox with the given `access`.
+pub(crate) async fn sandboxed(
     ctx: &Ctx<'_>,
     command: &str,
     timeout: Duration,
-    sensitive_data: bool,
+    access: Access,
 ) -> Result<duet_sandbox::Output, String> {
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
@@ -448,10 +460,10 @@ async fn sandboxed(
             ("CARGO_TERM_COLOR".into(), "never".into()),
             ("NO_COLOR".into(), "1".into()),
         ],
-        deny_read: if sensitive_data {
-            Vec::new()
-        } else {
-            ctx.presenter.hidden_from_commands(ctx.workspace)
+        deny_read: match access {
+            Access::Ordinary => ctx.presenter.hidden_from_commands(ctx.workspace),
+            Access::Checks => ctx.presenter.hidden_from_checks(ctx.workspace),
+            Access::SensitiveData => Vec::new(),
         },
     };
     duet_sandbox::run(
@@ -464,7 +476,7 @@ async fn sandboxed(
     .map_err(|e| e.to_string())
 }
 
-fn render_output(o: &duet_sandbox::Output) -> Vec<u8> {
+pub(crate) fn render_output(o: &duet_sandbox::Output) -> Vec<u8> {
     let mut text = match (o.timed_out, o.exit_code) {
         (true, _) => format!("timed out after {:.0}s\n", o.duration.as_secs_f64()),
         (false, Some(c)) => format!("exit code {c}\n"),
@@ -503,7 +515,12 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let before = sensitive_data.then(|| snapshot(ctx.workspace));
-    let o = sandboxed(ctx, command, timeout, sensitive_data).await?;
+    let access = if sensitive_data {
+        Access::SensitiveData
+    } else {
+        Access::Ordinary
+    };
+    let o = sandboxed(ctx, command, timeout, access).await?;
     let source = if let Some(before) = before {
         let after = snapshot(ctx.workspace);
         let changed: Vec<PathBuf> = after
@@ -562,10 +579,20 @@ async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
+    let (failed, report) = run_checks(ctx, ctx.checks).await;
+    if failed {
+        Outcome::ChecksFailed(ctx.presenter.present(&Source::Checks, &report))
+    } else {
+        Outcome::Finished { summary }
+    }
+}
+
+/// Runs `commands` as checks; returns whether any failed, and the report.
+pub(crate) async fn run_checks(ctx: &Ctx<'_>, commands: &[String]) -> (bool, Vec<u8>) {
     let mut report = Vec::new();
     let mut failed = false;
-    for check in ctx.checks {
-        match sandboxed(ctx, check, ctx.command_timeout, false).await {
+    for check in commands {
+        match sandboxed(ctx, check, ctx.command_timeout, Access::Checks).await {
             Ok(o) => {
                 let passed = o.exit_code == Some(0) && !o.timed_out;
                 failed |= !passed;
@@ -578,11 +605,7 @@ async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
             }
         }
     }
-    if failed {
-        Outcome::ChecksFailed(ctx.presenter.present(&Source::Checks, &report))
-    } else {
-        Outcome::Finished { summary }
-    }
+    (failed, report)
 }
 
 /// Paths the run wrote (for reports).

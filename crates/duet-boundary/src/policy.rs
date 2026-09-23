@@ -54,6 +54,19 @@ pub struct Policy {
     pub detect_pii: bool,
     pub detect_entropy: bool,
     pub bulky_tokens: usize,
+    /// Source the frontier sees as signatures only (`ip.interface_only`).
+    pub interface_only: Vec<String>,
+    /// Source whose content the frontier never sees (`ip.sealed`).
+    pub sealed: Vec<String>,
+}
+
+/// How much of a protected source file the frontier may see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpLevel {
+    /// Signatures, types, doc comments and public constants; bodies withheld.
+    InterfaceOnly,
+    /// Existence only.
+    Sealed,
 }
 
 impl Policy {
@@ -63,6 +76,23 @@ impl Policy {
             .iter()
             .chain(&self.protected_paths)
             .any(|g| glob_match(g, &p))
+    }
+
+    /// The IP level of `path`; Sealed wins when both lists match.
+    pub fn ip_level(&self, path: &Path) -> Option<IpLevel> {
+        let p = path.to_string_lossy();
+        if self.sealed.iter().any(|g| glob_match(g, &p)) {
+            Some(IpLevel::Sealed)
+        } else if self.interface_only.iter().any(|g| glob_match(g, &p)) {
+            Some(IpLevel::InterfaceOnly)
+        } else {
+            None
+        }
+    }
+
+    /// Whether any path is protected by an IP level.
+    pub fn has_ip(&self) -> bool {
+        !self.interface_only.is_empty() || !self.sealed.is_empty()
     }
 
     pub fn is_secret_sink(&self, path: &Path) -> bool {
@@ -105,6 +135,26 @@ mod tests {
         assert!(!glob_match("logs/**", "src/logs.rs"));
         assert!(glob_match("src/pricing/**", "src/pricing/engine.rs"));
         assert!(!glob_match("*.log", "src/log.rs"));
+    }
+
+    #[test]
+    fn ip_levels_come_from_their_globs_and_sealed_wins() {
+        let p = Policy {
+            interface_only: vec!["src/pricing/**".into()],
+            sealed: vec!["src/pricing/secret_*.rs".into()],
+            ..Policy::default()
+        };
+        assert_eq!(
+            p.ip_level(Path::new("src/pricing/engine.rs")),
+            Some(IpLevel::InterfaceOnly)
+        );
+        assert_eq!(
+            p.ip_level(Path::new("src/pricing/secret_table.rs")),
+            Some(IpLevel::Sealed)
+        );
+        assert_eq!(p.ip_level(Path::new("src/invoice.rs")), None);
+        assert!(p.has_ip() && !Policy::default().has_ip());
+        assert!(!p.is_sensitive_path(Path::new("src/pricing/engine.rs")));
     }
 
     #[test]

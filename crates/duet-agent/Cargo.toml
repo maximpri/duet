@@ -26,3 +26,4 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+duet-boundary = { workspace = true, features = ["test-support"] }

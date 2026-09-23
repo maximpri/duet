@@ -213,6 +213,26 @@ pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
     (invalid, limited)
 }
 
+/// The project configuration a task's repository carries for Duet: its IP
+/// marks (`ip.interface_only`, `ip.sealed`). `None` when the task has none.
+pub fn duet_project_config(spec: &crate::task::TaskSpec) -> Option<String> {
+    if spec.ip.interface_only.is_empty() && spec.ip.sealed.is_empty() {
+        return None;
+    }
+    let mut ip = toml::Table::new();
+    ip.insert(
+        "interface_only".into(),
+        toml::Value::try_from(&spec.ip.interface_only).ok()?,
+    );
+    ip.insert(
+        "sealed".into(),
+        toml::Value::try_from(&spec.ip.sealed).ok()?,
+    );
+    let mut root = toml::Table::new();
+    root.insert("ip".into(), toml::Value::Table(ip));
+    toml::to_string(&root).ok()
+}
+
 pub struct RunConfig<'a> {
     pub package: &'a TaskPackage,
     pub lane: &'a Lane,
@@ -244,6 +264,13 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         serde_json::to_string_pretty(&prepared.manifest)?,
     )?;
     fs::write(run_dir.join("objective.md"), &cfg.package.objective)?;
+    if cfg.lane.kind == LaneKind::Duet
+        && let Some(project) = duet_project_config(spec)
+    {
+        // The repository's own marks (after the git baseline, so untracked).
+        fs::create_dir_all(ws.join(".duet"))?;
+        fs::write(ws.join(".duet/config.toml"), project)?;
+    }
 
     let proxy_dir = run_dir.join("proxy");
     let proxy = leakproxy::start(
@@ -468,6 +495,22 @@ mod tests {
         ] {
             assert!(find_lane(&lanes, required).is_ok(), "{required}");
         }
+    }
+
+    #[test]
+    fn ip_marks_become_duet_project_config() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::task::tests_support::fixture(dir.path());
+        let mut pkg = crate::task::TaskPackage::load(dir.path()).unwrap();
+        assert!(duet_project_config(&pkg.spec).is_none());
+        pkg.spec.ip.interface_only = vec!["src/pricing/**".into()];
+        let text = duet_project_config(&pkg.spec).unwrap();
+        let parsed: toml::Table = toml::from_str(&text).unwrap();
+        assert_eq!(
+            parsed["ip"]["interface_only"].as_array().unwrap()[0].as_str(),
+            Some("src/pricing/**")
+        );
+        assert!(parsed["ip"]["sealed"].as_array().unwrap().is_empty());
     }
 
     #[test]

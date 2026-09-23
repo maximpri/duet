@@ -10,10 +10,14 @@ pub mod detect;
 pub mod engine;
 pub mod gate;
 pub mod handles;
+pub mod ip;
 pub mod local;
 pub mod local_eval;
 pub mod overlap;
 pub mod policy;
+pub mod skeleton;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 pub mod vault;
 pub mod view;
 

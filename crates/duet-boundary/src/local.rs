@@ -14,6 +14,8 @@ use serde_json::{Map, Value, json};
 pub const CHUNK_CHARS: usize = 60_000;
 pub const MAX_SUMMARY: usize = 800;
 pub const MAX_ANSWER: usize = 1200;
+/// Longest protected file (numbered, in characters) the local model rewrites in one call.
+pub const MAX_IMPLEMENT_CHARS: usize = CHUNK_CHARS;
 
 const SYSTEM: &str = "You read files for another engineer who is not allowed to see them. \
 Your output goes to that engineer. Describe structure, formats, patterns, causes and counts. \
@@ -162,6 +164,57 @@ knowing. Return only {{\"summary\": ..., \"facts\": [...]}}; leave every other f
         Ok(out)
     }
 
+    /// The complete new content of the protected file `source` (currently
+    /// `current`) changed as `spec` requires. `tests` is test code the change
+    /// must pass; `feedback` is the local-only output of a failed previous
+    /// attempt. The content block is the same as for questions about the file,
+    /// so the server can reuse its processed prefix.
+    pub async fn implement(
+        &self,
+        source: &str,
+        current: &str,
+        spec: &str,
+        tests: Option<&str>,
+        feedback: Option<&str>,
+    ) -> Result<String, ProviderError> {
+        let content = numbered(current);
+        if content.len() > MAX_IMPLEMENT_CHARS {
+            return Err(ProviderError::new(
+                duet_provider::ErrorKind::Malformed,
+                format!(
+                    "{source} is too large for the local model to rewrite ({} characters; limit {MAX_IMPLEMENT_CHARS})",
+                    content.len()
+                ),
+            ));
+        }
+        let mut prompt = format!(
+            "{}Change this file as the specification requires. You are the only one who sees this file; \
+keep everything the specification does not ask to change (signatures, names, doc comments, formatting). \
+Return only {{\"code\": ...}} holding the complete new file, without line numbers; leave every other field \
+out.\n\n<specification>{spec}</specification>",
+            framed(source, 0, 1, &content)
+        );
+        if let Some(t) = tests {
+            prompt.push_str(&format!("\n\n<tests>{t}</tests>"));
+        }
+        if let Some(f) = feedback {
+            prompt.push_str(&format!(
+                "\n\n<failed_attempt>The file above is your previous attempt; the checks failed with:\n{f}</failed_attempt>"
+            ));
+        }
+        let budget = (current.len() / 2).clamp(2048, 32_000) as u32;
+        let v = self.ask(prompt, &["code"], budget).await?;
+        let code = v.get("code").and_then(Value::as_str).unwrap_or_default();
+        let code = strip_line_numbers(&strip_fence(code));
+        if code.trim().is_empty() {
+            return Err(ProviderError::new(
+                duet_provider::ErrorKind::Malformed,
+                "local model returned no code",
+            ));
+        }
+        Ok(code)
+    }
+
     /// Answer to `question` about `text`, from the most relevant chunk.
     pub async fn answer(
         &self,
@@ -226,8 +279,50 @@ fn schema() -> Value {
         "facts": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 200}},
         "answer": {"type": "string", "maxLength": MAX_ANSWER},
         "evidence_lines": {"type": "array", "items": {"type": "integer"}},
-        "unanswerable": {"type": "boolean"}
+        "unanswerable": {"type": "boolean"},
+        "code": {"type": "string"}
     }})
+}
+
+/// Code without a surrounding Markdown fence.
+fn strip_fence(code: &str) -> String {
+    let t = code.trim();
+    match t.strip_prefix("```") {
+        Some(rest) if t.len() >= 6 && rest.ends_with("```") => {
+            let body = &rest[..rest.len() - 3];
+            body.split_once('\n').map_or("", |(_, b)| b).to_owned()
+        }
+        _ => code.to_owned(),
+    }
+}
+
+/// Code with the prompt's line numbers removed, if every non-empty line has one.
+fn strip_line_numbers(code: &str) -> String {
+    let rest = |l: &str| -> Option<String> {
+        let t = l.trim_start();
+        let digits = t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        (digits > 0 && t[digits..].starts_with("  ")).then(|| t[digits + 2..].to_owned())
+    };
+    let lines: Vec<&str> = code.lines().collect();
+    let numbered: Vec<Option<String>> = lines.iter().map(|l| rest(l)).collect();
+    let non_empty = lines.iter().filter(|l| !l.trim().is_empty()).count();
+    if non_empty < 2
+        || lines
+            .iter()
+            .zip(&numbered)
+            .any(|(l, n)| !l.trim().is_empty() && n.is_none())
+    {
+        return code.to_owned();
+    }
+    let mut out = numbered
+        .into_iter()
+        .map(Option::unwrap_or_default)
+        .collect::<Vec<_>>()
+        .join("\n");
+    if code.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 /// `text` with 1-based line numbers, the form every local prompt uses (so the
@@ -289,6 +384,33 @@ mod tests {
         assert!(extract_json("{\"summary\":\"x\"}").is_some());
         assert!(extract_json("Here:\n```json\n{\"answer\":\"y\"}\n```").is_some());
         assert!(extract_json("no json").is_none());
+    }
+
+    #[test]
+    fn implementation_output_loses_fences_and_line_numbers() {
+        assert_eq!(strip_fence("```rust\nfn a() {}\n```"), "fn a() {}\n");
+        assert_eq!(strip_fence("fn a() {}\n"), "fn a() {}\n");
+        assert_eq!(
+            strip_line_numbers("    1  fn a() {\n    2      1\n\n    3  }\n"),
+            "fn a() {\n    1\n\n}\n"
+        );
+        let plain = "fn a() {\n    1  \n}\n";
+        assert_eq!(strip_line_numbers(plain), plain);
+    }
+
+    #[test]
+    fn every_role_shares_one_schema() {
+        let s = schema();
+        for field in [
+            "summary",
+            "facts",
+            "answer",
+            "evidence_lines",
+            "unanswerable",
+            "code",
+        ] {
+            assert!(s["properties"].get(field).is_some(), "{field}");
+        }
     }
 
     #[test]
