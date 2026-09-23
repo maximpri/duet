@@ -7,6 +7,8 @@
 pub mod audit;
 pub mod detect;
 pub mod gate;
+pub mod overlap;
+pub mod vault;
 pub mod view;
 
 pub use gate::{GateError, GatedFrontier, OutboundCheck, OutboundFilter, OutboundGate};

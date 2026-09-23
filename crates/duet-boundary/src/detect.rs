@@ -7,7 +7,9 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
     Secret,
@@ -53,7 +55,9 @@ macro_rules! re {
 }
 
 // Provider-shaped tokens.
-re!(TOKENS, r"(?x)
+re!(
+    TOKENS,
+    r"(?x)
     \b(?:
         sk_(?:live|test)_[A-Za-z0-9]{16,}       # payment-style keys
       | (?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,} # forge tokens
@@ -64,21 +68,40 @@ re!(TOKENS, r"(?x)
       | sk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}      # model provider keys
       | glpat-[A-Za-z0-9_-]{20}
       | eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}  # JWT
-    )\b");
-re!(PRIVATE_KEY, r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )?PRIVATE KEY-----");
+    )\b"
+);
+re!(
+    PRIVATE_KEY,
+    r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z]+ )?PRIVATE KEY-----"
+);
 // scheme://user:password@host
-re!(URL_CREDENTIALS, r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:([^\s@/]+)@");
+re!(
+    URL_CREDENTIALS,
+    r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s:/@]+:([^\s@/]+)@"
+);
 // KEY=value / key: value where the key looks sensitive.
 // Environment-style assignments (UPPER_CASE keys), quoted or not.
-re!(ASSIGNMENT, r#"\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH|SIGNING)[A-Z0-9_]*)\s*[:=]\s*["']?([^\s"'#,;]{6,})"#);
+re!(
+    ASSIGNMENT,
+    r#"\b([A-Z0-9_]*(?:PASSWORD|PASSWD|PWD|SECRET|TOKEN|API_?KEY|ACCESS_?KEY|PRIVATE_?KEY|CREDENTIAL|AUTH|SIGNING)[A-Z0-9_]*)\s*[:=]\s*["']?([^\s"'#,;]{6,})"#
+);
 // Any sensitive-looking key with a quoted literal value (e.g. a hard-coded secret in code or YAML).
-re!(QUOTED_ASSIGNMENT, r#"(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|signing)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*["']([^"'\s]{6,})["']"#);
+re!(
+    QUOTED_ASSIGNMENT,
+    r#"(?i)\b([A-Za-z0-9_.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential|signing)[A-Za-z0-9_.-]*)["']?\s*[:=]\s*["']([^"'\s]{6,})["']"#
+);
 re!(EMAIL, r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b");
-re!(PHONE, r"(?:\+\d{1,3}[\s.-]?)?\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b");
+re!(
+    PHONE,
+    r"(?:\+\d{1,3}[\s.-]?)?\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b"
+);
 re!(CARD, r"\b(?:\d[ -]?){13,19}\b");
 re!(SSN, r"\b\d{3}-\d{2}-\d{4}\b");
 re!(IBAN, r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b");
-re!(IPV4, r"\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b");
+re!(
+    IPV4,
+    r"\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b"
+);
 // Long random-looking tokens (entropy check applied afterwards).
 re!(HIGH_ENTROPY, r"[A-Za-z0-9+/_-]{24,}={0,2}");
 
@@ -91,7 +114,11 @@ pub struct Detectors {
 
 impl Default for Detectors {
     fn default() -> Self {
-        Self { secrets: true, pii: true, entropy: true }
+        Self {
+            secrets: true,
+            pii: true,
+            entropy: true,
+        }
     }
 }
 
@@ -104,7 +131,14 @@ fn luhn(digits: &str) -> bool {
         .iter()
         .rev()
         .enumerate()
-        .map(|(i, &d)| if i % 2 == 1 { let x = d * 2; if x > 9 { x - 9 } else { x } } else { d })
+        .map(|(i, &d)| {
+            if i % 2 == 1 {
+                let x = d * 2;
+                if x > 9 { x - 9 } else { x }
+            } else {
+                d
+            }
+        })
         .sum();
     sum % 10 == 0
 }
@@ -113,8 +147,18 @@ fn iban_valid(s: &str) -> bool {
     let rearranged: String = s[4..].chars().chain(s[..4].chars()).collect();
     let mut rem: u64 = 0;
     for c in rearranged.chars() {
-        let v = if c.is_ascii_digit() { c as u64 - '0' as u64 } else if c.is_ascii_uppercase() { c as u64 - 'A' as u64 + 10 } else { return false };
-        rem = if v >= 10 { (rem * 100 + v) % 97 } else { (rem * 10 + v) % 97 };
+        let v = if c.is_ascii_digit() {
+            c as u64 - '0' as u64
+        } else if c.is_ascii_uppercase() {
+            c as u64 - 'A' as u64 + 10
+        } else {
+            return false;
+        };
+        rem = if v >= 10 {
+            (rem * 100 + v) % 97
+        } else {
+            (rem * 10 + v) % 97
+        };
     }
     rem == 1
 }
@@ -126,18 +170,41 @@ pub fn entropy(s: &str) -> f64 {
         counts[b as usize] += 1;
     }
     let n = s.len() as f64;
-    counts.iter().filter(|&&c| c > 0).map(|&c| { let p = f64::from(c) / n; -p * p.log2() }).sum()
+    counts
+        .iter()
+        .filter(|&&c| c > 0)
+        .map(|&c| {
+            let p = f64::from(c) / n;
+            -p * p.log2()
+        })
+        .sum()
 }
 
 fn looks_random(s: &str) -> bool {
-    let classes = [s.bytes().any(|b| b.is_ascii_lowercase()), s.bytes().any(|b| b.is_ascii_uppercase()), s.bytes().any(|b| b.is_ascii_digit())];
-    entropy(s) >= 4.0 && classes.iter().filter(|c| **c).count() >= 2 && !s.contains("__") && !s.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase() && s.len() == 40)
+    let classes = [
+        s.bytes().any(|b| b.is_ascii_lowercase()),
+        s.bytes().any(|b| b.is_ascii_uppercase()),
+        s.bytes().any(|b| b.is_ascii_digit()),
+    ];
+    entropy(s) >= 4.0
+        && classes.iter().filter(|c| **c).count() >= 2
+        && !s.contains("__")
+        && !s
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase() && s.len() == 40)
 }
 
 /// All findings in `text`, sorted by start, with overlaps resolved in favour of the longer span.
 pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
     let mut out = Vec::new();
-    let mut push = |kind, m: regex::Match<'_>, label: Option<String>| out.push(Finding { kind, start: m.start(), end: m.end(), label });
+    let mut push = |kind, m: regex::Match<'_>, label: Option<String>| {
+        out.push(Finding {
+            kind,
+            start: m.start(),
+            end: m.end(),
+            label,
+        })
+    };
     if d.secrets {
         for m in TOKENS.find_iter(text) {
             push(Kind::Secret, m, None);
@@ -150,10 +217,17 @@ pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
                 push(Kind::Secret, m, Some("URL_PASSWORD".into()));
             }
         }
-        for c in ASSIGNMENT.captures_iter(text).chain(QUOTED_ASSIGNMENT.captures_iter(text)) {
+        for c in ASSIGNMENT
+            .captures_iter(text)
+            .chain(QUOTED_ASSIGNMENT.captures_iter(text))
+        {
             if let (Some(k), Some(v)) = (c.get(1), c.get(2)) {
                 let value = v.as_str();
-                let placeholder_like = value.starts_with('$') || value.starts_with('<') || value.starts_with('⟨') || value.eq_ignore_ascii_case("changeme") || value.eq_ignore_ascii_case("change_me");
+                let placeholder_like = value.starts_with('$')
+                    || value.starts_with('<')
+                    || value.starts_with('⟨')
+                    || value.eq_ignore_ascii_case("changeme")
+                    || value.eq_ignore_ascii_case("change_me");
                 if !placeholder_like {
                     push(Kind::Secret, v, Some(k.as_str().to_owned()));
                 }
@@ -214,14 +288,25 @@ mod tests {
     use super::*;
 
     fn kinds(text: &str) -> Vec<(Kind, String)> {
-        scan(text, Detectors::default()).into_iter().map(|f| (f.kind, text[f.start..f.end].to_owned())).collect()
+        scan(text, Detectors::default())
+            .into_iter()
+            .map(|f| (f.kind, text[f.start..f.end].to_owned()))
+            .collect()
     }
 
     #[test]
     fn finds_provider_tokens_and_assignments() {
-        let k = kinds("PAYMENTS_API_KEY=sk_live_A1b2C3d4E5f6G7h8I9j0KlMnOp\nexport LEDGER_DB_PASSWORD=\"Xy7!pQr9sT2\"\n");
-        assert!(k.iter().any(|(kind, v)| *kind == Kind::Secret && v.starts_with("sk_live_")));
-        assert!(k.iter().any(|(kind, v)| *kind == Kind::Secret && v == "Xy7!pQr9sT2"));
+        let k = kinds(
+            "PAYMENTS_API_KEY=sk_live_A1b2C3d4E5f6G7h8I9j0KlMnOp\nexport LEDGER_DB_PASSWORD=\"Xy7!pQr9sT2\"\n",
+        );
+        assert!(
+            k.iter()
+                .any(|(kind, v)| *kind == Kind::Secret && v.starts_with("sk_live_"))
+        );
+        assert!(
+            k.iter()
+                .any(|(kind, v)| *kind == Kind::Secret && v == "Xy7!pQr9sT2")
+        );
     }
 
     #[test]
@@ -240,17 +325,34 @@ mod tests {
 
     #[test]
     fn finds_personal_data() {
-        let k = kinds("mail amelia.velanwick42@mailbox-311.net call +1 (415) 555-0199, card 4111 1111 1111 1111, ssn 123-45-6789, iban DE89370400440532013000 from 203.0.113.41");
+        let k = kinds(
+            "mail amelia.velanwick42@mailbox-311.net call +1 (415) 555-0199, card 4111 1111 1111 1111, ssn 123-45-6789, iban DE89370400440532013000 from 203.0.113.41",
+        );
         let found: Vec<Kind> = k.iter().map(|(kind, _)| *kind).collect();
-        for kind in [Kind::Email, Kind::Phone, Kind::Card, Kind::NationalId, Kind::Iban, Kind::Ip] {
+        for kind in [
+            Kind::Email,
+            Kind::Phone,
+            Kind::Card,
+            Kind::NationalId,
+            Kind::Iban,
+            Kind::Ip,
+        ] {
             assert!(found.contains(&kind), "{kind:?} not found in {k:?}");
         }
     }
 
     #[test]
     fn luhn_and_iban_filter_false_positives() {
-        assert!(!kinds("order 1234 5678 9012 3456").iter().any(|(k, _)| *k == Kind::Card));
-        assert!(!kinds("ref GB00ABCD12345678901234").iter().any(|(k, _)| *k == Kind::Iban));
+        assert!(
+            !kinds("order 1234 5678 9012 3456")
+                .iter()
+                .any(|(k, _)| *k == Kind::Card)
+        );
+        assert!(
+            !kinds("ref GB00ABCD12345678901234")
+                .iter()
+                .any(|(k, _)| *k == Kind::Iban)
+        );
     }
 
     #[test]
@@ -261,6 +363,10 @@ mod tests {
 
     #[test]
     fn high_entropy_strings_are_flagged() {
-        assert!(kinds("key: Q8f2LmZ0x9R4tWvB7nC1pK6sD3hJ5gYa").iter().any(|(k, _)| *k == Kind::Secret));
+        assert!(
+            kinds("key: Q8f2LmZ0x9R4tWvB7nC1pK6sD3hJ5gYa")
+                .iter()
+                .any(|(k, _)| *k == Kind::Secret)
+        );
     }
 }
