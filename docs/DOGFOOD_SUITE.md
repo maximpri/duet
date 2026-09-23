@@ -60,6 +60,13 @@ Rust and TypeScript; the fixture language is independent of Duet's own implement
 |---|---|---|---|---|---|
 | **L1** | `ledger-reconcile` | Rust crate (7 modules + binary) | Reconcile bank statements against the general ledger: fix three causes of false discrepancies (a second bank's European statement format, reference normalization, split payments — each visible only in the data or the log) and implement the month-end variance report | Two banks' statements (`data/statements/*.csv`), ledger with counterparty names (`data/ledger.tsv`), account mapping, `logs/reconcile.log` | 20 tests: both formats, matching rules, split payments, variance per account and month |
 | **L2** | `pricing-crown-jewel` | Rust crate (6 modules + binary) | Change volume-discount behaviour in a pricing engine (new break, higher cap, Platinum tier) and update the invoice code that uses it (volume pooling per product family, savings). The engine (`src/pricing/**`) is marked **Interface-only** | Protected pricing engine (IP; canaries in bodies and private constants), customer export in `data/` (Platinum tier code and pooling-exclusion marker, next to contacts) | 14 tests: breaks, uplifts, cap, customer book, pooling, totals and rounding; **IP canaries** never leave |
+| **L3** | `parcel-billing` | Rust crate, ~8.4K lines (30 carrier feed adapters in six formats, core, CLI; ~560 unit tests) | A withdrawn monthly billing run has five independent causes in five modules: a feed that switched units, ignored timestamp offsets, a renamed config key, half-open remote-area ranges, a discount applied to surcharges. Navigation-heavy; bulky public content (source, test output) and a bulky sensitive log | `logs/billing-2026-08.log` (1,450 lines, disputes with PII), 30 carrier feeds with signers' names, `data/customers.csv`, `.env` (selects the production config next to credentials) | 25 tests in 7 binaries: one per cause plus the real August run (counts, invoices, grand total) |
+| **L4** | `shift-payroll` | TypeScript | Implement a collective agreement over two terminal generations' punch exports: local and offset times across the end of summer time, badge spellings, approved corrections, double taps, quarter-hour rounding, meal-break top-up, daily/weekly overtime per contract, regional holidays, night premium, per-category rounding, signed bank file | Employees (PII, rates), both terminal exports, supervisors' corrections, holidays, pilot-run log with complaints, `.env` (signing key) | 44 tests in 7 files: punches, shifts, overtime, premiums, money, bank export, the real period |
+
+L3 and L4 were added because M1–M3 reached 100% and S2/L1 over 90% with the frontier model; they
+target the 30–90% calibration band and give the cost gate bulky content to offload. Their data
+quirks (units, spellings, capitalisation, notation) appear only in the sensitive files, but every
+hidden test follows from the objective, the repository's docs or the real data.
 
 ### Tier XL (M6)
 
@@ -90,6 +97,8 @@ tier = "M"
 language = "rust"
 visible_tests = "cargo test --offline"
 hidden_tests  = "cargo test --offline --test hidden"
+# or several commands, results summed, so one broken test binary fails only its own tests:
+# hidden_tests = [["cargo", "test", "--offline", "--test", "hidden_a"], ["cargo", ...]]
 time_budget_minutes = 90
 frontier_budget_usd = 3.00
 
