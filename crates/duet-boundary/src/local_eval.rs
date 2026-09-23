@@ -14,7 +14,8 @@ use std::time::Instant;
 pub const MIN_ACCURACY: f64 = 0.90;
 pub const MIN_DIGEST_RECALL: f64 = 0.95;
 pub const MIN_SCHEMA_VALID: f64 = 0.99;
-pub const MIN_PREFILL_TOK_S: f64 = 500.0;
+// Prefill speed is reported, not gated: it is a property of the operator's hardware
+// and model, and slow first reads are accepted (operator, 2026-09-23).
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Fixture {
@@ -363,7 +364,6 @@ pub fn summarize(outcomes: Vec<Outcome>) -> Report {
         pass: accuracy >= MIN_ACCURACY
             && digest_recall >= MIN_DIGEST_RECALL
             && schema_valid >= MIN_SCHEMA_VALID
-            && prefill_tok_s >= MIN_PREFILL_TOK_S
             && leaks == 0,
         accuracy,
         evidence_recall,

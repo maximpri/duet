@@ -52,6 +52,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Judge runs through the logged-in Claude CLI (subscription) instead of an API key; Codex CLI available as an alternative backend |
 | 2026-09-23 | Quality gates are decided by the judge (lower bound of the paired difference > −2/30). Hidden pass rate is reported; a pass-rate gap counts only when the candidate is behind on a majority of tasks. Reason: all-or-nothing tasks make the −5 pp pass-rate margin need hundreds of pairs (operator, after Gate 1) |
 | 2026-09-23 | Commands cannot read sensitive paths (OS sandbox); a command that must read them runs with `sensitive_data`, its output is held locally and the files it writes become sensitive. Value-based sanitizing of command output cannot stop derived or re-encoded data (hybrid batch, 3 of 5 leaking runs) |
+| 2026-09-23 | Local model stays oMLX `omlx-coding` (Qwen 3.8 27B): micro-eval accuracy, evidence, digest recall, schema 1.00, 0 leaks. First-read prefill ~175 tok/s is expected and accepted; prefill is reported, not gated (operator) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs); whether Run/Audit TUI
 screens move up to M3.
@@ -168,8 +169,8 @@ Fixed while porting (each with a failing-first test):
 9. Local-role loopback enforcement.
 
 Also in M1: **local-model micro-evaluation** (~40 fixtures: logs, CSVs, configs) to choose the local
-model: error-line recall ≥ 0.95, planted-fact accuracy ≥ 0.90, schema validity ≥ 0.99, prefill
-≥ 500 tok/s at 16K context.
+model: error-line recall ≥ 0.95, planted-fact accuracy ≥ 0.90, schema validity ≥ 0.99, 0 leaks. Prefill
+speed is reported, not gated (operator, 2026-09-23: slow first reads are expected).
 
 **Acceptance:** `cargo test -p duet-provider`; live tests (`DUET_LIVE_GLM=1 DUET_LIVE_LOCAL=1 cargo
 test -p duet-provider -- --ignored live_`) for a tool-call round trip, reported cached tokens and
