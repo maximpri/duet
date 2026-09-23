@@ -359,6 +359,7 @@ Prerequisites:
 | 2026-09-23 | M4 (merged `422c7b8`) | PublicBulky offload (head + outline + `read_raw` ranges), turn-wise masking with stubs, per-run cost ledger by content class read by duet-eval. Turn fixes before it: batched `ask_local`, sensitive paths named in the task (`129e5fe`). Gate 3 not yet measured. |
 | 2026-09-23 | M4.5 (merged `8edf98b`) | Interface-only (tree-sitter skeletons for Rust/TS/Python) and Sealed paths, `edit_protected` (local model implements, host runs checks, pass/fail back), protected code in the gate's filters, task L2 (starter 0/14, reference 14/14). IP gate not yet run. |
 | 2026-09-23 | Tasks (merged `1372c37`) | L3 parcel-billing (8.4K-line Rust codebase, 25 hidden tests in 7 binaries) and L4 shift-payroll (TypeScript, 44 hidden tests in 7 files); hidden tests may be several commands, so S0 now gives partial credit (1/8 starter, 8/8 reference). Not yet calibrated live. |
+| 2026-09-23 | **Gate 2 (Flash): PASS** | `duet-hybrid` (verification batch, build `a5346f4`) vs `duet-passthrough`, S1/S2/M1/M2/M3/L1 × 3 seeds, all runs valid (`results/gate2`). Privacy: 0 leaks and 0 sink violations in 18/18 hybrid runs (passthrough: 3,130 canaries across 18/18). Quality: judge Δ +0.1/30, lower bound −0.8; hidden pass rate 97.9% vs 98.3%, Δ −0.5 pp, lower bound −1.5 pp; behind on 1/6 tasks. Cost (not part of Gate 2): $0.0310 vs $0.0130 per run, wall 496 s vs 239 s — the M4 problem. |
 
 Scope changes, with reasons:
 - **Anthropic Messages and Responses dialects move to M6.** The frontier (z.ai GLM) and the local
