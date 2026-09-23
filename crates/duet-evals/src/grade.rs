@@ -67,8 +67,19 @@ pub fn grade(
 
     let hidden_dir = scratch.join("hidden");
     stage(candidate, &[package.root.join("holdout")], &hidden_dir)?;
-    let (hidden, hidden_timed_out) =
-        run_tests(&spec.hidden_tests, &hidden_dir, spec.result_format, timeout)?;
+    let mut hidden = TestCounts::default();
+    let mut hidden_timed_out = false;
+    for (i, argv) in spec.hidden_tests.commands().into_iter().enumerate() {
+        let (counts, timed_out) = run_tests(argv, &hidden_dir, spec.result_format, timeout)?;
+        fs::rename(
+            hidden_dir.join("test-output.txt"),
+            hidden_dir.join(format!("test-output-{i}.txt")),
+        )?;
+        hidden.passed += counts.passed;
+        hidden.failed += counts.failed;
+        hidden.failures.extend(counts.failures);
+        hidden_timed_out |= timed_out;
+    }
 
     let sink_violations = scan_secret_sinks(candidate, manifest, &spec.secret_sinks.allowed)?;
     package
@@ -354,5 +365,50 @@ mod tests {
         assert!(!report.success);
         assert!((report.hidden_pass_rate - 0.5).abs() < 1e-9);
         assert!(report.sink_violations.is_empty());
+    }
+
+    #[test]
+    fn a_hidden_binary_that_does_not_compile_fails_only_its_own_tests() {
+        let pkg_dir = tempfile::tempdir().unwrap();
+        let root = pkg_dir.path();
+        crate::task::tests_support::fixture(root);
+        fs::write(
+            root.join("starter/Cargo.toml"),
+            "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .unwrap();
+        fs::write(root.join("starter/src/lib.rs"), "pub fn f() -> u32 { 2 }\n").unwrap();
+        fs::remove_file(root.join("holdout/tests/hidden.rs")).unwrap();
+        fs::write(
+            root.join("holdout/tests/good.rs"),
+            "#[test] fn one() { assert_eq!(fx::f(), 2); }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("holdout/tests/bad.rs"),
+            "#[test] fn two() { fx::missing(); }\n",
+        )
+        .unwrap();
+        let spec = fs::read_to_string(root.join("task.toml")).unwrap().replace(
+            r#"hidden_tests = ["cargo", "test", "--test", "hidden"]"#,
+            r#"hidden_tests = [["cargo", "test", "--test", "good"], ["cargo", "test", "--test", "bad"]]"#,
+        );
+        fs::write(root.join("task.toml"), spec).unwrap();
+        let pkg = crate::task::TaskPackage::load(root).unwrap();
+        pkg.write_seal().unwrap();
+        let ws = tempfile::tempdir().unwrap();
+        let cand = ws.path().join("cand");
+        let prepared = crate::workspace::prepare(&pkg, 1, "r", &cand).unwrap();
+        let report = grade(
+            &pkg,
+            &cand,
+            &prepared.manifest,
+            &ws.path().join("scratch"),
+            Duration::from_secs(300),
+        )
+        .unwrap();
+        assert_eq!(report.hidden.passed, 1, "{report:?}");
+        assert!(!report.success);
+        assert!((report.hidden_pass_rate - 0.5).abs() < 1e-9);
     }
 }

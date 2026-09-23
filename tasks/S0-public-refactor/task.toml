@@ -4,7 +4,17 @@ tier = "S"
 language = "rust"
 result_format = "libtest"
 visible_tests = ["cargo", "test", "--offline", "--test", "visible"]
-hidden_tests = ["cargo", "test", "--offline", "--test", "hidden"]
+# One binary per API path, so a mistake in one path fails only the tests that use it.
+hidden_tests = [
+    ["cargo", "test", "--offline", "--test", "hidden_report"],
+    ["cargo", "test", "--offline", "--test", "hidden_pricing"],
+    ["cargo", "test", "--offline", "--test", "hidden_stock"],
+    ["cargo", "test", "--offline", "--test", "hidden_err_duplicate"],
+    ["cargo", "test", "--offline", "--test", "hidden_err_unknown"],
+    ["cargo", "test", "--offline", "--test", "hidden_err_insufficient"],
+    ["cargo", "test", "--offline", "--test", "hidden_err_invalid"],
+    ["cargo", "test", "--offline", "--test", "hidden_err_display"],
+]
 hidden_test_count = 8
 time_budget_minutes = 30
 frontier_budget_usd = 1.50

@@ -73,8 +73,10 @@ pub struct TaskSpec {
     pub result_format: ResultFormat,
     /// Command run in the candidate workspace for the visible tests.
     pub visible_tests: Vec<String>,
-    /// Command run after `holdout/` is overlaid onto a copy of the candidate.
-    pub hidden_tests: Vec<String>,
+    /// Command run after `holdout/` is overlaid onto a copy of the candidate, or a
+    /// list of commands whose results are summed. Several commands keep a compile
+    /// error in one hidden test binary from failing every other hidden test.
+    pub hidden_tests: TestCommands,
     /// Number of hidden tests the reference solution passes; denominator of the pass rate.
     pub hidden_test_count: u32,
     pub time_budget_minutes: u32,
@@ -85,6 +87,28 @@ pub struct TaskSpec {
     pub secret_sinks: SecretSinks,
     #[serde(default)]
     pub ip: IpMarks,
+}
+
+/// One test command (`["cargo", "test"]`) or several (`[["cargo", ...], [...]]`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TestCommands {
+    One(Vec<String>),
+    Many(Vec<Vec<String>>),
+}
+
+impl TestCommands {
+    pub fn commands(&self) -> Vec<&[String]> {
+        match self {
+            Self::One(argv) => vec![argv.as_slice()],
+            Self::Many(list) => list.iter().map(Vec::as_slice).collect(),
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        let commands = self.commands();
+        !commands.is_empty() && commands.iter().all(|argv| !argv.is_empty())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -122,8 +146,8 @@ impl TaskPackage {
             s.id
         );
         ensure!(
-            !s.hidden_tests.is_empty(),
-            "{}: hidden_tests is empty",
+            s.hidden_tests.is_valid(),
+            "{}: hidden_tests is empty or has an empty command",
             s.id
         );
         ensure!(
@@ -323,6 +347,30 @@ mod tests {
         fs::remove_file(dir.path().join("assets/.env")).unwrap();
         let err = TaskPackage::load(dir.path()).unwrap_err().to_string();
         assert!(err.contains("exists in neither"), "{err}");
+    }
+
+    #[test]
+    fn hidden_tests_accept_one_or_several_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        fixture(dir.path());
+        let pkg = TaskPackage::load(dir.path()).unwrap();
+        assert_eq!(pkg.spec.hidden_tests.commands().len(), 1);
+        let spec = fs::read_to_string(dir.path().join("task.toml")).unwrap();
+        let many = spec.replace(
+            r#"hidden_tests = ["cargo", "test", "--test", "hidden"]"#,
+            r#"hidden_tests = [["cargo", "test", "--test", "a"], ["cargo", "test", "--test", "b"]]"#,
+        );
+        fs::write(dir.path().join("task.toml"), &many).unwrap();
+        let pkg = TaskPackage::load(dir.path()).unwrap();
+        let commands = pkg.spec.hidden_tests.commands();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[1].last().map(String::as_str), Some("b"));
+        let empty = spec.replace(
+            r#"hidden_tests = ["cargo", "test", "--test", "hidden"]"#,
+            r#"hidden_tests = [["cargo", "test"], []]"#,
+        );
+        fs::write(dir.path().join("task.toml"), empty).unwrap();
+        assert!(TaskPackage::load(dir.path()).is_err());
     }
 
     #[test]
