@@ -1,0 +1,910 @@
+tracking_no: TAU93781681
+account: C-1037
+service: 48H
+weight_kg: 1.347
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 78040
+status_code: EV-DLV
+last_event: 20260728121508
+--
+
+tracking_no: TAU39361375
+account: C-1006
+service: 24H
+weight_kg: 16.18
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: DE
+postal: 34678
+status_code: EV-DLV
+last_event: 20260731170646
+--
+
+tracking_no: TAU56128928
+account: C-1008
+service: 48H
+weight_kg: 3.833
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: DE
+postal: 86380
+status_code: EV-DLV
+last_event: 20260801112853
+--
+
+tracking_no: TAU85056590
+account: C-1003
+service: 48H
+weight_kg: 23.952
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: AT
+postal: 5884
+status_code: EV-DLV
+last_event: 20260802205700
+--
+
+tracking_no: TAU64252734
+account: C-1034
+service: ECO
+weight_kg: 0.296
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: AT
+postal: 3375
+status_code: EV-DLV
+last_event: 20260803061922
+--
+
+tracking_no: TAU30143933
+account: C-1018
+service: 24H
+weight_kg: 18.29
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: DE
+postal: 16747
+status_code: EV-DLV
+last_event: 20260804043300
+--
+
+tracking_no: TAU97358572
+account: C-1025
+service: 24H
+weight_kg: 17.339
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: AT
+postal: 1340
+status_code: EV-DLV
+last_event: 20260804180659
+--
+
+tracking_no: TAU37587762
+account: C-1036
+service: 48H
+weight_kg: 12.973
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DK
+postal: 6418
+status_code: EV-DLV
+last_event: 20260804213641
+--
+
+tracking_no: TAU53928852
+account: C-1006
+service: 48H
+weight_kg: 7.59
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: DE
+postal: 76534
+status_code: EV-DLV
+last_event: 20260805143736
+--
+
+tracking_no: TAU74973381
+account: C-1012
+service: 48H
+weight_kg: 13.599
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: DE
+postal: 39832
+status_code: EV-DLV
+last_event: 20260805173843
+--
+
+tracking_no: TAU79151411
+account: C-1035
+service: 24H
+weight_kg: 18.016
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: IT
+postal: 65935
+status_code: EV-DLV
+last_event: 20260806142415
+--
+
+tracking_no: TAU65434982
+account: C-1002
+service: 48H
+weight_kg: 3.812
+len_cm: 100
+wid_cm: 40
+hgt_cm: 30
+dest_country: DE
+postal: 25845
+status_code: EV-DLV
+last_event: 20260806154356
+--
+
+tracking_no: TAU47259479
+account: C-1040
+service: 48H
+weight_kg: 27.394
+len_cm: 130
+wid_cm: 30
+hgt_cm: 20
+dest_country: AT
+postal: 7311
+status_code: EV-DLV
+last_event: 20260806161128
+--
+
+tracking_no: TAU60355521
+account: C-1029
+service: 24H
+weight_kg: 5.064
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 37284
+status_code: EV-DLV
+last_event: 20260807103224
+--
+
+tracking_no: TAU84446669
+account: C-1034
+service: 48H
+weight_kg: 2.294
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 35996
+status_code: EV-HUB
+last_event: 20260807212206
+--
+
+tracking_no: TAU29717757
+account: C-1017
+service: 24H
+weight_kg: 21.798
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: SE
+postal: 980 10
+status_code: EV-DLV
+last_event: 20260808180405
+--
+
+tracking_no: TAU87518812
+account: C-1014
+service: 48H
+weight_kg: 24.803
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 20450
+status_code: EV-DLV
+last_event: 20260809175730
+--
+
+tracking_no: TAU38290072
+account: C-1007
+service: 24H
+weight_kg: 1.594
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 42597
+status_code: EV-DLV
+last_event: 20260811040446
+--
+
+tracking_no: TAU52682791
+account: C-1013
+service: 48H
+weight_kg: 11.526
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 48646
+status_code: EV-HUB
+last_event: 20260811042651
+--
+
+tracking_no: TAU75140646
+account: C-1018
+service: ECO
+weight_kg: 3.566
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: NL
+postal: 3968
+status_code: EV-LOS
+last_event: 20260811234029
+--
+
+tracking_no: TAU47697077
+account: C-1018
+service: 24H
+weight_kg: 4.07
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: DE
+postal: 18650
+status_code: EV-DLV
+last_event: 20260812015220
+--
+
+tracking_no: TAU96708212
+account: C-1035
+service: 48H
+weight_kg: 1.214
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 59766
+status_code: EV-DLV
+last_event: 20260812111012
+--
+
+tracking_no: TAU26744590
+account: C-1004
+service: ECO
+weight_kg: 22.061
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: PL
+postal: 66-481
+status_code: EV-DLV
+last_event: 20260812120432
+--
+
+tracking_no: TAU51170160
+account: C-1010
+service: ECO
+weight_kg: 2.318
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DE
+postal: 25980
+status_code: EV-DLV
+last_event: 20260812145625
+--
+
+tracking_no: TAU21934363
+account: C-1009
+service: 24H
+weight_kg: 4.321
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: FR
+postal: 39529
+status_code: EV-HUB
+last_event: 20260812153035
+--
+
+tracking_no: TAU73028302
+account: C-1030
+service: ECO
+weight_kg: 2.963
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 69664
+status_code: EV-DLV
+last_event: 20260814015404
+--
+
+tracking_no: TAU78603633
+account: C-1030
+service: ECO
+weight_kg: 3.451
+len_cm: 100
+wid_cm: 40
+hgt_cm: 30
+dest_country: FI
+postal: 99100
+status_code: EV-DLV
+last_event: 20260814154247
+--
+
+tracking_no: TAU94709139
+account: C-1006
+service: ECO
+weight_kg: 0.844
+len_cm: 30
+wid_cm: 20
+hgt_cm: 15
+dest_country: DE
+postal: 12409
+status_code: EV-DLV
+last_event: 20260815003431
+--
+
+tracking_no: TAU62720886
+account: C-1034
+service: 48H
+weight_kg: 2.163
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DE
+postal: 86367
+status_code: EV-DLV
+last_event: 20260815051216
+--
+
+tracking_no: TAU72584854
+account: C-1020
+service: 48H
+weight_kg: 4.794
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: SE
+postal: 209 22
+status_code: EV-HUB
+last_event: 20260815070507
+--
+
+tracking_no: TAU16178319
+account: C-1028
+service: ECO
+weight_kg: 6.53
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: IT
+postal: 09170
+status_code: EV-DLV
+last_event: 20260815184541
+--
+
+tracking_no: TAU56778689
+account: C-1018
+service: ECO
+weight_kg: 3.359
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: ES
+postal: 44374
+status_code: EV-DLV
+last_event: 20260816015807
+--
+
+tracking_no: TAU11365863
+account: C-1024
+service: 48H
+weight_kg: 0.588
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 74026
+status_code: EV-OFD
+last_event: 20260816024742
+--
+
+tracking_no: TAU43545043
+account: C-1035
+service: 48H
+weight_kg: 0.857
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: NL
+postal: 2920
+status_code: EV-DLV
+last_event: 20260816035643
+--
+
+tracking_no: TAU22258842
+account: C-1033
+service: 48H
+weight_kg: 3.327
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 54407
+status_code: EV-DLV
+last_event: 20260816072136
+--
+
+tracking_no: TAU18107709
+account: C-1018
+service: 48H
+weight_kg: 4.045
+len_cm: 30
+wid_cm: 20
+hgt_cm: 15
+dest_country: DE
+postal: 27498
+status_code: EV-DLV
+last_event: 20260816191810
+--
+
+tracking_no: TAU41630288
+account: C-1017
+service: ECO
+weight_kg: 18.85
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 74068
+status_code: EV-DLV
+last_event: 20260816204728
+--
+
+tracking_no: TAU11996749
+account: C-1022
+service: 48H
+weight_kg: 5.876
+len_cm: 130
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 86488
+status_code: EV-DLV
+last_event: 20260817052430
+--
+
+tracking_no: TAU19926453
+account: C-1020
+service: ECO
+weight_kg: 1.805
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: ES
+postal: 42391
+status_code: EV-DLV
+last_event: 20260817223228
+--
+
+tracking_no: TAU88062304
+account: C-1008
+service: 48H
+weight_kg: 1.569
+len_cm: 30
+wid_cm: 20
+hgt_cm: 15
+dest_country: DK
+postal: 1477
+status_code: EV-DLV
+last_event: 20260818094939
+--
+
+tracking_no: TAU27414195
+account: C-1032
+service: 24H
+weight_kg: 3.38
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: NO
+postal: 9990
+status_code: EV-DLV
+last_event: 20260818125037
+--
+
+tracking_no: TAU30410984
+account: C-1006
+service: ECO
+weight_kg: 4.319
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: DE
+postal: 18878
+status_code: EV-DLV
+last_event: 20260818145314
+--
+
+tracking_no: TAU17252823
+account: C-1011
+service: ECO
+weight_kg: 2.021
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 77651
+status_code: EV-CST
+last_event: 20260818152035
+--
+
+tracking_no: TAU43508149
+account: C-1025
+service: ECO
+weight_kg: 27.007
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: DE
+postal: 81657
+status_code: EV-DLV
+last_event: 20260818214400
+--
+
+tracking_no: TAU30846709
+account: C-1002
+service: ECO
+weight_kg: 2.463
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: DE
+postal: 11744
+status_code: EV-OFD
+last_event: 20260819031930
+--
+
+tracking_no: TAU16352396
+account: C-1001
+service: 48H
+weight_kg: 0.274
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: DE
+postal: 45534
+status_code: EV-DLV
+last_event: 20260819083826
+--
+
+tracking_no: TAU14448097
+account: C-1027
+service: 48H
+weight_kg: 3.727
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: ES
+postal: 45001
+status_code: EV-DLV
+last_event: 20260820065103
+--
+
+tracking_no: TAU44929209
+account: C-1027
+service: ECO
+weight_kg: 10.769
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 33852
+status_code: EV-DLV
+last_event: 20260820163825
+--
+
+tracking_no: TAU26338208
+account: C-1035
+service: ECO
+weight_kg: 18.773
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: DE
+postal: 26486
+status_code: EV-DLV
+last_event: 20260822043100
+--
+
+tracking_no: TAU54712400
+account: C-1005
+service: ECO
+weight_kg: 1.427
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DE
+postal: 53657
+status_code: EV-HUB
+last_event: 20260822063445
+--
+
+tracking_no: TAU57195879
+account: C-1033
+service: 48H
+weight_kg: 2.048
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DE
+postal: 62003
+status_code: EV-DLV
+last_event: 20260823090843
+--
+
+tracking_no: TAU15072508
+account: C-1032
+service: 48H
+weight_kg: 4.927
+len_cm: 100
+wid_cm: 40
+hgt_cm: 30
+dest_country: DE
+postal: 39218
+status_code: EV-HUB
+last_event: 20260824044017
+--
+
+tracking_no: TAU97926225
+account: C-1022
+service: 48H
+weight_kg: 24.601
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 42928
+status_code: EV-DLV
+last_event: 20260824160057
+--
+
+tracking_no: TAU52583329
+account: C-1002
+service: ECO
+weight_kg: 0.51
+len_cm: 20
+wid_cm: 15
+hgt_cm: 10
+dest_country: FI
+postal: 32549
+status_code: EV-DLV
+last_event: 20260824181953
+--
+
+tracking_no: TAU90899166
+account: C-1016
+service: 24H
+weight_kg: 0.752
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: DE
+postal: 25849
+status_code: EV-DLV
+last_event: 20260824222440
+--
+
+tracking_no: TAU91167147
+account: C-1013
+service: 48H
+weight_kg: 16.514
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: DE
+postal: 64912
+status_code: EV-RET
+last_event: 20260825053117
+--
+
+tracking_no: TAU22949311
+account: C-1019
+service: 24H
+weight_kg: 0.862
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: AT
+postal: 1408
+status_code: EV-DLV
+last_event: 20260826045703
+--
+
+tracking_no: TAU80898878
+account: C-1027
+service: ECO
+weight_kg: 20.957
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 12545
+status_code: EV-RET
+last_event: 20260826053808
+--
+
+tracking_no: TAU52880212
+account: C-1039
+service: 24H
+weight_kg: 2.393
+len_cm: 130
+wid_cm: 30
+hgt_cm: 20
+dest_country: AT
+postal: 8766
+status_code: EV-DLV
+last_event: 20260826115913
+--
+
+tracking_no: TAU96575451
+account: C-1017
+service: 48H
+weight_kg: 2.955
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: ES
+postal: 38108
+status_code: EV-DLV
+last_event: 20260827121242
+--
+
+tracking_no: TAU73056886
+account: C-1019
+service: ECO
+weight_kg: 2.103
+len_cm: 60
+wid_cm: 40
+hgt_cm: 40
+dest_country: AT
+postal: 3712
+status_code: EV-DLV
+last_event: 20260828091049
+--
+
+tracking_no: TAU96569365
+account: C-1004
+service: 24H
+weight_kg: 10.16
+len_cm: 130
+wid_cm: 30
+hgt_cm: 20
+dest_country: DK
+postal: 6549
+status_code: EV-OFD
+last_event: 20260828121339
+--
+
+tracking_no: TAU74113965
+account: C-1036
+service: ECO
+weight_kg: 4.28
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 48125
+status_code: EV-HUB
+last_event: 20260828225747
+--
+
+tracking_no: TAU81285440
+account: C-1011
+service: 24H
+weight_kg: 22.912
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DK
+postal: 5541
+status_code: EV-DLV
+last_event: 20260829043959
+--
+
+tracking_no: TAU19236393
+account: C-1011
+service: 48H
+weight_kg: 5.958
+len_cm: 60
+wid_cm: 50
+hgt_cm: 40
+dest_country: DE
+postal: 99101
+status_code: EV-DLV
+last_event: 20260830053958
+--
+
+tracking_no: TAU49204385
+account: C-1031
+service: 48H
+weight_kg: 4.029
+len_cm: 30
+wid_cm: 20
+hgt_cm: 15
+dest_country: DE
+postal: 25791
+status_code: EV-OFD
+last_event: 20260830120816
+--
+
+tracking_no: TAU60539332
+account: C-1001
+service: ECO
+weight_kg: 1.368
+len_cm: 40
+wid_cm: 30
+hgt_cm: 20
+dest_country: DE
+postal: 15688
+status_code: EV-DLV
+last_event: 20260830124311
+--
+
+tracking_no: TAU66008657
+account: C-1019
+service: 48H
+weight_kg: 1.264
+len_cm: 35
+wid_cm: 25
+hgt_cm: 12
+dest_country: DE
+postal: 32370
+status_code: EV-DLV
+last_event: 20260831140404
+--
+
+tracking_no: TAU12025887
+account: C-1009
+service: 48H
+weight_kg: 0.679
+len_cm: 25
+wid_cm: 18
+hgt_cm: 6
+dest_country: DE
+postal: 25485
+status_code: EV-CST
+last_event: 20260831170129
+--
+
+tracking_no: TAU92665534
+account: C-1005
+service: ECO
+weight_kg: 3.26
+len_cm: 50
+wid_cm: 35
+hgt_cm: 30
+dest_country: PL
+postal: 37-934
+status_code: EV-DLV
+last_event: 20260831183231
+--
+

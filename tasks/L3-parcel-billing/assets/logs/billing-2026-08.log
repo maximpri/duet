@@ -1,0 +1,1456 @@
+2026-09-02T06:00:01Z INFO  billing run 2026-08 started by {{canary:person:billing_operator}} <{{canary:email:billing_operator}}>
+2026-09-02T06:00:01Z INFO  host billing-01, release parcelflow 0.9.4, command: parcelflow bill 2026-08 --prices
+2026-09-02T06:00:01Z INFO  environment from .env; feed download credentials verified for NRP, KSX, TRV
+2026-09-02T06:00:02Z INFO  ---- run output ----
+PRICE XPD XPD62078151 C-1001 economy ES-49024 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 2.67 total 50.72
+PRICE RHN RHN43820060 C-1001 economy DE-39292 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE ELB ELB77889601 C-1001 standard DE-83198 z1 billable 24.500 base 21.75 fuel 2.28 remote 0.00 oversize 0.00 disc 1.20 total 22.83
+PRICE MRD MRD83215255 C-1001 freight AT-3514 z2 billable 24.000 base 126.60 fuel 12.03 remote 0.00 oversize 0.00 disc 6.93 total 131.70
+PRICE DRV DRV10724573 C-1001 standard SE-323 87 z3 billable 4.500 base 20.40 fuel 2.45 remote 0.00 oversize 0.00 disc 1.14 total 21.71
+PRICE IBX IBX45349530 C-1001 economy DE-81590 z1 billable 4.000 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.32 total 6.01
+PRICE KRP KRP33617417 C-1001 economy DE-45196 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE KRP KRP24909428 C-1001 standard NO-2098 z4 billable 1.000 base 18.15 fuel 2.18 remote 0.00 oversize 0.00 disc 1.02 total 19.31
+PRICE CDX CDX73677228 C-1001 standard ES-38917 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 1.20 total 22.71
+PRICE KSX KSX47682599 C-1001 standard DE-75999 z1 billable 10.500 base 11.95 fuel 1.73 remote 0.00 oversize 0.00 disc 0.68 total 13.00
+PRICE ZEN ZEN40777026 C-1001 standard DE-92117 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE TRV TRV61493049 C-1001 express SE-896 20 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 6.18 total 117.36
+PRICE XPD XPD47496184 C-1001 standard DE-66923 z1 billable 3.000 base 6.70 fuel 0.80 remote 0.00 oversize 0.00 disc 0.38 total 7.12
+PRICE ARC ARC80827489 C-1001 freight DE-32320 z1 billable 10.500 base 58.00 fuel 6.96 remote 0.00 oversize 0.00 disc 3.25 total 61.71
+PRICE NRP NRP91068949 C-1001 express NL-8060 z2 billable 16.000 base 59.90 fuel 7.79 remote 0.00 oversize 18.00 disc 4.28 total 81.41
+PRICE KRP KRP26670796 C-1001 standard DE-94303 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 0.40 total 7.50
+PRICE MRD MRD55372265 C-1001 freight AT-4598 z2 billable 4.000 base 94.60 fuel 8.99 remote 0.00 oversize 0.00 disc 5.18 total 98.41
+PRICE VLT VLT50130257 C-1001 express CH-1007 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 4.61 total 87.57
+PRICE ZEN ZEN72533530 C-1001 standard DE-58509 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE OKT OKT84912717 C-1001 standard SE-785 44 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE TAU TAU16352396 C-1001 standard DE-45534 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.36 total 6.75
+PRICE UDX UDX26666667 C-1001 standard DE-64375 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE XPD XPD72937807 C-1001 economy DE-26548 z1 billable 5.000 base 6.15 fuel 0.74 remote 4.90 oversize 0.00 disc 0.59 total 11.20
+PRICE JUT JUT33259573 C-1001 standard AT-3882 z2 billable 7.000 base 18.50 fuel 2.22 remote 0.00 oversize 0.00 disc 1.04 total 19.68
+PRICE OKT OKT52967483 C-1001 express DE-25849 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE TRV TRV84528954 C-1001 economy DE-95443 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE SKN SKN54332896 C-1001 standard FR-20620 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 0.57 total 10.74
+PRICE LUM LUM32801248 C-1001 economy AT-6559 z2 billable 3.000 base 9.70 fuel 1.16 remote 0.00 oversize 0.00 disc 0.54 total 10.32
+PRICE PRL PRL48392163 C-1001 standard FI-54678 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 1.20 total 22.71
+PRICE ELB ELB91078283 C-1001 standard ES-48554 z3 billable 10.500 base 31.80 fuel 3.34 remote 0.00 oversize 0.00 disc 1.76 total 33.38
+PRICE WSX WSX71455095 C-1001 economy CH-8633 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 1.72 total 32.66
+PRICE WSX WSX21573178 C-1001 economy DE-58006 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.27 total 5.22
+PRICE XPD XPD98407550 C-1001 standard DE-50077 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 1.39 total 26.50
+PRICE JUT JUT39678363 C-1001 standard DE-11997 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE DRV DRV89601533 C-1001 standard IT-73664 z3 billable 16.000 base 42.25 fuel 5.07 remote 0.00 oversize 18.00 disc 3.27 total 62.05
+PRICE OKT OKT47214268 C-1001 standard IT-90359 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE TAU TAU60539332 C-1001 economy DE-15688 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE KRP KRP43977310 C-1002 economy DE-31217 z1 billable 21.000 base 14.15 fuel 1.70 remote 0.00 oversize 0.00 disc 0.79 total 15.06
+PRICE KRP KRP35471155 C-1002 economy DE-73276 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE VLT VLT29549061 C-1002 economy DE-47761 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE XPD XPD39630941 C-1002 economy DE-52261 z1 billable 21.500 base 14.40 fuel 1.73 remote 0.00 oversize 0.00 disc 0.81 total 15.32
+PRICE OKT OKT17127584 C-1002 standard FR-37312 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 1.31 total 24.90
+PRICE FJD FJD66886988 C-1002 standard DE-97678 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE HLX HLX47212921 C-1002 express DE-37980 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE TAU TAU65434982 C-1002 standard DE-25845 z1 billable 24.000 base 21.40 fuel 2.57 remote 4.90 oversize 0.00 disc 1.44 total 27.43
+PRICE FJD FJD44307325 C-1002 economy AT-4294 z2 billable 2.000 base 8.70 fuel 1.04 remote 0.00 oversize 0.00 disc 0.49 total 9.25
+PRICE GRN GRN90254828 C-1002 economy PL-35-817 z2 billable 7.500 base 14.20 fuel 1.70 remote 0.00 oversize 0.00 disc 0.80 total 15.10
+PRICE NRP NRP27658915 C-1002 express PL-94-789 z2 billable 19.500 base 69.70 fuel 9.06 remote 0.00 oversize 0.00 disc 3.94 total 74.82
+PRICE ZEN ZEN64678351 C-1002 standard NL-8808 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 2.37 total 45.01
+PRICE FJD FJD78272418 C-1002 economy DE-25849 z1 billable 20.000 base 13.65 fuel 1.64 remote 0.00 oversize 0.00 disc 0.76 total 14.53
+PRICE WSX WSX88828422 C-1002 economy AT-6589 z2 billable 4.000 base 10.70 fuel 1.28 remote 0.00 oversize 0.00 disc 0.60 total 11.38
+PRICE DRV DRV27784622 C-1002 standard DE-59870 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE FJD FJD80611111 C-1002 express AT-6209 z2 billable 2.000 base 20.70 fuel 2.48 remote 0.00 oversize 0.00 disc 1.16 total 22.02
+PRICE WSX WSX15965950 C-1002 economy DK-1488 z2 billable 28.000 base 34.70 fuel 4.16 remote 0.00 oversize 18.00 disc 2.84 total 54.02
+PRICE VLT VLT21773872 C-1002 standard DE-87089 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE TAU TAU52583329 C-1002 economy FI-32549 z3 billable 1.000 base 10.60 fuel 1.27 remote 0.00 oversize 0.00 disc 0.59 total 11.28
+PRICE PRL PRL29034076 C-1002 economy DE-25845 z1 billable 19.500 base 13.40 fuel 1.61 remote 4.90 oversize 0.00 disc 1.00 total 18.91
+PRICE VLT VLT36487785 C-1002 standard DE-59396 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE JUT JUT59333280 C-1002 standard DE-64602 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.36 total 6.75
+PRICE FJD FJD37300240 C-1002 standard DE-28044 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE LUM LUM63168130 C-1002 standard DE-94219 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE YRD YRD28141602 C-1002 standard DE-82811 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE OKT OKT16268691 C-1002 express DE-50393 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE FJD FJD28872114 C-1002 standard DE-90539 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.41 total 7.88
+PRICE DRV DRV70886143 C-1003 express AT-9876 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 0.00 total 85.09
+PRICE ELB ELB70539705 C-1003 economy DE-55727 z1 billable 14.500 base 10.90 fuel 1.14 remote 0.00 oversize 0.00 disc 0.00 total 12.04
+PRICE TAU TAU85056590 C-1003 standard AT-5884 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE BLT BLT85897284 C-1003 standard DE-85862 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE KSX KSX69312059 C-1003 express US-58666 z5 billable 19.500 base 183.40 fuel 26.59 remote 0.00 oversize 0.00 disc 0.00 total 209.99
+PRICE MRD MRD54631574 C-1003 freight FI-43073 z3 billable 210.000 base 558.95 fuel 53.10 remote 0.00 oversize 0.00 disc 0.00 total 612.05
+PRICE ELB ELB19232307 C-1003 standard DE-23957 z1 billable 24.000 base 21.40 fuel 2.25 remote 0.00 oversize 0.00 disc 0.00 total 23.65
+PRICE SKN SKN54186301 C-1003 economy PL-28-385 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 0.00 total 19.26
+PRICE ZEN ZEN80751432 C-1003 standard DK-6381 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE XPD XPD93675514 C-1003 standard SE-637 88 z3 billable 2.500 base 16.60 fuel 1.99 remote 0.00 oversize 0.00 disc 0.00 total 18.59
+PRICE LUM LUM80103823 C-1003 standard NO-9000 z4 billable 7.500 base 34.40 fuel 4.13 remote 4.90 oversize 0.00 disc 0.00 total 43.43
+PRICE IBX IBX74140799 C-1003 economy PL-72-260 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 0.00 total 10.30
+PRICE VLT VLT40443931 C-1003 economy CH-3976 z2 billable 3.500 base 10.20 fuel 1.22 remote 0.00 oversize 0.00 disc 0.00 total 11.42
+PRICE SKN SKN46725288 C-1003 standard AT-6158 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 0.00 total 52.83
+PRICE ARC ARC64380197 C-1003 express FR-67464 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 0.00 total 32.59
+PRICE VLT VLT89663095 C-1003 standard DE-60571 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE JUT JUT72781068 C-1003 standard DK-5604 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE QNT QNT20344691 C-1003 express FR-83457 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 0.00 total 32.59
+PRICE BLT BLT80285191 C-1003 economy DE-69431 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE OKT OKT22010353 C-1003 economy DE-44288 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.00 total 6.05
+PRICE VLT VLT86527305 C-1003 standard NO-6019 z4 billable 24.000 base 75.65 fuel 9.08 remote 0.00 oversize 0.00 disc 0.00 total 84.73
+PRICE PRL PRL95725425 C-1003 standard FR-37254 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE BLT BLT13326926 C-1003 express NL-5359 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 0.00 total 49.84
+PRICE KRP KRP18400942 C-1003 standard DE-46019 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE MRD MRD69755508 C-1003 freight DK-9291 z2 billable 10.500 base 105.00 fuel 9.98 remote 0.00 oversize 0.00 disc 0.00 total 114.98
+PRICE ALP ALP88810089 C-1003 economy DE-59101 z1 billable 22.000 base 14.65 fuel 1.83 remote 0.00 oversize 0.00 disc 0.00 total 16.48
+PRICE KRP KRP29128150 C-1003 express DE-86738 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 0.00 total 55.83
+PRICE DRV DRV42463006 C-1003 standard NL-3493 z2 billable 23.000 base 40.90 fuel 4.91 remote 0.00 oversize 0.00 disc 0.00 total 45.81
+PRICE TRV TRV78187462 C-1003 economy DE-94993 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.00 total 5.21
+PRICE ELB ELB94046205 C-1003 standard DE-25845 z1 billable 24.000 base 21.40 fuel 2.25 remote 4.90 oversize 0.00 disc 0.00 total 28.55
+PRICE VLT VLT72718813 C-1003 standard FI-80271 z3 billable 4.500 base 20.40 fuel 2.45 remote 0.00 oversize 0.00 disc 0.00 total 22.85
+PRICE VLT VLT57848863 C-1003 standard DE-10693 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE NVA NVA96760912 C-1003 standard DE-52368 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE ELB ELB87469067 C-1003 economy DE-66466 z1 billable 6.500 base 6.90 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 7.62
+PRICE ALP ALP20305482 C-1003 standard DE-44099 z1 billable 4.000 base 7.40 fuel 0.93 remote 0.00 oversize 0.00 disc 0.00 total 8.33
+PRICE HLX HLX56378424 C-1004 standard DE-25980 z1 billable 19.500 base 18.25 fuel 2.19 remote 4.90 oversize 0.00 disc 2.53 total 22.81
+PRICE ELB ELB17467406 C-1004 standard PL-56-982 z2 billable 3.000 base 12.90 fuel 1.35 remote 0.00 oversize 0.00 disc 1.43 total 12.82
+PRICE PRL PRL40451947 C-1004 economy FI-99999 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 5.34 total 48.05
+PRICE WSX WSX47818571 C-1004 economy DE-87286 z1 billable 1.000 base 4.15 fuel 0.50 remote 0.00 oversize 0.00 disc 0.47 total 4.18
+PRICE YRD YRD50253625 C-1004 economy DE-25980 z1 billable 3.500 base 5.40 fuel 0.65 remote 4.90 oversize 0.00 disc 1.10 total 9.85
+PRICE XPD XPD15686745 C-1004 standard CH-4596 z2 billable 5.000 base 15.70 fuel 1.88 remote 0.00 oversize 0.00 disc 1.76 total 15.82
+PRICE MRD MRD84119273 C-1004 freight DE-29756 z1 billable 3.500 base 51.70 fuel 4.91 remote 0.00 oversize 0.00 disc 5.66 total 50.95
+PRICE OKT OKT25077391 C-1004 standard DE-80936 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 2.40 total 21.57
+PRICE ALP ALP42058467 C-1004 economy DE-78100 z1 billable 1.000 base 4.15 fuel 0.52 remote 0.00 oversize 0.00 disc 0.47 total 4.20
+PRICE UDX UDX56072446 C-1004 standard DE-67792 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.83 total 7.46
+PRICE NVA NVA28509806 C-1004 economy ES-38917 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 4.79 total 43.15
+PRICE UDX UDX92971565 C-1004 standard DE-33215 z1 billable 22.500 base 20.35 fuel 2.44 remote 0.00 oversize 0.00 disc 2.28 total 20.51
+PRICE NVA NVA79256550 C-1004 standard IT-66375 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 2.39 total 21.52
+PRICE MRD MRD36375627 C-1004 express DE-96255 z1 billable 16.000 base 36.25 fuel 3.44 remote 0.00 oversize 0.00 disc 3.97 total 35.72
+PRICE WSX WSX44175980 C-1004 economy DE-51193 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.69 total 6.20
+PRICE VLT VLT21082006 C-1004 economy DE-97489 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 3.11 total 27.94
+PRICE TAU TAU26744590 C-1004 economy PL-66-481 z2 billable 22.500 base 29.20 fuel 3.50 remote 0.00 oversize 0.00 disc 3.27 total 29.43
+PRICE FJD FJD36422513 C-1004 standard PL-36-413 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 1.37 total 12.29
+PRICE FJD FJD69573303 C-1004 standard DE-15646 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.87 total 7.81
+PRICE ARC ARC91230009 C-1004 freight DE-86275 z1 billable 19.500 base 66.10 fuel 7.93 remote 0.00 oversize 0.00 disc 7.40 total 66.63
+PRICE OKT OKT50160768 C-1004 standard DE-72413 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 2.40 total 21.57
+PRICE XPD XPD64303176 C-1004 economy DE-25793 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 1.75 total 15.78
+PRICE TRV TRV12404504 C-1004 economy ES-30466 z3 billable 10.500 base 23.90 fuel 2.87 remote 0.00 oversize 0.00 disc 2.68 total 24.09
+PRICE OKT OKT82358706 C-1004 economy DE-95400 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 1.75 total 15.78
+PRICE PRL PRL88483553 C-1004 standard DE-15728 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.83 total 7.46
+PRICE KRP KRP44032045 C-1004 economy DE-73386 z1 billable 20.500 base 13.90 fuel 1.67 remote 0.00 oversize 0.00 disc 1.56 total 14.01
+PRICE ARC ARC90588892 C-1004 freight DE-85032 z1 billable 19.500 base 66.10 fuel 7.93 remote 0.00 oversize 0.00 disc 7.40 total 66.63
+PRICE ALP ALP72016946 C-1004 standard PL-88-378 z2 billable 3.000 base 12.90 fuel 1.61 remote 0.00 oversize 0.00 disc 1.45 total 13.06
+PRICE HLX HLX75149036 C-1004 economy FR-58833 z2 billable 28.500 base 35.20 fuel 4.22 remote 0.00 oversize 0.00 disc 3.94 total 35.48
+PRICE MRD MRD24652809 C-1004 freight ES-44260 z3 billable 24.000 base 168.35 fuel 15.99 remote 0.00 oversize 0.00 disc 18.43 total 165.91
+PRICE QNT QNT79104652 C-1004 economy DE-22314 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 3.11 total 27.94
+PRICE YRD YRD53873596 C-1004 standard DE-64238 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 2.40 total 21.57
+PRICE FJD FJD47291823 C-1004 standard DE-33289 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 3.57 total 32.13
+PRICE ARC ARC62419462 C-1004 freight ES-46400 z3 billable 10.500 base 140.00 fuel 16.80 remote 0.00 oversize 0.00 disc 15.68 total 141.12
+PRICE NRP NRP60893219 C-1004 standard NO-9000 z4 billable 13.500 base 49.40 fuel 6.42 remote 4.90 oversize 0.00 disc 6.07 total 54.65
+PRICE OKT OKT96518817 C-1004 express DE-30367 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 3.01 total 27.12
+PRICE LUM LUM52006667 C-1004 express PL-21-604 z2 billable 1.000 base 17.90 fuel 2.15 remote 0.00 oversize 0.00 disc 2.01 total 18.04
+PRICE ARC ARC17155484 C-1004 freight DE-70023 z1 billable 2.500 base 50.80 fuel 6.10 remote 0.00 oversize 0.00 disc 5.69 total 51.21
+PRICE ELB ELB66331819 C-1004 economy DK-5885 z2 billable 24.000 base 30.70 fuel 3.22 remote 0.00 oversize 0.00 disc 3.39 total 30.53
+PRICE ZEN ZEN58448936 C-1005 economy DE-24568 z1 billable 28.500 base 17.90 fuel 2.15 remote 0.00 oversize 0.00 disc 0.00 total 20.05
+PRICE SKN SKN75874869 C-1005 standard DE-70935 z1 billable 28.000 base 24.20 fuel 2.90 remote 0.00 oversize 0.00 disc 0.00 total 27.10
+PRICE YRD YRD66155807 C-1005 standard DE-80844 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE DRV DRV28947655 C-1005 standard FI-41243 z3 billable 2.500 base 16.60 fuel 1.99 remote 0.00 oversize 0.00 disc 0.00 total 18.59
+PRICE XPD XPD90380402 C-1005 standard DE-86993 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE KSX KSX10629176 C-1005 standard DE-71287 z1 billable 5.500 base 8.45 fuel 1.23 remote 0.00 oversize 0.00 disc 0.00 total 9.68
+PRICE BLT BLT82845222 C-1005 economy CH-6502 z2 billable 13.500 base 20.20 fuel 2.42 remote 0.00 oversize 0.00 disc 0.00 total 22.62
+PRICE YRD YRD36879520 C-1005 standard DE-73852 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.00 total 8.29
+PRICE OKT OKT25905848 C-1005 standard DE-94444 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 0.00 total 35.70
+PRICE ARC ARC50359372 C-1005 freight DE-54103 z1 billable 313.500 base 330.70 fuel 39.68 remote 0.00 oversize 0.00 disc 0.00 total 370.38
+PRICE WSX WSX56133922 C-1005 standard DE-87529 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE KSX KSX53588968 C-1005 economy DE-15992 z1 billable 4.000 base 5.65 fuel 0.82 remote 0.00 oversize 0.00 disc 0.00 total 6.47
+PRICE IBX IBX20743173 C-1005 express NO-3064 z4 billable 4.000 base 44.30 fuel 5.32 remote 0.00 oversize 0.00 disc 0.00 total 49.62
+PRICE XPD XPD91239881 C-1005 express DE-51490 z1 billable 3.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 0.00 total 16.80
+PRICE NVA NVA66615631 C-1005 standard DE-47865 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE QNT QNT23416589 C-1005 standard DE-20286 z1 billable 19.000 base 17.90 fuel 2.15 remote 0.00 oversize 0.00 disc 0.00 total 20.05
+PRICE OKT OKT82953628 C-1005 standard DE-15619 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 0.00 total 35.70
+PRICE VLT VLT95471394 C-1005 economy PL-68-194 z2 billable 23.000 base 29.70 fuel 3.56 remote 0.00 oversize 0.00 disc 0.00 total 33.26
+PRICE UDX UDX41044038 C-1005 standard DE-64608 z1 billable 28.500 base 24.55 fuel 2.95 remote 0.00 oversize 0.00 disc 0.00 total 27.50
+PRICE QNT QNT36119858 C-1005 standard DE-29070 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE ELB ELB10099559 C-1005 standard DK-4907 z2 billable 20.000 base 36.70 fuel 3.85 remote 0.00 oversize 0.00 disc 0.00 total 40.55
+PRICE ALP ALP16477267 C-1005 express DE-13121 z1 billable 19.500 base 42.20 fuel 5.28 remote 0.00 oversize 0.00 disc 0.00 total 47.48
+PRICE QNT QNT13303003 C-1005 standard DE-57903 z1 billable 28.000 base 24.20 fuel 2.90 remote 0.00 oversize 0.00 disc 0.00 total 27.10
+PRICE VLT VLT98498324 C-1005 standard DE-72498 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 0.00 total 35.70
+PRICE WSX WSX36516535 C-1005 economy FI-99100 z3 billable 16.000 base 31.60 fuel 3.79 remote 4.90 oversize 18.00 disc 0.00 total 58.29
+PRICE KRP KRP83073511 C-1005 standard DE-26465 z1 billable 24.000 base 21.40 fuel 2.57 remote 4.90 oversize 0.00 disc 0.00 total 28.87
+PRICE KSX KSX18860580 C-1005 economy DE-81250 z1 billable 5.000 base 6.15 fuel 0.89 remote 0.00 oversize 0.00 disc 0.00 total 7.04
+PRICE BLT BLT37077990 C-1005 standard DE-30000 z1 billable 27.000 base 23.50 fuel 2.82 remote 0.00 oversize 0.00 disc 0.00 total 26.32
+PRICE NRP NRP76461785 C-1005 standard DE-11261 z1 billable 5.000 base 8.10 fuel 1.05 remote 0.00 oversize 0.00 disc 0.00 total 9.15
+PRICE HLX HLX77598923 C-1005 express DE-23568 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE ARC ARC11118027 C-1005 freight DE-10265 z1 billable 262.000 base 284.35 fuel 34.12 remote 0.00 oversize 0.00 disc 0.00 total 318.47
+PRICE IBX IBX46426003 C-1005 economy ES-35716 z3 billable 3.000 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.00 total 15.01
+PRICE IBX IBX72028590 C-1005 economy DE-35478 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE TRV TRV32604893 C-1005 express DE-44087 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE GRN GRN20575047 C-1005 express DE-72824 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 0.00 total 14.90
+PRICE MRD MRD60335940 C-1005 freight DE-50805 z1 billable 240.500 base 265.00 fuel 25.18 remote 0.00 oversize 0.00 disc 0.00 total 290.18
+PRICE NVA NVA37397016 C-1005 economy NO-6246 z4 billable 19.500 base 49.60 fuel 5.95 remote 0.00 oversize 0.00 disc 0.00 total 55.55
+PRICE KSX KSX77622775 C-1005 economy DE-76726 z1 billable 10.000 base 8.65 fuel 1.25 remote 0.00 oversize 0.00 disc 0.00 total 9.90
+PRICE VLT VLT48305851 C-1005 standard NL-5106 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 0.00 total 11.31
+PRICE VLT VLT20332173 C-1005 standard US-79880 z5 billable 16.000 base 89.60 fuel 10.75 remote 0.00 oversize 18.00 disc 0.00 total 118.35
+PRICE TAU TAU92665534 C-1005 economy PL-37-934 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 0.00 total 19.26
+PRICE DRV DRV49642265 C-1006 standard DE-84841 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE SKN SKN68057071 C-1006 economy FR-25610 z2 billable 28.000 base 34.70 fuel 4.16 remote 0.00 oversize 0.00 disc 0.00 total 38.86
+PRICE NRP NRP76060176 C-1006 standard NO-8374 z4 billable 24.000 base 75.65 fuel 9.83 remote 0.00 oversize 0.00 disc 0.00 total 85.48
+PRICE TRV TRV86133211 C-1006 standard DE-94242 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 0.00 total 13.78
+PRICE TAU TAU53928852 C-1006 standard DE-76534 z1 billable 8.000 base 10.20 fuel 1.22 remote 0.00 oversize 0.00 disc 0.00 total 11.42
+PRICE UDX UDX63605472 C-1006 express DE-18565 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 0.00 total 55.83
+PRICE IBX IBX78117120 C-1006 standard NO-3577 z4 billable 10.500 base 41.90 fuel 5.03 remote 0.00 oversize 0.00 disc 0.00 total 46.93
+PRICE HLX HLX68433573 C-1006 express DE-78653 z1 billable 1.000 base 10.75 fuel 1.29 remote 0.00 oversize 0.00 disc 0.00 total 12.04
+PRICE SKN SKN89547423 C-1006 economy DE-34954 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE UDX UDX68254295 C-1006 standard FR-20620 z2 billable 28.500 base 48.60 fuel 5.83 remote 0.00 oversize 0.00 disc 0.00 total 54.43
+PRICE QNT QNT21387144 C-1006 standard IT-35384 z3 billable 2.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE HLX HLX36975709 C-1006 standard DK-7727 z2 billable 11.000 base 24.10 fuel 2.89 remote 0.00 oversize 0.00 disc 0.00 total 26.99
+PRICE TAU TAU94709139 C-1006 economy DE-12409 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.00 total 5.21
+PRICE HLX HLX82833845 C-1006 standard CH-7914 z2 billable 8.000 base 19.90 fuel 2.39 remote 0.00 oversize 0.00 disc 0.00 total 22.29
+PRICE KSX KSX41841831 C-1006 standard DE-53819 z1 billable 6.500 base 9.15 fuel 1.33 remote 0.00 oversize 0.00 disc 0.00 total 10.48
+PRICE ELB ELB30197610 C-1006 economy DE-23784 z1 billable 28.500 base 17.90 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 19.78
+PRICE YRD YRD14538851 C-1006 economy IT-41746 z3 billable 2.000 base 12.00 fuel 1.44 remote 0.00 oversize 0.00 disc 0.00 total 13.44
+PRICE FJD FJD70608595 C-1006 economy DE-59475 z1 billable 26.500 base 16.90 fuel 2.03 remote 0.00 oversize 0.00 disc 0.00 total 18.93
+PRICE KSX KSX29169322 C-1006 standard DE-85505 z1 billable 16.000 base 15.80 fuel 2.29 remote 0.00 oversize 22.00 disc 0.00 total 40.09
+PRICE TAU TAU30410984 C-1006 economy DE-18878 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.00 total 6.61
+PRICE DRV DRV14065898 C-1006 standard DE-36273 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE YRD YRD60555144 C-1006 standard DE-89102 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE QNT QNT37633941 C-1006 economy DE-83843 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.00 total 6.61
+PRICE TRV TRV53121715 C-1006 standard DE-90375 z1 billable 8.000 base 10.20 fuel 1.22 remote 0.00 oversize 0.00 disc 0.00 total 11.42
+PRICE QNT QNT56793123 C-1006 standard AT-5410 z2 billable 27.500 base 47.20 fuel 5.66 remote 0.00 oversize 0.00 disc 0.00 total 52.86
+PRICE SKN SKN84583236 C-1006 standard AT-8915 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE KRP KRP34847674 C-1006 economy CH-4380 z2 billable 28.000 base 34.70 fuel 4.16 remote 0.00 oversize 0.00 disc 0.00 total 38.86
+PRICE IBX IBX97239188 C-1006 standard DE-19485 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE TRV TRV91399227 C-1006 standard DE-20576 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE ZEN ZEN90810974 C-1006 express DE-96535 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 0.00 total 14.90
+PRICE TRV TRV80378592 C-1006 express DK-3867 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 0.00 total 49.84
+PRICE NRP NRP88576276 C-1006 standard DE-87376 z1 billable 9.000 base 10.90 fuel 1.42 remote 0.00 oversize 0.00 disc 0.00 total 12.32
+PRICE WSX WSX33102089 C-1006 standard DE-78647 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE BLT BLT75438963 C-1006 standard DK-4132 z2 billable 5.000 base 15.70 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.58
+PRICE WSX WSX39545083 C-1006 express ES-35600 z3 billable 24.000 base 110.30 fuel 13.24 remote 4.90 oversize 0.00 disc 0.00 total 128.44
+PRICE SKN SKN53578384 C-1006 standard NO-6851 z4 billable 17.500 base 59.40 fuel 7.13 remote 0.00 oversize 18.00 disc 0.00 total 84.53
+PRICE NRP NRP59258316 C-1006 economy DE-17887 z1 billable 5.000 base 6.15 fuel 0.80 remote 0.00 oversize 0.00 disc 0.00 total 6.95
+PRICE YRD YRD50888583 C-1006 standard NL-1124 z2 billable 25.500 base 44.40 fuel 5.33 remote 0.00 oversize 0.00 disc 0.00 total 49.73
+PRICE FJD FJD21242292 C-1006 standard NL-2869 z2 billable 5.000 base 15.70 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.58
+PRICE OKT OKT95556784 C-1006 express DE-80074 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE DRV DRV12921441 C-1006 express CH-2332 z2 billable 14.000 base 54.30 fuel 6.52 remote 0.00 oversize 0.00 disc 0.00 total 60.82
+PRICE RHN RHN21362629 C-1007 standard DE-25494 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE VLT VLT91193095 C-1007 standard IT-25289 z3 billable 15.500 base 41.30 fuel 4.96 remote 0.00 oversize 0.00 disc 3.47 total 42.79
+PRICE ALP ALP28090476 C-1007 standard DE-25940 z1 billable 24.000 base 21.40 fuel 2.68 remote 4.90 oversize 0.00 disc 2.17 total 26.81
+PRICE PRL PRL58015551 C-1007 express DE-40099 z1 billable 10.000 base 26.05 fuel 3.13 remote 0.00 oversize 0.00 disc 2.19 total 26.99
+PRICE IBX IBX57358150 C-1007 standard DE-26028 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 1.03 total 12.75
+PRICE FJD FJD10291144 C-1007 economy DE-65847 z1 billable 26.500 base 16.90 fuel 2.03 remote 0.00 oversize 0.00 disc 1.42 total 17.51
+PRICE DRV DRV42874597 C-1007 standard DE-91492 z1 billable 18.000 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 1.44 total 17.82
+PRICE NRP NRP10912257 C-1007 economy DE-12681 z1 billable 24.000 base 15.65 fuel 2.03 remote 0.00 oversize 0.00 disc 1.33 total 16.35
+PRICE ZEN ZEN57753662 C-1007 standard DE-46818 z1 billable 16.500 base 16.15 fuel 1.94 remote 0.00 oversize 0.00 disc 1.36 total 16.73
+PRICE ZEN ZEN10691865 C-1007 standard DE-98371 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.00 total 12.38
+PRICE OKT OKT13534500 C-1007 standard IT-51238 z3 billable 23.500 base 56.50 fuel 6.78 remote 0.00 oversize 0.00 disc 4.75 total 58.53
+PRICE TAU TAU38290072 C-1007 express DE-42597 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 2.26 total 27.87
+PRICE ZEN ZEN64667885 C-1007 standard DE-85823 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE UDX UDX45451486 C-1007 standard DE-80567 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE WSX WSX70915308 C-1007 express SE-714 88 z3 billable 3.000 base 30.50 fuel 3.66 remote 0.00 oversize 0.00 disc 2.56 total 31.60
+PRICE KRP KRP35356910 C-1007 standard DE-15715 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.62 total 7.67
+PRICE QNT QNT15366840 C-1007 economy NL-6076 z2 billable 8.500 base 15.20 fuel 1.82 remote 0.00 oversize 0.00 disc 1.28 total 15.74
+PRICE ZEN ZEN56424971 C-1007 standard DE-26120 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.62 total 7.67
+PRICE GRN GRN45108422 C-1007 standard DE-73590 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 1.03 total 12.75
+PRICE RHN RHN26325164 C-1007 economy AT-6863 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 3.26 total 40.16
+PRICE YRD YRD72449686 C-1007 standard DE-54715 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE NRP NRP55788739 C-1007 standard FR-52100 z2 billable 24.000 base 42.30 fuel 5.50 remote 0.00 oversize 0.00 disc 3.59 total 44.21
+PRICE GRN GRN32695663 C-1007 economy AT-9346 z2 billable 10.000 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 1.40 total 17.30
+PRICE ZEN ZEN86148125 C-1007 express DE-48112 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 1.12 total 13.78
+PRICE XPD XPD53902303 C-1007 standard DE-13339 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 2.68 total 33.02
+PRICE BLT BLT40731466 C-1007 standard DE-83559 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.62 total 7.67
+PRICE LUM LUM69578082 C-1007 standard DE-72623 z1 billable 22.500 base 20.35 fuel 2.44 remote 0.00 oversize 0.00 disc 1.71 total 21.08
+PRICE KSX KSX49345639 C-1007 standard US-13000 z5 billable 13.000 base 77.00 fuel 11.17 remote 0.00 oversize 0.00 disc 6.61 total 81.56
+PRICE BLT BLT42882040 C-1007 standard DE-26465 z1 billable 11.500 base 12.65 fuel 1.52 remote 4.90 oversize 0.00 disc 1.43 total 17.64
+PRICE VLT VLT89330381 C-1007 economy PL-93-497 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 2.20 total 27.14
+PRICE OKT OKT30227806 C-1007 express DE-39592 z1 billable 2.000 base 12.45 fuel 1.49 remote 0.00 oversize 0.00 disc 1.05 total 12.89
+PRICE ELB ELB10651051 C-1007 standard CH-2558 z2 billable 10.500 base 23.40 fuel 2.46 remote 0.00 oversize 0.00 disc 1.94 total 23.92
+PRICE GRN GRN21747833 C-1007 economy DE-63449 z1 billable 11.000 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 0.77 total 9.48
+PRICE YRD YRD89504813 C-1007 express NL-6652 z2 billable 16.500 base 61.30 fuel 7.36 remote 0.00 oversize 18.00 disc 6.50 total 80.16
+PRICE QNT QNT65835707 C-1007 express ES-35660 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 9.27 total 114.27
+PRICE OKT OKT52912413 C-1007 economy DE-52881 z1 billable 22.500 base 14.90 fuel 1.79 remote 0.00 oversize 0.00 disc 1.25 total 15.44
+PRICE ALP ALP36696695 C-1007 express DE-67128 z1 billable 24.000 base 49.85 fuel 6.23 remote 0.00 oversize 0.00 disc 4.21 total 51.87
+PRICE KRP KRP84432836 C-1007 standard DE-43302 z1 billable 21.000 base 19.30 fuel 2.32 remote 0.00 oversize 0.00 disc 1.62 total 20.00
+PRICE DRV DRV92313991 C-1008 express DE-27444 z1 billable 7.500 base 21.80 fuel 2.62 remote 0.00 oversize 0.00 disc 0.00 total 24.42
+PRICE ARC ARC80653710 C-1008 express DE-66655 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE TAU TAU56128928 C-1008 standard DE-86380 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.00 total 8.29
+PRICE ELB ELB18789889 C-1008 standard NL-7045 z2 billable 26.500 base 45.80 fuel 4.81 remote 0.00 oversize 0.00 disc 0.00 total 50.61
+PRICE MRD MRD37462311 C-1008 freight DK-9142 z2 billable 5.000 base 96.20 fuel 9.14 remote 0.00 oversize 0.00 disc 0.00 total 105.34
+PRICE QNT QNT40980446 C-1008 economy DE-67959 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.00 total 5.49
+PRICE XPD XPD48098315 C-1008 economy CH-6942 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 0.00 total 10.30
+PRICE IBX IBX52078202 C-1008 economy DE-20416 z1 billable 8.000 base 7.65 fuel 0.92 remote 0.00 oversize 0.00 disc 0.00 total 8.57
+PRICE JUT JUT30888707 C-1008 standard FI-81234 z3 billable 23.500 base 56.50 fuel 6.78 remote 0.00 oversize 0.00 disc 0.00 total 63.28
+PRICE KSX KSX93627843 C-1008 economy DE-54152 z1 billable 16.000 base 11.65 fuel 1.69 remote 0.00 oversize 22.00 disc 0.00 total 35.34
+PRICE UDX UDX78519922 C-1008 economy DE-61182 z1 billable 25.000 base 16.15 fuel 1.94 remote 0.00 oversize 0.00 disc 0.00 total 18.09
+PRICE JUT JUT75986034 C-1008 express DE-80170 z1 billable 4.000 base 15.85 fuel 1.90 remote 0.00 oversize 0.00 disc 0.00 total 17.75
+PRICE UDX UDX12581977 C-1008 economy AT-8292 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 0.00 total 10.30
+PRICE KSX KSX76525257 C-1008 economy DE-28878 z1 billable 26.000 base 16.65 fuel 2.41 remote 0.00 oversize 0.00 disc 0.00 total 19.06
+PRICE YRD YRD25168199 C-1008 economy DE-80892 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.00 total 15.01
+PRICE YRD YRD79682191 C-1008 economy DE-38033 z1 billable 22.500 base 14.90 fuel 1.79 remote 0.00 oversize 18.00 disc 0.00 total 34.69
+PRICE TRV TRV31325648 C-1008 standard DE-93139 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE LUM LUM17956972 C-1008 economy DE-90392 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE NVA NVA79068378 C-1008 standard DE-16079 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE IBX IBX27886334 C-1008 economy SE-984 99 z3 billable 3.000 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.00 total 15.01
+PRICE FJD FJD73318428 C-1008 economy DE-48808 z1 billable 21.000 base 14.15 fuel 1.70 remote 0.00 oversize 0.00 disc 0.00 total 15.85
+PRICE ALP ALP64180156 C-1008 express DE-92147 z1 billable 14.000 base 32.85 fuel 4.11 remote 0.00 oversize 0.00 disc 0.00 total 36.96
+PRICE CDX CDX95359020 C-1008 express DE-24687 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 0.00 total 55.83
+PRICE NVA NVA20314824 C-1008 standard DE-69762 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE TAU TAU88062304 C-1008 standard DK-1477 z2 billable 2.000 base 11.50 fuel 1.38 remote 0.00 oversize 0.00 disc 0.00 total 12.88
+PRICE BLT BLT98005520 C-1008 economy DE-25849 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE TRV TRV83303408 C-1008 standard DE-58466 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 0.00 total 35.70
+PRICE NRP NRP92920877 C-1008 economy NO-0380 z4 billable 4.000 base 20.15 fuel 2.62 remote 0.00 oversize 0.00 disc 0.00 total 22.77
+PRICE OKT OKT95752188 C-1008 economy DE-53523 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 0.00 total 31.05
+PRICE BLT BLT39223780 C-1008 express DE-69629 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 0.00 total 30.13
+PRICE SKN SKN36307461 C-1008 economy DE-40582 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.00 total 15.01
+PRICE XPD XPD63342943 C-1008 standard DE-14713 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE CDX CDX61720559 C-1008 standard DK-3700 z2 billable 19.500 base 36.00 fuel 4.32 remote 4.90 oversize 0.00 disc 0.00 total 45.22
+PRICE GRN GRN58785182 C-1008 economy DE-15237 z1 billable 11.000 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 0.00 total 10.25
+PRICE KSX KSX68604118 C-1008 standard IT-47616 z3 billable 29.000 base 66.95 fuel 9.71 remote 0.00 oversize 0.00 disc 0.00 total 76.66
+PRICE JUT JUT80448375 C-1008 economy NO-5177 z4 billable 5.000 base 22.05 fuel 2.65 remote 0.00 oversize 0.00 disc 0.00 total 24.70
+PRICE SKN SKN57850185 C-1008 standard NL-8970 z2 billable 4.000 base 14.30 fuel 1.72 remote 0.00 oversize 0.00 disc 0.00 total 16.02
+PRICE ARC ARC14405333 C-1008 express DE-35886 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE PRL PRL94036198 C-1008 express DE-31044 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE NRP NRP21137930 C-1008 standard CH-4524 z2 billable 16.000 base 31.10 fuel 4.04 remote 0.00 oversize 18.00 disc 0.00 total 53.14
+PRICE ZEN ZEN47995332 C-1008 economy DE-89191 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE FJD FJD14794719 C-1008 standard ES-34209 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 0.00 total 23.91
+PRICE WSX WSX42189062 C-1009 standard SE-946 53 z3 billable 4.000 base 19.45 fuel 2.33 remote 0.00 oversize 0.00 disc 2.72 total 19.06
+PRICE JUT JUT95384318 C-1009 express DE-44494 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 3.77 total 26.36
+PRICE QNT QNT68279932 C-1009 express DE-79850 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 1.86 total 13.04
+PRICE FJD FJD84736155 C-1009 standard SE-980 10 z3 billable 24.000 base 57.45 fuel 6.89 remote 7.40 oversize 0.00 disc 8.97 total 62.77
+PRICE IBX IBX75466509 C-1009 standard NL-7323 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 5.92 total 41.46
+PRICE PRL PRL76584623 C-1009 economy SE-165 99 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 6.67 total 46.72
+PRICE GRN GRN47327194 C-1009 economy DK-3790 z2 billable 22.000 base 28.70 fuel 3.44 remote 0.00 oversize 0.00 disc 4.02 total 28.12
+PRICE DRV DRV16681604 C-1009 economy NO-0534 z4 billable 5.000 base 22.05 fuel 2.65 remote 0.00 oversize 0.00 disc 3.09 total 21.61
+PRICE XPD XPD31239981 C-1009 standard DE-89835 z1 billable 14.500 base 14.75 fuel 1.77 remote 0.00 oversize 0.00 disc 2.07 total 14.45
+PRICE DRV DRV92366000 C-1009 express DE-56174 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.46 total 17.20
+PRICE PRL PRL45281684 C-1009 economy DE-77488 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.65 total 4.56
+PRICE IBX IBX65462389 C-1009 standard DE-36932 z1 billable 24.500 base 21.75 fuel 2.61 remote 0.00 oversize 0.00 disc 3.05 total 21.31
+PRICE JUT JUT57030697 C-1009 economy DE-87493 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE IBX IBX89291171 C-1009 economy DE-25849 z1 billable 15.500 base 11.40 fuel 1.37 remote 0.00 oversize 0.00 disc 1.60 total 11.17
+PRICE XPD XPD24724888 C-1009 standard DE-71862 z1 billable 15.500 base 15.45 fuel 1.85 remote 0.00 oversize 0.00 disc 2.16 total 15.14
+PRICE UDX UDX18404741 C-1009 standard DE-78156 z1 billable 22.000 base 20.00 fuel 2.40 remote 0.00 oversize 0.00 disc 2.80 total 19.60
+PRICE KSX KSX21934620 C-1009 economy DE-88045 z1 billable 24.000 base 15.65 fuel 2.27 remote 0.00 oversize 0.00 disc 2.24 total 15.68
+PRICE OKT OKT75855624 C-1009 economy DE-65360 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 1.88 total 13.13
+PRICE MRD MRD50270396 C-1009 freight DE-45130 z1 billable 3.000 base 51.25 fuel 4.87 remote 0.00 oversize 0.00 disc 7.02 total 49.10
+PRICE CDX CDX10639741 C-1009 economy CH-7016 z2 billable 18.000 base 24.70 fuel 2.96 remote 0.00 oversize 0.00 disc 3.46 total 24.20
+PRICE ELB ELB65552797 C-1009 economy DE-63485 z1 billable 2.500 base 4.90 fuel 0.51 remote 0.00 oversize 0.00 disc 0.68 total 4.73
+PRICE FJD FJD12105768 C-1009 standard DE-41793 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.67 total 11.71
+PRICE WSX WSX22222323 C-1009 economy DE-27248 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.83 total 5.78
+PRICE BLT BLT61868628 C-1009 standard SE-984 99 z3 billable 4.000 base 19.45 fuel 2.33 remote 0.00 oversize 0.00 disc 2.72 total 19.06
+PRICE XPD XPD15719905 C-1009 economy DE-26669 z1 billable 1.500 base 4.40 fuel 0.53 remote 0.00 oversize 0.00 disc 0.62 total 4.31
+PRICE DRV DRV31524848 C-1009 express ES-38917 z3 billable 10.500 base 59.00 fuel 7.08 remote 0.00 oversize 0.00 disc 8.26 total 57.82
+PRICE ALP ALP16712655 C-1010 economy DE-26108 z1 billable 18.500 base 12.90 fuel 1.61 remote 0.00 oversize 0.00 disc 0.73 total 13.78
+PRICE WSX WSX37775154 C-1010 standard DE-38880 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE DRV DRV20710097 C-1010 economy AT-9268 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 0.52 total 9.78
+PRICE OKT OKT78953436 C-1010 express DE-31537 z1 billable 2.000 base 12.45 fuel 1.49 remote 0.00 oversize 0.00 disc 0.70 total 13.24
+PRICE DRV DRV78600265 C-1010 economy NO-6491 z4 billable 3.000 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE JUT JUT93067495 C-1010 standard DE-13538 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE QNT QNT83698548 C-1010 economy DE-10391 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.50 total 9.47
+PRICE MRD MRD79710372 C-1010 standard IT-30264 z3 billable 4.000 base 19.45 fuel 1.85 remote 0.00 oversize 0.00 disc 1.07 total 20.23
+PRICE QNT QNT65017107 C-1010 economy SE-313 71 z3 billable 5.000 base 16.20 fuel 1.94 remote 0.00 oversize 0.00 disc 0.91 total 17.23
+PRICE ZEN ZEN89341657 C-1010 standard DE-68046 z1 billable 3.000 base 6.70 fuel 0.80 remote 0.00 oversize 0.00 disc 0.38 total 7.12
+PRICE IBX IBX71866728 C-1010 express DE-62733 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.94 total 17.76
+PRICE KRP KRP33495366 C-1010 economy DE-82594 z1 billable 4.000 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.32 total 6.01
+PRICE TAU TAU51170160 C-1010 economy DE-25980 z1 billable 2.500 base 4.90 fuel 0.59 remote 4.90 oversize 0.00 disc 0.52 total 9.87
+PRICE GRN GRN68078024 C-1010 standard IT-15467 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE ELB ELB31389970 C-1010 express DE-44180 z1 billable 16.000 base 36.25 fuel 3.81 remote 0.00 oversize 18.00 disc 2.90 total 55.16
+PRICE ZEN ZEN51017192 C-1010 express FI-99999 z3 billable 10.500 base 59.00 fuel 7.08 remote 0.00 oversize 0.00 disc 3.30 total 62.78
+PRICE WSX WSX78782775 C-1010 standard DE-26548 z1 billable 5.000 base 8.10 fuel 0.97 remote 4.90 oversize 0.00 disc 0.70 total 13.27
+PRICE HLX HLX62577756 C-1010 economy DE-63726 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.50 total 9.47
+PRICE ALP ALP11519043 C-1010 economy PL-85-572 z2 billable 4.500 base 11.20 fuel 1.40 remote 0.00 oversize 0.00 disc 0.63 total 11.97
+PRICE OKT OKT56328658 C-1010 economy CH-4380 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.66 total 12.44
+PRICE KSX KSX72472711 C-1010 express DE-42800 z1 billable 16.000 base 36.25 fuel 5.26 remote 0.00 oversize 22.00 disc 3.18 total 60.33
+PRICE PRL PRL84081771 C-1010 standard DK-1642 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 0.68 total 12.98
+PRICE ELB ELB86694671 C-1010 standard DE-46365 z1 billable 23.500 base 21.05 fuel 2.21 remote 0.00 oversize 0.00 disc 1.16 total 22.10
+PRICE OKT OKT68653506 C-1010 economy ES-43963 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 2.40 total 45.54
+PRICE PRL PRL74630317 C-1010 express ES-38917 z3 billable 4.000 base 34.30 fuel 4.12 remote 0.00 oversize 0.00 disc 1.92 total 36.50
+PRICE HLX HLX54092570 C-1010 standard DE-50684 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.41 total 7.88
+PRICE JUT JUT50081594 C-1010 express DE-60601 z1 billable 8.000 base 22.65 fuel 2.72 remote 0.00 oversize 0.00 disc 1.27 total 24.10
+PRICE RHN RHN74717846 C-1010 standard DE-80690 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.71
+PRICE IBX IBX24303123 C-1010 economy SE-489 43 z3 billable 10.500 base 23.90 fuel 2.87 remote 0.00 oversize 0.00 disc 1.34 total 25.43
+PRICE OKT OKT52295033 C-1010 standard DK-7557 z2 billable 4.000 base 14.30 fuel 1.72 remote 0.00 oversize 0.00 disc 0.80 total 15.22
+PRICE CDX CDX45141210 C-1010 standard DE-18439 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.36 total 6.75
+PRICE YRD YRD66301966 C-1010 express AT-2718 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 3.90 total 74.16
+PRICE SKN SKN27453961 C-1010 economy NL-1492 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 1.47 total 27.87
+PRICE YRD YRD42369161 C-1010 economy DE-57724 z1 billable 16.500 base 11.90 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.66
+PRICE RHN RHN85400779 C-1011 standard DE-71718 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.60 total 20.37
+PRICE XPD XPD18539792 C-1011 economy DE-67053 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE JUT JUT39097012 C-1011 standard CH-4406 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 2.05 total 11.61
+PRICE LUM LUM97653720 C-1011 express DE-27498 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.95 total 16.71
+PRICE HLX HLX92727482 C-1011 economy NL-6019 z2 billable 4.000 base 10.70 fuel 1.28 remote 0.00 oversize 0.00 disc 1.80 total 10.18
+PRICE XPD XPD51314042 C-1011 economy DE-24074 z1 billable 13.500 base 10.40 fuel 1.25 remote 0.00 oversize 0.00 disc 1.75 total 9.90
+PRICE NVA NVA99923537 C-1011 economy DE-88249 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 1.50 total 8.47
+PRICE XPD XPD66208832 C-1011 standard DE-75945 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 5.36 total 30.34
+PRICE RHN RHN16037494 C-1011 express AT-2913 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 12.76 total 72.33
+PRICE WSX WSX83599413 C-1011 express IT-88124 z3 billable 19.500 base 93.20 fuel 11.18 remote 0.00 oversize 0.00 disc 15.66 total 88.72
+PRICE ZEN ZEN75920203 C-1011 economy DE-25980 z1 billable 19.500 base 13.40 fuel 1.61 remote 4.90 oversize 0.00 disc 2.99 total 16.92
+PRICE YRD YRD24234185 C-1011 standard NO-9000 z4 billable 9.500 base 39.40 fuel 4.73 remote 4.90 oversize 0.00 disc 7.35 total 41.68
+PRICE VLT VLT60215312 C-1011 standard DE-84438 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 3.07 total 17.37
+PRICE KRP KRP29873886 C-1011 economy FR-64686 z2 billable 2.000 base 8.70 fuel 1.04 remote 0.00 oversize 0.00 disc 1.46 total 8.28
+PRICE DRV DRV95404006 C-1011 standard DE-95700 z1 billable 28.500 base 24.55 fuel 2.95 remote 0.00 oversize 18.00 disc 6.83 total 38.67
+PRICE FJD FJD71328913 C-1011 standard ES-28894 z3 billable 3.500 base 18.50 fuel 2.22 remote 0.00 oversize 0.00 disc 3.11 total 17.61
+PRICE ALP ALP61908525 C-1011 standard DE-81436 z1 billable 5.000 base 8.10 fuel 1.01 remote 0.00 oversize 0.00 disc 1.37 total 7.74
+PRICE KRP KRP52396507 C-1011 standard DE-70547 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 2.07 total 11.71
+PRICE ELB ELB51276159 C-1011 standard NO-9000 z4 billable 20.000 base 65.65 fuel 6.89 remote 4.90 oversize 0.00 disc 11.62 total 65.82
+PRICE VLT VLT79211715 C-1011 standard AT-2935 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 2.05 total 11.61
+PRICE NRP NRP65130664 C-1011 economy NL-6914 z2 billable 5.000 base 11.70 fuel 1.52 remote 0.00 oversize 0.00 disc 1.98 total 11.24
+PRICE ELB ELB69254935 C-1011 economy NO-3404 z4 billable 19.500 base 49.60 fuel 5.21 remote 0.00 oversize 0.00 disc 8.22 total 46.59
+PRICE HLX HLX48247424 C-1011 express DE-37127 z1 billable 2.000 base 12.45 fuel 1.49 remote 0.00 oversize 0.00 disc 2.09 total 11.85
+PRICE OKT OKT14947768 C-1011 express DE-67173 z1 billable 20.000 base 43.05 fuel 5.17 remote 0.00 oversize 0.00 disc 7.23 total 40.99
+PRICE BLT BLT38322612 C-1011 economy NL-6804 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 1.97 total 11.13
+PRICE SKN SKN71865520 C-1011 express AT-4717 z2 billable 3.000 base 23.50 fuel 2.82 remote 0.00 oversize 0.00 disc 3.95 total 22.37
+PRICE DRV DRV94692806 C-1011 economy FI-33855 z3 billable 5.000 base 16.20 fuel 1.94 remote 0.00 oversize 0.00 disc 2.72 total 15.42
+PRICE PRL PRL94046949 C-1011 economy IT-59630 z3 billable 20.000 base 37.20 fuel 4.46 remote 0.00 oversize 0.00 disc 6.25 total 35.41
+PRICE VLT VLT82237915 C-1011 economy DE-27498 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.82 total 4.67
+PRICE TAU TAU81285440 C-1011 express DK-5541 z2 billable 23.000 base 79.50 fuel 9.54 remote 0.00 oversize 0.00 disc 13.36 total 75.68
+PRICE CDX CDX78587776 C-1011 economy DE-65469 z1 billable 27.500 base 17.40 fuel 2.09 remote 0.00 oversize 0.00 disc 2.92 total 16.57
+PRICE JUT JUT65558989 C-1011 economy CH-2033 z2 billable 21.500 base 28.20 fuel 3.38 remote 0.00 oversize 0.00 disc 4.74 total 26.84
+PRICE TAU TAU19236393 C-1011 standard DE-99101 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.60 total 20.37
+PRICE NRP NRP96888466 C-1011 standard DE-42070 z1 billable 2.500 base 6.35 fuel 0.83 remote 0.00 oversize 0.00 disc 1.08 total 6.10
+PRICE SKN SKN10050485 C-1011 standard DE-23379 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 1.30 total 7.38
+PRICE NRP NRP60295493 C-1011 express DE-63325 z1 billable 23.500 base 49.00 fuel 6.37 remote 0.00 oversize 0.00 disc 8.31 total 47.06
+PRICE RHN RHN80620124 C-1011 express AT-6559 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 12.76 total 72.33
+PRICE WSX WSX44170569 C-1012 economy DE-22039 z1 billable 22.500 base 14.90 fuel 1.79 remote 0.00 oversize 0.00 disc 2.50 total 14.19
+PRICE ELB ELB11594536 C-1012 express DE-89942 z1 billable 10.500 base 26.90 fuel 2.82 remote 0.00 oversize 0.00 disc 4.46 total 25.26
+PRICE YRD YRD10302793 C-1012 economy FR-53184 z2 billable 29.000 base 35.70 fuel 4.28 remote 0.00 oversize 0.00 disc 6.00 total 33.98
+PRICE FJD FJD50893428 C-1012 express PL-26-609 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 13.83 total 78.35
+PRICE SKN SKN76219808 C-1012 economy DE-84579 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE BLT BLT38123431 C-1012 express DE-62752 z1 billable 4.000 base 15.85 fuel 1.90 remote 0.00 oversize 0.00 disc 2.66 total 15.09
+PRICE TAU TAU74973381 C-1012 standard DE-39832 z1 billable 14.000 base 14.40 fuel 1.73 remote 0.00 oversize 0.00 disc 2.42 total 13.71
+PRICE ELB ELB34322711 C-1012 standard DE-96753 z1 billable 24.000 base 21.40 fuel 2.25 remote 0.00 oversize 0.00 disc 3.55 total 20.10
+PRICE PRL PRL62744024 C-1012 economy DE-75614 z1 billable 20.500 base 13.90 fuel 1.67 remote 0.00 oversize 0.00 disc 2.34 total 13.23
+PRICE SKN SKN30653853 C-1012 economy ES-50919 z3 billable 19.500 base 36.50 fuel 4.38 remote 0.00 oversize 0.00 disc 6.13 total 34.75
+PRICE KRP KRP28620302 C-1012 express DE-39266 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 7.09 total 40.17
+PRICE XPD XPD71941805 C-1012 express NL-7638 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 13.83 total 78.35
+PRICE SKN SKN80594840 C-1012 economy DE-11445 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE GRN GRN85327339 C-1012 express DE-57063 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.95 total 16.71
+PRICE ALP ALP74705935 C-1012 standard SE-401 16 z3 billable 24.000 base 57.45 fuel 7.18 remote 0.00 oversize 0.00 disc 9.69 total 54.94
+PRICE IBX IBX86435727 C-1012 economy AT-3902 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 2.89 total 16.37
+PRICE GRN GRN86945025 C-1012 standard DE-17179 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 2.07 total 11.71
+PRICE YRD YRD36915540 C-1012 economy NL-5319 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 5.16 total 29.22
+PRICE KRP KRP34649065 C-1012 economy DE-73736 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.91 total 5.14
+PRICE KRP KRP28826200 C-1012 economy DE-68255 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.91 total 5.14
+PRICE NRP NRP45139778 C-1012 standard DE-68427 z1 billable 24.000 base 21.40 fuel 2.78 remote 0.00 oversize 0.00 disc 3.63 total 20.55
+PRICE ZEN ZEN30430973 C-1012 economy FI-99999 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 7.19 total 40.75
+PRICE KRP KRP54289751 C-1012 standard IT-61732 z3 billable 19.500 base 48.90 fuel 5.87 remote 0.00 oversize 0.00 disc 8.22 total 46.55
+PRICE HLX HLX47934252 C-1012 standard FR-53317 z2 billable 2.000 base 11.50 fuel 1.38 remote 0.00 oversize 0.00 disc 1.93 total 10.95
+PRICE ELB ELB10762946 C-1012 standard NO-9408 z4 billable 5.000 base 28.15 fuel 2.96 remote 4.90 oversize 0.00 disc 5.40 total 30.61
+PRICE OKT OKT95806469 C-1013 standard DE-33959 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.68 total 8.39
+PRICE SKN SKN15226705 C-1013 express IT-56427 z3 billable 10.500 base 59.00 fuel 7.08 remote 0.00 oversize 0.00 disc 4.96 total 61.12
+PRICE KRP KRP64246769 C-1013 economy DE-39008 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 1.13 total 13.88
+PRICE MRD MRD93303069 C-1013 express NO-9408 z4 billable 15.000 base 97.10 fuel 9.22 remote 4.90 oversize 0.00 disc 8.34 total 102.88
+PRICE KSX KSX77357275 C-1013 economy DE-59027 z1 billable 24.000 base 15.65 fuel 2.27 remote 0.00 oversize 0.00 disc 1.34 total 16.58
+PRICE OKT OKT62634468 C-1013 economy DE-99668 z1 billable 1.000 base 4.15 fuel 0.50 remote 0.00 oversize 0.00 disc 0.35 total 4.30
+PRICE CDX CDX81841224 C-1013 standard DE-98208 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE WSX WSX50662140 C-1013 express DE-96579 z1 billable 2.000 base 12.45 fuel 1.49 remote 0.00 oversize 0.00 disc 1.05 total 12.89
+PRICE SKN SKN22088819 C-1013 express DE-82878 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 4.19 total 51.64
+PRICE HLX HLX42468176 C-1013 standard SE-984 99 z3 billable 11.000 base 32.75 fuel 3.93 remote 0.00 oversize 0.00 disc 2.75 total 33.93
+PRICE DRV DRV41932176 C-1013 standard NO-2921 z4 billable 17.000 base 58.15 fuel 6.98 remote 0.00 oversize 0.00 disc 4.88 total 60.25
+PRICE JUT JUT39723572 C-1013 standard DE-12876 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE VLT VLT84523124 C-1013 standard NL-7197 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 3.96 total 48.87
+PRICE ARC ARC76929495 C-1013 standard DE-36843 z1 billable 25.500 base 22.45 fuel 2.69 remote 0.00 oversize 0.00 disc 1.89 total 23.25
+PRICE ARC ARC11213766 C-1013 express DE-77997 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 2.26 total 27.87
+PRICE VLT VLT33511789 C-1013 economy ES-44331 z3 billable 5.000 base 16.20 fuel 1.94 remote 0.00 oversize 0.00 disc 1.36 total 16.78
+PRICE QNT QNT40224970 C-1013 standard ES-43563 z3 billable 10.500 base 31.80 fuel 3.82 remote 0.00 oversize 0.00 disc 2.67 total 32.95
+PRICE MRD MRD44699499 C-1013 standard DE-70074 z1 billable 10.500 base 11.95 fuel 1.14 remote 0.00 oversize 0.00 disc 0.98 total 12.11
+PRICE ELB ELB67902012 C-1013 economy IT-61004 z3 billable 4.500 base 15.50 fuel 1.63 remote 0.00 oversize 0.00 disc 1.28 total 15.85
+PRICE LUM LUM58874538 C-1013 economy NO-1998 z4 billable 24.000 base 58.15 fuel 6.98 remote 0.00 oversize 0.00 disc 4.88 total 60.25
+PRICE TRV TRV30479879 C-1013 standard DE-77662 z1 billable 6.500 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 0.77 total 9.48
+PRICE KRP KRP70462768 C-1013 standard CH-2410 z2 billable 22.000 base 39.50 fuel 4.74 remote 0.00 oversize 0.00 disc 3.32 total 40.92
+PRICE ARC ARC51685129 C-1014 standard IT-30522 z3 billable 18.500 base 47.00 fuel 5.64 remote 0.00 oversize 0.00 disc 7.90 total 44.74
+PRICE ARC ARC42917234 C-1014 standard DK-3460 z2 billable 6.000 base 17.10 fuel 2.05 remote 0.00 oversize 0.00 disc 2.87 total 16.28
+PRICE MRD MRD20678745 C-1014 freight DE-16388 z1 billable 16.000 base 62.95 fuel 5.98 remote 0.00 oversize 0.00 disc 10.34 total 58.59
+PRICE MRD MRD16593449 C-1014 freight DE-55976 z1 billable 352.000 base 365.35 fuel 34.71 remote 0.00 oversize 0.00 disc 60.01 total 340.05
+PRICE NVA NVA77780668 C-1014 standard FR-47562 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 7.11 total 40.27
+PRICE MRD MRD97945695 C-1014 freight AT-2964 z2 billable 311.500 base 586.60 fuel 55.73 remote 0.00 oversize 0.00 disc 96.35 total 545.98
+PRICE YRD YRD85829533 C-1014 economy PL-45-779 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 5.16 total 29.22
+PRICE ELB ELB82696197 C-1014 express CH-3537 z2 billable 24.000 base 82.30 fuel 8.64 remote 0.00 oversize 0.00 disc 13.64 total 77.30
+PRICE TAU TAU87518812 C-1014 standard DE-20450 z1 billable 25.000 base 22.10 fuel 2.65 remote 0.00 oversize 0.00 disc 3.71 total 21.04
+PRICE IBX IBX28838575 C-1014 standard DE-25980 z1 billable 15.500 base 15.45 fuel 1.85 remote 4.90 oversize 0.00 disc 3.33 total 18.87
+PRICE ELB ELB97087948 C-1014 standard DE-30466 z1 billable 3.500 base 7.05 fuel 0.74 remote 0.00 oversize 0.00 disc 1.17 total 6.62
+PRICE SKN SKN47875363 C-1014 standard AT-1605 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 6.05 total 34.27
+PRICE WSX WSX16386377 C-1014 economy DE-46700 z1 billable 19.000 base 13.15 fuel 1.58 remote 0.00 oversize 0.00 disc 2.21 total 12.52
+PRICE SKN SKN81860168 C-1014 economy NO-5670 z4 billable 16.000 base 42.95 fuel 5.15 remote 0.00 oversize 0.00 disc 7.22 total 40.88
+PRICE QNT QNT17392723 C-1014 standard DE-41560 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 1.24 total 7.05
+PRICE CDX CDX44501511 C-1014 standard NO-0169 z4 billable 14.000 base 50.65 fuel 6.08 remote 0.00 oversize 0.00 disc 8.51 total 48.22
+PRICE GRN GRN93709385 C-1014 standard DE-37044 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 5.36 total 30.34
+PRICE HLX HLX69102125 C-1014 economy DE-11376 z1 billable 10.000 base 8.65 fuel 1.04 remote 0.00 oversize 0.00 disc 1.45 total 8.24
+PRICE HLX HLX50531172 C-1014 express DE-31238 z1 billable 21.500 base 45.60 fuel 5.47 remote 0.00 oversize 0.00 disc 7.66 total 43.41
+PRICE JUT JUT77326821 C-1014 express DE-99010 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 7.09 total 40.17
+PRICE IBX IBX72957442 C-1014 standard DE-90906 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 3.07 total 17.37
+PRICE UDX UDX21994559 C-1014 standard DE-25744 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 2.01 total 11.37
+PRICE ALP ALP98347251 C-1014 express FR-83137 z2 billable 10.500 base 44.50 fuel 5.56 remote 0.00 oversize 0.00 disc 7.51 total 42.55
+PRICE ELB ELB66427167 C-1014 express DE-18565 z1 billable 19.500 base 42.20 fuel 4.43 remote 0.00 oversize 0.00 disc 6.99 total 39.64
+PRICE ARC ARC70102685 C-1014 freight DE-41929 z1 billable 1.000 base 49.45 fuel 5.93 remote 0.00 oversize 0.00 disc 8.31 total 47.07
+PRICE QNT QNT44404993 C-1014 standard FI-99100 z3 billable 20.500 base 50.80 fuel 6.10 remote 4.90 oversize 0.00 disc 9.27 total 52.53
+PRICE LUM LUM57716356 C-1014 economy DE-78465 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.78 total 4.43
+PRICE QNT QNT34171371 C-1014 standard DE-43191 z1 billable 9.500 base 11.25 fuel 1.35 remote 0.00 oversize 0.00 disc 1.89 total 10.71
+PRICE FJD FJD91312819 C-1014 standard DE-76651 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 1.07 total 6.04
+PRICE NVA NVA89457534 C-1014 standard ES-32089 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 3.59 total 20.32
+PRICE ARC ARC35266511 C-1014 freight PL-66-170 z2 billable 279.500 base 535.40 fuel 64.25 remote 0.00 oversize 0.00 disc 89.95 total 509.70
+PRICE VLT VLT53915517 C-1014 express US-14724 z5 billable 19.500 base 183.40 fuel 22.01 remote 0.00 oversize 0.00 disc 30.81 total 174.60
+PRICE ARC ARC28967466 C-1014 freight NO-9000 z4 billable 1.500 base 151.60 fuel 18.19 remote 4.90 oversize 0.00 disc 26.20 total 148.49
+PRICE OKT OKT26843059 C-1014 economy DE-25780 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE KSX KSX89401978 C-1014 standard FI-83692 z3 billable 4.500 base 20.40 fuel 2.96 remote 0.00 oversize 0.00 disc 3.50 total 19.86
+PRICE SKN SKN48762700 C-1014 express DE-81779 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 8.37 total 47.46
+PRICE MRD MRD89587983 C-1014 standard CH-4868 z2 billable 10.500 base 23.40 fuel 2.22 remote 0.00 oversize 0.00 disc 3.84 total 21.78
+PRICE CDX CDX59441231 C-1014 standard DE-88699 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE SKN SKN29579532 C-1014 express DE-83808 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.95 total 16.71
+PRICE ARC ARC72078942 C-1014 standard DE-43145 z1 billable 28.500 base 24.55 fuel 2.95 remote 0.00 oversize 0.00 disc 4.13 total 23.37
+PRICE KRP KRP73662293 C-1014 express DE-80296 z1 billable 3.000 base 14.15 fuel 1.70 remote 0.00 oversize 0.00 disc 2.38 total 13.47
+PRICE ALP ALP46162924 C-1015 express PL-72-642 z2 billable 10.500 base 44.50 fuel 5.56 remote 0.00 oversize 0.00 disc 3.75 total 46.31
+PRICE NVA NVA48929708 C-1015 economy DE-69672 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.75 total 9.22
+PRICE FJD FJD19219607 C-1015 standard FR-52685 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 3.02 total 37.30
+PRICE NVA NVA76617349 C-1015 standard IT-72809 z3 billable 3.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 1.47 total 18.19
+PRICE FJD FJD52396860 C-1015 standard DE-80805 z1 billable 1.000 base 5.30 fuel 0.64 remote 0.00 oversize 0.00 disc 0.45 total 5.49
+PRICE FJD FJD61299046 C-1015 economy DK-3790 z2 billable 6.000 base 12.70 fuel 1.52 remote 0.00 oversize 0.00 disc 1.07 total 13.15
+PRICE TRV TRV64830768 C-1015 standard DE-14452 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE NRP NRP47398046 C-1015 standard DE-85072 z1 billable 19.500 base 18.25 fuel 2.37 remote 0.00 oversize 0.00 disc 1.55 total 19.07
+PRICE DRV DRV54224373 C-1015 standard DE-67039 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.50 total 6.22
+PRICE GRN GRN63233271 C-1015 express DE-91567 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 3.54 total 43.72
+PRICE FJD FJD65777433 C-1015 standard DE-39026 z1 billable 3.000 base 6.70 fuel 0.80 remote 0.00 oversize 0.00 disc 0.56 total 6.94
+PRICE DRV DRV54918597 C-1015 standard DE-97414 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE YRD YRD83083263 C-1015 standard DE-85601 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE ELB ELB36662612 C-1015 standard DE-39735 z1 billable 27.000 base 23.50 fuel 2.47 remote 0.00 oversize 0.00 disc 1.95 total 24.02
+PRICE TRV TRV68655745 C-1015 standard DE-97701 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE NRP NRP26187673 C-1015 standard SE-302 79 z3 billable 4.500 base 20.40 fuel 2.65 remote 0.00 oversize 0.00 disc 1.73 total 21.32
+PRICE RHN RHN23358950 C-1015 standard SE-984 99 z3 billable 28.500 base 66.00 fuel 7.92 remote 0.00 oversize 0.00 disc 5.54 total 68.38
+PRICE ZEN ZEN31235646 C-1015 standard FI-99100 z3 billable 5.000 base 21.35 fuel 2.56 remote 4.90 oversize 0.00 disc 2.16 total 26.65
+PRICE HLX HLX38071431 C-1015 standard FR-29989 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 0.85 total 10.46
+PRICE HLX HLX54220984 C-1015 economy AT-9626 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.98 total 12.12
+PRICE TRV TRV39558932 C-1015 standard FR-19013 z2 billable 11.000 base 24.10 fuel 2.89 remote 0.00 oversize 0.00 disc 2.02 total 24.97
+PRICE RHN RHN98181188 C-1015 economy DE-53770 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.75 total 9.22
+PRICE GRN GRN50702314 C-1015 standard NL-6088 z2 billable 8.500 base 20.60 fuel 2.47 remote 0.00 oversize 0.00 disc 1.73 total 21.34
+PRICE WSX WSX23422584 C-1015 standard DE-75278 z1 billable 21.500 base 19.65 fuel 2.36 remote 0.00 oversize 0.00 disc 1.65 total 20.36
+PRICE YRD YRD80038106 C-1015 economy DE-42461 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 1.13 total 13.88
+PRICE NRP NRP64544162 C-1016 standard DE-80331 z1 billable 3.000 base 6.70 fuel 0.87 remote 0.00 oversize 0.00 disc 0.00 total 7.57
+PRICE PRL PRL58616096 C-1016 economy DE-25304 z1 billable 27.500 base 17.40 fuel 2.09 remote 0.00 oversize 0.00 disc 0.00 total 19.49
+PRICE ARC ARC55116408 C-1016 express FR-61326 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 0.00 total 78.06
+PRICE HLX HLX14565427 C-1016 standard DE-27498 z1 billable 21.500 base 19.65 fuel 2.36 remote 0.00 oversize 18.00 disc 0.00 total 40.01
+PRICE YRD YRD26378022 C-1016 economy DE-20703 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE DRV DRV57280970 C-1016 standard DK-3785 z2 billable 19.500 base 36.00 fuel 4.32 remote 4.90 oversize 0.00 disc 0.00 total 45.22
+PRICE ZEN ZEN99806164 C-1016 economy NL-1601 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 0.00 total 43.42
+PRICE SKN SKN61448514 C-1016 standard DE-13880 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE NVA NVA16511979 C-1016 standard DK-4339 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 0.00 total 26.21
+PRICE ZEN ZEN23030247 C-1016 standard DE-71155 z1 billable 1.500 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.00 total 6.33
+PRICE ELB ELB75419555 C-1016 economy ES-31033 z3 billable 5.000 base 16.20 fuel 1.70 remote 0.00 oversize 0.00 disc 0.00 total 17.90
+PRICE RHN RHN46042244 C-1016 express DK-7312 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 0.00 total 49.84
+PRICE ALP ALP38593548 C-1016 express DK-3162 z2 billable 24.000 base 82.30 fuel 10.29 remote 0.00 oversize 0.00 disc 0.00 total 92.59
+PRICE HLX HLX45592641 C-1016 economy DE-26548 z1 billable 16.000 base 11.65 fuel 1.40 remote 4.90 oversize 18.00 disc 0.00 total 35.95
+PRICE LUM LUM64255777 C-1016 standard DE-51851 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE BLT BLT65744291 C-1016 standard DE-87118 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE TAU TAU90899166 C-1016 express DE-25849 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 0.00 total 30.13
+PRICE IBX IBX45183112 C-1016 standard DE-30454 z1 billable 18.500 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE FJD FJD96976324 C-1016 standard CH-5990 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 0.00 total 13.66
+PRICE NVA NVA76941917 C-1016 express DE-57488 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE FJD FJD85536416 C-1016 economy AT-8781 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 0.00 total 34.38
+PRICE QNT QNT25047269 C-1016 express NL-2037 z2 billable 4.000 base 26.30 fuel 3.16 remote 0.00 oversize 0.00 disc 0.00 total 29.46
+PRICE UDX UDX92027128 C-1016 standard DE-69931 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE ARC ARC80179233 C-1016 express DE-64994 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE XPD XPD72249702 C-1017 standard DE-43486 z1 billable 6.000 base 8.80 fuel 1.06 remote 0.00 oversize 0.00 disc 0.49 total 9.37
+PRICE IBX IBX29529480 C-1017 economy DE-49102 z1 billable 17.500 base 12.40 fuel 1.49 remote 0.00 oversize 0.00 disc 0.69 total 13.20
+PRICE NRP NRP88884740 C-1017 economy DE-10954 z1 billable 10.500 base 8.90 fuel 1.16 remote 0.00 oversize 0.00 disc 0.50 total 9.56
+PRICE XPD XPD26250190 C-1017 economy DE-52546 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.27 total 5.22
+PRICE NVA NVA69324413 C-1017 standard SE-325 86 z3 billable 20.000 base 49.85 fuel 5.98 remote 0.00 oversize 18.00 disc 3.69 total 70.14
+PRICE TRV TRV95307363 C-1017 economy FR-64538 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.66 total 12.44
+PRICE SKN SKN51458597 C-1017 economy DE-49887 z1 billable 1.000 base 4.15 fuel 0.50 remote 0.00 oversize 0.00 disc 0.23 total 4.42
+PRICE WSX WSX70250787 C-1017 standard DE-37873 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE JUT JUT11474671 C-1017 economy FR-56743 z2 billable 20.500 base 27.20 fuel 3.26 remote 0.00 oversize 0.00 disc 1.52 total 28.94
+PRICE XPD XPD44830567 C-1017 economy DE-14676 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.33 total 6.28
+PRICE TAU TAU29717757 C-1017 express SE-980 10 z3 billable 24.000 base 110.30 fuel 13.24 remote 4.90 oversize 0.00 disc 6.42 total 122.02
+PRICE NVA NVA72342286 C-1017 standard DE-45581 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.71
+PRICE CDX CDX50140868 C-1017 express DE-78727 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 1.51 total 28.62
+PRICE XPD XPD89800631 C-1017 standard DE-99332 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE NVA NVA70065704 C-1017 standard DE-51716 z1 billable 1.500 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.32 total 6.01
+PRICE CDX CDX41829259 C-1017 economy DK-2207 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 1.72 total 32.66
+PRICE KRP KRP35767431 C-1017 express AT-2856 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 2.49 total 47.35
+PRICE OKT OKT60006629 C-1017 standard DE-18400 z1 billable 28.500 base 24.55 fuel 2.95 remote 0.00 oversize 0.00 disc 1.38 total 26.12
+PRICE TAU TAU41630288 C-1017 economy DE-74068 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE OKT OKT55013965 C-1017 standard US-94186 z5 billable 2.500 base 32.90 fuel 3.95 remote 0.00 oversize 0.00 disc 1.84 total 35.01
+PRICE JUT JUT29182230 C-1017 economy CH-2360 z2 billable 1.000 base 7.70 fuel 0.92 remote 0.00 oversize 0.00 disc 0.43 total 8.19
+PRICE NRP NRP44358435 C-1017 standard DE-59469 z1 billable 4.500 base 7.75 fuel 1.01 remote 0.00 oversize 0.00 disc 0.44 total 8.32
+PRICE HLX HLX73357097 C-1017 economy NL-1618 z2 billable 1.500 base 8.20 fuel 0.98 remote 0.00 oversize 0.00 disc 0.46 total 8.72
+PRICE YRD YRD63412066 C-1017 economy DE-50844 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE RHN RHN66720030 C-1017 economy SE-520 91 z3 billable 2.500 base 12.70 fuel 1.52 remote 0.00 oversize 0.00 disc 0.71 total 13.51
+PRICE CDX CDX76164953 C-1017 standard FR-60962 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 2.37 total 45.01
+PRICE HLX HLX32949287 C-1017 standard DE-36018 z1 billable 9.000 base 10.90 fuel 1.31 remote 0.00 oversize 0.00 disc 0.61 total 11.60
+PRICE GRN GRN13307814 C-1017 standard DE-27498 z1 billable 6.000 base 8.80 fuel 1.06 remote 0.00 oversize 0.00 disc 0.49 total 9.37
+PRICE PRL PRL83652696 C-1017 standard FI-06269 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE TAU TAU96575451 C-1017 standard ES-38108 z3 billable 10.500 base 31.80 fuel 3.82 remote 4.90 oversize 0.00 disc 2.03 total 38.49
+PRICE RHN RHN18822839 C-1017 economy DE-67451 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE UDX UDX54324625 C-1017 standard DE-42069 z1 billable 28.000 base 24.20 fuel 2.90 remote 0.00 oversize 0.00 disc 1.36 total 25.74
+PRICE OKT OKT70928488 C-1017 economy CH-7614 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 1.72 total 32.66
+PRICE WSX WSX33855296 C-1018 standard DE-43328 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE FJD FJD81797268 C-1018 standard DE-42388 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE OKT OKT48009281 C-1018 economy PL-78-847 z2 billable 29.000 base 35.70 fuel 4.28 remote 0.00 oversize 0.00 disc 0.00 total 39.98
+PRICE VLT VLT24434979 C-1018 standard CH-9472 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 0.00 total 40.32
+PRICE TAU TAU30143933 C-1018 express DE-16747 z1 billable 18.500 base 40.50 fuel 4.86 remote 0.00 oversize 0.00 disc 0.00 total 45.36
+PRICE XPD XPD44100575 C-1018 standard PL-32-280 z2 billable 4.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 0.00 total 16.80
+PRICE GRN GRN56568729 C-1018 express AT-3459 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 0.00 total 85.09
+PRICE WSX WSX57519428 C-1018 economy DK-3790 z2 billable 1.000 base 7.70 fuel 0.92 remote 0.00 oversize 0.00 disc 0.00 total 8.62
+PRICE KSX KSX35662357 C-1018 economy DE-42961 z1 billable 4.000 base 5.65 fuel 0.82 remote 0.00 oversize 0.00 disc 0.00 total 6.47
+PRICE ELB ELB65465936 C-1018 express DE-40135 z1 billable 3.000 base 14.15 fuel 1.49 remote 0.00 oversize 0.00 disc 0.00 total 15.64
+PRICE YRD YRD52883041 C-1018 economy FI-65655 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 0.00 total 53.39
+PRICE LUM LUM63487598 C-1018 economy ES-29593 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 0.00 total 47.94
+PRICE QNT QNT30561969 C-1018 economy DE-99608 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE BLT BLT94207057 C-1018 economy DE-38227 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE TAU TAU47697077 C-1018 express DE-18650 z1 billable 4.500 base 16.70 fuel 2.00 remote 0.00 oversize 0.00 disc 0.00 total 18.70
+PRICE DRV DRV33877715 C-1018 economy NL-4440 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.00 total 13.10
+PRICE ALP ALP56518156 C-1018 economy DE-30949 z1 billable 16.000 base 11.65 fuel 1.46 remote 0.00 oversize 18.00 disc 0.00 total 31.11
+PRICE NVA NVA87732654 C-1018 economy SE-984 99 z3 billable 3.000 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.00 total 15.01
+PRICE NRP NRP27427659 C-1018 standard DE-52946 z1 billable 5.000 base 8.10 fuel 1.05 remote 0.00 oversize 0.00 disc 0.00 total 9.15
+PRICE XPD XPD70946009 C-1018 express DE-77190 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 0.00 total 55.83
+PRICE RHN RHN60781536 C-1018 standard SE-528 63 z3 billable 21.000 base 51.75 fuel 6.21 remote 0.00 oversize 0.00 disc 0.00 total 57.96
+PRICE YRD YRD70133731 C-1018 standard DE-92068 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE TAU TAU56778689 C-1018 economy ES-44374 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 0.00 total 47.94
+PRICE NRP NRP53026847 C-1018 express FR-57064 z2 billable 1.500 base 19.30 fuel 2.51 remote 0.00 oversize 0.00 disc 0.00 total 21.81
+PRICE TAU TAU18107709 C-1018 standard DE-27498 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.00 total 8.68
+PRICE OKT OKT62340014 C-1018 standard AT-2150 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE UDX UDX68759080 C-1018 standard DE-32865 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE MRD MRD95368720 C-1018 freight DE-26465 z1 billable 5.000 base 53.05 fuel 5.04 remote 4.90 oversize 0.00 disc 0.00 total 62.99
+PRICE DRV DRV92621462 C-1018 standard DE-95980 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.00 total 8.29
+PRICE ZEN ZEN96798884 C-1018 standard ES-38321 z3 billable 15.500 base 41.30 fuel 4.96 remote 4.90 oversize 0.00 disc 0.00 total 51.16
+PRICE ZEN ZEN12125059 C-1018 economy DE-94616 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE VLT VLT97869791 C-1018 economy DE-26337 z1 billable 25.000 base 16.15 fuel 1.94 remote 0.00 oversize 0.00 disc 0.00 total 18.09
+PRICE NRP NRP63404628 C-1018 standard DE-29739 z1 billable 19.000 base 17.90 fuel 2.33 remote 0.00 oversize 0.00 disc 0.00 total 20.23
+PRICE ZEN ZEN82927899 C-1018 economy DE-10913 z1 billable 23.000 base 15.15 fuel 1.82 remote 0.00 oversize 0.00 disc 0.00 total 16.97
+PRICE HLX HLX91170469 C-1018 standard DE-96195 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE GRN GRN26150969 C-1018 standard DE-30653 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE ARC ARC69735478 C-1018 freight NO-9408 z4 billable 16.000 base 189.30 fuel 22.72 remote 4.90 oversize 18.00 disc 0.00 total 234.92
+PRICE PRL PRL93529209 C-1018 standard SE-250 11 z3 billable 16.000 base 42.25 fuel 5.07 remote 0.00 oversize 18.00 disc 0.00 total 65.32
+PRICE ZEN ZEN74760426 C-1018 economy DE-34428 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE RHN RHN60163168 C-1019 economy SE-952 89 z3 billable 22.500 base 40.70 fuel 4.88 remote 0.00 oversize 0.00 disc 2.28 total 43.30
+PRICE RHN RHN79159137 C-1019 express DE-49422 z1 billable 2.000 base 12.45 fuel 1.49 remote 0.00 oversize 0.00 disc 0.70 total 13.24
+PRICE DRV DRV81186725 C-1019 standard PL-22-532 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 0.57 total 10.74
+PRICE KSX KSX45320893 C-1019 standard DE-25771 z1 billable 1.000 base 5.30 fuel 0.77 remote 0.00 oversize 0.00 disc 0.30 total 5.77
+PRICE LUM LUM53749720 C-1019 economy DE-70828 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE RHN RHN43076794 C-1019 economy DE-19526 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE UDX UDX81418069 C-1019 standard DE-82193 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.71
+PRICE KSX KSX91780740 C-1019 standard SE-418 71 z3 billable 10.000 base 30.85 fuel 4.47 remote 0.00 oversize 0.00 disc 1.77 total 33.55
+PRICE TRV TRV76246194 C-1019 economy DE-26486 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE KSX KSX46295381 C-1019 economy DE-13096 z1 billable 10.500 base 8.90 fuel 1.29 remote 0.00 oversize 0.00 disc 0.51 total 9.68
+PRICE NVA NVA76014004 C-1019 express ES-39771 z3 billable 4.500 base 36.20 fuel 4.34 remote 0.00 oversize 0.00 disc 2.03 total 38.51
+PRICE HLX HLX66079200 C-1019 standard DE-29704 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.02 total 19.42
+PRICE ELB ELB39976337 C-1019 standard DE-43802 z1 billable 18.000 base 17.20 fuel 1.81 remote 0.00 oversize 0.00 disc 0.95 total 18.06
+PRICE QNT QNT94603591 C-1019 standard NO-3046 z4 billable 16.000 base 55.65 fuel 6.68 remote 0.00 oversize 18.00 disc 4.02 total 76.31
+PRICE QNT QNT81474962 C-1019 standard AT-7689 z2 billable 3.500 base 13.60 fuel 1.63 remote 0.00 oversize 0.00 disc 0.76 total 14.47
+PRICE MRD MRD94242262 C-1019 standard DE-97337 z1 billable 24.000 base 21.40 fuel 2.03 remote 0.00 oversize 0.00 disc 1.17 total 22.26
+PRICE QNT QNT38087691 C-1019 economy DE-82133 z1 billable 26.500 base 16.90 fuel 2.03 remote 0.00 oversize 0.00 disc 0.95 total 17.98
+PRICE ELB ELB82307039 C-1019 express US-46249 z5 billable 24.000 base 217.60 fuel 22.85 remote 0.00 oversize 0.00 disc 12.02 total 228.43
+PRICE RHN RHN37976129 C-1019 express NO-2893 z4 billable 22.500 base 133.10 fuel 15.97 remote 0.00 oversize 0.00 disc 7.45 total 141.62
+PRICE KSX KSX90238580 C-1019 economy PL-33-257 z2 billable 16.000 base 22.70 fuel 3.29 remote 0.00 oversize 22.00 disc 2.40 total 45.59
+PRICE YRD YRD82124610 C-1019 standard NO-7035 z4 billable 9.000 base 38.15 fuel 4.58 remote 0.00 oversize 0.00 disc 2.14 total 40.59
+PRICE NRP NRP72409415 C-1019 standard IT-28059 z3 billable 3.000 base 17.55 fuel 2.28 remote 0.00 oversize 0.00 disc 0.99 total 18.84
+PRICE ALP ALP52696306 C-1019 express DE-89951 z1 billable 10.500 base 26.90 fuel 3.36 remote 0.00 oversize 0.00 disc 1.51 total 28.75
+PRICE GRN GRN98218001 C-1019 economy DE-44106 z1 billable 24.500 base 15.90 fuel 1.91 remote 0.00 oversize 0.00 disc 0.89 total 16.92
+PRICE YRD YRD56751391 C-1019 economy DE-74462 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.50 total 9.47
+PRICE IBX IBX91143070 C-1019 express SE-372 28 z3 billable 14.000 base 72.30 fuel 8.68 remote 0.00 oversize 0.00 disc 4.05 total 76.93
+PRICE TAU TAU22949311 C-1019 express AT-1408 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 4.61 total 87.57
+PRICE HLX HLX56144438 C-1019 standard NO-2878 z4 billable 24.000 base 75.65 fuel 9.08 remote 0.00 oversize 0.00 disc 4.24 total 80.49
+PRICE TAU TAU73056886 C-1019 economy AT-3712 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 1.47 total 27.87
+PRICE SKN SKN71602240 C-1019 economy AT-4621 z2 billable 14.000 base 20.70 fuel 2.48 remote 0.00 oversize 0.00 disc 1.16 total 22.02
+PRICE HLX HLX61925486 C-1019 standard DE-13670 z1 billable 9.000 base 10.90 fuel 1.31 remote 0.00 oversize 0.00 disc 0.61 total 11.60
+PRICE NVA NVA96429420 C-1019 economy ES-39689 z3 billable 16.500 base 32.30 fuel 3.88 remote 0.00 oversize 0.00 disc 1.81 total 34.37
+PRICE XPD XPD66813889 C-1019 standard DE-88205 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE ALP ALP82036160 C-1019 express NL-4316 z2 billable 10.500 base 44.50 fuel 5.56 remote 0.00 oversize 0.00 disc 2.50 total 47.56
+PRICE TAU TAU66008657 C-1019 standard DE-32370 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.36 total 6.75
+PRICE DRV DRV63794397 C-1019 standard FI-08263 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE IBX IBX78218869 C-1020 economy SE-196 21 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 4.79 total 43.15
+PRICE ARC ARC23266837 C-1020 freight AT-6111 z2 billable 77.500 base 212.20 fuel 25.46 remote 0.00 oversize 0.00 disc 23.77 total 213.89
+PRICE ZEN ZEN12001509 C-1020 standard DE-77303 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.91 total 8.16
+PRICE RHN RHN83742741 C-1020 economy CH-7871 z2 billable 21.000 base 27.70 fuel 3.32 remote 0.00 oversize 0.00 disc 3.10 total 27.92
+PRICE YRD YRD62226070 C-1020 economy DE-20408 z1 billable 20.500 base 13.90 fuel 1.67 remote 0.00 oversize 0.00 disc 1.56 total 14.01
+PRICE OKT OKT27525643 C-1020 economy NL-4808 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 1.93 total 17.33
+PRICE IBX IBX53605112 C-1020 standard DE-78755 z1 billable 28.500 base 24.55 fuel 2.95 remote 0.00 oversize 0.00 disc 2.75 total 24.75
+PRICE KSX KSX84505717 C-1020 standard DE-59345 z1 billable 14.000 base 14.40 fuel 2.09 remote 0.00 oversize 0.00 disc 1.65 total 14.84
+PRICE TRV TRV53348962 C-1020 economy DE-22268 z1 billable 20.000 base 13.65 fuel 1.64 remote 0.00 oversize 0.00 disc 1.53 total 13.76
+PRICE PRL PRL73838376 C-1020 express FR-52898 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 4.98 total 44.86
+PRICE JUT JUT69410900 C-1020 economy DE-27498 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.61 total 5.44
+PRICE IBX IBX86673554 C-1020 standard SE-273 97 z3 billable 3.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 1.97 total 17.69
+PRICE UDX UDX57167040 C-1020 economy ES-40714 z3 billable 18.000 base 34.40 fuel 4.13 remote 0.00 oversize 0.00 disc 3.85 total 34.68
+PRICE SKN SKN31836215 C-1020 economy DE-55270 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.52 total 4.69
+PRICE XPD XPD53561739 C-1020 express DE-28500 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 5.58 total 50.25
+PRICE NVA NVA43320546 C-1020 standard DE-57965 z1 billable 1.500 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.63 total 5.70
+PRICE HLX HLX38245561 C-1020 standard DE-47826 z1 billable 23.500 base 21.05 fuel 2.53 remote 0.00 oversize 0.00 disc 2.36 total 21.22
+PRICE QNT QNT45112388 C-1020 standard FI-27981 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 6.43 total 57.91
+PRICE XPD XPD19683545 C-1020 standard FR-54943 z2 billable 4.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 1.68 total 15.12
+PRICE TAU TAU19926453 C-1020 economy ES-42391 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 4.79 total 43.15
+PRICE XPD XPD45634958 C-1020 economy DE-70861 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.66 total 5.95
+PRICE VLT VLT82984004 C-1020 express SE-984 99 z3 billable 11.000 base 60.90 fuel 7.31 remote 0.00 oversize 0.00 disc 6.82 total 61.39
+PRICE IBX IBX67806543 C-1020 economy DE-25845 z1 billable 3.000 base 5.15 fuel 0.62 remote 4.90 oversize 0.00 disc 1.07 total 9.60
+PRICE IBX IBX19915453 C-1020 express DE-46302 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 1.97 total 17.69
+PRICE JUT JUT31882128 C-1020 economy ES-38917 z3 billable 2.500 base 12.70 fuel 1.52 remote 0.00 oversize 0.00 disc 1.42 total 12.80
+PRICE TRV TRV66913157 C-1020 economy NL-9760 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 4.34 total 39.08
+PRICE LUM LUM41046709 C-1020 economy DE-76134 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.52 total 4.69
+PRICE LUM LUM66821208 C-1020 economy DE-68223 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.69 total 6.20
+PRICE ALP ALP83109774 C-1020 standard DK-4742 z2 billable 2.000 base 11.50 fuel 1.44 remote 0.00 oversize 0.00 disc 1.29 total 11.65
+PRICE YRD YRD76047246 C-1020 economy NL-3602 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 2.93 total 26.41
+PRICE CDX CDX87190438 C-1020 economy DE-82729 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 1.75 total 15.78
+PRICE IBX IBX20523972 C-1020 economy DE-18565 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 3.11 total 27.94
+PRICE ARC ARC65206390 C-1021 standard IT-24015 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 0.00 total 64.34
+PRICE QNT QNT68978083 C-1021 standard FI-99100 z3 billable 7.500 base 26.10 fuel 3.13 remote 4.90 oversize 0.00 disc 0.00 total 34.13
+PRICE GRN GRN71672926 C-1021 standard SE-936 48 z3 billable 19.500 base 48.90 fuel 5.87 remote 0.00 oversize 0.00 disc 0.00 total 54.77
+PRICE IBX IBX45568531 C-1021 standard PL-29-844 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE OKT OKT18057280 C-1021 economy NL-9312 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 0.00 total 43.42
+PRICE TRV TRV65393197 C-1021 economy SE-980 41 z3 billable 4.000 base 14.80 fuel 1.78 remote 6.20 oversize 0.00 disc 0.00 total 22.78
+PRICE GRN GRN46518075 C-1021 standard DE-95623 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE NVA NVA18066374 C-1021 standard SE-355 67 z3 billable 4.500 base 20.40 fuel 2.45 remote 0.00 oversize 0.00 disc 0.00 total 22.85
+PRICE OKT OKT71222817 C-1021 express DE-55017 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 0.00 total 30.13
+PRICE XPD XPD62881618 C-1021 standard SE-643 79 z3 billable 9.500 base 29.90 fuel 3.59 remote 0.00 oversize 0.00 disc 0.00 total 33.49
+PRICE SKN SKN33728948 C-1021 economy NO-1567 z4 billable 5.000 base 22.05 fuel 2.65 remote 0.00 oversize 0.00 disc 0.00 total 24.70
+PRICE ZEN ZEN48673341 C-1021 standard CH-8489 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE PRL PRL92089081 C-1021 express DE-68472 z1 billable 3.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 0.00 total 16.80
+PRICE RHN RHN86677029 C-1021 economy DE-98792 z1 billable 1.000 base 4.15 fuel 0.50 remote 0.00 oversize 0.00 disc 0.00 total 4.65
+PRICE YRD YRD21102963 C-1021 standard DE-48335 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 0.00 total 27.89
+PRICE GRN GRN85806874 C-1021 standard DE-63396 z1 billable 19.000 base 17.90 fuel 2.15 remote 0.00 oversize 18.00 disc 0.00 total 38.05
+PRICE NVA NVA52133409 C-1021 standard DE-19423 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 0.00 total 27.89
+PRICE KRP KRP55346964 C-1021 express DE-93516 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 0.00 total 30.13
+PRICE JUT JUT82769613 C-1021 standard DE-62735 z1 billable 17.000 base 16.50 fuel 1.98 remote 0.00 oversize 0.00 disc 0.00 total 18.48
+PRICE ZEN ZEN33675468 C-1021 economy IT-23926 z3 billable 3.500 base 14.10 fuel 1.69 remote 0.00 oversize 0.00 disc 0.00 total 15.79
+PRICE XPD XPD79539987 C-1021 express NL-2640 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 0.00 total 32.59
+PRICE HLX HLX28057991 C-1021 standard DE-51388 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE PRL PRL89552118 C-1021 economy PL-54-810 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 0.00 total 10.30
+PRICE ARC ARC57413270 C-1021 express FI-67500 z3 billable 10.500 base 59.00 fuel 7.08 remote 0.00 oversize 0.00 disc 0.00 total 66.08
+PRICE NRP NRP67339643 C-1021 standard FR-95588 z2 billable 3.500 base 13.60 fuel 1.77 remote 0.00 oversize 0.00 disc 0.00 total 15.37
+PRICE HLX HLX83724016 C-1021 standard DE-86000 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE HLX HLX13217406 C-1021 economy NO-1900 z4 billable 11.000 base 33.45 fuel 4.01 remote 0.00 oversize 0.00 disc 0.00 total 37.46
+PRICE KRP KRP17448718 C-1021 economy DE-53064 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE WSX WSX97548497 C-1021 standard DE-93146 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE ZEN ZEN94564705 C-1021 economy DE-61293 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.00 total 5.21
+PRICE YRD YRD81590811 C-1022 standard PL-91-315 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 6.60 total 46.23
+PRICE NVA NVA19818443 C-1022 economy DE-21850 z1 billable 1.000 base 4.15 fuel 0.50 remote 0.00 oversize 0.00 disc 0.58 total 4.07
+PRICE NRP NRP60758018 C-1022 economy PL-80-475 z2 billable 24.000 base 30.70 fuel 3.99 remote 0.00 oversize 0.00 disc 4.34 total 30.35
+PRICE HLX HLX97474808 C-1022 standard DE-82547 z1 billable 6.500 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 1.28 total 8.97
+PRICE NVA NVA86156163 C-1022 express IT-11888 z3 billable 16.000 base 79.90 fuel 9.59 remote 0.00 oversize 18.00 disc 13.44 total 94.05
+PRICE KSX KSX16565568 C-1022 standard DE-49611 z1 billable 3.000 base 6.70 fuel 0.97 remote 0.00 oversize 0.00 disc 0.96 total 6.71
+PRICE CDX CDX47398303 C-1022 express FR-80227 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 6.23 total 43.61
+PRICE MRD MRD32460880 C-1022 freight DE-27272 z1 billable 24.000 base 70.15 fuel 6.66 remote 0.00 oversize 0.00 disc 9.60 total 67.21
+PRICE XPD XPD13182841 C-1022 economy DE-25980 z1 billable 3.000 base 5.15 fuel 0.62 remote 4.90 oversize 0.00 disc 1.33 total 9.34
+PRICE VLT VLT22001671 C-1022 economy FR-76609 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 5.43 total 37.99
+PRICE QNT QNT49393928 C-1022 standard DE-27498 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.84 total 5.88
+PRICE KRP KRP15650698 C-1022 standard DE-26118 z1 billable 24.500 base 21.75 fuel 2.61 remote 0.00 oversize 0.00 disc 3.05 total 21.31
+PRICE PRL PRL44520712 C-1022 standard DE-14430 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE GRN GRN30366698 C-1022 express ES-40638 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 15.44 total 108.10
+PRICE RHN RHN34177648 C-1022 economy NL-3396 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 3.67 total 25.67
+PRICE QNT QNT39282166 C-1022 standard FR-38050 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 1.41 total 9.90
+PRICE NVA NVA69493153 C-1022 standard DE-25050 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE ALP ALP94120731 C-1022 economy DE-26486 z1 billable 10.500 base 8.90 fuel 1.11 remote 0.00 oversize 0.00 disc 1.25 total 8.76
+PRICE IBX IBX32139734 C-1022 express SE-464 36 z3 billable 3.000 base 30.50 fuel 3.66 remote 0.00 oversize 0.00 disc 4.27 total 29.89
+PRICE NVA NVA63563372 C-1022 standard DE-79038 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE QNT QNT20385011 C-1022 express DE-55414 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 6.98 total 48.85
+PRICE FJD FJD46807229 C-1022 standard AT-1328 z2 billable 15.500 base 30.40 fuel 3.65 remote 0.00 oversize 0.00 disc 4.26 total 29.79
+PRICE TAU TAU11996749 C-1022 standard DE-86488 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 4.46 total 31.24
+PRICE NVA NVA51161656 C-1022 standard CH-1244 z2 billable 4.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 2.10 total 14.70
+PRICE NRP NRP67317911 C-1022 standard DE-97207 z1 billable 2.500 base 6.35 fuel 0.83 remote 0.00 oversize 0.00 disc 0.90 total 6.28
+PRICE FJD FJD72518871 C-1022 standard DE-50624 z1 billable 25.500 base 22.45 fuel 2.69 remote 0.00 oversize 0.00 disc 3.14 total 22.00
+PRICE IBX IBX39643953 C-1022 standard DE-86212 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.67 total 11.71
+PRICE FJD FJD23937610 C-1022 economy DE-19609 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE VLT VLT15810517 C-1022 express DK-3462 z2 billable 21.500 base 75.30 fuel 9.04 remote 0.00 oversize 0.00 disc 10.54 total 73.80
+PRICE HLX HLX33488705 C-1022 economy DE-34413 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE UDX UDX45899864 C-1022 economy NL-8138 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 4.30 total 30.08
+PRICE ZEN ZEN26370783 C-1022 economy AT-6773 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 1.64 total 11.46
+PRICE IBX IBX63313222 C-1022 standard IT-55352 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 8.04 total 56.30
+PRICE NRP NRP84193737 C-1022 express DE-67511 z1 billable 5.500 base 18.40 fuel 2.39 remote 0.00 oversize 0.00 disc 2.60 total 18.19
+PRICE ARC ARC35650307 C-1022 standard DE-67708 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE WSX WSX60301531 C-1022 standard ES-38111 z3 billable 24.000 base 57.45 fuel 6.89 remote 4.90 oversize 0.00 disc 8.66 total 60.58
+PRICE TAU TAU97926225 C-1022 standard DE-42928 z1 billable 25.000 base 22.10 fuel 2.65 remote 0.00 oversize 0.00 disc 3.09 total 21.66
+PRICE QNT QNT65167720 C-1022 standard DE-52310 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE WSX WSX20887024 C-1022 economy DE-62078 z1 billable 4.500 base 5.90 fuel 0.71 remote 0.00 oversize 0.00 disc 0.83 total 5.78
+PRICE HLX HLX21611588 C-1022 express PL-17-242 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 11.52 total 80.66
+PRICE DRV DRV57116334 C-1022 economy DE-48275 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 1.25 total 8.72
+PRICE XPD XPD35488731 C-1022 standard ES-35192 z3 billable 8.500 base 28.00 fuel 3.36 remote 4.90 oversize 0.00 disc 4.53 total 31.73
+PRICE KSX KSX93192323 C-1022 economy FR-87111 z2 billable 6.000 base 12.70 fuel 1.84 remote 0.00 oversize 0.00 disc 1.82 total 12.72
+PRICE ARC ARC25940487 C-1022 express CH-4930 z2 billable 21.000 base 73.90 fuel 8.87 remote 0.00 oversize 18.00 disc 12.60 total 88.17
+PRICE GRN GRN69633159 C-1022 standard AT-6338 z2 billable 3.000 base 12.90 fuel 1.55 remote 0.00 oversize 0.00 disc 1.81 total 12.64
+PRICE YRD YRD58460124 C-1022 economy DE-19001 z1 billable 6.000 base 6.65 fuel 0.80 remote 0.00 oversize 0.00 disc 0.93 total 6.52
+PRICE XPD XPD70793862 C-1023 express DE-25845 z1 billable 16.000 base 36.25 fuel 4.35 remote 4.90 oversize 18.00 disc 0.00 total 63.50
+PRICE ARC ARC42032904 C-1023 express DE-35306 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 0.00 total 30.13
+PRICE XPD XPD77638637 C-1023 economy DE-68300 z1 billable 14.500 base 10.90 fuel 1.31 remote 0.00 oversize 0.00 disc 0.00 total 12.21
+PRICE FJD FJD95106334 C-1023 standard IT-89963 z3 billable 2.500 base 16.60 fuel 1.99 remote 0.00 oversize 0.00 disc 0.00 total 18.59
+PRICE OKT OKT38606203 C-1023 express IT-27465 z3 billable 2.000 base 26.70 fuel 3.20 remote 0.00 oversize 0.00 disc 0.00 total 29.90
+PRICE ELB ELB53700661 C-1023 standard DE-13232 z1 billable 29.000 base 24.90 fuel 2.61 remote 0.00 oversize 18.00 disc 0.00 total 45.51
+PRICE NRP NRP91675632 C-1023 economy DE-93456 z1 billable 19.500 base 13.40 fuel 1.74 remote 0.00 oversize 0.00 disc 0.00 total 15.14
+PRICE YRD YRD21216205 C-1023 standard DE-17290 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 0.00 total 8.29
+PRICE XPD XPD77860805 C-1023 standard AT-8559 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 0.00 total 40.32
+PRICE RHN RHN65052453 C-1023 economy DE-47576 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.00 total 6.05
+PRICE QNT QNT50974582 C-1023 express DE-96986 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE HLX HLX11290189 C-1023 standard CH-9341 z2 billable 26.500 base 45.80 fuel 5.50 remote 0.00 oversize 0.00 disc 0.00 total 51.30
+PRICE UDX UDX99602576 C-1023 standard DE-49010 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE NRP NRP76111071 C-1023 economy FI-11740 z3 billable 5.000 base 16.20 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 18.31
+PRICE LUM LUM59840695 C-1023 standard FR-52674 z2 billable 21.500 base 38.80 fuel 4.66 remote 0.00 oversize 0.00 disc 0.00 total 43.46
+PRICE MRD MRD83698938 C-1023 express DE-50910 z1 billable 2.000 base 12.45 fuel 1.18 remote 0.00 oversize 0.00 disc 0.00 total 13.63
+PRICE ARC ARC76835033 C-1023 standard DE-52172 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE YRD YRD29803194 C-1023 express DE-46338 z1 billable 16.000 base 36.25 fuel 4.35 remote 0.00 oversize 18.00 disc 0.00 total 58.60
+PRICE TRV TRV41224087 C-1023 express DK-9096 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 0.00 total 49.84
+PRICE IBX IBX22937680 C-1023 economy DE-57518 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE GRN GRN72997782 C-1023 express DE-42644 z1 billable 11.000 base 27.75 fuel 3.33 remote 0.00 oversize 0.00 disc 0.00 total 31.08
+PRICE JUT JUT30314851 C-1023 express DE-78567 z1 billable 22.000 base 46.45 fuel 5.57 remote 0.00 oversize 0.00 disc 0.00 total 52.02
+PRICE NVA NVA49094810 C-1023 economy DE-84923 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.00 total 5.21
+PRICE JUT JUT47264656 C-1023 standard NO-1672 z4 billable 15.500 base 54.40 fuel 6.53 remote 0.00 oversize 0.00 disc 0.00 total 60.93
+PRICE SKN SKN72169759 C-1023 express DK-3368 z2 billable 24.000 base 82.30 fuel 9.88 remote 0.00 oversize 0.00 disc 0.00 total 92.18
+PRICE QNT QNT48631052 C-1023 standard DE-88940 z1 billable 26.500 base 23.15 fuel 2.78 remote 0.00 oversize 0.00 disc 0.00 total 25.93
+PRICE YRD YRD73402112 C-1023 economy DE-63934 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE ARC ARC80394235 C-1023 freight DE-70811 z1 billable 24.000 base 70.15 fuel 8.42 remote 0.00 oversize 0.00 disc 0.00 total 78.57
+PRICE ZEN ZEN62210090 C-1023 standard IT-73378 z3 billable 16.000 base 42.25 fuel 5.07 remote 0.00 oversize 18.00 disc 0.00 total 65.32
+PRICE GRN GRN76452235 C-1023 standard DE-58144 z1 billable 17.000 base 16.50 fuel 1.98 remote 0.00 oversize 0.00 disc 0.00 total 18.48
+PRICE MRD MRD86285971 C-1023 standard DE-57087 z1 billable 24.000 base 21.40 fuel 2.03 remote 0.00 oversize 0.00 disc 0.00 total 23.43
+PRICE IBX IBX89931465 C-1024 standard FI-09994 z3 billable 28.000 base 65.05 fuel 7.81 remote 0.00 oversize 0.00 disc 10.93 total 61.93
+PRICE PRL PRL71650955 C-1024 economy DE-27498 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.63 total 14.90
+PRICE SKN SKN98875897 C-1024 economy DE-25845 z1 billable 3.000 base 5.15 fuel 0.62 remote 7.40 oversize 0.00 disc 1.98 total 11.19
+PRICE QNT QNT21152436 C-1024 express IT-87690 z3 billable 19.500 base 93.20 fuel 11.18 remote 0.00 oversize 0.00 disc 15.66 total 88.72
+PRICE FJD FJD47361289 C-1024 economy DE-18565 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 1.50 total 8.47
+PRICE WSX WSX21087666 C-1024 economy DE-25148 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.82 total 4.67
+PRICE QNT QNT26381468 C-1024 standard DE-84633 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.60 total 20.37
+PRICE KRP KRP49997629 C-1024 standard DE-25980 z1 billable 24.000 base 21.40 fuel 2.57 remote 4.90 oversize 0.00 disc 4.33 total 24.54
+PRICE CDX CDX72153321 C-1024 express AT-5411 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 12.76 total 72.33
+PRICE SKN SKN70424512 C-1024 express ES-47417 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 18.53 total 105.01
+PRICE GRN GRN92830263 C-1024 standard NO-9408 z4 billable 1.000 base 18.15 fuel 2.18 remote 5.50 oversize 0.00 disc 3.87 total 21.96
+PRICE XPD XPD50706844 C-1024 economy DE-23056 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE ARC ARC74967841 C-1024 freight IT-77619 z3 billable 3.000 base 124.25 fuel 14.91 remote 0.00 oversize 0.00 disc 20.87 total 118.29
+PRICE TRV TRV79332174 C-1024 standard PL-97-854 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 3.93 total 22.28
+PRICE QNT QNT86379682 C-1024 express DE-61832 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.95 total 16.71
+PRICE SKN SKN16876964 C-1024 standard DE-23701 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE UDX UDX89231751 C-1024 economy DE-29034 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 1.03 total 5.86
+PRICE YRD YRD61616954 C-1024 express DE-11530 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 8.37 total 47.46
+PRICE UDX UDX88113050 C-1024 standard ES-38917 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 9.65 total 54.69
+PRICE YRD YRD29968670 C-1024 standard DE-49549 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 2.01 total 11.37
+PRICE NVA NVA29198614 C-1024 express NL-2390 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 4.89 total 27.70
+PRICE PRL PRL11837556 C-1024 standard DE-82681 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE NVA NVA24404934 C-1024 express DE-84070 z1 billable 22.000 base 46.45 fuel 5.57 remote 0.00 oversize 0.00 disc 7.80 total 44.22
+PRICE RHN RHN24950463 C-1024 economy DE-89279 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE PRL PRL32712600 C-1024 standard DE-36236 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 2.01 total 11.37
+PRICE NRP NRP60192786 C-1024 standard FR-34225 z2 billable 10.500 base 23.40 fuel 3.04 remote 0.00 oversize 0.00 disc 3.97 total 22.47
+PRICE NVA NVA17464104 C-1024 standard DE-58280 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 2.07 total 11.71
+PRICE MRD MRD96280400 C-1024 freight DE-84675 z1 billable 19.500 base 66.10 fuel 6.28 remote 0.00 oversize 0.00 disc 10.86 total 61.52
+PRICE VLT VLT72920384 C-1024 standard DE-78490 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 1.01 total 5.71
+PRICE DRV DRV54436644 C-1024 express ES-38917 z3 billable 5.000 base 38.10 fuel 4.57 remote 0.00 oversize 0.00 disc 6.40 total 36.27
+PRICE NRP NRP37013618 C-1025 standard DE-80331 z1 billable 2.000 base 6.00 fuel 0.78 remote 0.00 oversize 0.00 disc 0.85 total 5.93
+PRICE VLT VLT86985857 C-1025 economy DE-94249 z1 billable 3.500 base 5.40 fuel 0.65 remote 0.00 oversize 0.00 disc 0.76 total 5.29
+PRICE PRL PRL39654050 C-1025 express DE-93494 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 6.98 total 48.85
+PRICE RHN RHN40902249 C-1025 standard DE-25980 z1 billable 16.000 base 15.80 fuel 1.90 remote 4.90 oversize 18.00 disc 5.08 total 35.52
+PRICE TAU TAU97358572 C-1025 express AT-1340 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 9.76 total 68.30
+PRICE ARC ARC80274796 C-1025 standard US-20358 z5 billable 24.000 base 123.20 fuel 14.78 remote 0.00 oversize 0.00 disc 17.25 total 120.73
+PRICE PRL PRL94175891 C-1025 standard ES-38785 z3 billable 19.500 base 48.90 fuel 5.87 remote 4.90 oversize 0.00 disc 7.46 total 52.21
+PRICE JUT JUT46342587 C-1025 standard DE-47507 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.89 total 6.22
+PRICE OKT OKT60107940 C-1025 economy AT-7083 z2 billable 12.000 base 18.70 fuel 2.24 remote 0.00 oversize 0.00 disc 2.62 total 18.32
+PRICE YRD YRD51675198 C-1025 standard CH-1403 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 5.04 total 35.28
+PRICE TRV TRV37021314 C-1025 express DE-69569 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 5.91 total 41.35
+PRICE ELB ELB90677774 C-1025 standard AT-4588 z2 billable 2.500 base 12.20 fuel 1.28 remote 0.00 oversize 0.00 disc 1.69 total 11.79
+PRICE SKN SKN32844489 C-1025 standard DE-20747 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 1.09 total 7.59
+PRICE MRD MRD75370419 C-1025 standard AT-9084 z2 billable 2.000 base 11.50 fuel 1.09 remote 0.00 oversize 0.00 disc 1.57 total 11.02
+PRICE IBX IBX90953656 C-1025 express DE-60560 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 1.86 total 13.04
+PRICE RHN RHN42821703 C-1025 standard DE-66007 z1 billable 22.000 base 20.00 fuel 2.40 remote 0.00 oversize 0.00 disc 2.80 total 19.60
+PRICE ELB ELB45324253 C-1025 economy DE-60644 z1 billable 8.000 base 7.65 fuel 0.80 remote 0.00 oversize 0.00 disc 1.06 total 7.39
+PRICE SKN SKN33875064 C-1025 standard DE-97269 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE NRP NRP64812463 C-1025 standard DK-3700 z2 billable 2.000 base 11.50 fuel 1.50 remote 4.90 oversize 0.00 disc 2.24 total 15.66
+PRICE LUM LUM89798023 C-1025 economy PL-99-123 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 4.30 total 30.08
+PRICE TAU TAU43508149 C-1025 economy DE-81657 z1 billable 27.500 base 17.40 fuel 2.09 remote 0.00 oversize 0.00 disc 2.44 total 17.05
+PRICE ARC ARC39423274 C-1025 express DE-43367 z1 billable 10.500 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 3.77 total 26.36
+PRICE SKN SKN94014072 C-1025 standard DE-45327 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 0.99 total 6.91
+PRICE ALP ALP11048700 C-1025 express NL-8171 z2 billable 6.500 base 33.30 fuel 4.16 remote 0.00 oversize 0.00 disc 4.68 total 32.78
+PRICE TRV TRV15820446 C-1025 standard DE-82939 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE WSX WSX99493177 C-1025 standard DE-57995 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE YRD YRD22579144 C-1025 express FR-30603 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 9.76 total 68.30
+PRICE GRN GRN36971969 C-1025 economy DE-21153 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE DRV DRV33833042 C-1025 standard DE-16339 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 1.72 total 12.06
+PRICE VLT VLT54577380 C-1025 express DE-85878 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 1.86 total 13.04
+PRICE DRV DRV60073681 C-1025 express DE-63432 z1 billable 23.000 base 48.15 fuel 5.78 remote 0.00 oversize 0.00 disc 6.74 total 47.19
+PRICE GRN GRN87376547 C-1025 economy NL-7340 z2 billable 27.500 base 34.20 fuel 4.10 remote 0.00 oversize 0.00 disc 4.79 total 33.51
+PRICE BLT BLT16386662 C-1025 standard CH-3306 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 5.04 total 35.28
+PRICE XPD XPD20697448 C-1025 standard DK-3790 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 3.28 total 22.93
+PRICE NRP NRP15410311 C-1025 standard DE-67720 z1 billable 24.000 base 21.40 fuel 2.78 remote 0.00 oversize 0.00 disc 3.02 total 21.16
+PRICE GRN GRN94452236 C-1025 economy FR-47279 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 4.30 total 30.08
+PRICE ELB ELB70330395 C-1026 standard DE-98064 z1 billable 19.500 base 18.25 fuel 1.92 remote 0.00 oversize 0.00 disc 2.52 total 17.65
+PRICE BLT BLT30762796 C-1026 standard SE-276 23 z3 billable 2.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE SKN SKN22550547 C-1026 standard DE-32142 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE PRL PRL26662076 C-1026 standard DE-98065 z1 billable 6.500 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 1.28 total 8.97
+PRICE KRP KRP74453349 C-1026 express DE-29262 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.46 total 17.20
+PRICE NVA NVA14995832 C-1026 standard DK-3790 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 0.00 disc 4.35 total 30.48
+PRICE DRV DRV10303120 C-1026 standard AT-8809 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 3.28 total 22.93
+PRICE XPD XPD44891345 C-1026 economy DE-25105 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.69 total 4.80
+PRICE YRD YRD68020580 C-1026 express PL-37-780 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 10.64 total 74.45
+PRICE RHN RHN13930735 C-1026 standard DE-72885 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.89 total 6.22
+PRICE QNT QNT86662386 C-1026 standard DE-13572 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.67 total 11.71
+PRICE PRL PRL55723656 C-1026 standard DE-29345 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 1.72 total 12.06
+PRICE SKN SKN52206567 C-1026 standard DE-26548 z1 billable 13.000 base 13.70 fuel 1.64 remote 7.40 oversize 0.00 disc 2.84 total 19.90
+PRICE ALP ALP84703890 C-1026 standard NO-9408 z4 billable 1.500 base 19.40 fuel 2.43 remote 4.90 oversize 0.00 disc 3.34 total 23.39
+PRICE BLT BLT71408162 C-1026 standard DE-59268 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.67 total 11.71
+PRICE RHN RHN18036087 C-1026 economy DE-63835 z1 billable 28.500 base 17.90 fuel 2.15 remote 0.00 oversize 0.00 disc 2.51 total 17.54
+PRICE ALP ALP92652231 C-1026 standard DE-22392 z1 billable 10.500 base 11.95 fuel 1.49 remote 0.00 oversize 0.00 disc 1.68 total 11.76
+PRICE HLX HLX20518686 C-1026 standard SE-534 31 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 8.04 total 56.30
+PRICE ZEN ZEN40855457 C-1026 economy DE-10832 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE QNT QNT24330859 C-1026 standard DE-90033 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 2.56 total 17.88
+PRICE CDX CDX25040866 C-1026 standard DE-96180 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 3.49 total 24.40
+PRICE HLX HLX32800391 C-1026 standard AT-1892 z2 billable 4.000 base 14.30 fuel 1.72 remote 0.00 oversize 0.00 disc 2.00 total 14.02
+PRICE KRP KRP27184097 C-1026 economy SE-146 17 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 5.99 total 41.95
+PRICE KRP KRP64913879 C-1026 standard DE-72298 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.67 total 11.71
+PRICE IBX IBX95685086 C-1026 standard NL-9033 z2 billable 13.500 base 27.60 fuel 3.31 remote 0.00 oversize 0.00 disc 3.86 total 27.05
+PRICE MRD MRD81498331 C-1026 express SE-466 37 z3 billable 19.500 base 93.20 fuel 8.85 remote 0.00 oversize 0.00 disc 12.76 total 89.29
+PRICE SKN SKN90185877 C-1026 express DK-5196 z2 billable 3.000 base 23.50 fuel 2.82 remote 0.00 oversize 0.00 disc 3.29 total 23.03
+PRICE ZEN ZEN47174167 C-1026 express FR-66694 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 9.76 total 68.30
+PRICE YRD YRD49855255 C-1026 economy FR-83464 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 1.64 total 11.46
+PRICE KRP KRP76614683 C-1026 economy DE-25849 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.19 total 15.34
+PRICE SKN SKN25561317 C-1026 economy CH-5881 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 4.30 total 30.08
+PRICE NRP NRP48148608 C-1026 standard DE-26579 z1 billable 5.000 base 8.10 fuel 1.05 remote 0.00 oversize 0.00 disc 1.14 total 8.01
+PRICE KRP KRP25375708 C-1026 standard DE-40487 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.13 total 7.94
+PRICE VLT VLT57243950 C-1026 express ES-32550 z3 billable 22.500 base 104.60 fuel 12.55 remote 0.00 oversize 0.00 disc 14.64 total 102.51
+PRICE GRN GRN99747346 C-1026 express FI-99100 z3 billable 19.500 base 93.20 fuel 11.18 remote 5.50 oversize 0.00 disc 13.74 total 96.14
+PRICE ARC ARC55751498 C-1026 standard DE-73906 z1 billable 13.000 base 13.70 fuel 1.64 remote 0.00 oversize 0.00 disc 1.92 total 13.42
+PRICE ZEN ZEN31309815 C-1026 standard DE-93943 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE SKN SKN41057493 C-1027 standard DE-87647 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 1.39 total 26.50
+PRICE ELB ELB94321206 C-1027 express AT-7262 z2 billable 3.000 base 23.50 fuel 2.47 remote 0.00 oversize 0.00 disc 1.30 total 24.67
+PRICE GRN GRN63238373 C-1027 economy DE-43199 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE ALP ALP23988707 C-1027 express NO-9000 z4 billable 2.500 base 37.10 fuel 4.64 remote 4.90 oversize 0.00 disc 2.33 total 44.31
+PRICE JUT JUT71562867 C-1027 economy AT-5307 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.66 total 12.44
+PRICE NRP NRP52060483 C-1027 express DE-43972 z1 billable 5.000 base 17.55 fuel 2.28 remote 0.00 oversize 0.00 disc 0.99 total 18.84
+PRICE XPD XPD21788253 C-1027 express DE-73311 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE QNT QNT62522671 C-1027 express DE-83759 z1 billable 4.000 base 15.85 fuel 1.90 remote 0.00 oversize 0.00 disc 0.89 total 16.86
+PRICE ZEN ZEN77122807 C-1027 standard DE-40334 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.71
+PRICE LUM LUM58071721 C-1027 standard DE-99228 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 0.69 total 13.09
+PRICE YRD YRD80616202 C-1027 express SE-890 98 z3 billable 2.500 base 28.60 fuel 3.43 remote 0.00 oversize 0.00 disc 1.60 total 30.43
+PRICE TRV TRV46978290 C-1027 standard DE-48930 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE BLT BLT84448904 C-1027 economy DE-26548 z1 billable 2.000 base 4.65 fuel 0.56 remote 4.90 oversize 0.00 disc 0.51 total 9.60
+PRICE GRN GRN89629320 C-1027 standard AT-2861 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 2.37 total 45.01
+PRICE ALP ALP91128652 C-1027 standard US-75206 z5 billable 1.000 base 26.60 fuel 3.33 remote 0.00 oversize 0.00 disc 1.50 total 28.43
+PRICE IBX IBX90428403 C-1027 standard SE-198 12 z3 billable 28.000 base 65.05 fuel 7.81 remote 0.00 oversize 0.00 disc 3.64 total 69.22
+PRICE BLT BLT87660865 C-1027 economy DE-33725 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE ZEN ZEN13405176 C-1027 standard NL-5466 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 1.31 total 24.90
+PRICE RHN RHN35149735 C-1027 standard ES-48467 z3 billable 10.500 base 31.80 fuel 3.82 remote 0.00 oversize 0.00 disc 1.78 total 33.84
+PRICE SKN SKN19078430 C-1027 economy CH-2377 z2 billable 4.000 base 10.70 fuel 1.28 remote 0.00 oversize 0.00 disc 0.60 total 11.38
+PRICE TAU TAU14448097 C-1027 standard ES-45001 z3 billable 4.000 base 19.45 fuel 2.33 remote 0.00 oversize 0.00 disc 1.09 total 20.69
+PRICE TAU TAU44929209 C-1027 economy DE-33852 z1 billable 11.000 base 9.15 fuel 1.10 remote 0.00 oversize 0.00 disc 0.51 total 9.74
+PRICE PRL PRL93505084 C-1027 standard SE-837 95 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE IBX IBX72436073 C-1027 standard FR-37561 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 2.37 total 45.01
+PRICE KSX KSX11517336 C-1027 standard ES-34688 z3 billable 15.000 base 40.35 fuel 5.85 remote 0.00 oversize 0.00 disc 2.31 total 43.89
+PRICE ELB ELB17973837 C-1027 economy DE-26189 z1 billable 3.000 base 5.15 fuel 0.54 remote 0.00 oversize 0.00 disc 0.28 total 5.41
+PRICE VLT VLT82401513 C-1027 standard DE-66224 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 1.79 total 33.91
+PRICE GRN GRN93271782 C-1027 standard DE-57689 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE UDX UDX15228876 C-1027 express DE-71873 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE JUT JUT60757258 C-1027 economy DK-7189 z2 billable 24.500 base 31.20 fuel 3.74 remote 0.00 oversize 0.00 disc 1.75 total 33.19
+PRICE WSX WSX32042857 C-1027 standard DE-81960 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.43 total 8.25
+PRICE TRV TRV30909443 C-1027 standard DE-41001 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE XPD XPD65128934 C-1028 express DK-2468 z2 billable 19.500 base 69.70 fuel 8.36 remote 0.00 oversize 0.00 disc 11.71 total 66.35
+PRICE SKN SKN85098365 C-1028 standard DE-67597 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 4.18 total 23.71
+PRICE GRN GRN45255696 C-1028 standard FI-49734 z3 billable 18.000 base 46.05 fuel 5.53 remote 0.00 oversize 0.00 disc 7.74 total 43.84
+PRICE MRD MRD65481660 C-1028 freight FR-34292 z2 billable 288.000 base 549.00 fuel 52.16 remote 0.00 oversize 0.00 disc 90.17 total 510.99
+PRICE BLT BLT11701178 C-1028 economy CH-8411 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 5.16 total 29.22
+PRICE SKN SKN43938397 C-1028 economy DE-37667 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 2.25 total 12.76
+PRICE XPD XPD98273432 C-1028 economy SE-980 10 z3 billable 19.500 base 36.50 fuel 4.38 remote 4.90 oversize 0.00 disc 6.87 total 38.91
+PRICE ARC ARC16977769 C-1028 freight DE-99489 z1 billable 417.500 base 424.30 fuel 50.92 remote 0.00 oversize 18.00 disc 73.98 total 419.24
+PRICE KSX KSX48518134 C-1028 economy DE-26465 z1 billable 10.500 base 8.90 fuel 1.29 remote 4.90 oversize 0.00 disc 2.26 total 12.83
+PRICE FJD FJD20338711 C-1028 economy DE-26488 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 4.66 total 26.39
+PRICE XPD XPD26376368 C-1028 standard DE-41341 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 2.01 total 11.37
+PRICE IBX IBX93275668 C-1028 standard DE-90166 z1 billable 8.500 base 10.55 fuel 1.27 remote 0.00 oversize 0.00 disc 1.77 total 10.05
+PRICE NRP NRP63946571 C-1028 economy FR-32023 z2 billable 5.000 base 11.70 fuel 1.52 remote 0.00 oversize 0.00 disc 1.98 total 11.24
+PRICE ARC ARC27310974 C-1028 freight DE-25999 z1 billable 410.500 base 418.00 fuel 50.16 remote 0.00 oversize 0.00 disc 70.22 total 397.94
+PRICE ELB ELB89736384 C-1028 standard ES-45083 z3 billable 9.000 base 28.95 fuel 3.04 remote 0.00 oversize 0.00 disc 4.80 total 27.19
+PRICE GRN GRN96297815 C-1028 standard DE-97490 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 3.07 total 17.37
+PRICE QNT QNT68884118 C-1028 express DE-91100 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 8.37 total 47.46
+PRICE TAU TAU16178319 C-1028 economy IT-09170 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 7.19 total 40.75
+PRICE ZEN ZEN16919520 C-1028 economy DE-52544 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 1.03 total 5.86
+PRICE PRL PRL87051969 C-1028 economy DK-7628 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 6.51 total 36.91
+PRICE CDX CDX81842454 C-1028 standard DE-85032 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.60 total 20.37
+PRICE WSX WSX95994907 C-1028 standard DE-77388 z1 billable 11.500 base 12.65 fuel 1.52 remote 0.00 oversize 0.00 disc 2.13 total 12.04
+PRICE IBX IBX33238249 C-1028 standard FR-91543 z2 billable 5.000 base 15.70 fuel 1.88 remote 0.00 oversize 0.00 disc 2.64 total 14.94
+PRICE ARC ARC68191961 C-1028 freight DE-39996 z1 billable 310.000 base 327.55 fuel 39.31 remote 0.00 oversize 0.00 disc 55.03 total 311.83
+PRICE FJD FJD31791032 C-1028 standard DE-94065 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 5.36 total 30.34
+PRICE JUT JUT22172035 C-1028 standard DE-51819 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.60 total 20.37
+PRICE LUM LUM92644358 C-1028 economy AT-4133 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 6.51 total 36.91
+PRICE QNT QNT54779955 C-1028 standard DE-72558 z1 billable 6.000 base 8.80 fuel 1.06 remote 0.00 oversize 0.00 disc 1.48 total 8.38
+PRICE NVA NVA14469022 C-1028 economy SE-193 63 z3 billable 2.000 base 12.00 fuel 1.44 remote 0.00 oversize 0.00 disc 2.02 total 11.42
+PRICE UDX UDX23611786 C-1028 standard DE-28586 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE GRN GRN84873309 C-1028 standard NO-6151 z4 billable 1.000 base 18.15 fuel 2.18 remote 0.00 oversize 0.00 disc 3.05 total 17.28
+PRICE LUM LUM16446367 C-1028 standard DE-45788 z1 billable 26.500 base 23.15 fuel 2.78 remote 0.00 oversize 0.00 disc 3.89 total 22.04
+PRICE OKT OKT44995373 C-1028 standard DE-95197 z1 billable 4.000 base 7.40 fuel 0.89 remote 0.00 oversize 0.00 disc 1.24 total 7.05
+PRICE ALP ALP92887571 C-1029 economy SE-514 60 z3 billable 4.000 base 14.80 fuel 1.85 remote 0.00 oversize 0.00 disc 0.83 total 15.82
+PRICE MRD MRD32993169 C-1029 express AT-3244 z2 billable 1.000 base 17.90 fuel 1.70 remote 0.00 oversize 0.00 disc 0.98 total 18.62
+PRICE KSX KSX94331885 C-1029 standard PL-73-965 z2 billable 16.000 base 31.10 fuel 4.51 remote 0.00 oversize 22.00 disc 2.88 total 54.73
+PRICE RHN RHN87865221 C-1029 standard DE-97583 z1 billable 28.000 base 24.20 fuel 2.90 remote 0.00 oversize 0.00 disc 1.36 total 25.74
+PRICE WSX WSX74283814 C-1029 economy DE-51749 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE WSX WSX27498435 C-1029 economy DE-49323 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.34 total 6.55
+PRICE XPD XPD86565118 C-1029 express FI-38386 z3 billable 1.000 base 22.90 fuel 2.75 remote 0.00 oversize 0.00 disc 1.28 total 24.37
+PRICE ALP ALP66458526 C-1029 express SE-980 10 z3 billable 17.000 base 83.70 fuel 10.46 remote 4.90 oversize 0.00 disc 4.95 total 94.11
+PRICE TAU TAU60355521 C-1029 express DE-37284 z1 billable 5.500 base 18.40 fuel 2.21 remote 0.00 oversize 0.00 disc 1.03 total 19.58
+PRICE OKT OKT40394143 C-1029 economy NO-9990 z4 billable 20.500 base 51.50 fuel 6.18 remote 0.00 oversize 0.00 disc 2.88 total 54.80
+PRICE ELB ELB11984436 C-1029 economy DE-38641 z1 billable 2.500 base 4.90 fuel 0.51 remote 0.00 oversize 0.00 disc 0.27 total 5.14
+PRICE OKT OKT85411643 C-1029 standard DE-44802 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.36 total 6.75
+PRICE GRN GRN25669555 C-1029 standard DE-81484 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 0.69 total 13.09
+PRICE VLT VLT98153711 C-1029 economy DE-64821 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE IBX IBX98270314 C-1029 standard DE-14418 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE UDX UDX82288781 C-1029 standard DK-9241 z2 billable 23.500 base 41.60 fuel 4.99 remote 0.00 oversize 0.00 disc 2.33 total 44.26
+PRICE PRL PRL98225227 C-1029 economy NO-5128 z4 billable 5.000 base 22.05 fuel 2.65 remote 0.00 oversize 0.00 disc 1.24 total 23.46
+PRICE OKT OKT18763710 C-1029 economy DE-20200 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.26 total 4.95
+PRICE ELB ELB82689664 C-1029 express CH-4379 z2 billable 3.500 base 24.90 fuel 2.61 remote 0.00 oversize 0.00 disc 1.38 total 26.13
+PRICE DRV DRV51236332 C-1029 express DE-68277 z1 billable 14.000 base 32.85 fuel 3.94 remote 0.00 oversize 0.00 disc 1.84 total 34.95
+PRICE LUM LUM58351746 C-1029 standard DE-51706 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE MRD MRD55270324 C-1029 standard DE-22788 z1 billable 1.000 base 5.30 fuel 0.50 remote 0.00 oversize 0.00 disc 0.29 total 5.51
+PRICE BLT BLT84992423 C-1029 express FR-64168 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 2.49 total 47.35
+PRICE GRN GRN17095146 C-1029 standard DE-98021 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE NRP NRP10417823 C-1029 standard DE-41555 z1 billable 10.000 base 11.60 fuel 1.51 remote 0.00 oversize 0.00 disc 0.66 total 12.45
+PRICE JUT JUT84664899 C-1029 express DE-13711 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE VLT VLT52245900 C-1029 economy AT-1075 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.66 total 12.44
+PRICE HLX HLX55382335 C-1029 standard DE-24655 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 0.69 total 13.09
+PRICE IBX IBX14963305 C-1029 standard ES-40101 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 1.20 total 22.71
+PRICE PRL PRL71496411 C-1029 economy DE-17833 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.27 total 5.22
+PRICE WSX WSX85864645 C-1029 standard DE-17027 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 1.79 total 33.91
+PRICE VLT VLT73981565 C-1030 standard CH-5723 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 0.00 total 40.32
+PRICE QNT QNT17221211 C-1030 standard DE-51157 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE SKN SKN89214902 C-1030 standard SE-334 66 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 0.00 total 23.91
+PRICE BLT BLT13697008 C-1030 express NO-8263 z4 billable 5.000 base 49.10 fuel 5.89 remote 0.00 oversize 0.00 disc 0.00 total 54.99
+PRICE MRD MRD86989260 C-1030 express DE-80439 z1 billable 16.000 base 36.25 fuel 3.44 remote 0.00 oversize 0.00 disc 0.00 total 39.69
+PRICE OKT OKT75834892 C-1030 standard ES-33129 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 0.00 total 64.34
+PRICE TRV TRV34241936 C-1030 economy NO-1517 z4 billable 3.000 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE KSX KSX76835887 C-1030 standard AT-6494 z2 billable 10.500 base 23.40 fuel 3.39 remote 0.00 oversize 0.00 disc 0.00 total 26.79
+PRICE TAU TAU73028302 C-1030 economy DE-69664 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE TAU TAU78603633 C-1030 economy FI-99100 z3 billable 24.000 base 42.80 fuel 5.14 remote 4.90 oversize 0.00 disc 0.00 total 52.84
+PRICE XPD XPD30654977 C-1030 economy DE-11024 z1 billable 11.500 base 9.40 fuel 1.13 remote 0.00 oversize 0.00 disc 0.00 total 10.53
+PRICE VLT VLT75200756 C-1030 standard DK-2230 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 0.00 total 13.66
+PRICE SKN SKN26057352 C-1030 economy ES-41230 z3 billable 19.500 base 36.50 fuel 4.38 remote 0.00 oversize 0.00 disc 0.00 total 40.88
+PRICE NVA NVA86198594 C-1030 standard DE-44410 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE GRN GRN28548545 C-1030 economy DE-18565 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE KRP KRP77990336 C-1030 standard DE-31436 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE TRV TRV91003116 C-1030 standard ES-43426 z3 billable 21.000 base 51.75 fuel 6.21 remote 0.00 oversize 0.00 disc 0.00 total 57.96
+PRICE ZEN ZEN39063553 C-1030 express FR-30217 z2 billable 21.500 base 75.30 fuel 9.04 remote 0.00 oversize 0.00 disc 0.00 total 84.34
+PRICE UDX UDX34802947 C-1030 economy IT-13972 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 0.00 total 53.39
+PRICE BLT BLT69527808 C-1030 economy DE-36127 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE CDX CDX45193375 C-1030 economy NL-1066 z2 billable 5.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 0.00 total 13.66
+PRICE NRP NRP44997421 C-1030 standard DE-81386 z1 billable 19.500 base 18.25 fuel 2.37 remote 0.00 oversize 0.00 disc 0.00 total 20.62
+PRICE LUM LUM10745022 C-1030 economy DE-73225 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.00 total 17.53
+PRICE DRV DRV45127435 C-1030 standard NL-1139 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 0.00 total 52.83
+PRICE GRN GRN43200676 C-1030 economy ES-40053 z3 billable 16.000 base 31.60 fuel 3.79 remote 0.00 oversize 18.00 disc 0.00 total 53.39
+PRICE PRL PRL46198446 C-1030 standard DE-73791 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE OKT OKT97283241 C-1030 economy DE-71743 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE GRN GRN62465385 C-1031 economy DE-72576 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.69 total 6.20
+PRICE RHN RHN71254397 C-1031 economy CH-5668 z2 billable 16.000 base 22.70 fuel 2.72 remote 0.00 oversize 18.00 disc 4.34 total 39.08
+PRICE NVA NVA48113455 C-1031 standard IT-32147 z3 billable 25.500 base 60.30 fuel 7.24 remote 0.00 oversize 0.00 disc 6.75 total 60.79
+PRICE LUM LUM86136612 C-1031 standard PL-44-389 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 5.28 total 47.55
+PRICE GRN GRN51474054 C-1031 standard DE-26579 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.91 total 8.16
+PRICE ARC ARC86688457 C-1031 standard FR-83249 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 4.74 total 42.64
+PRICE ARC ARC35284131 C-1031 freight DE-68837 z1 billable 16.000 base 62.95 fuel 7.55 remote 0.00 oversize 18.00 disc 8.85 total 79.65
+PRICE DRV DRV40301688 C-1031 standard DE-96299 z1 billable 21.500 base 19.65 fuel 2.36 remote 0.00 oversize 0.00 disc 2.20 total 19.81
+PRICE OKT OKT65229997 C-1031 economy CH-4300 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 3.44 total 30.94
+PRICE PRL PRL77329469 C-1031 express FR-39797 z2 billable 10.500 base 44.50 fuel 5.34 remote 0.00 oversize 0.00 disc 4.98 total 44.86
+PRICE WSX WSX97709426 C-1031 standard DE-62783 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.67 total 6.05
+PRICE QNT QNT37660993 C-1031 standard DE-23443 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.67 total 6.05
+PRICE YRD YRD35708015 C-1031 standard DE-26548 z1 billable 10.500 base 11.95 fuel 1.43 remote 4.90 oversize 0.00 disc 1.83 total 16.45
+PRICE JUT JUT61193655 C-1031 standard AT-7268 z2 billable 25.000 base 43.70 fuel 5.24 remote 0.00 oversize 0.00 disc 4.89 total 44.05
+PRICE JUT JUT95822145 C-1031 standard FI-57977 z3 billable 22.500 base 54.60 fuel 6.55 remote 0.00 oversize 0.00 disc 6.12 total 55.03
+PRICE PRL PRL34248142 C-1031 economy DE-44684 z1 billable 9.500 base 8.40 fuel 1.01 remote 0.00 oversize 0.00 disc 0.94 total 8.47
+PRICE LUM LUM44563625 C-1031 economy AT-9081 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 3.44 total 30.94
+PRICE PRL PRL33544432 C-1031 standard CH-6148 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 4.74 total 42.64
+PRICE ARC ARC82383089 C-1031 freight NL-1502 z2 billable 2.000 base 91.40 fuel 10.97 remote 0.00 oversize 0.00 disc 10.24 total 92.13
+PRICE NVA NVA67375706 C-1031 economy DE-15739 z1 billable 9.500 base 8.40 fuel 1.01 remote 0.00 oversize 0.00 disc 0.94 total 8.47
+PRICE VLT VLT36499450 C-1031 standard SE-980 10 z3 billable 2.000 base 15.65 fuel 1.88 remote 4.90 oversize 0.00 disc 2.24 total 20.19
+PRICE FJD FJD10384905 C-1031 economy DE-87349 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.69 total 6.20
+PRICE ARC ARC95974440 C-1031 express CH-4376 z2 billable 2.000 base 20.70 fuel 2.48 remote 0.00 oversize 0.00 disc 2.32 total 20.86
+PRICE OKT OKT78410707 C-1031 express IT-73449 z3 billable 2.500 base 28.60 fuel 3.43 remote 0.00 oversize 0.00 disc 3.20 total 28.83
+PRICE ELB ELB84919837 C-1031 standard AT-1615 z2 billable 22.000 base 39.50 fuel 4.15 remote 0.00 oversize 0.00 disc 4.37 total 39.28
+PRICE XPD XPD96269404 C-1031 standard AT-2192 z2 billable 28.500 base 48.60 fuel 5.83 remote 0.00 oversize 0.00 disc 5.44 total 48.99
+PRICE KSX KSX20049695 C-1031 economy SE-758 61 z3 billable 2.000 base 12.00 fuel 1.74 remote 0.00 oversize 0.00 disc 1.37 total 12.37
+PRICE FJD FJD11295602 C-1031 economy FI-82754 z3 billable 2.500 base 12.70 fuel 1.52 remote 0.00 oversize 0.00 disc 1.42 total 12.80
+PRICE HLX HLX72511790 C-1031 standard DE-25849 z1 billable 3.000 base 6.70 fuel 0.80 remote 0.00 oversize 0.00 disc 0.75 total 6.75
+PRICE ALP ALP22750114 C-1031 express DE-24078 z1 billable 2.500 base 13.30 fuel 1.66 remote 0.00 oversize 0.00 disc 1.50 total 13.46
+PRICE LUM LUM45225624 C-1032 express AT-5112 z2 billable 7.000 base 34.70 fuel 4.16 remote 0.00 oversize 0.00 disc 0.00 total 38.86
+PRICE NVA NVA15079450 C-1032 economy DK-4238 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 0.00 total 29.34
+PRICE SKN SKN39234271 C-1032 standard DE-26579 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE ARC ARC12102624 C-1032 standard DE-11105 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE ARC ARC26821240 C-1032 express FI-71490 z3 billable 12.500 base 66.60 fuel 7.99 remote 0.00 oversize 0.00 disc 0.00 total 74.59
+PRICE OKT OKT59887227 C-1032 standard NL-4818 z2 billable 2.000 base 11.50 fuel 1.38 remote 0.00 oversize 0.00 disc 0.00 total 12.88
+PRICE RHN RHN47222461 C-1032 economy FR-57123 z2 billable 18.500 base 25.20 fuel 3.02 remote 0.00 oversize 0.00 disc 0.00 total 28.22
+PRICE VLT VLT62527411 C-1032 standard PL-56-213 z2 billable 18.500 base 34.60 fuel 4.15 remote 0.00 oversize 0.00 disc 0.00 total 38.75
+PRICE FJD FJD67348159 C-1032 standard DE-84519 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE NVA NVA18205152 C-1032 standard DE-68241 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE TAU TAU27414195 C-1032 express NO-9990 z4 billable 19.500 base 118.70 fuel 14.24 remote 0.00 oversize 0.00 disc 0.00 total 132.94
+PRICE TRV TRV93723180 C-1032 economy DE-49348 z1 billable 1.500 base 4.40 fuel 0.53 remote 0.00 oversize 0.00 disc 0.00 total 4.93
+PRICE ELB ELB28295478 C-1032 standard DE-88749 z1 billable 1.000 base 5.30 fuel 0.56 remote 0.00 oversize 0.00 disc 0.00 total 5.86
+PRICE VLT VLT59971256 C-1032 economy FI-02712 z3 billable 19.000 base 35.80 fuel 4.30 remote 0.00 oversize 0.00 disc 0.00 total 40.10
+PRICE NVA NVA41809311 C-1032 economy DE-95951 z1 billable 4.000 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.00 total 6.33
+PRICE DRV DRV97266102 C-1032 economy DE-61475 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.00 total 5.49
+PRICE OKT OKT67306338 C-1032 economy NL-5523 z2 billable 5.000 base 11.70 fuel 1.40 remote 0.00 oversize 0.00 disc 0.00 total 13.10
+PRICE QNT QNT13731315 C-1032 standard US-36349 z5 billable 13.000 base 77.00 fuel 9.24 remote 0.00 oversize 0.00 disc 0.00 total 86.24
+PRICE OKT OKT61158413 C-1032 standard SE-980 10 z3 billable 10.500 base 31.80 fuel 3.82 remote 4.90 oversize 0.00 disc 0.00 total 40.52
+PRICE BLT BLT94576854 C-1032 standard NO-7452 z4 billable 4.000 base 25.65 fuel 3.08 remote 0.00 oversize 0.00 disc 0.00 total 28.73
+PRICE TRV TRV36144861 C-1032 standard DE-70053 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE UDX UDX54888194 C-1032 standard DE-86586 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE NVA NVA27519564 C-1032 standard DE-35346 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE WSX WSX15474594 C-1032 standard SE-740 78 z3 billable 4.500 base 20.40 fuel 2.45 remote 0.00 oversize 0.00 disc 0.00 total 22.85
+PRICE HLX HLX23669609 C-1033 standard DE-17202 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE KRP KRP28725158 C-1033 standard DE-85971 z1 billable 23.000 base 20.70 fuel 2.48 remote 0.00 oversize 0.00 disc 1.74 total 21.44
+PRICE QNT QNT28161640 C-1033 standard PL-18-360 z2 billable 4.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 1.26 total 15.54
+PRICE KSX KSX76597873 C-1033 economy FR-42661 z2 billable 24.000 base 30.70 fuel 4.45 remote 0.00 oversize 0.00 disc 2.64 total 32.51
+PRICE NRP NRP84144090 C-1033 standard DE-42397 z1 billable 24.500 base 21.75 fuel 2.83 remote 0.00 oversize 18.00 disc 3.19 total 39.39
+PRICE HLX HLX97409220 C-1033 economy DK-1936 z2 billable 11.000 base 17.70 fuel 2.12 remote 0.00 oversize 0.00 disc 1.49 total 18.33
+PRICE TAU TAU22258842 C-1033 standard DE-54407 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.68 total 8.39
+PRICE PRL PRL58719649 C-1033 standard DE-68142 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 0.59 total 7.31
+PRICE TRV TRV71420841 C-1033 economy DE-47326 z1 billable 28.000 base 17.65 fuel 2.12 remote 0.00 oversize 18.00 disc 2.83 total 34.94
+PRICE LUM LUM57534221 C-1033 standard NL-2431 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 3.55 total 43.83
+PRICE KRP KRP34704443 C-1033 standard DE-20968 z1 billable 22.000 base 20.00 fuel 2.40 remote 0.00 oversize 18.00 disc 3.03 total 37.37
+PRICE HLX HLX38867399 C-1033 economy DE-42487 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 2.33 total 28.72
+PRICE WSX WSX94690340 C-1033 standard DE-56203 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE NVA NVA95083107 C-1033 economy DE-90475 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 1.31 total 16.22
+PRICE OKT OKT66917691 C-1033 express DE-44927 z1 billable 8.000 base 22.65 fuel 2.72 remote 0.00 oversize 0.00 disc 1.90 total 23.47
+PRICE MRD MRD56127278 C-1033 freight DE-43186 z1 billable 16.000 base 62.95 fuel 5.98 remote 0.00 oversize 0.00 disc 5.17 total 63.76
+PRICE TAU TAU57195879 C-1033 standard DE-62003 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.53 total 6.58
+PRICE ZEN ZEN11871809 C-1033 express DE-99194 z1 billable 18.000 base 39.65 fuel 4.76 remote 0.00 oversize 0.00 disc 3.33 total 41.08
+PRICE SKN SKN41684081 C-1033 standard DE-76137 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.50 total 6.22
+PRICE FJD FJD31164562 C-1033 economy FR-36357 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 1.44 total 17.82
+PRICE CDX CDX51744226 C-1033 express DE-15414 z1 billable 20.500 base 43.90 fuel 5.27 remote 0.00 oversize 0.00 disc 3.69 total 45.48
+PRICE NRP NRP34354151 C-1033 standard DE-11646 z1 billable 5.000 base 8.10 fuel 1.05 remote 0.00 oversize 0.00 disc 0.69 total 8.46
+PRICE SKN SKN64030824 C-1033 economy DE-18339 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 1.31 total 16.22
+PRICE LUM LUM21835860 C-1033 standard DE-70101 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE YRD YRD44074956 C-1034 economy DE-88396 z1 billable 3.000 base 5.15 fuel 0.62 remote 0.00 oversize 0.00 disc 0.00 total 5.77
+PRICE ALP ALP71970653 C-1034 standard DE-28896 z1 billable 24.000 base 21.40 fuel 2.68 remote 0.00 oversize 0.00 disc 0.00 total 24.08
+PRICE QNT QNT21341338 C-1034 standard DE-52847 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.00 total 8.68
+PRICE DRV DRV77085444 C-1034 express DE-19656 z1 billable 3.500 base 15.00 fuel 1.80 remote 0.00 oversize 0.00 disc 0.00 total 16.80
+PRICE TAU TAU64252734 C-1034 economy AT-3375 z2 billable 1.000 base 7.70 fuel 0.92 remote 0.00 oversize 0.00 disc 0.00 total 8.62
+PRICE YRD YRD36699590 C-1034 economy PL-52-905 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 0.00 total 29.34
+PRICE KSX KSX13279683 C-1034 economy DE-25849 z1 billable 24.000 base 15.65 fuel 2.27 remote 0.00 oversize 0.00 disc 0.00 total 17.92
+PRICE PRL PRL79273595 C-1034 standard DE-83961 z1 billable 11.500 base 12.65 fuel 1.52 remote 0.00 oversize 0.00 disc 0.00 total 14.17
+PRICE JUT JUT38246319 C-1034 standard DE-27669 z1 billable 3.000 base 6.70 fuel 0.80 remote 0.00 oversize 0.00 disc 0.00 total 7.50
+PRICE JUT JUT58037928 C-1034 standard NL-5127 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE PRL PRL72150871 C-1034 standard DE-35439 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE YRD YRD94425462 C-1034 economy DK-1609 z2 billable 3.000 base 9.70 fuel 1.16 remote 0.00 oversize 0.00 disc 0.00 total 10.86
+PRICE DRV DRV78265282 C-1034 standard FR-40924 z2 billable 3.000 base 12.90 fuel 1.55 remote 0.00 oversize 0.00 disc 0.00 total 14.45
+PRICE XPD XPD62734564 C-1034 standard SE-980 10 z3 billable 8.500 base 28.00 fuel 3.36 remote 4.90 oversize 0.00 disc 0.00 total 36.26
+PRICE TRV TRV91844181 C-1034 standard AT-1516 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 0.00 total 26.21
+PRICE MRD MRD14770755 C-1034 express DE-31091 z1 billable 19.500 base 42.20 fuel 4.01 remote 0.00 oversize 0.00 disc 0.00 total 46.21
+PRICE XPD XPD68259615 C-1034 economy DE-10327 z1 billable 4.000 base 5.65 fuel 0.68 remote 0.00 oversize 0.00 disc 0.00 total 6.33
+PRICE OKT OKT98734277 C-1034 standard DE-52717 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE TRV TRV31435183 C-1034 standard ES-41902 z3 billable 5.000 base 21.35 fuel 2.56 remote 0.00 oversize 0.00 disc 0.00 total 23.91
+PRICE TAU TAU62720886 C-1034 standard DE-86367 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE DRV DRV78167646 C-1034 express DE-25845 z1 billable 15.000 base 34.55 fuel 4.15 remote 4.90 oversize 0.00 disc 0.00 total 43.60
+PRICE IBX IBX21561573 C-1034 express DE-65441 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 0.00 total 47.26
+PRICE TRV TRV61907997 C-1034 economy DE-30220 z1 billable 10.500 base 8.90 fuel 1.07 remote 0.00 oversize 0.00 disc 0.00 total 9.97
+PRICE YRD YRD88845647 C-1034 economy IT-88260 z3 billable 19.500 base 36.50 fuel 4.38 remote 0.00 oversize 0.00 disc 0.00 total 40.88
+PRICE XPD XPD32289597 C-1034 standard AT-6200 z2 billable 1.000 base 10.10 fuel 1.21 remote 0.00 oversize 0.00 disc 0.00 total 11.31
+PRICE IBX IBX59800132 C-1034 standard DE-50156 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.00 total 8.68
+PRICE YRD YRD72945824 C-1034 standard NO-5798 z4 billable 11.500 base 44.40 fuel 5.33 remote 0.00 oversize 0.00 disc 0.00 total 49.73
+PRICE GRN GRN62804085 C-1034 standard DE-38133 z1 billable 8.000 base 10.20 fuel 1.22 remote 0.00 oversize 0.00 disc 0.00 total 11.42
+PRICE IBX IBX18300462 C-1034 express DE-25980 z1 billable 21.000 base 44.75 fuel 5.37 remote 4.90 oversize 0.00 disc 0.00 total 55.02
+PRICE MRD MRD87092147 C-1034 standard DE-76743 z1 billable 12.000 base 13.00 fuel 1.24 remote 0.00 oversize 0.00 disc 0.00 total 14.24
+PRICE DRV DRV44927093 C-1034 express DE-16933 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE SKN SKN99366222 C-1034 standard NL-4204 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE SKN SKN53746066 C-1034 standard DE-15078 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.00 total 13.38
+PRICE MRD MRD39725623 C-1034 freight DE-28317 z1 billable 170.500 base 202.00 fuel 19.19 remote 0.00 oversize 0.00 disc 0.00 total 221.19
+PRICE OKT OKT89760512 C-1035 economy DE-49364 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE NRP NRP79001456 C-1035 economy NL-7695 z2 billable 11.500 base 18.20 fuel 2.37 remote 0.00 oversize 0.00 disc 1.03 total 19.54
+PRICE YRD YRD90379548 C-1035 standard DE-10962 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE TRV TRV54687227 C-1035 standard FR-71451 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 2.37 total 45.01
+PRICE TAU TAU79151411 C-1035 express IT-65935 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 6.18 total 117.36
+PRICE LUM LUM86245251 C-1035 standard DE-40923 z1 billable 11.000 base 12.30 fuel 1.48 remote 0.00 oversize 0.00 disc 0.69 total 13.09
+PRICE VLT VLT28065375 C-1035 standard DE-38395 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE DRV DRV79215842 C-1035 standard DE-73268 z1 billable 25.500 base 22.45 fuel 2.69 remote 0.00 oversize 0.00 disc 1.26 total 23.88
+PRICE HLX HLX77103910 C-1035 standard SE-598 31 z3 billable 11.000 base 32.75 fuel 3.93 remote 0.00 oversize 0.00 disc 1.83 total 34.85
+PRICE NRP NRP49480242 C-1035 standard AT-7003 z2 billable 29.000 base 49.30 fuel 6.41 remote 0.00 oversize 0.00 disc 2.79 total 52.92
+PRICE VLT VLT86788384 C-1035 standard DE-20350 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE NVA NVA57261532 C-1035 standard NO-5863 z4 billable 16.000 base 55.65 fuel 6.68 remote 0.00 oversize 18.00 disc 4.02 total 76.31
+PRICE KRP KRP27296193 C-1035 express DE-71997 z1 billable 18.000 base 39.65 fuel 4.76 remote 0.00 oversize 0.00 disc 2.22 total 42.19
+PRICE TAU TAU96708212 C-1035 standard DE-59766 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE CDX CDX75191135 C-1035 standard DE-68891 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 0.40 total 7.50
+PRICE ARC ARC73053208 C-1035 freight DE-34193 z1 billable 75.000 base 116.05 fuel 13.93 remote 0.00 oversize 0.00 disc 6.50 total 123.48
+PRICE OKT OKT33312166 C-1035 standard NL-7430 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 2.64 total 50.19
+PRICE WSX WSX47942818 C-1035 express DE-36204 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 0.75 total 14.15
+PRICE TAU TAU43545043 C-1035 standard NL-2920 z2 billable 2.500 base 12.20 fuel 1.46 remote 0.00 oversize 0.00 disc 0.68 total 12.98
+PRICE KSX KSX15165150 C-1035 economy DE-98403 z1 billable 8.000 base 7.65 fuel 1.11 remote 0.00 oversize 0.00 disc 0.44 total 8.32
+PRICE RHN RHN27210397 C-1035 standard FI-21390 z3 billable 23.500 base 56.50 fuel 6.78 remote 0.00 oversize 18.00 disc 4.06 total 77.22
+PRICE KRP KRP82384483 C-1035 standard NO-9408 z4 billable 24.000 base 75.65 fuel 9.08 remote 4.90 oversize 0.00 disc 4.48 total 85.15
+PRICE IBX IBX61291415 C-1035 standard FR-78020 z2 billable 18.500 base 34.60 fuel 4.15 remote 0.00 oversize 0.00 disc 1.94 total 36.81
+PRICE OKT OKT18124106 C-1035 standard FI-40792 z3 billable 3.500 base 18.50 fuel 2.22 remote 0.00 oversize 0.00 disc 1.04 total 19.68
+PRICE TAU TAU26338208 C-1035 economy DE-26486 z1 billable 19.500 base 13.40 fuel 1.61 remote 0.00 oversize 0.00 disc 0.75 total 14.26
+PRICE ARC ARC59656269 C-1035 freight NL-4591 z2 billable 24.000 base 126.60 fuel 15.19 remote 0.00 oversize 0.00 disc 7.09 total 134.70
+PRICE SKN SKN20935991 C-1035 economy DE-25849 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.65
+PRICE RHN RHN37101136 C-1035 express DE-70465 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.98 total 18.68
+PRICE FJD FJD84074664 C-1035 standard DK-7398 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 1.31 total 24.90
+PRICE UDX UDX37167893 C-1035 standard NL-5114 z2 billable 1.500 base 10.80 fuel 1.30 remote 0.00 oversize 0.00 disc 0.61 total 11.49
+PRICE YRD YRD97352245 C-1035 standard SE-540 82 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE ZEN ZEN54422153 C-1035 express DE-14064 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 0.75 total 14.15
+PRICE NVA NVA44649096 C-1035 standard DE-65385 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE XPD XPD47179981 C-1035 economy DK-3935 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 0.96 total 18.30
+PRICE HLX HLX20976318 C-1036 standard DE-32470 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE SKN SKN97640722 C-1036 standard FR-12639 z2 billable 7.500 base 19.20 fuel 2.30 remote 0.00 oversize 0.00 disc 1.61 total 19.89
+PRICE QNT QNT62613478 C-1036 express DE-27498 z1 billable 3.000 base 14.15 fuel 1.70 remote 0.00 oversize 0.00 disc 1.19 total 14.66
+PRICE HLX HLX71688473 C-1036 standard ES-50183 z3 billable 19.500 base 48.90 fuel 5.87 remote 0.00 oversize 0.00 disc 4.11 total 50.66
+PRICE PRL PRL30130248 C-1036 standard DE-40722 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 1.00 total 12.38
+PRICE TAU TAU37587762 C-1036 standard DK-6418 z2 billable 13.000 base 26.90 fuel 3.23 remote 0.00 oversize 0.00 disc 2.26 total 27.87
+PRICE GRN GRN64816725 C-1036 express NO-2933 z4 billable 16.000 base 101.90 fuel 12.23 remote 0.00 oversize 18.00 disc 9.91 total 122.22
+PRICE UDX UDX32202388 C-1036 standard DE-29244 z1 billable 29.000 base 24.90 fuel 2.99 remote 0.00 oversize 0.00 disc 2.09 total 25.80
+PRICE QNT QNT86831236 C-1036 express DE-22774 z1 billable 1.500 base 11.60 fuel 1.39 remote 0.00 oversize 0.00 disc 0.97 total 12.02
+PRICE OKT OKT85365916 C-1036 standard IT-76156 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 4.83 total 59.51
+PRICE YRD YRD25237095 C-1036 economy SE-156 52 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 3.60 total 44.34
+PRICE JUT JUT11669749 C-1036 standard DE-99529 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.53 total 6.58
+PRICE VLT VLT53913051 C-1036 standard DE-69097 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 1.53 total 18.91
+PRICE TRV TRV58683098 C-1036 standard DE-75895 z1 billable 9.000 base 10.90 fuel 1.31 remote 0.00 oversize 0.00 disc 0.92 total 11.29
+PRICE YRD YRD18880622 C-1036 economy DE-20915 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.41 total 5.08
+PRICE NVA NVA60051642 C-1036 standard DE-21512 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.68 total 8.39
+PRICE IBX IBX64079438 C-1036 standard CH-5488 z2 billable 20.000 base 36.70 fuel 4.40 remote 0.00 oversize 0.00 disc 3.08 total 38.02
+PRICE GRN GRN94777491 C-1036 standard PL-57-853 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 3.55 total 43.83
+PRICE PRL PRL58602516 C-1036 standard AT-5137 z2 billable 1.500 base 10.80 fuel 1.30 remote 0.00 oversize 0.00 disc 0.91 total 11.19
+PRICE KSX KSX58317281 C-1036 express DE-86044 z1 billable 19.500 base 42.20 fuel 6.12 remote 0.00 oversize 0.00 disc 3.62 total 44.70
+PRICE YRD YRD30348416 C-1036 express DE-74045 z1 billable 2.500 base 13.30 fuel 1.60 remote 0.00 oversize 0.00 disc 1.12 total 13.78
+PRICE YRD YRD60897359 C-1036 standard DE-26364 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 0.59 total 7.31
+PRICE ARC ARC89268023 C-1036 standard DE-72697 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE SKN SKN83741292 C-1036 standard ES-35660 z3 billable 10.500 base 31.80 fuel 3.82 remote 0.00 oversize 0.00 disc 2.67 total 32.95
+PRICE ARC ARC10330742 C-1036 freight DE-26820 z1 billable 69.500 base 111.10 fuel 13.33 remote 0.00 oversize 0.00 disc 9.33 total 115.10
+PRICE OKT OKT36064756 C-1036 standard DE-95409 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE VLT VLT53342663 C-1036 standard DE-34675 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.80 total 22.17
+PRICE UDX UDX26257540 C-1036 standard ES-45513 z3 billable 28.000 base 65.05 fuel 7.81 remote 0.00 oversize 0.00 disc 5.46 total 67.40
+PRICE DRV DRV49275891 C-1037 standard DE-74599 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 2.56 total 17.88
+PRICE BLT BLT74759917 C-1037 economy DE-15146 z1 billable 24.500 base 15.90 fuel 1.91 remote 0.00 oversize 0.00 disc 2.23 total 15.58
+PRICE MRD MRD67061053 C-1037 standard DE-80835 z1 billable 19.000 base 17.90 fuel 1.70 remote 0.00 oversize 0.00 disc 2.45 total 17.15
+PRICE BLT BLT72672782 C-1037 standard ES-35912 z3 billable 23.500 base 56.50 fuel 6.78 remote 0.00 oversize 18.00 disc 10.16 total 71.12
+PRICE NRP NRP18615134 C-1037 express DE-89197 z1 billable 10.500 base 26.90 fuel 3.50 remote 0.00 oversize 0.00 disc 3.80 total 26.60
+PRICE VLT VLT85290346 C-1037 standard DE-57150 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE TRV TRV91822974 C-1037 economy CH-5723 z2 billable 2.500 base 9.20 fuel 1.10 remote 0.00 oversize 0.00 disc 1.29 total 9.01
+PRICE SKN SKN86956566 C-1037 standard DE-77258 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE LUM LUM28721052 C-1037 economy DE-90825 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.86 total 6.03
+PRICE CDX CDX99168826 C-1037 express ES-37707 z3 billable 2.500 base 28.60 fuel 3.43 remote 0.00 oversize 0.00 disc 4.00 total 28.03
+PRICE NRP NRP63284714 C-1037 economy PL-85-930 z2 billable 18.000 base 24.70 fuel 3.21 remote 0.00 oversize 0.00 disc 3.49 total 24.42
+PRICE NVA NVA30467081 C-1037 economy NO-9990 z4 billable 4.500 base 21.10 fuel 2.53 remote 0.00 oversize 0.00 disc 2.95 total 20.68
+PRICE GRN GRN31845967 C-1037 express AT-1129 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 4.07 total 28.52
+PRICE GRN GRN92660613 C-1037 economy FR-93323 z2 billable 24.000 base 30.70 fuel 3.68 remote 0.00 oversize 0.00 disc 4.30 total 30.08
+PRICE MRD MRD67326833 C-1037 freight DE-23025 z1 billable 19.500 base 66.10 fuel 6.28 remote 0.00 oversize 0.00 disc 9.05 total 63.33
+PRICE ARC ARC78235190 C-1037 freight DE-47611 z1 billable 338.000 base 352.75 fuel 42.33 remote 0.00 oversize 0.00 disc 49.39 total 345.69
+PRICE ARC ARC12151787 C-1037 freight DE-26579 z1 billable 354.000 base 367.15 fuel 44.06 remote 0.00 oversize 0.00 disc 51.40 total 359.81
+PRICE CDX CDX72386072 C-1037 economy AT-9887 z2 billable 2.000 base 8.70 fuel 1.04 remote 0.00 oversize 0.00 disc 1.22 total 8.52
+PRICE YRD YRD95464983 C-1037 standard DE-40953 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE QNT QNT10972966 C-1037 express CH-8147 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 10.64 total 74.45
+PRICE ELB ELB82068789 C-1037 economy DE-33840 z1 billable 16.000 base 11.65 fuel 1.22 remote 0.00 oversize 18.00 disc 3.86 total 27.01
+PRICE OKT OKT30565380 C-1037 express DE-78159 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 5.91 total 41.35
+PRICE QNT QNT68916743 C-1037 standard DE-29054 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE QNT QNT72798017 C-1037 economy DE-79345 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.86 total 6.03
+PRICE NRP NRP88716994 C-1037 standard NO-7866 z4 billable 2.000 base 20.65 fuel 2.68 remote 0.00 oversize 0.00 disc 2.92 total 20.41
+PRICE VLT VLT50308456 C-1037 standard NO-5123 z4 billable 10.500 base 41.90 fuel 5.03 remote 0.00 oversize 0.00 disc 5.87 total 41.06
+PRICE JUT JUT43689646 C-1037 economy FR-13535 z2 billable 4.500 base 11.20 fuel 1.34 remote 0.00 oversize 0.00 disc 1.57 total 10.97
+PRICE KSX KSX69381566 C-1037 express CH-5813 z2 billable 24.000 base 82.30 fuel 11.93 remote 0.00 oversize 0.00 disc 11.78 total 82.45
+PRICE JUT JUT18164753 C-1037 standard DE-25058 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE UDX UDX55063513 C-1037 standard DE-88150 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 3.00 total 20.97
+PRICE QNT QNT55740388 C-1037 standard NO-3055 z4 billable 21.000 base 68.15 fuel 8.18 remote 0.00 oversize 0.00 disc 9.54 total 66.79
+PRICE JUT JUT15468406 C-1037 economy ES-47098 z3 billable 10.500 base 23.90 fuel 2.87 remote 0.00 oversize 0.00 disc 3.35 total 23.42
+PRICE NRP NRP78801448 C-1038 express IT-69708 z3 billable 16.000 base 79.90 fuel 10.39 remote 0.00 oversize 18.00 disc 5.41 total 102.88
+PRICE SKN SKN27137085 C-1038 standard DE-25999 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.45 total 8.62
+PRICE GRN GRN68036109 C-1038 standard DE-20280 z1 billable 1.000 base 5.30 fuel 0.64 remote 0.00 oversize 0.00 disc 0.30 total 5.64
+PRICE GRN GRN57419231 C-1038 standard DE-68811 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.34 total 6.38
+PRICE JUT JUT84739928 C-1038 standard IT-28177 z3 billable 21.000 base 51.75 fuel 6.21 remote 0.00 oversize 0.00 disc 2.90 total 55.06
+PRICE XPD XPD24213491 C-1038 economy NL-2064 z2 billable 19.500 base 26.20 fuel 3.14 remote 0.00 oversize 0.00 disc 1.47 total 27.87
+PRICE MRD MRD69695106 C-1038 freight DE-89881 z1 billable 365.000 base 377.05 fuel 35.82 remote 0.00 oversize 0.00 disc 20.64 total 392.23
+PRICE OKT OKT82053789 C-1038 economy DE-74118 z1 billable 15.500 base 11.40 fuel 1.37 remote 0.00 oversize 0.00 disc 0.64 total 12.13
+PRICE SKN SKN28987414 C-1038 standard CH-2234 z2 billable 10.500 base 23.40 fuel 2.81 remote 0.00 oversize 0.00 disc 1.31 total 24.90
+PRICE ARC ARC80352779 C-1038 freight DE-44952 z1 billable 306.000 base 323.95 fuel 38.87 remote 0.00 oversize 0.00 disc 18.14 total 344.68
+PRICE KSX KSX55630215 C-1038 standard FI-99100 z3 billable 16.000 base 42.25 fuel 6.13 remote 4.90 oversize 22.00 disc 3.76 total 71.52
+PRICE ALP ALP27017216 C-1038 standard DE-56757 z1 billable 27.500 base 23.85 fuel 2.98 remote 0.00 oversize 18.00 disc 2.24 total 42.59
+PRICE CDX CDX39953018 C-1038 economy DE-25845 z1 billable 19.500 base 13.40 fuel 1.61 remote 4.90 oversize 0.00 disc 1.00 total 18.91
+PRICE WSX WSX55071557 C-1038 standard DK-7744 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 2.64 total 50.19
+PRICE ZEN ZEN82981973 C-1038 express DE-74033 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 2.79 total 53.04
+PRICE BLT BLT65191149 C-1038 standard DE-34338 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE DRV DRV53847253 C-1038 standard DE-27498 z1 billable 4.500 base 7.75 fuel 0.93 remote 0.00 oversize 0.00 disc 0.43 total 8.25
+PRICE JUT JUT82577223 C-1038 standard AT-4736 z2 billable 5.000 base 15.70 fuel 1.88 remote 0.00 oversize 0.00 disc 0.88 total 16.70
+PRICE ARC ARC46719178 C-1038 express CH-8852 z2 billable 5.000 base 29.10 fuel 3.49 remote 0.00 oversize 0.00 disc 1.63 total 30.96
+PRICE GRN GRN21239176 C-1038 express DE-55650 z1 billable 19.500 base 42.20 fuel 5.06 remote 0.00 oversize 0.00 disc 2.36 total 44.90
+PRICE JUT JUT30097507 C-1038 standard DE-37856 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE VLT VLT79355475 C-1038 standard DE-93814 z1 billable 10.500 base 11.95 fuel 1.43 remote 0.00 oversize 0.00 disc 0.67 total 12.71
+PRICE ARC ARC19524770 C-1038 standard ES-36930 z3 billable 4.000 base 19.45 fuel 2.33 remote 0.00 oversize 0.00 disc 1.09 total 20.69
+PRICE DRV DRV27367737 C-1038 economy DE-95613 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 1.55 total 29.50
+PRICE IBX IBX52846121 C-1038 standard DE-91179 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 1.20 total 22.77
+PRICE JUT JUT47431601 C-1038 standard ES-30256 z3 billable 24.000 base 57.45 fuel 6.89 remote 0.00 oversize 0.00 disc 3.22 total 61.12
+PRICE RHN RHN93411605 C-1039 standard DE-17229 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE IBX IBX82718876 C-1039 economy NO-3720 z4 billable 19.500 base 49.60 fuel 5.95 remote 0.00 oversize 0.00 disc 0.00 total 55.55
+PRICE WSX WSX60336165 C-1039 standard DE-27498 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE JUT JUT10535637 C-1039 standard DE-39395 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE DRV DRV72264981 C-1039 economy DE-88352 z1 billable 16.000 base 11.65 fuel 1.40 remote 0.00 oversize 18.00 disc 0.00 total 31.05
+PRICE IBX IBX37260334 C-1039 standard DE-26088 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE OKT OKT30488417 C-1039 economy IT-09170 z3 billable 24.000 base 42.80 fuel 5.14 remote 0.00 oversize 0.00 disc 0.00 total 47.94
+PRICE GRN GRN23529779 C-1039 standard DE-23248 z1 billable 22.000 base 20.00 fuel 2.40 remote 0.00 oversize 0.00 disc 0.00 total 22.40
+PRICE YRD YRD50387988 C-1039 economy DE-54516 z1 billable 5.000 base 6.15 fuel 0.74 remote 0.00 oversize 0.00 disc 0.00 total 6.89
+PRICE RHN RHN70879575 C-1039 standard DE-56423 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE ZEN ZEN22418006 C-1039 standard NL-8903 z2 billable 24.000 base 42.30 fuel 5.08 remote 0.00 oversize 0.00 disc 0.00 total 47.38
+PRICE CDX CDX60198408 C-1039 standard DE-91441 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE CDX CDX52224430 C-1039 standard DE-63037 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 0.00 total 6.72
+PRICE CDX CDX45032935 C-1039 standard DE-95063 z1 billable 15.500 base 15.45 fuel 1.85 remote 0.00 oversize 0.00 disc 0.00 total 17.30
+PRICE BLT BLT97062542 C-1039 standard NL-2131 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 0.00 total 40.32
+PRICE ALP ALP88785464 C-1039 express DE-86899 z1 billable 24.000 base 49.85 fuel 6.23 remote 0.00 oversize 0.00 disc 0.00 total 56.08
+PRICE PRL PRL79505168 C-1039 standard DE-95738 z1 billable 24.000 base 21.40 fuel 2.57 remote 0.00 oversize 0.00 disc 0.00 total 23.97
+PRICE ARC ARC55023195 C-1039 freight DE-13474 z1 billable 366.000 base 377.95 fuel 45.35 remote 0.00 oversize 0.00 disc 0.00 total 423.30
+PRICE BLT BLT54707836 C-1039 standard FI-99999 z3 billable 3.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 0.00 total 19.66
+PRICE XPD XPD10391225 C-1039 standard DE-87140 z1 billable 2.500 base 6.35 fuel 0.76 remote 0.00 oversize 0.00 disc 0.00 total 7.11
+PRICE KSX KSX87990750 C-1039 standard DE-32658 z1 billable 5.500 base 8.45 fuel 1.23 remote 0.00 oversize 0.00 disc 0.00 total 9.68
+PRICE OKT OKT57817559 C-1039 economy SE-920 68 z3 billable 2.500 base 12.70 fuel 1.52 remote 0.00 oversize 0.00 disc 0.00 total 14.22
+PRICE TAU TAU52880212 C-1039 express AT-8766 z2 billable 16.000 base 59.90 fuel 7.19 remote 0.00 oversize 18.00 disc 0.00 total 85.09
+PRICE KRP KRP23134415 C-1039 standard DE-40281 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 0.00 total 9.07
+PRICE XPD XPD88359283 C-1039 economy FR-48150 z2 billable 10.500 base 17.20 fuel 2.06 remote 0.00 oversize 0.00 disc 0.00 total 19.26
+PRICE NVA NVA94075332 C-1039 economy NL-3420 z2 billable 25.500 base 32.20 fuel 3.86 remote 0.00 oversize 0.00 disc 0.00 total 36.06
+PRICE ZEN ZEN85001612 C-1039 standard PL-22-725 z2 billable 16.000 base 31.10 fuel 3.73 remote 0.00 oversize 18.00 disc 0.00 total 52.83
+PRICE YRD YRD62622921 C-1039 standard DE-73013 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 0.00 total 20.44
+PRICE QNT QNT52026929 C-1039 express IT-22277 z3 billable 3.500 base 32.40 fuel 3.89 remote 0.00 oversize 0.00 disc 0.00 total 36.29
+PRICE RHN RHN64245210 C-1040 standard DE-82219 z1 billable 22.000 base 20.00 fuel 2.40 remote 0.00 oversize 0.00 disc 3.36 total 19.04
+PRICE JUT JUT50199220 C-1040 express DE-79706 z1 billable 4.000 base 15.85 fuel 1.90 remote 0.00 oversize 0.00 disc 2.66 total 15.09
+PRICE NRP NRP79607563 C-1040 standard AT-2989 z2 billable 11.500 base 24.80 fuel 3.22 remote 0.00 oversize 0.00 disc 4.20 total 23.82
+PRICE BLT BLT41249216 C-1040 economy NL-4194 z2 billable 2.000 base 8.70 fuel 1.04 remote 0.00 oversize 0.00 disc 1.46 total 8.28
+PRICE YRD YRD90906696 C-1040 express DE-57210 z1 billable 24.000 base 49.85 fuel 5.98 remote 0.00 oversize 0.00 disc 8.37 total 47.46
+PRICE ALP ALP58861497 C-1040 standard DE-52437 z1 billable 16.000 base 15.80 fuel 1.98 remote 0.00 oversize 18.00 disc 5.37 total 30.41
+PRICE GRN GRN30535260 C-1040 standard DE-59926 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE ARC ARC85064052 C-1040 standard DE-72726 z1 billable 2.000 base 6.00 fuel 0.72 remote 0.00 oversize 0.00 disc 1.01 total 5.71
+PRICE IBX IBX69682416 C-1040 express DE-25845 z1 billable 10.500 base 26.90 fuel 3.23 remote 4.90 oversize 0.00 disc 5.25 total 29.78
+PRICE TAU TAU47259479 C-1040 standard AT-7311 z2 billable 27.500 base 47.20 fuel 5.66 remote 0.00 oversize 18.00 disc 10.63 total 60.23
+PRICE NVA NVA48629107 C-1040 express AT-9006 z2 billable 4.000 base 26.30 fuel 3.16 remote 0.00 oversize 0.00 disc 4.42 total 25.04
+PRICE JUT JUT28345319 C-1040 express NL-9340 z2 billable 4.000 base 26.30 fuel 3.16 remote 0.00 oversize 0.00 disc 4.42 total 25.04
+PRICE ARC ARC38086185 C-1040 express CH-2007 z2 billable 2.500 base 22.10 fuel 2.65 remote 0.00 oversize 0.00 disc 3.71 total 21.04
+PRICE DRV DRV82350085 C-1040 standard PL-29-592 z2 billable 19.500 base 36.00 fuel 4.32 remote 0.00 oversize 0.00 disc 6.05 total 34.27
+PRICE ARC ARC90045297 C-1040 express ES-50764 z3 billable 24.000 base 110.30 fuel 13.24 remote 0.00 oversize 0.00 disc 18.53 total 105.01
+PRICE VLT VLT54347266 C-1040 standard DE-30448 z1 billable 20.500 base 18.95 fuel 2.27 remote 0.00 oversize 0.00 disc 3.18 total 18.04
+PRICE FJD FJD12924005 C-1040 standard SE-715 49 z3 billable 26.000 base 61.25 fuel 7.35 remote 0.00 oversize 0.00 disc 10.29 total 58.31
+PRICE FJD FJD41848473 C-1040 standard DE-50062 z1 billable 5.000 base 8.10 fuel 0.97 remote 0.00 oversize 0.00 disc 1.36 total 7.71
+PRICE ARC ARC45344159 C-1040 freight SE-513 20 z3 billable 16.000 base 151.55 fuel 18.19 remote 0.00 oversize 18.00 disc 28.16 total 159.58
+PRICE PRL PRL74537911 C-1040 standard DE-13398 z1 billable 19.500 base 18.25 fuel 2.19 remote 0.00 oversize 0.00 disc 3.07 total 17.37
+PRICE RHN RHN85940781 C-1040 economy DE-42605 z1 billable 2.500 base 4.90 fuel 0.59 remote 0.00 oversize 0.00 disc 0.82 total 4.67
+PRICE OKT OKT82038272 C-1040 standard DE-85061 z1 billable 3.500 base 7.05 fuel 0.85 remote 0.00 oversize 0.00 disc 1.19 total 6.71
+PRICE XPD XPD65184551 C-1040 economy DE-74940 z1 billable 29.000 base 18.15 fuel 2.18 remote 0.00 oversize 0.00 disc 3.05 total 17.28
+PRICE ARC ARC22574664 C-1040 freight DE-15202 z1 billable 339.500 base 354.10 fuel 42.49 remote 0.00 oversize 0.00 disc 59.49 total 337.10
+PRICE CDX CDX86848952 C-1040 standard DE-14331 z1 billable 16.000 base 15.80 fuel 1.90 remote 0.00 oversize 18.00 disc 5.36 total 30.34
+PRICE OKT OKT84894662 C-1040 economy DE-19143 z1 billable 24.000 base 15.65 fuel 1.88 remote 0.00 oversize 0.00 disc 2.63 total 14.90
+PRICE SKN SKN40654537 C-1040 economy DE-21475 z1 billable 27.000 base 17.15 fuel 2.06 remote 0.00 oversize 0.00 disc 2.88 total 16.33
+PRICE MRD MRD46589216 C-1040 express DE-21188 z1 billable 16.000 base 36.25 fuel 3.44 remote 0.00 oversize 0.00 disc 5.95 total 33.74
+PRICE VLT VLT76004668 C-1040 express DE-10365 z1 billable 5.000 base 17.55 fuel 2.11 remote 0.00 oversize 0.00 disc 2.95 total 16.71
+PRICE UDX UDX41910149 C-1040 economy DE-70415 z1 billable 2.000 base 4.65 fuel 0.56 remote 0.00 oversize 0.00 disc 0.78 total 4.43
+billing month 2026-08
+carrier config ./config/carriers-2026.conf
+
+FEEDS
+  ALP  alp_2026-08.txt                 44 shipments
+  ARC  arc_2026-08.csv                 74 shipments
+  BLT  blt_2026-08.dat                 38 shipments
+  CDX  cdx_2026-08.edi                 40 shipments
+  DRV  drv_2026-08.csv                 54 shipments
+  ELB  elb_2026-08.jsonl               52 shipments
+  FJD  fjd_2026-08.tsv                 54 shipments
+  GRN  grn_2026-08.txt                 66 shipments
+  HLX  hlx_2026-08.csv                 55 shipments
+  IBX  ibx_2026-08.dat                 55 shipments
+  JUT  jut_2026-08.jsonl               55 shipments
+  KRP  krp_2026-08.edi                 52 shipments
+  KSX  ksx_2026-08.csv                 59 shipments
+  LUM  lum_2026-08.csv                 38 shipments
+  MRD  mrd_2026-08.csv                 46 shipments
+  NRP  nrp_2026-08.jsonl               59 shipments
+  NVA  nva_2026-08.txt                 64 shipments
+  OKT  okt_2026-08.dat                 75 shipments
+  PRL  prl_2026-08.jsonl               49 shipments
+  QNT  qnt_2026-08.csv                 74 shipments
+  RHN  rhn_2026-08.edi                 51 shipments
+  SKN  skn_2026-08.csv                 72 shipments
+  TAU  tau_2026-08.txt                 70 shipments
+  TRV  trv_2026-08.csv                 48 shipments
+  UDX  udx_2026-08.csv                 38 shipments
+  VLT  vlt_2026-08.jsonl               62 shipments
+  WSX  wsx_2026-08.csv                 49 shipments
+  XPD  xpd_2026-08.txt                 74 shipments
+  YRD  yrd_2026-08.dat                 78 shipments
+  ZEN  zen_2026-08.edi                 51 shipments
+
+BILLED PER CARRIER
+  ALP     32 shipments      1020.12
+  ARC     57 shipments      7183.31
+  BLT     31 shipments       722.85
+  CDX     27 shipments       732.59
+  DRV     45 shipments      1244.08
+  ELB     41 shipments      1263.14
+  FJD     40 shipments       840.98
+  GRN     51 shipments      1482.97
+  HLX     43 shipments      1087.24
+  IBX     50 shipments      1326.98
+  JUT     42 shipments      1108.37
+  KRP     38 shipments       872.91
+  KSX     36 shipments      1184.76
+  LUM     28 shipments       655.26
+  MRD     37 shipments      4533.97
+  NRP     48 shipments      1240.53
+  NVA     48 shipments      1199.57
+  OKT     60 shipments      1660.82
+  PRL     42 shipments      1078.51
+  QNT     51 shipments      1430.88
+  RHN     36 shipments      1124.09
+  SKN     56 shipments      1502.96
+  TAU     52 shipments      1650.36
+  TRV     37 shipments       928.21
+  UDX     30 shipments       749.50
+  VLT     48 shipments      1608.25
+  WSX     39 shipments       918.27
+  XPD     55 shipments      1312.15
+  YRD     57 shipments      1599.19
+  ZEN     41 shipments      1161.17
+
+SKIPPED (32)
+  ARC  ARC33284246        no rate for zone 5
+  ARC  ARC86044544        no rate for zone 5
+  CDX  CDX80641427        unknown customer C-1999
+  FJD  FJD19316571        unknown customer C-1999
+  JUT  JUT71124759        unknown customer C-1999
+  KSX  KSX95558174        billable 56.000 kg exceeds service limit 30.000 kg
+  KSX  KSX18820114        billable 61.000 kg exceeds service limit 31.500 kg
+  KSX  KSX32442111        billable 44.500 kg exceeds service limit 30.000 kg
+  KSX  KSX26685687        billable 46.000 kg exceeds service limit 31.500 kg
+  KSX  KSX91600507        billable 42.500 kg exceeds service limit 31.500 kg
+  KSX  KSX73772119        billable 51.000 kg exceeds service limit 30.000 kg
+  KSX  KSX38549721        billable 59.500 kg exceeds service limit 40.000 kg
+  KSX  KSX54303581        billable 41.000 kg exceeds service limit 30.000 kg
+  KSX  KSX31916945        billable 50.000 kg exceeds service limit 31.500 kg
+  KSX  KSX16902750        billable 34.500 kg exceeds service limit 30.000 kg
+  KSX  KSX47298950        billable 40.500 kg exceeds service limit 40.000 kg
+  LUM  LUM75768511        no rate for zone 5
+  MRD  MRD88542800        unknown customer C-1999
+  NVA  NVA66579869        unknown customer C-1999
+  NVA  NVA99186820        unknown customer C-1999
+  NVA  NVA86185455        unknown customer C-1999
+  OKT  OKT51351639        unknown customer C-1999
+  OKT  OKT86480018        unknown customer C-1999
+  OKT  OKT72082256        unknown customer C-1999
+  PRL  PRL99311610        unknown customer C-1999
+  QNT  QNT93564874        unknown customer C-1999
+  QNT  QNT53452780        no rate for zone 5
+  SKN  SKN63514807        unknown customer C-1999
+  SKN  SKN18901838        unknown customer C-1999
+  UDX  UDX34407429        unknown customer C-1999
+  XPD  XPD58083358        unknown customer C-1999
+  XPD  XPD56798227        unknown customer C-1999
+
+INVOICES
+  C-1001   {{canary:mononym:c1001}} KG                37 lines      1276.86
+  C-1002   {{canary:mononym:c1002}} e.K.              27 lines       615.30
+  C-1003   {{canary:mononym:c1003}} GmbH & Co. KG     35 lines      1871.08
+  C-1004   {{canary:mononym:c1004}} Versand GmbH      39 lines      1252.99
+  C-1005   {{canary:mononym:c1005}} GmbH & Co. KG     41 lines      1961.74
+  C-1006   {{canary:mononym:c1006}} KG                41 lines      1220.85
+  C-1007   {{canary:mononym:c1007}} GmbH              38 lines      1065.71
+  C-1008   {{canary:mononym:c1008}} GmbH & Co. KG     42 lines      1114.68
+  C-1009   {{canary:mononym:c1009}} Versand GmbH      26 lines       583.43
+  C-1010   {{canary:mononym:c1010}} GmbH              34 lines       799.89
+  C-1011   {{canary:mononym:c1011}} e.K.              37 lines      1004.43
+  C-1012   {{canary:mononym:c1012}} e.K.              25 lines       708.60
+  C-1013   {{canary:mononym:c1013}} Handel GmbH       22 lines       698.53
+  C-1014   {{canary:mononym:c1014}} Versand GmbH      41 lines      2725.63
+  C-1015   {{canary:mononym:c1015}} KG                25 lines       537.23
+  C-1016   {{canary:mononym:c1016}} KG                24 lines       709.66
+  C-1017   {{canary:mononym:c1017}} GmbH              33 lines       804.04
+  C-1018   {{canary:mononym:c1018}} e.K.              39 lines      1321.23
+  C-1019   {{canary:mononym:c1019}} GmbH              36 lines      1372.62
+  C-1020   {{canary:mononym:c1020}} GmbH              32 lines       917.70
+  C-1021   {{canary:mononym:c1021}} Versand GmbH      30 lines       846.65
+  C-1022   {{canary:mononym:c1022}} KG                46 lines      1338.06
+  C-1023   {{canary:mononym:c1023}} AG                31 lines      1035.78
+  C-1024   {{canary:mononym:c1024}} KG                30 lines       999.92
+  C-1025   {{canary:mononym:c1025}} Handel GmbH       36 lines       973.01
+  C-1026   {{canary:mononym:c1026}} AG                37 lines      1022.22
+  C-1027   {{canary:mononym:c1027}} AG                32 lines       862.25
+  C-1028   {{canary:mononym:c1028}} AG                33 lines      2311.06
+  C-1029   {{canary:mononym:c1029}} GmbH & Co. KG     31 lines       747.45
+  C-1030   {{canary:mononym:c1030}} KG                27 lines       841.96
+  C-1031   {{canary:mononym:c1031}} GmbH              30 lines       899.69
+  C-1032   {{canary:mononym:c1032}} AG                24 lines       718.70
+  C-1033   {{canary:mononym:c1033}} Versand GmbH      24 lines       599.59
+  C-1034   {{canary:mononym:c1034}} e.K.              34 lines       978.36
+  C-1035   {{canary:mononym:c1035}} GmbH              34 lines      1286.60
+  C-1036   {{canary:mononym:c1036}} e.K.              28 lines       902.56
+  C-1037   {{canary:mononym:c1037}} Handel GmbH       32 lines      1592.21
+  C-1038   {{canary:mononym:c1038}} Versand GmbH      26 lines      1509.78
+  C-1039   {{canary:mononym:c1039}} GmbH & Co. KG     29 lines      1194.79
+  C-1040   {{canary:mononym:c1040}} e.K.              30 lines      1201.15
+
+1298 shipments billed, 32 skipped, 366 not billable this month
+grand total 44423.99
+2026-09-02T06:00:09Z INFO  ---- end of run output ----
+2026-09-02T06:00:09Z INFO  invoices for 2026-08 sent to 40 customers; total {{canary:number:aug_invoiced}} incl. VAT reported to finance
+2026-09-03T08:14:22Z TICKET BILL-4471 from {{canary:person:c1039}} <{{canary:email:c1039}}>, {{canary:phone:c1039}} (customer C-1039): "Our Kestrel Express parcels KSX32442111 and KSX95558174 were rejected as overweight in your August statement. KSX32442111 weighed 20.1 kg on our scale when it left the warehouse. Several other KSX parcels on our invoice look billed at about twice their weight."
+2026-09-03T09:02:51Z TICKET BILL-4472 from {{canary:person:c1002}} <{{canary:email:c1002}}> (customer C-1002): "NRP84725145 was delivered on 31 August in the evening (our consignee confirms) but it is not on the August invoice; your preview for September lists it instead."
+2026-09-03T09:40:10Z NOTE  from {{canary:person:am2}} (account management): C-1037 and C-1014 report the same for Nordpost deliveries late on 31 August. Conversely C-1016 was invoiced in August for NRP64544162, which Nordpost delivered on the night of 31 July.
+2026-09-03T11:26:37Z NOTE  from {{canary:person:am4}} (account management), re carrier contracts: since the July renewal Nordpost, Elbe, Cordex, Fjord, Jutland and Skandik price dimensional weight with 6000 cm3/kg, Drava, Lumen, Perla and Travesia with 4000, Meridian with 3000 (see config/carriers-2026.conf). The August statement looks as if every carrier had been priced with 5000.
+2026-09-03T13:05:44Z NOTE  from {{canary:person:revenue_assurance}} <{{canary:email:revenue_assurance}}> (revenue assurance): no remote-area fee on the August shipments to Helgoland (DE-27498), and none to NO-9990 or FI-99999 either, although config/remote_areas.csv lists all of them. Other remote postcodes were charged.
+2026-09-04T07:51:19Z NOTE  from {{canary:person:finance_controller}} (finance controller), phone {{canary:phone:finance_controller}}: C-1009 (12.5 % contract discount) and other discounted customers received their discount on fuel, remote and oversize surcharges as well. Contracts discount the base price only; see docs/BILLING.md.
+2026-09-04T08:30:00Z INFO  August invoices withdrawn pending a corrected run; ticket BILL-4480 assigned to engineering

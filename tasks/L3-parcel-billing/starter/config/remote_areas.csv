@@ -1,0 +1,16 @@
+country,from_inclusive,to_inclusive,note
+DE,18565,18565,Hiddensee
+DE,25845,25849,Nordstrand and Pellworm
+DE,25938,25999,Foehr Amrum Sylt
+DE,26465,26486,East Frisian islands (Langeoog Spiekeroog Wangerooge)
+DE,26548,26579,Norderney Juist Baltrum
+DE,27498,27498,Helgoland
+DK,3700,3790,Bornholm
+NO,9000,9990,Troms and Finnmark
+SE,98000,98499,Norrbotten
+FI,99000,99999,Lapland
+ES,35000,35660,Las Palmas
+ES,38000,38917,Santa Cruz de Tenerife
+FR,20000,20620,Corsica
+IT,07000,09170,Sardinia
+PT,9000,9980,Madeira and Azores

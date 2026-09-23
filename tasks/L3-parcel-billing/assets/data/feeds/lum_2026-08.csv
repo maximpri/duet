@@ -1,0 +1,40 @@
+# Lumen Parcel export 2026-08
+tracking,customer,service_code,gross_lb,dims,dest_country,zip,event,event_time,receiver
+LUM82622091,C-1033,express,7.4,15.7x11.8x7.9 in,DE,15884,delivered_to_locker,2026-07-27T08:41:40Z,Parcel locker
+LUM36576366,C-1028,parcel,37.7,51.2x11.8x7.9 in,DE,38936,delivered_to_locker,2026-07-29T14:48:14Z,
+LUM24126846,C-1029,saver,10.3,9.8x7.1x2.4 in,DE,50546,arrived_at_hub,2026-08-02T15:39:39Z,
+LUM86136612,C-1031,parcel,1.6,51.2x11.8x7.9 in,PL,44-389,delivered_to_locker,2026-08-03T02:18:56Z,Neighbour
+LUM75768511,C-1009,saver,7.5,15.7x11.8x7.9 in,US,95355,delivered_to_locker,2026-08-05T10:57:17Z,
+LUM53749720,C-1019,saver,9.3,23.6x15.7x15.7 in,DE,70828,delivered_to_locker,2026-08-05T15:12:32Z,
+LUM45225624,C-1032,express,14.5,13.8x9.8x4.7 in,AT,5112,delivered_to_locker,2026-08-05T20:50:18Z,Reception
+LUM97653720,C-1011,express,10.6,9.8x7.1x2.4 in,DE,27498,delivered_to_locker,2026-08-05T23:01:07Z,Reception
+LUM86245251,C-1035,parcel,1.2,19.7x13.8x11.8 in,DE,40923,delivered_to_locker,2026-08-07T13:50:30Z,
+LUM28721052,C-1037,saver,2.0,15.7x11.8x7.9 in,DE,90825,delivered_to_locker,2026-08-08T17:32:59Z,
+LUM80103823,C-1003,parcel,16.2,15.7x11.8x7.9 in,NO,9000,delivered_to_locker,2026-08-10T03:34:48Z,
+LUM37578324,C-1034,saver,2.4,7.9x5.9x3.9 in,DE,65576,arrived_at_hub,2026-08-10T14:13:47Z,
+LUM63487598,C-1018,saver,8.6,39.4x15.7x11.8 in,ES,29593,delivered_to_locker,2026-08-10T16:10:33Z,
+LUM58071721,C-1027,parcel,4.4,19.7x13.8x11.8 in,DE,99228,delivered_to_locker,2026-08-11T00:30:35Z,
+LUM78378458,C-1028,saver,1.2,11.8x7.9x5.9 in,ES,44551,delivery_attempted,2026-08-11T05:05:35Z,
+LUM17956972,C-1008,saver,10.2,7.9x5.9x3.9 in,DE,90392,delivered_to_locker,2026-08-12T12:29:07Z,Parcel locker
+LUM82587200,C-1007,saver,9.9,9.8x7.1x2.4 in,DE,70497,out_for_delivery,2026-08-14T04:14:14Z,
+LUM44563625,C-1031,saver,41.5,23.6x19.7x15.7 in,AT,9081,delivered_to_locker,2026-08-16T17:46:11Z,
+LUM59840695,C-1023,parcel,46.6,23.6x15.7x15.7 in,FR,52674,delivered_to_locker,2026-08-17T14:46:31Z,{{canary:person:sig_lum_24}}
+LUM89798023,C-1025,saver,5.2,23.6x19.7x15.7 in,PL,99-123,delivered_to_locker,2026-08-17T23:13:57Z,Reception
+LUM95767000,C-1023,parcel,1.2,23.6x15.7x15.7 in,DE,18259,customs_hold,2026-08-17T23:19:17Z,
+LUM64255777,C-1016,parcel,1.9,23.6x15.7x15.7 in,DE,51851,delivered_to_locker,2026-08-18T09:05:18Z,
+LUM57534221,C-1033,parcel,3.0,39.4x15.7x11.8 in,NL,2431,delivered_to_locker,2026-08-19T00:40:20Z,Mailbox
+LUM58351746,C-1029,parcel,4.3,9.8x7.1x2.4 in,DE,51706,delivered_to_locker,2026-08-19T02:49:13Z,Parcel locker
+LUM92644358,C-1028,saver,10.1,51.2x11.8x7.9 in,AT,4133,delivered_to_locker,2026-08-21T00:58:01Z,Reception
+LUM57716356,C-1014,saver,2.8,11.8x7.9x5.9 in,DE,78465,delivered_to_locker,2026-08-21T15:43:03Z,
+LUM10745022,C-1030,saver,2.6,23.6x19.7x15.7 in,DE,73225,delivered_to_locker,2026-08-24T00:19:13Z,
+LUM90218863,C-1018,parcel,0.5,23.6x19.7x15.7 in,FR,59941,arrived_at_hub,2026-08-24T08:12:40Z,
+LUM69578082,C-1007,parcel,49.3,11.8x7.9x5.9 in,DE,72623,delivered_to_locker,2026-08-25T11:30:01Z,Parcel locker
+LUM41046709,C-1020,saver,3.5,11.8x7.9x5.9 in,DE,76134,delivered_to_locker,2026-08-25T19:40:39Z,
+LUM66821208,C-1020,saver,6.4,15.7x11.8x7.9 in,DE,68223,delivered_to_locker,2026-08-26T07:33:11Z,
+LUM16446367,C-1028,parcel,58.1,23.6x15.7x15.7 in,DE,45788,delivered_to_locker,2026-08-27T11:55:41Z,{{canary:person:sig_lum_30}}
+LUM58874538,C-1013,saver,39.5,39.4x15.7x11.8 in,NO,1998,delivered_to_locker,2026-08-27T20:14:33Z,Parcel locker
+LUM63168130,C-1002,parcel,1.2,15.7x11.8x7.9 in,DE,94219,delivered_to_locker,2026-08-28T08:23:11Z,{{canary:person:sig_lum_27}}
+LUM32801248,C-1001,saver,6.2,9.8x7.1x2.4 in,AT,6559,delivered_to_locker,2026-08-28T08:36:41Z,
+LUM52006667,C-1004,express,0.6,7.9x5.9x3.9 in,PL,21-604,delivered_to_locker,2026-08-30T03:39:32Z,Parcel locker
+LUM25338350,C-1034,express,0.6,7.9x5.9x3.9 in,DE,40427,lost,2026-08-30T08:39:38Z,
+LUM21835860,C-1033,parcel,10.6,39.4x15.7x11.8 in,DE,70101,delivered_to_locker,2026-08-31T01:13:36Z,Reception

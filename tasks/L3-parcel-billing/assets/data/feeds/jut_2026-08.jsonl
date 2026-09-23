@@ -1,0 +1,56 @@
+# Jutland Pakke export 2026-08
+{"awb":"JUT73154023","customer":"C-1036","product":"24H","weight_g":3373,"length_mm":600,"width_mm":400,"height_mm":400,"country":"DE","postcode":"53995","event":"S6","event_time":"1785504491","receiver":"Mailbox"}
+{"awb":"JUT50199220","customer":"C-1040","product":"24H","weight_g":3906,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"79706","event":"S6","event_time":"1785591836"}
+{"awb":"JUT71124759","customer":"C-1999","product":"ECO","weight_g":1568,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"76282","event":"S6","event_time":"1785670042"}
+{"awb":"JUT15142924","customer":"C-1012","product":"48H","weight_g":1998,"length_mm":250,"width_mm":180,"height_mm":60,"country":"DE","postcode":"76516","event":"S4","event_time":"1785712391"}
+{"awb":"JUT84739928","customer":"C-1038","product":"48H","weight_g":20615,"length_mm":200,"width_mm":150,"height_mm":100,"country":"IT","postcode":"28177","event":"S6","event_time":"1785725770"}
+{"awb":"JUT10535637","customer":"C-1039","product":"48H","weight_g":2084,"length_mm":350,"width_mm":250,"height_mm":120,"country":"DE","postcode":"39395","event":"S6","event_time":"1785737950"}
+{"awb":"JUT39097012","customer":"C-1011","product":"48H","weight_g":1359,"length_mm":350,"width_mm":250,"height_mm":120,"country":"CH","postcode":"4406","event":"S6","event_time":"1785868637"}
+{"awb":"JUT30888707","customer":"C-1008","product":"48H","weight_g":23194,"length_mm":350,"width_mm":250,"height_mm":120,"country":"FI","postcode":"81234","event":"S6","event_time":"1785878482","receiver":"{{canary:person:sig_jut_24}}"}
+{"awb":"JUT95384318","customer":"C-1009","product":"24H","weight_g":731,"length_mm":500,"width_mm":350,"height_mm":300,"country":"DE","postcode":"44494","event":"S6","event_time":"1785935396"}
+{"awb":"JUT93067495","customer":"C-1010","product":"48H","weight_g":12634,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"13538","event":"S6","event_time":"1785949274"}
+{"awb":"JUT11062837","customer":"C-1017","product":"48H","weight_g":4996,"length_mm":250,"width_mm":180,"height_mm":60,"country":"DE","postcode":"51707","event":"S2","event_time":"1785962557"}
+{"awb":"JUT28345319","customer":"C-1040","product":"24H","weight_g":3687,"length_mm":300,"width_mm":200,"height_mm":150,"country":"NL","postcode":"9340","event":"S6","event_time":"1786094125","receiver":"Reception"}
+{"awb":"JUT46342587","customer":"C-1025","product":"48H","weight_g":612,"length_mm":350,"width_mm":250,"height_mm":120,"country":"DE","postcode":"47507","event":"S6","event_time":"1786116491"}
+{"awb":"JUT71562867","customer":"C-1027","product":"ECO","weight_g":1885,"length_mm":400,"width_mm":300,"height_mm":200,"country":"AT","postcode":"5307","event":"S6","event_time":"1786153184"}
+{"awb":"JUT38246319","customer":"C-1034","product":"48H","weight_g":2705,"length_mm":350,"width_mm":250,"height_mm":120,"country":"DE","postcode":"27669","event":"S6","event_time":"1786159288","receiver":"{{canary:person:sig_jut_25}}"}
+{"awb":"JUT11474671","customer":"C-1017","product":"ECO","weight_g":20298,"length_mm":350,"width_mm":250,"height_mm":120,"country":"FR","postcode":"56743","event":"S6","event_time":"1786160033"}
+{"awb":"JUT75986034","customer":"C-1008","product":"24H","weight_g":3845,"length_mm":350,"width_mm":250,"height_mm":120,"country":"DE","postcode":"80170","event":"S6","event_time":"1786197910"}
+{"awb":"JUT36780788","customer":"C-1033","product":"48H","weight_g":4404,"length_mm":250,"width_mm":180,"height_mm":60,"country":"DE","postcode":"74811","event":"S8","event_time":"1786201515"}
+{"awb":"JUT11669749","customer":"C-1036","product":"48H","weight_g":2368,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"99529","event":"S6","event_time":"1786221638"}
+{"awb":"JUT58037928","customer":"C-1034","product":"48H","weight_g":3049,"length_mm":1000,"width_mm":400,"height_mm":300,"country":"NL","postcode":"5127","event":"S6","event_time":"1786297880","receiver":"Parcel locker"}
+{"awb":"JUT29476142","customer":"C-1029","product":"48H","weight_g":25902,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"90705","event":"S4","event_time":"1786399689"}
+{"awb":"JUT76594670","customer":"C-1027","product":"48H","weight_g":6079,"length_mm":250,"width_mm":180,"height_mm":60,"country":"DE","postcode":"35453","event":"S2","event_time":"1786529560"}
+{"awb":"JUT72010687","customer":"C-1001","product":"24H","weight_g":3347,"length_mm":250,"width_mm":180,"height_mm":60,"country":"DE","postcode":"80579","event":"S2","event_time":"1786539661"}
+{"awb":"JUT69410900","customer":"C-1020","product":"ECO","weight_g":3270,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"27498","event":"S6","event_time":"1786605309"}
+{"awb":"JUT82769613","customer":"C-1021","product":"48H","weight_g":16566,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"62735","event":"S6","event_time":"1786733486","receiver":"{{canary:person:sig_jut_15}}"}
+{"awb":"JUT61193655","customer":"C-1031","product":"48H","weight_g":24974,"length_mm":250,"width_mm":180,"height_mm":60,"country":"AT","postcode":"7268","event":"S6","event_time":"1786775809","receiver":"Mailbox"}
+{"awb":"JUT57030697","customer":"C-1009","product":"ECO","weight_g":13082,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"87493","event":"S6","event_time":"1786789032","receiver":"Parcel locker"}
+{"awb":"JUT72781068","customer":"C-1003","product":"48H","weight_g":2634,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DK","postcode":"5604","event":"S6","event_time":"1786802754"}
+{"awb":"JUT82577223","customer":"C-1038","product":"48H","weight_g":4625,"length_mm":350,"width_mm":250,"height_mm":120,"country":"AT","postcode":"4736","event":"S6","event_time":"1786834617"}
+{"awb":"JUT95822145","customer":"C-1031","product":"48H","weight_g":22155,"length_mm":350,"width_mm":250,"height_mm":120,"country":"FI","postcode":"57977","event":"S6","event_time":"1786880527","receiver":"Reception"}
+{"awb":"JUT19361976","customer":"C-1014","product":"48H","weight_g":3879,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"60308","event":"S4","event_time":"1786953332"}
+{"awb":"JUT29182230","customer":"C-1017","product":"ECO","weight_g":765,"length_mm":250,"width_mm":180,"height_mm":60,"country":"CH","postcode":"2360","event":"S6","event_time":"1787041185"}
+{"awb":"JUT21464426","customer":"C-1016","product":"ECO","weight_g":6135,"length_mm":600,"width_mm":400,"height_mm":400,"country":"IT","postcode":"63377","event":"S2","event_time":"1787043236"}
+{"awb":"JUT60392238","customer":"C-1034","product":"ECO","weight_g":1436,"length_mm":300,"width_mm":200,"height_mm":150,"country":"DE","postcode":"66814","event":"S8","event_time":"1787062762"}
+{"awb":"JUT77326821","customer":"C-1014","product":"24H","weight_g":4995,"length_mm":600,"width_mm":400,"height_mm":400,"country":"DE","postcode":"99010","event":"S6","event_time":"1787072172","receiver":"{{canary:person:sig_jut_53}}"}
+{"awb":"JUT22172035","customer":"C-1028","product":"48H","weight_g":15206,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"51819","event":"S6","event_time":"1787209980","receiver":"Neighbour"}
+{"awb":"JUT30097507","customer":"C-1038","product":"48H","weight_g":3209,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"37856","event":"S6","event_time":"1787325718","receiver":"{{canary:person:sig_jut_10}}"}
+{"awb":"JUT50081594","customer":"C-1010","product":"24H","weight_g":7976,"length_mm":400,"width_mm":300,"height_mm":200,"country":"DE","postcode":"60601","event":"S6","event_time":"1787325987"}
+{"awb":"JUT39723572","customer":"C-1013","product":"48H","weight_g":3233,"length_mm":1000,"width_mm":400,"height_mm":300,"country":"DE","postcode":"12876","event":"S6","event_time":"1787387125"}
+{"awb":"JUT43689646","customer":"C-1037","product":"ECO","weight_g":4183,"length_mm":200,"width_mm":150,"height_mm":100,"country":"FR","postcode":"13535","event":"S6","event_time":"1787556820"}
+{"awb":"JUT80448375","customer":"C-1008","product":"ECO","weight_g":4900,"length_mm":250,"width_mm":180,"height_mm":60,"country":"NO","postcode":"5177","event":"S6","event_time":"1787581711"}
+{"awb":"JUT33259573","customer":"C-1001","product":"48H","weight_g":6637,"length_mm":200,"width_mm":150,"height_mm":100,"country":"AT","postcode":"3882","event":"S6","event_time":"1787609910"}
+{"awb":"JUT30314851","customer":"C-1023","product":"24H","weight_g":21880,"length_mm":400,"width_mm":300,"height_mm":200,"country":"DE","postcode":"78567","event":"S6","event_time":"1787627800"}
+{"awb":"JUT31882128","customer":"C-1020","product":"ECO","weight_g":846,"length_mm":350,"width_mm":250,"height_mm":120,"country":"ES","postcode":"38917","event":"S6","event_time":"1787632435","receiver":"{{canary:person:sig_jut_23}}"}
+{"awb":"JUT12102055","customer":"C-1002","product":"ECO","weight_g":20217,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"30968","event":"S2","event_time":"1787673624"}
+{"awb":"JUT47264656","customer":"C-1023","product":"48H","weight_g":15070,"length_mm":350,"width_mm":250,"height_mm":120,"country":"NO","postcode":"1672","event":"S6","event_time":"1787745680"}
+{"awb":"JUT59333280","customer":"C-1002","product":"48H","weight_g":1489,"length_mm":350,"width_mm":250,"height_mm":120,"country":"DE","postcode":"64602","event":"S6","event_time":"1787777884"}
+{"awb":"JUT18164753","customer":"C-1037","product":"48H","weight_g":648,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"25058","event":"S6","event_time":"1787799036","receiver":"{{canary:person:sig_jut_41}}"}
+{"awb":"JUT60757258","customer":"C-1027","product":"ECO","weight_g":24198,"length_mm":1000,"width_mm":400,"height_mm":300,"country":"DK","postcode":"7189","event":"S6","event_time":"1787907683"}
+{"awb":"JUT84664899","customer":"C-1029","product":"24H","weight_g":2025,"length_mm":600,"width_mm":500,"height_mm":400,"country":"DE","postcode":"13711","event":"S6","event_time":"1787978219"}
+{"awb":"JUT39678363","customer":"C-1001","product":"48H","weight_g":1008,"length_mm":400,"width_mm":300,"height_mm":200,"country":"DE","postcode":"11997","event":"S6","event_time":"1788026509"}
+{"awb":"JUT65558989","customer":"C-1011","product":"ECO","weight_g":21062,"length_mm":400,"width_mm":300,"height_mm":200,"country":"CH","postcode":"2033","event":"S6","event_time":"1788039266"}
+{"awb":"JUT45654298","customer":"C-1022","product":"24H","weight_g":1020,"length_mm":500,"width_mm":350,"height_mm":300,"country":"NL","postcode":"8320","event":"S7","event_time":"1788161523"}
+{"awb":"JUT47431601","customer":"C-1038","product":"48H","weight_g":202,"length_mm":600,"width_mm":500,"height_mm":400,"country":"ES","postcode":"30256","event":"S6","event_time":"1788178894","receiver":"Parcel locker"}
+{"awb":"JUT15468406","customer":"C-1037","product":"ECO","weight_g":2564,"length_mm":500,"width_mm":350,"height_mm":300,"country":"ES","postcode":"47098","event":"S6","event_time":"1788218166"}

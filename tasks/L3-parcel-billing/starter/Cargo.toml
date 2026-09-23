@@ -1,0 +1,11 @@
+[package]
+name = "parcelflow"
+version = "0.9.4"
+edition = "2021"
+description = "Multi-carrier parcel billing for resellers"
+
+[dependencies]
+
+[[bin]]
+name = "parcelflow"
+path = "src/main.rs"
