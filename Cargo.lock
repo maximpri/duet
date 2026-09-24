@@ -529,6 +529,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "duet-release"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "toml",
+]
+
+[[package]]
 name = "duet-sandbox"
 version = "0.1.0"
 dependencies = [
