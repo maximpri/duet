@@ -336,6 +336,12 @@ pub fn lane_program(lane: &Lane) -> Result<String> {
 }
 
 /// Classifies a run from the provider statuses the proxy saw, in order.
+/// Errors that come from the machine running the evaluation (a full disk), not
+/// from the agent under test.
+pub fn host_failure(error: &str) -> bool {
+    error.contains("No space left on device") || error.contains("os error 28")
+}
+
 pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
     let limited = statuses.contains(&429);
     let ok = statuses.iter().filter(|s| (200..300).contains(*s)).count();
@@ -510,6 +516,12 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
             let msg = format!("grading failed: {e:#}");
             record.error = Some(record.error.map_or(msg.clone(), |x| format!("{x}; {msg}")));
         }
+    }
+    // The host, not the agent, decided the outcome: exclude and retry the run.
+    if record.invalid.is_none()
+        && let Some(e) = record.error.as_deref().filter(|e| host_failure(e))
+    {
+        record.invalid = Some(format!("host failure: {e}"));
     }
     fs::write(
         run_dir.join("run.json"),
@@ -868,6 +880,12 @@ mod infra_tests {
         );
         assert!(infra_verdict(&[]).0.is_some());
         assert!(infra_verdict(&[200, 503, 200]).0.is_none());
+        assert!(crate::lanes::host_failure(
+            "grading failed: staging ws/.env: No space left on device (os error 28)"
+        ));
+        assert!(!crate::lanes::host_failure(
+            "grading failed: hidden tests timed out"
+        ));
     }
 }
 
