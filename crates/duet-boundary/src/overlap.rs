@@ -92,7 +92,13 @@ impl OverlapIndex {
                 j += 1;
             }
             if j - i >= MIN_CONSECUTIVE {
-                spans.push((windows[i].1, windows[j - 1].2));
+                let (s, e) = (windows[i].1, windows[j - 1].2);
+                // Windows overlap by up to WINDOW - 1 tokens, so a run separated
+                // from the previous one by a single miss can start inside it.
+                match spans.last_mut() {
+                    Some(prev) if s <= prev.1 => prev.1 = prev.1.max(e),
+                    _ => spans.push((s, e)),
+                }
             }
             i = j;
         }
@@ -134,6 +140,22 @@ mod tests {
         let (short, n) = idx.redact("It mentions Northwind and the announcement.");
         assert_eq!(n, 0);
         assert_eq!(short, "It mentions Northwind and the announcement.");
+    }
+
+    #[test]
+    fn copied_runs_split_by_a_public_window_are_merged() {
+        // One window in the middle of a copied passage also occurs in public text,
+        // so it is exempt: the passage splits into two runs whose byte spans overlap
+        // (neighbouring windows share 7 tokens). Redaction must merge them.
+        let words: Vec<&str> = SECRET_NOTE.split_whitespace().collect();
+        for mid in WINDOW..words.len() - 2 * WINDOW {
+            let mut idx = OverlapIndex::default();
+            idx.add_sensitive(SECRET_NOTE);
+            idx.add_public(&words[mid..mid + WINDOW].join(" "));
+            let (out, n) = idx.redact(SECRET_NOTE);
+            assert!(n >= 1, "{out}");
+            assert!(!out.contains("acquisition of Northwind closes"), "{out}");
+        }
     }
 
     #[test]
