@@ -146,6 +146,33 @@ plants unique canaries — secrets, personal data, business facts, source string
 bodies and prompt-injection text — in every run, and an independent logging proxy between Duet and
 the provider records every request. A release requires zero canaries in outbound traffic.
 
+The boundary's own code is also tested against generated input, in the gate on every commit:
+
+- **No canary survives the gate** (`crates/duet-boundary/tests/no_canary.rs`). Sensitive `.env`,
+  CSV and log files are generated with canaries, the engine is primed on them as at run start, and
+  requests are generated that carry every canary in user text, tool results, assistant text,
+  reasoning and tool-call arguments. After the outbound filter the final check must pass and no
+  covered spelling may remain in the body, raw or JSON-decoded; a body that still holds one (6+
+  bytes) must be refused by the check alone.
+- **Building blocks**: vault round trip, idempotence, no value left outside tokens, aliases never
+  restored; copied-span redaction leaves no copied run; detector spans in bounds and disjoint; the
+  stream parser, chunk assembler and tool-call recovery never panic on model output.
+- **Fuzzing** of the same components (`fuzz/`, `tools/fuzz.sh`), run before releases.
+
+What the value filters cover, precisely (the spellings the property asserts):
+
+| Value | Replaced when it appears as |
+|---|---|
+| `.env` values, detected secrets and tokens, emails, phone numbers, IBANs, card numbers, IPv4 addresses | exactly as in the sensitive content (including characters JSON escapes, such as `\` and `"`, inside tool-call arguments) |
+| Person names in sensitive content (title-case runs, person fields such as `name=`) | as written; the surname alone if it has 4+ letters and is not a word of public content |
+| Numbers of 6+ digits in sensitive content | as written, plain digits, comma-grouped, and as minor units (`51861.26`, `51,861.26`) |
+
+Not covered by value filters: values under 4 bytes (the final check needs 6+), a first name alone,
+other letter cases or number formats, and any re-encoding (base64, hex, character codes, a value
+split across strings). Re-encoding is stopped by access control instead: commands cannot read
+sensitive paths, `.git` or `.duet`, so no program can print their content in any encoding, and a
+`sensitive_data` command's output is held locally.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to

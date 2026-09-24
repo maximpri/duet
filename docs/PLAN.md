@@ -236,7 +236,7 @@ As built (details: ARCHITECTURE §5):
 - **Write-back:** local placeholder resolution; secret-sink check.
 - **Tests:** unit tests per detector; vault round trip; gate blocking; hash-chain verification;
   injection canaries; end-to-end hybrid runs on S1, S2, M1–M3 and L1 with the proxy. The property
-  test that no canary survives the gate is part of SbD-2 (not yet written).
+  test that no canary survives the gate is part of SbD-2 (`duet-boundary/tests/no_canary.rs`).
 
 **Gate 2 — privacy without quality loss** (S1, S2, M1, M2, M3, L1). Zero leaks and zero secret-sink
 violations across all hybrid runs (leak proxy and grader);
@@ -306,11 +306,23 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
   inside the sandbox; what the sandbox and write path still prevent).
 
 **SbD-2 — eliminate classes, verify independently (with M5)**
-- Fuzzing (cargo-fuzz) of the SSE parser, JSON/tool-call recovery, vault tokenize/detokenize, the
-  copied-span filter and detectors; property test "no canary survives the gate" over generated content.
+- Fuzzing and property tests — in place. `fuzz/` (own workspace, excluded from the main one) has
+  libFuzzer targets for the SSE parser, chunk assembly with tool-call recovery, vault
+  tokenize/detokenize, the copied-span filter and the detectors; `tools/fuzz.sh [seconds]` runs them
+  with `cargo +nightly fuzz`, or on stable with the same instrumentation and no sanitizer. Property
+  tests (proptest, in the gate with small case counts, `PROPTEST_CASES` to raise): parsers never
+  panic and SSE is chunking-independent; vault round trip, idempotence, no value outside tokens,
+  aliases never detokenize; copied-span redaction leaves no copied run; detector spans well formed;
+  and "no canary survives the gate" over generated `.env`/CSV/log content with canaries in every
+  request channel and covered spelling (SECURITY.md, Verification). Bugs found and fixed at the class
+  level with regression tests: tokens rewritten by values that spell part of them; values escaped
+  inside tool-call arguments (JSON in JSON) missed by the filter and the final check; values inside
+  a longer overlapping detection never registered on their own.
 - Adversarial review of the boundary before the public benchmark (a red-team pass with fresh canaries,
   encodings and injection), findings fixed at the class level.
-- Pre-commit / pre-push hook running `tools/gate.sh` (no hosted CI by operator decision).
+- Pre-push hook running `tools/gate.sh`, optional pre-commit hook running `tools/gate.sh --fast`
+  (format, license, privacy, provenance) — in place: `tools/install-hooks.sh [--pre-commit]` (no hosted
+  CI by operator decision).
 
 **SbD-3 — supply chain and oversight (with M6)**
 - Versioned, signed releases; SBOM (CycloneDX); security advisory channel; `duet doctor` flags outdated

@@ -14,8 +14,8 @@
 //!
 //! Covered spellings (what the value filters claim, and all this test asserts):
 //! - secrets from `.env` (any characters, including `\` and `"`), provider-shaped
-//!   tokens, emails, phone numbers and IPv4 addresses: exactly as they appear in
-//!   the sensitive file;
+//!   tokens, emails, phone numbers, card numbers, IBANs and IPv4 addresses:
+//!   exactly as they appear in the sensitive file;
 //! - person names (two or more title-case words, or the value of a person field
 //!   such as `name=`): as written, and the surname alone when it has 4+ letters
 //!   and is not a word of public content;
@@ -63,6 +63,8 @@ struct Canaries {
     emails: Vec<String>,
     phones: Vec<String>,
     ips: Vec<String>,
+    cards: Vec<String>,
+    ibans: Vec<String>,
     names: Vec<(String, String)>,
     single_names: Vec<String>,
     numbers: Vec<u64>,
@@ -108,19 +110,35 @@ fn canaries() -> impl Strategy<Value = Canaries> {
         proptest::collection::vec(email, 1..4),
         proptest::collection::vec(phone, 1..3),
         proptest::collection::vec(ip, 0..2),
+        proptest::collection::vec(card(), 0..2),
+        proptest::collection::vec(iban(), 0..2),
         proptest::collection::vec((word(1, 3), word(2, 3)), 1..4),
         proptest::collection::vec(word(2, 3), 1..3),
         proptest::collection::vec(100_000u64..10_000_000_000, 1..4),
         proptest::collection::vec(1_000_000u64..10_000_000_000, 1..3),
     )
         .prop_map(
-            |(env_secrets, tokens, emails, phones, ips, names, single_names, numbers, grouped)| {
+            |(
+                env_secrets,
+                tokens,
+                emails,
+                phones,
+                ips,
+                cards,
+                ibans,
+                names,
+                single_names,
+                numbers,
+                grouped,
+            )| {
                 Canaries {
                     env_secrets,
                     tokens,
                     emails,
                     phones,
                     ips,
+                    cards,
+                    ibans,
                     names,
                     single_names,
                     numbers,
@@ -128,6 +146,48 @@ fn canaries() -> impl Strategy<Value = Canaries> {
                 }
             },
         )
+}
+
+/// A Luhn-valid 16-digit card number, plain or in groups of four.
+fn card() -> impl Strategy<Value = String> {
+    (proptest::collection::vec(0u32..10, 15), any::<bool>()).prop_map(|(mut d, spaced)| {
+        d[0] = 4;
+        let sum: u32 = d
+            .iter()
+            .rev()
+            .enumerate()
+            .map(|(i, &x)| {
+                if i % 2 == 0 {
+                    (x * 2) % 9 + u32::from(x == 9) * 9
+                } else {
+                    x
+                }
+            })
+            .sum();
+        d.push((10 - sum % 10) % 10);
+        let digits: String = d.iter().map(|x| char::from(b'0' + *x as u8)).collect();
+        if spaced {
+            digits
+                .as_bytes()
+                .chunks(4)
+                .map(|c| std::str::from_utf8(c).unwrap())
+                .collect::<Vec<_>>()
+                .join(" ")
+        } else {
+            digits
+        }
+    })
+}
+
+/// A German IBAN with valid check digits.
+fn iban() -> impl Strategy<Value = String> {
+    "[0-9]{18}".prop_map(|bban| {
+        // DE = 13 14; check digits = 98 - (bban + "131400") mod 97.
+        let rem = format!("{bban}131400")
+            .bytes()
+            .fold(0u32, |r, b| (r * 10 + u32::from(b - b'0')) % 97);
+        format!("DE{:02}{bban}", 98 - rem)
+    })
 }
 
 fn group(n: u64) -> String {
@@ -189,6 +249,16 @@ fn files(c: &Canaries, seps: &[&str]) -> Vec<(String, String)> {
         // Digits next to digits: detectors may read the pair as one card number.
         log.push_str(&format!("INFO {} {n}\n", c.phones[i % c.phones.len()]));
     }
+    for (i, card) in c.cards.iter().enumerate() {
+        log.push_str(&format!("WARN declined card{}{card}\n", sep(i)));
+    }
+    for (i, iban) in c.ibans.iter().enumerate() {
+        log.push_str(&format!(
+            "INFO payout{}{iban}{}queued\n",
+            sep(i),
+            sep(i + 1)
+        ));
+    }
     for (i, ip) in c.ips.iter().enumerate() {
         log.push_str(&format!("DEBUG from {ip}{}ok\n", sep(i)));
     }
@@ -225,6 +295,8 @@ fn covered_spellings(c: &Canaries) -> Vec<String> {
     out.extend(c.emails.iter().cloned());
     out.extend(c.phones.iter().cloned());
     out.extend(c.ips.iter().cloned());
+    out.extend(c.cards.iter().cloned());
+    out.extend(c.ibans.iter().cloned());
     for (first, last) in &c.names {
         out.push(format!("{first} {last}"));
         if last.chars().count() >= 4 && !is_public_word(last) {
