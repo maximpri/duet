@@ -468,6 +468,7 @@ mod tests {
             invalid: None,
             rate_limited: false,
             duet_ledger: None,
+            provenance: None,
         }
     }
 

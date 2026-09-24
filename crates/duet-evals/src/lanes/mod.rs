@@ -194,6 +194,97 @@ pub struct RunRecord {
     /// Duet's own cost ledger (Duet lanes that wrote a run summary).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duet_ledger: Option<DuetLedger>,
+    /// What produced the run: harness build, lane model, agent version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<Provenance>,
+}
+
+/// Versions behind one run, for the benchmark's reproducibility section.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Provenance {
+    /// Commit of the duet_v2 build that ran: `DUET_EVAL_GIT_COMMIT` when the
+    /// runner sets it, else `git rev-parse HEAD` in the working directory.
+    pub git_commit: Option<String>,
+    /// Whether tracked files differed from that commit.
+    pub git_dirty: Option<bool>,
+    /// `env`, `git` or `unknown`.
+    pub commit_source: String,
+    pub harness_version: String,
+    pub lane_model: String,
+    pub lane_upstream: String,
+    /// First line of the lane program's `--version`.
+    pub agent_version: Option<String>,
+}
+
+/// The duet_v2 commit this run is attributed to (see [`Provenance::git_commit`]).
+pub fn build_commit() -> (Option<String>, Option<bool>, &'static str) {
+    if let Some(c) = std::env::var("DUET_EVAL_GIT_COMMIT")
+        .ok()
+        .map(|c| c.trim().to_owned())
+        .filter(|c| !c.is_empty())
+    {
+        let dirty = std::env::var("DUET_EVAL_GIT_DIRTY")
+            .ok()
+            .map(|v| matches!(v.trim(), "1" | "true" | "yes"));
+        return (Some(c), dirty, "env");
+    }
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(["-c", "core.fsmonitor=false"])
+            .args(args)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
+    };
+    match git(&["rev-parse", "HEAD"]).filter(|c| !c.is_empty()) {
+        Some(c) => {
+            let dirty =
+                git(&["status", "--porcelain", "--untracked-files=no"]).map(|s| !s.is_empty());
+            (Some(c), dirty, "git")
+        }
+        None => (None, None, "unknown"),
+    }
+}
+
+/// First line of `<program> --version` (no model call), at most 200 characters.
+pub async fn program_version(program: &str) -> Option<String> {
+    let out = tokio::time::timeout(
+        Duration::from_secs(20),
+        tokio::process::Command::new(program)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(line.chars().take(200).collect())
+}
+
+/// The duet binary built alongside this harness (never a `duet` found elsewhere).
+pub fn duet_bin() -> Result<String> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|d| d.join("duet")))
+        .filter(|p| p.is_file())
+        .map(|p| p.to_string_lossy().into_owned())
+        .context("the duet binary is not built next to duet-eval (cargo build -p duet-cli)")
+}
+
+/// The program a lane launches, with `{duet_bin}` resolved.
+pub fn lane_program(lane: &Lane) -> Result<String> {
+    let first = lane.argv.first().context("empty lane argv")?;
+    Ok(if first == "{duet_bin}" {
+        duet_bin()?
+    } else {
+        first.clone()
+    })
 }
 
 /// Classifies a run from the provider statuses the proxy saw, in order.
@@ -281,6 +372,20 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
     )
     .await?;
     let proxy_url = proxy.base_url();
+    let (git_commit, git_dirty, commit_source) = build_commit();
+    let agent_version = match lane_program(cfg.lane) {
+        Ok(p) => program_version(&p).await,
+        Err(_) => None,
+    };
+    let provenance = Provenance {
+        git_commit,
+        git_dirty,
+        commit_source: commit_source.to_owned(),
+        harness_version: env!("CARGO_PKG_VERSION").to_owned(),
+        lane_model: cfg.lane.model.clone(),
+        lane_upstream: cfg.lane.upstream.clone(),
+        agent_version,
+    };
 
     let outcome = launch(&cfg, &run_dir, &ws, &proxy_url).await;
     proxy.stop();
@@ -309,6 +414,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
             LaneKind::Duet => crate::ledger::read(&ws),
             LaneKind::External => None,
         },
+        provenance: Some(provenance),
     };
     let statuses: Vec<u16> = leakproxy::read_requests(&proxy_dir)?
         .iter()
@@ -376,13 +482,7 @@ async fn launch(
     proxy_url: &str,
 ) -> Result<LaunchOutcome> {
     let lane = cfg.lane;
-    // The duet binary built alongside this harness (never a `duet` found elsewhere).
-    let duet_bin = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|d| d.join("duet")))
-        .filter(|p| p.is_file())
-        .map(|p| p.to_string_lossy().into_owned())
-        .context("the duet binary is not built next to duet-eval (cargo build -p duet-cli)")?;
+    let duet_bin = duet_bin()?;
     let vars = Vars {
         workspace: ws,
         run_dir,
@@ -552,6 +652,29 @@ mod tests {
             Some("src/pricing/**")
         );
         assert!(parsed["ip"]["sealed"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn records_without_provenance_still_load() {
+        let old = serde_json::json!({
+            "task": "S1", "lane": "a", "lane_kind": "duet", "seed": 1, "run_id": "S1-a-s1",
+            "exit_code": 0, "timed_out": false, "wall_seconds": 1.0, "grade": null, "leaks": [],
+            "frontier_requests": 1, "usage_by_model": {}, "unreported_requests": 0,
+            "frontier_cost_usd": 0.0, "electricity_usd": 0.0, "total_cost_usd": 0.0, "error": null
+        });
+        let r: RunRecord = serde_json::from_value(old).unwrap();
+        assert!(r.provenance.is_none());
+        let (commit, _, source) = build_commit();
+        assert_eq!(commit.is_some(), source != "unknown");
+    }
+
+    #[tokio::test]
+    async fn version_of_a_missing_program_is_none() {
+        assert!(
+            program_version("/nonexistent/duet-eval-probe")
+                .await
+                .is_none()
+        );
     }
 
     #[test]
