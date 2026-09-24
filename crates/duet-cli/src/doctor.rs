@@ -123,10 +123,15 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
         "version",
         Status::Pass,
         format!(
-            "duet {} ({}-{}); release channel not published yet, so no update check",
+            "duet {} ({}-{}, {} build); release channel not published yet, so no update check",
             env!("CARGO_PKG_VERSION"),
             std::env::consts::OS,
-            std::env::consts::ARCH
+            std::env::consts::ARCH,
+            if RELEASE_BUILD {
+                "release"
+            } else {
+                "development"
+            }
         ),
     )];
     let owner = duet_config::owner_config_path();
@@ -159,7 +164,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
             "configuration did not load",
         )),
     }
-    out.push(release_signers());
+    out.push(release_signers(&release_signers_path(), RELEASE_BUILD));
     out.push(sandbox());
     out.extend(git(ws));
     out.push(disk(ws));
@@ -289,14 +294,28 @@ pub fn release_signers_path() -> std::path::PathBuf {
     duet_config::owner_config_path().with_file_name("allowed_signers")
 }
 
-/// Whether release verification material is present (warn-only).
-fn release_signers() -> Check {
-    let path = release_signers_path();
+/// Whether this binary was built by `tools/release.sh`, which sets
+/// `DUET_RELEASE_BUILD` at compile time. Any other build is a development
+/// build.
+pub const RELEASE_BUILD: bool = option_env!("DUET_RELEASE_BUILD").is_some();
+
+/// Whether release verification material is present. A release build warns
+/// without it; a development build only notes it (skip), since no release has
+/// been published for it to verify.
+fn release_signers(path: &Path, release_build: bool) -> Check {
+    let (missing, dev_note) = if release_build {
+        (Status::Warn, "")
+    } else {
+        (
+            Status::Skip,
+            " (development build: no release has been published, so none is needed yet)",
+        )
+    };
     let fix = format!(
         "save the published release signer line (`<identity> namespaces=\"duet-release\" <public key>`) to {}, then check a download with tools/verify-release.sh <release dir>",
         path.display()
     );
-    match std::fs::read_to_string(&path) {
+    match std::fs::read_to_string(path) {
         Ok(text) => {
             let signers = text
                 .lines()
@@ -305,8 +324,8 @@ fn release_signers() -> Check {
             if signers == 0 {
                 check(
                     "release keys",
-                    Status::Warn,
-                    format!("{} lists no signer", path.display()),
+                    missing,
+                    format!("{} lists no signer{dev_note}", path.display()),
                 )
                 .fix(fix)
             } else {
@@ -322,9 +341,9 @@ fn release_signers() -> Check {
         }
         Err(_) => check(
             "release keys",
-            Status::Warn,
+            missing,
             format!(
-                "no release signing keys at {}: a downloaded release cannot be verified",
+                "no release signing keys at {}: a downloaded release cannot be verified{dev_note}",
                 path.display()
             ),
         )
@@ -786,5 +805,43 @@ fn retention(ws: &Path, c: &Config) -> Check {
             format!("{old} run(s) keep raw data past data.retention_days ({days})"),
         )
         .fix("duet purge")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_keys_warn_only_in_a_release_build() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("allowed_signers");
+
+        // A development build: no release exists, so missing keys are a note.
+        let dev = release_signers(&path, false);
+        assert_eq!(dev.status, Status::Skip, "{dev:?}");
+        assert!(dev.detail.contains("development build"), "{}", dev.detail);
+        assert_eq!(exit_code(&[dev]), 0);
+
+        // A release build: a downloaded release cannot be verified without them.
+        let release = release_signers(&path, true);
+        assert_eq!(release.status, Status::Warn, "{release:?}");
+        assert!(!release.detail.contains("development build"));
+        assert!(release.fix.unwrap().contains("verify-release.sh"));
+
+        std::fs::write(&path, "# no signer yet\n").unwrap();
+        assert_eq!(release_signers(&path, false).status, Status::Skip);
+        assert_eq!(release_signers(&path, true).status, Status::Warn);
+
+        std::fs::write(
+            &path,
+            "release@duet namespaces=\"duet-release\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample\n",
+        )
+        .unwrap();
+        for build in [false, true] {
+            let keys = release_signers(&path, build);
+            assert_eq!(keys.status, Status::Pass, "{keys:?}");
+            assert!(keys.detail.starts_with("1 release signer"));
+        }
     }
 }

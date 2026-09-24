@@ -353,15 +353,28 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
 }
 
 #[test]
-fn doctor_shows_the_approval_mode_and_warns_without_release_keys() {
+fn doctor_shows_the_approval_mode_and_notes_release_keys_in_a_development_build() {
     let e = env();
     let (_, report) = doctor(&e, &[], &[]);
     let approval = check(&report, "approval");
     assert_eq!(approval["status"], "pass");
     assert!(approval["detail"].as_str().unwrap().starts_with("off"));
+    // A development build: no release has been published, so no warning.
     let keys = check(&report, "release keys");
-    assert_eq!(keys["status"], "warn", "{keys}");
+    assert_eq!(keys["status"], "skip", "{keys}");
+    assert!(
+        keys["detail"]
+            .as_str()
+            .unwrap()
+            .contains("development build")
+    );
     assert!(keys["fix"].as_str().unwrap().contains("verify-release.sh"));
+    assert!(
+        check(&report, "version")["detail"]
+            .as_str()
+            .unwrap()
+            .contains("development build")
+    );
 
     owner_config(&e, "[oversight]\napprove = \"risky\"\n");
     std::fs::write(

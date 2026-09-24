@@ -84,7 +84,9 @@ tools/gate.sh
 
 target=$(rustc -vV | sed -n 's/^host: //p')
 echo "== build ($target)"
-cargo build --release --locked -p duet-cli --bin duet --target "$target"
+# DUET_RELEASE_BUILD marks the binary as a release build (`duet doctor` then
+# warns when no release signing keys are present).
+DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet --target "$target"
 target_dir=$(cargo metadata --format-version 1 --no-deps --offline |
     sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
 [ -n "$target_dir" ] || die "cannot find cargo's target directory"
@@ -105,7 +107,7 @@ target $target
 $(rustc -V)
 $(cargo -V)
 source_date_epoch $SOURCE_DATE_EPOCH
-built with: cargo build --release --locked -p duet-cli --bin duet --target $target
+built with: DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet --target $target
 INFO
 
 echo "== checksums and signature"

@@ -290,8 +290,9 @@ deploying what a run produced.**
   `<identity> namespaces="duet-release" <public key>`, in `~/.config/duet/allowed_signers` (next to
   the owner config), obtained over a channel you already trust, then run
   `tools/verify-release.sh <release dir>`: the signature must verify against that file, and every
-  file in the directory must be listed in `SHA256SUMS` and match. `duet doctor` warns when the
-  allowed-signers file is missing.
+  file in the directory must be listed in `SHA256SUMS` and match. A release build of `duet`
+  (`tools/release.sh` sets `DUET_RELEASE_BUILD` at compile time) makes `duet doctor` warn when the
+  allowed-signers file is missing; a development build only notes it.
 - **Not yet:** a published release channel, so `duet doctor` cannot flag an outdated version, and
   an advisory feed beyond the table below; build reproducibility is not verified independently.
 

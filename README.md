@@ -126,7 +126,8 @@ does that, through the same `--confirm` and audit path as any endpoint change.
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git, disk
 space, the audit chains and anchors of the latest runs, run data past retention, the approval
-mode, and whether release signing keys are present (warn-only). It uses no
+mode, and whether release signing keys are present (a warning in a build made by
+`tools/release.sh`; a note in a development build, since no release has been published). It uses no
 network by default. `--online` adds one model listing per configured server (and the local model's
 context window); it never calls a model. Exit code: 0 pass, 1 warn, 2 fail.
 
