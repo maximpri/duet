@@ -28,7 +28,9 @@ toml.workspace = true
 uuid.workspace = true
 time.workspace = true
 
+
 [dev-dependencies]
+duet-provider = { workspace = true, features = ["test-support"] }
 tempfile = "3"
 bytes = "1"
 futures-util.workspace = true

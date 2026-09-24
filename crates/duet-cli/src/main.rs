@@ -21,6 +21,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+mod setup;
+
 #[derive(Parser)]
 #[command(
     name = "duet",
@@ -131,6 +133,20 @@ enum ConfigCmd {
         #[arg(long)]
         confirm: bool,
     },
+    /// Point the local role at a known backend (Ollama, LM Studio, llama.cpp,
+    /// vLLM, oMLX, MLX) on loopback. Without a name, lists the presets.
+    Preset {
+        name: Option<String>,
+        /// Also set local.model.
+        #[arg(long)]
+        model: Option<String>,
+        /// A port other than the backend's default.
+        #[arg(long)]
+        port: Option<u16>,
+        /// Apply a change that loosens privacy (changing an endpoint does).
+        #[arg(long)]
+        confirm: bool,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -140,6 +156,15 @@ struct RunManifest {
     objective: String,
     frontier_url: String,
     frontier_model: String,
+    /// A local endpoint found by bootstrap for this run (no local model configured).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    local: Option<LocalOverride>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LocalOverride {
+    base_url: String,
+    model: String,
 }
 
 fn workspace(cli: &Cli) -> Result<PathBuf> {
@@ -181,15 +206,25 @@ fn frontier_provider(cfg: &Config, url: &str, model: &str) -> Result<ChatProvide
 
 /// The local model provider and the audit event recording why its endpoint is
 /// trusted. A remote host over plain HTTP is refused unless the owner opted in.
-fn local_provider(cfg: &Config) -> Result<(ChatProvider, AuditEvent)> {
-    let url = cfg.str("local.base_url")?;
+fn local_provider(
+    cfg: &Config,
+    over: Option<&LocalOverride>,
+) -> Result<(ChatProvider, AuditEvent)> {
+    let url = match over {
+        Some(o) => o.base_url.clone(),
+        None => cfg.str("local.base_url")?,
+    };
+    let model = match over {
+        Some(o) => o.model.clone(),
+        None => cfg.str("local.model")?,
+    };
     let allowlist = cfg.list("local.allowlist")?;
     let allow_plaintext = cfg.bool("local.allow_plaintext")?;
     let trust = duet_provider::endpoint::check_local_endpoint(&url, &allowlist, allow_plaintext)
         .map_err(|e| anyhow::anyhow!(e.message))?;
     let mut pc = ProviderConfig::new(
         &url,
-        &cfg.str("local.model")?,
+        &model,
         Role::Local {
             allowlist,
             allow_plaintext,
@@ -295,7 +330,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     let mut trust = None;
     let engine = match manifest.mode {
         Mode::Hybrid => {
-            let (local, event) = local_provider(&cfg)?;
+            let (local, event) = local_provider(&cfg, manifest.local.as_ref())?;
             trust = Some(event);
             Some(Engine::open(
                 &run_dir,
@@ -311,7 +346,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
             manifest.frontier_model.clone(),
         ),
         Mode::LocalOnly => {
-            let (local, event) = local_provider(&cfg)?;
+            let (local, event) = local_provider(&cfg, manifest.local.as_ref())?;
             trust = Some(event);
             (local, String::new())
         }
@@ -398,7 +433,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
 }
 
 /// The owner's log of settings changes.
-fn config_audit_path() -> PathBuf {
+pub(crate) fn config_audit_path() -> PathBuf {
     duet_config::owner_state_dir().join("config-audit.jsonl")
 }
 
@@ -538,12 +573,23 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 _ => bail!("give the task as text or with --objective-file (not both)"),
             };
             let cfg = load_config(&ws)?;
+            let local = match mode {
+                Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
+                    Ok(found) => found.map(|b| LocalOverride {
+                        base_url: b.base_url,
+                        model: b.model,
+                    }),
+                    Err(code) => std::process::exit(code),
+                },
+                Mode::Passthrough => None,
+            };
             let manifest = RunManifest {
                 run_id: new_run_id(),
                 mode,
                 objective,
                 frontier_url: frontier_url.unwrap_or(cfg.str("frontier.base_url")?),
                 frontier_model: frontier_model.unwrap_or(cfg.str("frontier.model")?),
+                local,
             };
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
             std::process::exit(execute(ws, manifest, false).await?);
@@ -598,46 +644,38 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     let v: toml::Value = toml::from_str::<toml::Table>(&format!("v = {value}"))
                         .with_context(|| format!("{value} is not a TOML value"))?["v"]
                         .clone();
+                    if !project {
+                        std::process::exit(setup::apply_owner(
+                            &mut cfg,
+                            &[(key.as_str(), v)],
+                            confirm,
+                        )?);
+                    }
+                    // A project may only tighten, so nothing here needs confirming.
                     let old = cfg.value(&key)?.clone();
-                    let event = if project {
-                        // A project may only tighten, so nothing here needs confirming.
-                        cfg.set_project(&key, v.clone())?;
-                        AuditEvent::ConfigChange {
-                            key: key.clone(),
-                            file: "project".into(),
-                            old: old.to_string(),
-                            new: v.to_string(),
-                            weakens: None,
-                            confirmed: confirm,
-                        }
-                    } else {
-                        match cfg.set_owner_checked(&key, v, confirm) {
-                            Ok(change) => AuditEvent::ConfigChange {
-                                key: change.key,
-                                file: "owner".into(),
-                                old: change.old.to_string(),
-                                new: change.new.to_string(),
-                                weakens: change.weakens,
-                                confirmed: confirm,
-                            },
-                            Err(duet_config::ConfigError::NeedsConfirm {
-                                key,
-                                old,
-                                new,
-                                weakens,
-                            }) => {
-                                eprintln!(
-                                    "policy change not applied: it loosens privacy\n\n  {key}\n  - {old}\n  + {new}\n\n  weakens: {weakens}\n\nRe-run with --confirm to apply it; the change is recorded in {}.",
-                                    config_audit_path().display()
-                                );
-                                std::process::exit(2);
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    };
-                    AuditLog::open(&config_audit_path())?.event(event)?;
+                    cfg.set_project(&key, v.clone())?;
+                    AuditLog::open(&config_audit_path())?.event(AuditEvent::ConfigChange {
+                        key: key.clone(),
+                        file: "project".into(),
+                        old: old.to_string(),
+                        new: v.to_string(),
+                        weakens: None,
+                        confirmed: confirm,
+                    })?;
                     println!("{key} = {}", cfg.value(&key)?);
                 }
+                ConfigCmd::Preset {
+                    name,
+                    model,
+                    port,
+                    confirm,
+                } => std::process::exit(setup::preset(
+                    &mut cfg,
+                    name.as_deref(),
+                    model.as_deref(),
+                    port,
+                    confirm,
+                )?),
             }
         }
         Cmd::Purge { run_id, all } => {
@@ -646,7 +684,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         Cmd::LocalEval { sizes, seed, out } => {
             let cfg = load_config(&ws)?;
-            let reader = LocalReader::new(local_provider(&cfg)?.0);
+            let reader = LocalReader::new(local_provider(&cfg, None)?.0);
             let fixtures = duet_boundary::local_eval::fixtures(seed, &sizes);
             let report = duet_boundary::local_eval::run(&reader, &fixtures, |o| {
                 eprintln!(
