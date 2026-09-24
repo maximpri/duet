@@ -14,7 +14,7 @@
 //!   secret files.
 
 use crate::bulky::{self, Shape};
-use crate::detect::{Detectors, Kind, scan};
+use crate::detect::{Detectors, Kind, scan, scan_each};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
 use crate::local::LocalReader;
@@ -104,6 +104,9 @@ const NAME_STOPWORDS: &[&str] = &[
     "Result", "Option", "Error", "String", "Vec", "Some", "None", "Ok", "Err", "Self", "Warn",
     "Info", "Debug",
 ];
+
+/// A detected span: byte range, kind and label.
+type Span = (usize, usize, Kind, Option<String>);
 
 struct State {
     vault: Vault,
@@ -307,7 +310,7 @@ impl Engine {
     /// Replaces detected secrets/PII (and, in sensitive context, names and long
     /// numbers) with placeholders, then any value already in the vault.
     fn sanitize(&self, st: &mut State, text: &str, origin: &str, sensitive: bool) -> String {
-        let mut spans: Vec<(usize, usize, Kind, Option<String>)> = scan(text, self.detectors)
+        let mut spans: Vec<Span> = scan_each(text, self.detectors)
             .into_iter()
             .map(|f| (f.start, f.end, f.kind, f.label))
             .collect();
@@ -353,12 +356,23 @@ impl Engine {
             }
         }
         spans.sort_by_key(|s| (s.0, std::cmp::Reverse(s.1)));
+        // Overlapping spans are replaced as one (their union, named by the
+        // first), and every part is also registered on its own: an email that
+        // a person field swallowed (`contact: kim@x.net 555-0100`) is still
+        // replaced when it later appears alone.
+        let mut groups: Vec<(usize, usize, Vec<Span>)> = Vec::new();
+        for span in spans {
+            match groups.last_mut() {
+                Some(g) if span.0 < g.1 => {
+                    g.1 = g.1.max(span.1);
+                    g.2.push(span);
+                }
+                _ => groups.push((span.0, span.1, vec![span])),
+            }
+        }
         let mut out = String::with_capacity(text.len());
         let mut last = 0;
-        for (start, end, kind, label) in spans {
-            if start < last {
-                continue;
-            }
+        for (start, end, parts) in groups {
             let value = &text[start..end];
             // The frontier wrote this value itself (test data, an example): it
             // discloses nothing, and replacing it would rewrite the model's own
@@ -367,15 +381,12 @@ impl Engine {
             if st.authored.contains(value) && !st.vault.contains(value) {
                 continue;
             }
-            let token = st
-                .vault
-                .token_for(value, kind, label.as_deref(), origin)
-                .unwrap_or_else(|_| format!("⟨{}⟩", kind.tag()));
-            if sensitive {
-                for spelling in other_spellings(value, kind) {
-                    if !st.public_words.contains(&spelling.to_lowercase()) {
-                        let _ = st.vault.alias(&spelling, value);
-                    }
+            let (_, _, kind, label) = &parts[0];
+            let token = Self::register(st, value, *kind, label.as_deref(), origin, sensitive);
+            for (s, e, kind, label) in &parts {
+                let part = &text[*s..*e];
+                if part != value && !(st.authored.contains(part) && !st.vault.contains(part)) {
+                    Self::register(st, part, *kind, label.as_deref(), origin, sensitive);
                 }
             }
             out.push_str(&text[last..start]);
@@ -384,6 +395,30 @@ impl Engine {
         }
         out.push_str(&text[last..]);
         st.vault.tokenize(&out).0
+    }
+
+    /// The token for a detected value; in sensitive text its other spellings
+    /// (surname, number formats) become aliases unless they are public words.
+    fn register(
+        st: &mut State,
+        value: &str,
+        kind: Kind,
+        label: Option<&str>,
+        origin: &str,
+        sensitive: bool,
+    ) -> String {
+        let token = st
+            .vault
+            .token_for(value, kind, label, origin)
+            .unwrap_or_else(|_| format!("⟨{}⟩", kind.tag()));
+        if sensitive {
+            for spelling in other_spellings(value, kind) {
+                if !st.public_words.contains(&spelling.to_lowercase()) {
+                    let _ = st.vault.alias(&spelling, value);
+                }
+            }
+        }
+        token
     }
 
     /// `KEY=value` files: structure kept, every value replaced.
@@ -1131,10 +1166,17 @@ impl OutboundFilter for Sanitize {
                         }
                     }
                     for call in tool_calls.iter_mut() {
-                        if let Ok(serde_json::Value::Object(args)) =
-                            serde_json::from_str(&call.raw_arguments)
-                        {
-                            call.arguments = args;
+                        if let Ok(mut parsed) = serde_json::from_str::<Value>(&call.raw_arguments) {
+                            // Arguments are JSON: a value holding `"` or `\` is
+                            // escaped in the raw text, where it does not match.
+                            let n = tokenize_json(&st.vault, &mut parsed);
+                            if n > 0 {
+                                call.raw_arguments = parsed.to_string();
+                                replaced += n;
+                            }
+                            if let Value::Object(args) = parsed {
+                                call.arguments = args;
+                            }
                         }
                     }
                     if replaced > 0 {
@@ -1159,6 +1201,57 @@ impl OutboundFilter for Sanitize {
     }
 }
 
+/// Replaces known values in every string (and key) of `v`; returns how many.
+fn tokenize_json(vault: &Vault, v: &mut Value) -> usize {
+    match v {
+        Value::String(s) => {
+            let (t, n) = vault.tokenize(s);
+            if n > 0 {
+                *s = t;
+            }
+            n
+        }
+        Value::Array(a) => a.iter_mut().map(|x| tokenize_json(vault, x)).sum(),
+        Value::Object(m) => {
+            let mut n = 0;
+            let entries: Vec<(String, Value)> = std::mem::take(m).into_iter().collect();
+            for (k, mut x) in entries {
+                let (k, kn) = vault.tokenize(&k);
+                n += kn + tokenize_json(vault, &mut x);
+                m.insert(k, x);
+            }
+            n
+        }
+        _ => 0,
+    }
+}
+
+/// The body as text, then each string in it that is itself JSON (tool-call
+/// arguments), decoded and re-serialized, so a value escaped once more inside
+/// it (`\"`, `\\`, `\u` escapes) is seen in its plain spelling.
+fn searchable(body: &Value, out: &mut Vec<String>) {
+    fn nested(v: &Value, out: &mut Vec<String>, depth: usize) {
+        match v {
+            Value::String(s) if depth < 4 => {
+                if let Ok(inner @ (Value::Object(_) | Value::Array(_) | Value::String(_))) =
+                    serde_json::from_str::<Value>(s)
+                {
+                    out.push(inner.to_string());
+                    if let Value::String(t) = &inner {
+                        out.push(t.clone());
+                    }
+                    nested(&inner, out, depth + 1);
+                }
+            }
+            Value::Array(a) => a.iter().for_each(|x| nested(x, out, depth)),
+            Value::Object(m) => m.values().for_each(|x| nested(x, out, depth)),
+            _ => {}
+        }
+    }
+    out.push(body.to_string());
+    nested(body, out, 0);
+}
+
 /// Final check: no value in the vault may appear anywhere in the body.
 struct NoKnownValues(Arc<Engine>);
 
@@ -1168,17 +1261,21 @@ impl OutboundCheck for NoKnownValues {
     }
 
     fn check(&self, body: &Value) -> Result<(), String> {
-        let text = body.to_string();
         let st = self.0.lock();
+        let mut texts = Vec::new();
+        searchable(body, &mut texts);
+        // Tokens are Duet's own text: a value that also spells part of one (a
+        // key name, a kind tag) is not disclosed by sending the token.
+        let texts: Vec<String> = texts.iter().map(|t| st.vault.strip_tokens(t)).collect();
         for (value, entry) in st.vault.values() {
-            if value.len() >= 6
-                && (text.contains(value)
-                    || text.contains(
-                        &serde_json::to_string(value)
-                            .unwrap_or_default()
-                            .trim_matches('"')
-                            .to_owned(),
-                    ))
+            if value.len() < 6 {
+                continue;
+            }
+            let escaped = serde_json::to_string(value).unwrap_or_default();
+            let escaped = escaped.trim_matches('"');
+            if texts
+                .iter()
+                .any(|t| t.contains(value) || t.contains(escaped))
             {
                 return Err(format!(
                     "a {} value from {} would have been sent",
@@ -1383,6 +1480,103 @@ mod tests {
         assert!(!body.to_string().contains(KEY) && !body.to_string().contains(EMAIL));
         assert!(check.check(&body).is_ok());
         assert!(check.check(&json!({"x": format!("oops {KEY}")})).is_err());
+    }
+
+    #[test]
+    fn values_escaped_in_tool_arguments_are_replaced_and_checked() {
+        // Found by the no-canary property: tool-call arguments are JSON, so a
+        // value holding `\` or `"` is escaped there; the filter matched only the
+        // plain spelling and the final check did not decode the arguments.
+        let (_d, e) = engine();
+        let value = r#"Ab3\Xy9"Qw!p42"#;
+        e.present(
+            &file(".env"),
+            format!("LEDGER_DB_PASSWORD={value}\n").as_bytes(),
+        );
+        let (filter, check) = e.outbound();
+        let raw = serde_json::to_string(&json!({"path": "a.txt", "content": value})).unwrap();
+        assert!(!raw.contains(value), "escaped in the arguments: {raw}");
+        let mut req = Request {
+            items: vec![Item::Assistant {
+                text: String::new(),
+                reasoning: None,
+                tool_calls: vec![crate::model::ToolCall {
+                    id: "c1".into(),
+                    name: "write_file".into(),
+                    arguments: Map::new(),
+                    raw_arguments: raw.clone(),
+                }],
+            }],
+            ..Request::default()
+        };
+        let unfiltered = duet_provider::chat::build_body("m", &req, true);
+        assert!(
+            check.check(&unfiltered).is_err(),
+            "the check decodes arguments"
+        );
+        assert!(!filter.apply(&mut req).is_empty());
+        let body = duet_provider::chat::build_body("m", &req, true);
+        assert!(check.check(&body).is_ok(), "{body}");
+        let Item::Assistant { tool_calls, .. } = &req.items[0] else {
+            unreachable!()
+        };
+        assert_eq!(
+            tool_calls[0].arguments["content"],
+            "⟨secret:LEDGER_DB_PASSWORD#1⟩"
+        );
+        assert!(!tool_calls[0].raw_arguments.contains("Xy9"));
+    }
+
+    #[test]
+    fn a_value_that_spells_part_of_a_token_does_not_block_the_request() {
+        // A `.env` value can be a word that also occurs in a token (a key
+        // name): sending the token discloses nothing and must not be blocked.
+        let (_d, e) = engine();
+        e.present(
+            &file(".env"),
+            format!("SERVICE_TOKEN={KEY}\nRUN_AS=SERVICE\n").as_bytes(),
+        );
+        let (filter, check) = e.outbound();
+        let mut req = Request {
+            items: vec![Item::User {
+                text: format!("rotate {KEY} (runs as SERVICE)"),
+            }],
+            ..Request::default()
+        };
+        filter.apply(&mut req);
+        let body = duet_provider::chat::build_body("m", &req, true);
+        assert!(
+            body.to_string().contains("⟨secret:SERVICE_TOKEN#1⟩"),
+            "{body}"
+        );
+        assert!(check.check(&body).is_ok(), "{body}");
+        assert!(check.check(&json!({"x": "runs as SERVICE"})).is_err());
+    }
+
+    #[test]
+    fn a_value_inside_a_longer_detected_span_is_known_alone() {
+        // Found by the no-canary property: a person field swallowed the email
+        // and phone after it (`contact: <email> <phone>`); only the whole span
+        // entered the vault, so the email alone passed in the model's own text.
+        let (_d, e) = engine();
+        e.present(
+            &file("logs/app.log"),
+            format!("ERROR contact: {EMAIL} 415-555-0199\n").as_bytes(),
+        );
+        let (filter, check) = e.outbound();
+        let mut req = Request {
+            items: vec![Item::Assistant {
+                text: format!("mail {EMAIL} or call 415-555-0199"),
+                reasoning: None,
+                tool_calls: Vec::new(),
+            }],
+            ..Request::default()
+        };
+        filter.apply(&mut req);
+        let body = duet_provider::chat::build_body("m", &req, true);
+        assert!(!body.to_string().contains(EMAIL), "{body}");
+        assert!(!body.to_string().contains("415-555-0199"), "{body}");
+        assert!(check.check(&body).is_ok());
     }
 
     #[test]
