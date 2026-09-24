@@ -105,7 +105,7 @@ rewritten in Rust.
 |---|---|
 | `task.rs` | Loads task packages (`task.toml`, `objective.md`, `starter/`, `holdout/`, `assets/`, `seal.toml`) per [DOGFOOD_SUITE.md](DOGFOOD_SUITE.md) |
 | `grade.rs` | Sealed grading (hidden-test pass rate): verify input seal, stage candidate, run visible and hidden tests sandboxed, scan the final workspace for secret-sink violations; the grade goes into the run record (`run.json`) |
-| `judge.rs` | Code-quality rubric: correctness risk, maintainability, scope discipline (3 × 10), versioned by hash; no anchoring. Claude judge (`claude-opus-5-5`, pinned per gate) through the operator's logged-in `claude` CLI by default (`--backend claude-cli`); `codex-cli` and `api` backends also available. Two repeats per artifact, each in an empty temporary directory with the rubric as system prompt and structured output; agent names scrubbed and canaries redacted; judge cost recorded |
+| `judge.rs` | Code-quality rubric: correctness risk, maintainability, scope discipline (3 × 10), versioned by hash; no anchoring. Two judges of different families on the operator's logged-in CLIs (`--judges claude-cli,codex-cli`, the default; `api` replaces the Claude CLI): Claude (`claude-opus-5-5`) and OpenAI via the Codex CLI (`gpt-5.5`), models pinned per gate. Two repeats per artifact per judge, each in an empty temporary directory with structured output; one result file per judge and run; agent names scrubbed and canaries redacted; judge model, CLI version and cost recorded |
 | `canary.rs` | Per-run unique, realistic canaries (no marker) in `.env`, data files, logs, a protected path, source code, and non-secret-looking business facts; injection canaries |
 | `leakproxy.rs` | Logging reverse proxy (hyper) in front of every lane's frontier endpoint; scans every request body; writes `leaks.jsonl` (independent of Duet's own audit log) |
 | `lanes/` | `lanes.toml`: `duet-passthrough` (frontier-only), `duet-hybrid`, `duet-local-only`; black-box external lanes `pi-glm`, `claude-code`, `codex` |
@@ -338,9 +338,16 @@ Publish `docs/BENCHMARK.md` with `duet-eval report --final <batch...>` (runs pai
 seed and lane; a JSON twin is written beside it): per lane and per task hidden pass rate, full success,
 judge score, leaks (canaries by kind, exact binomial bound), cost with the paired ratio against
 `duet-passthrough` (the privacy premium), wall clock, frontier and local tokens, each with 95% intervals;
-the gate verdicts under the current rules; the method (canaries, proxy, judge model and rubric version,
-pricing with source and date, statistics); model, build and agent versions; and links to the raw data
-with per-run digests. The same raw data regenerates the same bytes.
+the gate verdicts under the current rules; the method (canaries, proxy, judge models, CLI versions and
+rubric version, pricing with source and date, statistics); model, build and agent versions; and links to
+the raw data with per-run digests. The same raw data regenerates the same bytes.
+
+Every run is judged by both judges (`duet-eval judge <batch>`, Claude CLI and Codex CLI by default; §3,
+2026-09-24). The judge score the gates use is the mean of the two; `--final` requires both on every run,
+and a run missing one is listed as incompletely judged and left out of the judge gate. The report shows
+each judge's mean per lane separately, inter-judge agreement (mean absolute difference and correlation)
+and flags lanes judged by their own model family (`claude-code` by the Claude judge, `codex` by the
+OpenAI judge).
 
 ### M6 — Product hardening
 

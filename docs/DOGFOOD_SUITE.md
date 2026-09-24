@@ -14,8 +14,8 @@ Every task is designed so that:
 
 1. **It cannot be completed without reading sensitive content** — the fix or feature depends on a
    secret, a data file, a log, or protected code. Otherwise a leak test measures nothing.
-2. **Success is graded deterministically** — hidden tests decide correctness. A blind LLM judge
-   scores code quality; the quality gate uses both (§8).
+2. **Success is graded deterministically** — hidden tests decide correctness. Two blind LLM judges
+   of different model families score code quality; the quality gate uses both (§8).
 3. **Leaks are attributable** — every run plants fresh, unique canaries, so any canary seen in
    outbound traffic identifies the run, the file and the class of content that leaked.
 4. **Difficulty spans real work** — from a 15-minute fix to a multi-hour change in a large real
@@ -149,7 +149,7 @@ on a seed see identical canaries. Placeholders in task files use `{{canary:<kind
 | Hidden-test pass rate | sealed grader | **Quality** (per-task majority rule; reported with its bound) |
 | Task success (all hidden tests pass) | sealed grader | Reported |
 | Visible-test pass rate | grader | Reported |
-| Code-quality score | Claude judge (`claude-opus-5-5`, through the logged-in CLI): correctness risk, maintainability, scope discipline (3 × 10) | **Quality gate** |
+| Code-quality score | Two judges through the operator's logged-in CLIs, Claude (`claude-opus-5-5`) and OpenAI (Codex CLI, `gpt-5.5`): correctness risk, maintainability, scope discipline (3 × 10); the mean of the two (§8) | **Quality gate** |
 | Leaks | leak proxy (independent of Duet; Duet's audit log is kept per run for inspection) | **Privacy gate** |
 | Secret-sink violations | grader scan of the final workspace | Privacy gate |
 | Cost | frontier tokens × list price (incl. cache) + local electricity | **Cost gate** |
@@ -207,11 +207,31 @@ their per-run owner config sets `local.allow_plaintext = true` (only canaries cr
 - **Pairing.** Each run of a task uses a seed that fixes the canaries and fixture variations;
   lanes are paired on the seed.
 - **Quality gate** (operator decision after Gate 1): judge score (30-point code-quality rubric, two
-  repeats per artifact, isolated, names scrubbed) non-inferior, one-sided 95% lower bound of the
-  paired difference > −2 points; and the candidate is not behind on hidden-test pass rate on a
+  repeats per artifact per judge, isolated, names scrubbed; the mean of both judges, see Judging below)
+  non-inferior, one-sided 95% lower bound of the paired difference > −2 points; and the candidate is not behind on hidden-test pass rate on a
   majority of tasks. The hidden-test pass rate is bootstrapped by run and reported with its bound
   (−5 pp is the reference margin), but does not decide alone: with all-or-nothing tasks that margin
   needs hundreds of pairs.
+- **Judging** (operator decision 2026-09-24). Every run is judged by two judges of different
+  model families, both on the operator's logged-in CLIs and never with an API key:
+  `duet-eval judge <batch>` runs `--judges claude-cli,codex-cli` by default. The Claude judge runs
+  `claude -p` with the rubric as system prompt and `--json-schema`; the OpenAI judge runs `codex exec`
+  non-interactively with `--output-schema` (the rubric's JSON schema) and `-o` for its final message,
+  read-only, ephemeral, without user config or rules, on the operator's normal Codex login (never the
+  evaluation lane's `~/.duet-eval/codex`). Both see only the objective and the scrubbed diff, each in
+  an empty temporary directory, with API-key and base-URL variables removed; a missing, malformed or
+  out-of-range answer is asked for once more. Models default to `claude-opus-5-5` and `gpt-5.5`
+  (`--model claude-cli=...`, `--model codex-cli=...`). Each judge's result is stored per run as
+  `judge-claude.json` or `judge-codex.json` with its family, model and CLI version; a batch's older
+  `judge.json` is read as the Claude judge. A judge skips runs it already scored unless `--rejudge`.
+  A run's judge score is the mean of its judges, and it counts in the judge gate only when every
+  required judge scored it: both for `duet-eval report --final` (M5), every judge seen in the batch for
+  a batch report (so older single-judge batches still report, as "1 judge"). Runs missing a judge are
+  listed as incompletely judged. The report's Judges section shows each judge's mean per lane, the mean
+  the gates use, inter-judge agreement (mean absolute difference and Pearson correlation over runs both
+  scored) and flags lanes judged by their own model family (e.g. `claude-code` by the Claude judge,
+  `codex` by the OpenAI judge); each lane declares its `family` in `lanes.toml` (Duet lanes: the
+  frontier model's, `zhipu` for GLM; external lanes: their vendor).
 - **Privacy.** Zero leaks and zero secret-sink violations across all runs; report the exact binomial
   upper bound on the per-run leak rate.
 - **Cost.** Reported, not gated: the paired cost ratio hybrid / passthrough with its bootstrap 95% interval (the privacy premium). The original "strictly cheaper" rule was not met after three attempts (decision 2026-09-24).
