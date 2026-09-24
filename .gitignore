@@ -8,3 +8,4 @@
 # Task fixtures hold canary templates, not secrets; they are part of the sealed packages.
 !tasks/*/assets/.env
 !tasks/*/assets/.env.*
+/dist/
