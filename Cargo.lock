@@ -446,6 +446,7 @@ dependencies = [
  "duet-git",
  "duet-provider",
  "duet-sandbox",
+ "duet-tui",
  "futures-util",
  "rustix 0.38.44",
  "serde",

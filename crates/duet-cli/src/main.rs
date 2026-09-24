@@ -108,6 +108,10 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Terminal UI: settings screens generated from the registry (edits use the
+    /// same checks, confirmation and audit as `duet config set`), IP levels,
+    /// the audit viewer and a read-only run view.
+    Tui,
 }
 
 #[derive(Subcommand)]
@@ -656,6 +660,25 @@ Add --no-privacy to confirm, or use --mode hybrid."
             if let Some(p) = out {
                 std::fs::write(p, serde_json::to_vec_pretty(&report)?)?;
             }
+        }
+        Cmd::Tui => {
+            let handle = tokio::runtime::Handle::current();
+            let at = ws.clone();
+            let doctor: duet_tui::Doctor = Box::new(move |online| {
+                handle
+                    .block_on(doctor::run(&at, online))
+                    .into_iter()
+                    .map(|c| duet_tui::DoctorLine {
+                        status: format!("{:?}", c.status).to_lowercase(),
+                        name: c.name.into(),
+                        detail: c.detail,
+                        fix: c.fix,
+                    })
+                    .collect()
+            });
+            tokio::task::block_in_place(|| {
+                duet_tui::run(duet_tui::Paths::for_workspace(ws), doctor)
+            })?;
         }
         Cmd::Doctor { online, json } => {
             let checks = doctor::run(&ws, online).await;
