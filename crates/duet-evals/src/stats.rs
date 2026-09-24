@@ -54,6 +54,74 @@ pub fn paired_bootstrap(
     }
 }
 
+/// A two-sided interval around a point estimate.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Interval {
+    pub n: usize,
+    pub estimate: f64,
+    pub lower: f64,
+    pub upper: f64,
+}
+
+/// Mean of `values` with a two-sided percentile bootstrap interval at level `1 − alpha`.
+/// `None` when there are no values.
+pub fn bootstrap_mean(values: &[f64], iters: usize, alpha: f64, seed: u64) -> Option<Interval> {
+    let n = values.len();
+    if n == 0 {
+        return None;
+    }
+    let mean = values.iter().sum::<f64>() / n as f64;
+    let mut rng = SplitMix(seed);
+    let mut means: Vec<f64> = (0..iters)
+        .map(|_| {
+            (0..n)
+                .map(|_| values[(rng.next() % n as u64) as usize])
+                .sum::<f64>()
+                / n as f64
+        })
+        .collect();
+    means.sort_by(f64::total_cmp);
+    Some(Interval {
+        n,
+        estimate: mean,
+        lower: quantile(&means, alpha / 2.0),
+        upper: quantile(&means, 1.0 - alpha / 2.0),
+    })
+}
+
+/// Ratio of means Σa / Σb over pairs (a, b), with a two-sided paired bootstrap
+/// interval at level `1 − alpha` (pairs are resampled together). `None` when the
+/// reference total is not positive; resamples whose reference total is zero are skipped.
+pub fn paired_ratio(pairs: &[(f64, f64)], iters: usize, alpha: f64, seed: u64) -> Option<Interval> {
+    let n = pairs.len();
+    let (sa, sb) = pairs
+        .iter()
+        .fold((0.0, 0.0), |(x, y), (a, b)| (x + a, y + b));
+    if n == 0 || sb <= 0.0 {
+        return None;
+    }
+    let mut rng = SplitMix(seed);
+    let mut ratios: Vec<f64> = (0..iters)
+        .filter_map(|_| {
+            let (x, y) = (0..n).fold((0.0, 0.0), |(x, y), _| {
+                let (a, b) = pairs[(rng.next() % n as u64) as usize];
+                (x + a, y + b)
+            });
+            (y > 0.0).then(|| x / y)
+        })
+        .collect();
+    if ratios.is_empty() {
+        return None;
+    }
+    ratios.sort_by(f64::total_cmp);
+    Some(Interval {
+        n,
+        estimate: sa / sb,
+        lower: quantile(&ratios, alpha / 2.0),
+        upper: quantile(&ratios, 1.0 - alpha / 2.0),
+    })
+}
+
 fn quantile(sorted: &[f64], q: f64) -> f64 {
     let pos = q * (sorted.len() - 1) as f64;
     let lo = pos.floor() as usize;
@@ -179,6 +247,34 @@ mod tests {
         let expected = 1.0 - 0.05_f64.powf(1.0 / n as f64);
         assert!((binomial_upper(0, n, 0.05) - expected).abs() < 1e-6);
         assert!(binomial_upper(2, 60, 0.05) > binomial_upper(0, 60, 0.05));
+    }
+
+    #[test]
+    fn bootstrap_intervals_are_deterministic_and_bracket_the_estimate() {
+        let v: Vec<f64> = (0..30).map(|i| f64::from(i % 7)).collect();
+        let a = bootstrap_mean(&v, 2000, 0.05, 4).unwrap();
+        assert_eq!(a, bootstrap_mean(&v, 2000, 0.05, 4).unwrap());
+        assert!(a.lower < a.estimate && a.estimate < a.upper);
+        assert!(bootstrap_mean(&[], 10, 0.05, 1).is_none());
+        let one = bootstrap_mean(&[2.5], 100, 0.05, 1).unwrap();
+        assert_eq!((one.lower, one.upper), (2.5, 2.5));
+    }
+
+    #[test]
+    fn paired_ratio_is_the_ratio_of_totals() {
+        let pairs: Vec<(f64, f64)> = (0..20)
+            .map(|i| {
+                (
+                    1.4 * (1.0 + 0.1 * f64::from(i % 5)),
+                    1.0 + 0.1 * f64::from(i % 5),
+                )
+            })
+            .collect();
+        let r = paired_ratio(&pairs, 2000, 0.05, 2).unwrap();
+        assert!((r.estimate - 1.4).abs() < 1e-12);
+        assert!(r.lower <= 1.4 + 1e-9 && r.upper >= 1.4 - 1e-9);
+        assert!(r.upper - r.lower < 1e-9, "a constant ratio has no spread");
+        assert!(paired_ratio(&[(1.0, 0.0)], 100, 0.05, 1).is_none());
     }
 
     #[test]

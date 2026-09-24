@@ -2,6 +2,7 @@
 //! Duet evaluation harness: dogfood tasks, canaries, leak proxy, grading,
 //! judging and statistics.
 
+mod benchmark;
 mod canary;
 mod cost;
 mod grade;
@@ -85,12 +86,26 @@ enum Cmd {
         #[arg(long, default_value_t = 2)]
         repeats: usize,
     },
-    /// Summarize a batch and apply the gates.
+    /// Summarize a batch and apply the gates. With --final, write the public
+    /// benchmark (Markdown and JSON) from one or more batches, paired by task, seed and lane.
     Report {
-        batch: PathBuf,
-        /// Gate pairs as candidate:reference, e.g. duet-hybrid:duet-passthrough.
+        #[arg(required = true, num_args = 1..)]
+        batches: Vec<PathBuf>,
+        /// Gate pairs as candidate:reference, e.g. duet-hybrid:duet-passthrough
+        /// (with --final the default is duet-hybrid:duet-passthrough).
         #[arg(long, value_delimiter = ',')]
         gate: Vec<String>,
+        /// Write the public benchmark report instead of a batch summary.
+        #[arg(long = "final")]
+        final_report: bool,
+        /// Benchmark Markdown path; the JSON twin is written beside it.
+        #[arg(long, default_value = "docs/BENCHMARK.md")]
+        out: PathBuf,
+        /// Reference lane for cost ratios (the privacy premium).
+        #[arg(long, default_value = "duet-passthrough")]
+        reference: String,
+        #[arg(long, default_value = "crates/duet-evals/pricing.toml")]
+        prices: PathBuf,
     },
     /// Harness self-test: proxy, canaries, statistics and pricing.
     Selftest,
@@ -284,33 +299,97 @@ async fn main() -> Result<()> {
             };
             judge_batch(&cli.tasks, &batch, &backend, repeats).await?
         }
-        Cmd::Report { batch, gate } => {
-            let records = report::load_records(&batch)?;
-            ensure!(!records.is_empty(), "no runs in {}", batch.display());
-            let summaries = report::summarize(&records);
-            let judges = report::load_judges(&batch)?;
-            let mut verdicts = Vec::new();
-            for g in &gate {
-                let (c, r) = g
-                    .split_once(':')
-                    .context("gate must be candidate:reference")?;
-                match report::gate(&records, &judges, c, r) {
-                    Some(v) => verdicts.push(v),
-                    None => eprintln!("no paired runs for {g}"),
-                }
+        Cmd::Report {
+            batches,
+            gate,
+            final_report,
+            out,
+            reference,
+            prices,
+        } => {
+            let pairs = gate
+                .iter()
+                .map(|g| {
+                    g.split_once(':')
+                        .map(|(c, r)| (c.to_owned(), r.to_owned()))
+                        .context("gate must be candidate:reference")
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if final_report {
+                let pairs = if pairs.is_empty() {
+                    vec![("duet-hybrid".to_owned(), "duet-passthrough".to_owned())]
+                } else {
+                    pairs
+                };
+                final_benchmark(&batches, &pairs, &reference, &prices, &out)?;
+            } else {
+                let [batch] = batches.as_slice() else {
+                    bail!("several batches need --final");
+                };
+                batch_report(batch, &pairs)?;
             }
-            let invalid: Vec<&lanes::RunRecord> =
-                records.iter().filter(|r| r.invalid.is_some()).collect();
-            let md = report::render_markdown(&summaries, &verdicts, &invalid);
-            fs::write(batch.join("report.md"), &md)?;
-            fs::write(
-                batch.join("verdicts.json"),
-                serde_json::to_string_pretty(&verdicts)?,
-            )?;
-            print!("{md}");
         }
         Cmd::Selftest => selftest().await?,
     }
+    Ok(())
+}
+
+fn batch_report(batch: &Path, gate: &[(String, String)]) -> Result<()> {
+    let records = report::load_records(batch)?;
+    ensure!(!records.is_empty(), "no runs in {}", batch.display());
+    let summaries = report::summarize(&records);
+    let judges = report::load_judges(batch)?;
+    let mut verdicts = Vec::new();
+    for (c, r) in gate {
+        match report::gate(&records, &judges, c, r) {
+            Some(v) => verdicts.push(v),
+            None => eprintln!("no paired runs for {c}:{r}"),
+        }
+    }
+    let invalid: Vec<&lanes::RunRecord> = records.iter().filter(|r| r.invalid.is_some()).collect();
+    let md = report::render_markdown(&summaries, &verdicts, &invalid);
+    fs::write(batch.join("report.md"), &md)?;
+    fs::write(
+        batch.join("verdicts.json"),
+        serde_json::to_string_pretty(&verdicts)?,
+    )?;
+    print!("{md}");
+    Ok(())
+}
+
+fn final_benchmark(
+    batches: &[PathBuf],
+    gates: &[(String, String)],
+    reference: &str,
+    prices: &Path,
+    out: &Path,
+) -> Result<()> {
+    let prices = cost::PriceTable::load(prices)?;
+    let (runs, info) = benchmark::load(batches)?;
+    ensure!(!runs.is_empty(), "no runs in the given batches");
+    let report = benchmark::build(
+        &runs,
+        &info,
+        &benchmark::Options {
+            reference,
+            gates,
+            prices: &prices,
+            out_md: out,
+        },
+    );
+    let mut command = String::from("duet-eval report --final");
+    for b in batches {
+        command.push(' ');
+        command.push_str(&b.to_string_lossy());
+    }
+    let (json, _) = benchmark::write(&report, out, &command)?;
+    println!(
+        "wrote {} and {} ({} runs, inputs {})",
+        out.display(),
+        json.display(),
+        report.runs.len(),
+        &report.inputs_sha256[..16]
+    );
     Ok(())
 }
 

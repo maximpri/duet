@@ -12,8 +12,8 @@ use std::path::Path;
 
 pub const PASS_RATE_MARGIN: f64 = 0.05;
 pub const JUDGE_MARGIN: f64 = 2.0;
-const ALPHA: f64 = 0.05;
-const BOOTSTRAP_ITERS: usize = 10_000;
+pub const ALPHA: f64 = 0.05;
+pub const BOOTSTRAP_ITERS: usize = 10_000;
 
 #[derive(Debug, Serialize)]
 pub struct LaneSummary {
@@ -109,7 +109,7 @@ pub struct GateVerdict {
 }
 
 /// Run directories a retry replaced (`<run>.invalid-<unix>`); kept for inspection, never reported.
-fn superseded(dir: &Path) -> bool {
+pub fn superseded(dir: &Path) -> bool {
     dir.extension()
         .is_some_and(|e| e.to_string_lossy().starts_with("invalid-"))
 }

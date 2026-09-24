@@ -34,6 +34,11 @@ pub struct DuetLedger {
     pub sandbox_denials: u64,
     pub local_calls: u64,
     pub local_busy_seconds: f64,
+    /// Local model tokens (older records lack them).
+    #[serde(default)]
+    pub local_input_tokens: u64,
+    #[serde(default)]
+    pub local_output_tokens: u64,
     /// Frontier dollars at list price as Duet priced them.
     pub input_usd: f64,
     pub output_usd: f64,
@@ -72,6 +77,8 @@ pub fn parse(summary: &Value) -> Option<DuetLedger> {
     if let Some(local) = l.get("local") {
         out.local_calls = u(local, "calls");
         out.local_busy_seconds = f(local, "seconds");
+        out.local_input_tokens = u(local, "input_tokens");
+        out.local_output_tokens = u(local, "output_tokens");
     }
     for (class, c) in l
         .get("by_class")
@@ -99,7 +106,7 @@ mod tests {
                    "request_tokens": 30000, "ask_local_calls": 2, "ask_local_questions": 5,
                    "sensitive_data_commands": 1, "sandbox_denials": 3,
                    "input_usd": 0.004, "output_usd": 0.001,
-                   "local": {"calls": 4, "input_tokens": 1, "cached_tokens": 0, "output_tokens": 1, "seconds": 42.5}}}})
+                   "local": {"calls": 4, "input_tokens": 1200, "cached_tokens": 0, "output_tokens": 80, "seconds": 42.5}}}})
     }
 
     #[test]
@@ -111,6 +118,7 @@ mod tests {
         assert_eq!((l.ask_local_calls, l.ask_local_questions), (2, 5));
         assert_eq!((l.sensitive_data_commands, l.sandbox_denials), (1, 3));
         assert_eq!(l.local_calls, 4);
+        assert_eq!((l.local_input_tokens, l.local_output_tokens), (1200, 80));
         assert!((l.local_busy_seconds - 42.5).abs() < 1e-9);
         // Older summaries without a ledger give none.
         assert!(parse(&json!({"stats": {"turns": 3}})).is_none());
