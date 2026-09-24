@@ -2,8 +2,8 @@
 //! The settings registry.
 //!
 //! Every setting is declared once in [`REGISTRY`] with its type, default, scope
-//! and direction. The loader, `duet config`, `duet doctor` and the TUI all read
-//! this table; reading an unregistered key is an error.
+//! and direction. The loader and `duet config` read this table (as will
+//! `duet doctor` and the TUI); reading an unregistered key is an error.
 //!
 //! Files: owner `~/.config/duet/config.toml` (trusted) and project
 //! `.duet/config.toml` (untrusted). A project file may never set owner-only keys

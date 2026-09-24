@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Model API layer: wire dialects, streaming, retry, credentials, usage and pricing.
+//! Model API layer: Chat Completions, streaming, retry, credentials, local-endpoint
+//! trust, usage and pricing.
 
 pub mod chat;
 pub mod client;

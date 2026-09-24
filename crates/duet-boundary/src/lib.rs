@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Security engine: classification, transformation, vault, handles, outbound gate and audit.
+//! Security engine: classification, transformation, vault, handles, bulky
+//! offload, IP levels, local roles, outbound gate and audit.
 //!
-//! M2 provides the gate and the audit log in pass-through mode; classification,
-//! placeholders, handles and the local roles arrive in M3.
+//! In passthrough mode only the gate and the audit log are active; hybrid mode
+//! adds the engine ([`engine::Engine`]) as the presenter and outbound filter.
 
 pub mod audit;
 pub mod bulky;
