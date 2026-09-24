@@ -47,6 +47,7 @@ duet-cli                     → all of the above (composition root)
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
 pricing and usage parsing. duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
 ratatui); duet-cli links it for `duet tui` and supplies `duet doctor` as a callback.
+duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet crate.
 ```
 
 | Crate | Owns | Must never |
@@ -57,9 +58,10 @@ ratatui); duet-cli links it for `duet tui` and supplies `duet doctor` as a callb
 | `duet-git` | Private checkpoint store; the only function that spawns `git` | Inherit the user's git config, hooks or fsmonitor |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
+| `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
 
 ## 3. Key types
 

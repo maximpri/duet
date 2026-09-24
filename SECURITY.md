@@ -69,7 +69,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 4. **Hash-chained audit log** of every outbound request (placeholder-substituted) and of the
    security decisions taken during the run: local-endpoint trust, sandbox denials, `sensitive_data`
    commands (command, exit code, files marked derived), blocked sends (which check), protected
-   edits, run start (with whether the boundary is on) and end. Events hold names, paths and
+   edits, operator approval decisions (tool, risk class, a write's path, approved or not), run
+   start (with whether the boundary is on) and end. Events hold names, paths and
    outcomes, never content. After every append the log's head is anchored outside the workspace,
    in the owner state directory (`$DUET_CONFIG_HOME/state`, else `$XDG_STATE_HOME/duet`, else
    `~/.local/state/duet`), so `duet audit verify <run>` detects a log that was rewritten or
@@ -139,6 +140,61 @@ Limits of this design:
 - Local answers about protected bodies can paraphrase the logic.
 - The skeleton itself (names, signatures, doc comments, public constants) is disclosed by design.
 
+## Oversight: operator approval
+
+`oversight.approve` (owner config only; a project cannot set it) makes the CLI ask the operator on
+the terminal, y/N, before an action runs. Default `off`.
+
+| Mode | Asks before |
+|---|---|
+| `off` | nothing |
+| `risky` | a `run_command` with `sensitive_data`; every `edit_protected`; an `edit_file`/`write_file` to a path that is not an ordinary source or test file |
+| `all` | the above, plus every other command and write |
+
+An **ordinary source or test file**, precisely: the file name has a program-source extension (`.rs`,
+`.py`, `.ts`, `.tsx`, `.js`, `.go`, `.java`, `.c`, `.cpp`, `.rb`, `.swift` and similar; the list is
+in `crates/duet-agent/src/oversight.rs`); no path component starts with `.`; no directory is
+`scripts`, `tools`, `bin`, `ci`, `hooks`, `vendor`, `third_party`, `node_modules`, `target`, `dist`
+or `build`; the file is not a build or test-collection hook (`build.rs`, `setup.py`, `conftest.py`,
+`noxfile.py`, `fabfile.py`, `manage.py`, gulp/grunt files) or a `*.config.*` file; and the path is
+not sensitive (policy globs, or derived from sensitive data during the run). Everything else is
+risky: manifests and lock files, CI and editor configuration, shell scripts, Makefiles and
+Dockerfiles, documentation, data and configuration files. Reads, `ask_local` and `finish` (whose
+checks the owner configured) are never asked about.
+
+The prompt shows the tool, why it is risky, the path and size of a write, and a command's text.
+Only `y` or `yes` approves. A refused action is not run; the model receives a tool error saying the
+operator did not approve it and should take another approach. Every decision is recorded in the
+run's audit log as an `approval` event with the tool, the risk class, a write's path and the
+outcome, never the command text, the content or the specification. With approval on, a run whose
+standard input is not a terminal, or that cannot open the controlling terminal, refuses to start
+(fail closed); nothing is sent and no run is created. Evaluation lanes use their own owner config and
+keep approval off. Turning approval down (`all` → `risky` → `off`) loosens oversight and needs
+`duet config set ... --confirm`.
+
+Approval is a check on actions, not on disclosure: what the frontier receives is decided by the
+boundary whether or not an action is approved.
+
+## Disclosure report
+
+`duet audit disclosure <run>` (`--json` for the same data), also written as the `disclosure`
+section of the run's `summary.json`, states what the boundary withheld from the frontier in that run,
+built from the run's audit log and cost ledger. It holds counts, kinds and check names only, never a
+value, a placeholder's name, a command or a path:
+
+| Line | Counted as |
+|---|---|
+| Placeholders, by kind (`secret`, `email`, `phone`, `name`, ...) | distinct placeholder tokens in the requests sent (one per withheld value) |
+| Copied spans removed | copied-span markers in the distinct messages sent |
+| Protected bodies and constants | distinct `⟨body:…⟩` / `⟨value:…⟩` handles sent |
+| Protected code lines withheld | line markers in the distinct messages sent |
+| Sensitive results held locally, tokenized files, protected views, bulky previews, local answers | tool results by how they were shown (cost ledger) |
+| Requests changed by the outbound filter; requests blocked, by check | audit records and `blocked_send` events |
+| Sandbox denials, `sensitive_data` commands and files they marked, protected edits, approvals | audit events |
+
+A passthrough run is reported as having the boundary off, with nothing withheld. A run without a
+`summary.json` (interrupted, or purged) is reported from its audit log alone.
+
 ## Verification
 
 The claim is measured, not assumed. The dogfood suite ([docs/DOGFOOD_SUITE.md](docs/DOGFOOD_SUITE.md))
@@ -195,7 +251,8 @@ such instructions; the frontier may follow them. What that can and cannot achiev
 **Still possible.** A steered frontier can change any Open source file (including inserting
 malicious code the owner later runs outside the sandbox), run arbitrary commands inside the sandbox,
 ask the local model questions about sensitive content with `ask_local`, and run `sensitive_data`
-commands. Local answers are derived from sensitive content by design and can convey meaning in
+commands. With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
+protected edits and writes outside ordinary source and test files. Local answers are derived from sensitive content by design and can convey meaning in
 paraphrase; the protected-source limits above apply. **Review the diff before running, committing or
 deploying what a run produced.**
 
@@ -211,6 +268,32 @@ deploying what a run produced.**
 - Loosening policy: repository content (including `.duet/config.toml`) can only tighten, and the
   owner config is outside the workspace.
 - Hiding what happened: denials, sensitive commands and blocked sends are in the anchored audit log.
+
+## Supply chain
+
+- **Dependencies.** `cargo deny check` in the gate: known advisories and yanked crates, licenses
+  (a GPL-3.0-compatible allowlist), bans and sources (crates.io only, no git dependencies).
+  Builds use the committed `Cargo.lock` (`--locked`).
+- **SBOM.** `tools/sbom.sh` writes a CycloneDX 1.5 JSON SBOM of the `duet` binary: every normal and
+  build dependency, transitively, for the target platform, with its package URL, declared license
+  expression, the SHA-256 of its crates.io archive (from `Cargo.lock`) and its repository. It is
+  generated by Duet's own tool (`crates/duet-release`) from `cargo metadata --locked --offline`: no
+  network, no plugin. Dev-only dependencies are excluded; local paths never appear.
+- **Signed releases.** `tools/release.sh <version> --key <ssh key>` runs the full gate, builds `duet`
+  with `cargo build --release --locked` for the host target, and writes, in `dist/duet-<version>/`,
+  the binary, the SBOM, `BUILDINFO.txt` (version, commit, toolchain), `SHA256SUMS` over all of them,
+  and `SHA256SUMS.sig`, a detached signature made with `ssh-keygen -Y sign` in the namespace
+  `duet-release`. The key is the operator's: the script never generates or stores one, refuses to
+  run without it, refuses a key inside the repository, and refuses a dirty tree or a version other
+  than the workspace's. The private key can stay in `ssh-agent` (pass its public key).
+- **Verifying.** Put the release signer line published by the maintainer,
+  `<identity> namespaces="duet-release" <public key>`, in `~/.config/duet/allowed_signers` (next to
+  the owner config), obtained over a channel you already trust, then run
+  `tools/verify-release.sh <release dir>`: the signature must verify against that file, and every
+  file in the directory must be listed in `SHA256SUMS` and match. `duet doctor` warns when the
+  allowed-signers file is missing.
+- **Not yet:** a published release channel, so `duet doctor` cannot flag an outdated version, and
+  an advisory feed beyond the table below; build reproducibility is not verified independently.
 
 ## Advisories and fixed leak classes
 

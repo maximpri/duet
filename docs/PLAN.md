@@ -327,9 +327,19 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
 
 **SbD-3 — supply chain and oversight (with M6)**
 - Versioned, signed releases; SBOM (CycloneDX); security advisory channel; `duet doctor` flags outdated
-  versions.
-- Optional approval mode for risky actions (`sensitive_data` commands, writes outside sources/tests).
-- Per-run disclosure report: what was withheld, by class (extends the M4 cost ledger).
+  versions. Signed releases and SBOM — done: `tools/release.sh <version> --key <ssh key>` (gate,
+  `--locked` release build, SBOM, `SHA256SUMS`, detached `ssh-keygen -Y` signature with the operator's
+  key, never generated or stored in the repo), `tools/verify-release.sh`, `tools/sbom.sh` (own
+  generator from `cargo metadata`, offline, `crates/duet-release`); `duet doctor` warns without
+  release keys (`allowed_signers`). Open: a published release channel (then the outdated-version check)
+  and an advisory feed beyond SECURITY.md.
+- Optional approval mode for risky actions (`sensitive_data` commands, writes outside sources/tests) —
+  done: `oversight.approve` (owner-only; `off`/`risky`/`all`), y/N on the terminal, refusals are tool
+  errors, decisions audited without content, fail closed without a terminal, eval lanes keep it off;
+  `duet doctor` shows the mode (SECURITY.md, Oversight).
+- Per-run disclosure report: what was withheld, by class (extends the M4 cost ledger) — done:
+  `duet audit disclosure <run>` and `disclosure` in `summary.json`, from the audit log and ledger,
+  counts and kinds only (SECURITY.md, Disclosure report).
 - Frontier provider data-retention terms documented in the threat model.
 
 **SbD gate (before M5):** every SbD-1 item done with tests; red-team pass (SbD-2) with zero canary

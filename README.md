@@ -81,6 +81,7 @@ with raw data and the method needed to reproduce them.
 duet run "fix the failing billing export"      # hybrid mode (the default)
 duet audit show <run>           # see exactly what was sent to the frontier, and the security events
 duet audit verify <run>         # check the hash chain and its anchor
+duet audit disclosure <run>     # what was withheld from the frontier, by class (counts only)
 duet resume <run>               # continue an interrupted run
 duet config list                # every setting, its value and where it came from
 duet config set --project ip.interface_only '["src/pricing/**"]'
@@ -108,6 +109,12 @@ show where each value comes from (default, owner or project). Edits take the sam
 to the project file (which only tightens and never takes owner-only keys), and every applied change
 is recorded in the owner's config audit log.
 
+**Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Duet
+asks y/N on the terminal before a `sensitive_data` command, a protected edit, or a write to anything
+other than an ordinary source or test file; with `all`, before every command and write. A refusal
+is returned to the model as a tool error, and every decision is in the run's audit log. A run with
+approval on and no terminal refuses to start. Details: [SECURITY.md](SECURITY.md) (Oversight).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on
@@ -118,7 +125,8 @@ does that, through the same `--confirm` and audit path as any endpoint change.
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git, disk
-space, the audit chains and anchors of the latest runs, and run data past retention. It uses no
+space, the audit chains and anchors of the latest runs, run data past retention, the approval
+mode, and whether release signing keys are present (warn-only). It uses no
 network by default. `--online` adds one model listing per configured server (and the local model's
 context window); it never calls a model. Exit code: 0 pass, 1 warn, 2 fail.
 
@@ -160,6 +168,18 @@ Rust only.
 cargo build --release
 tools/gate.sh        # formatting, lints, tests, license and provenance checks
 ```
+
+A release is signed and comes with an SBOM. The operator provides an SSH signing key (never stored in
+the repository):
+
+```sh
+tools/release.sh 0.1.0 --key ~/.ssh/duet_release   # gate, --locked release build, SBOM, SHA256SUMS + signature
+tools/verify-release.sh dist/duet-0.1.0            # signature (allowed_signers) and every checksum
+tools/sbom.sh --out duet.cdx.json                  # CycloneDX SBOM alone (offline, no plugin)
+```
+
+To verify a release, put the published signer line in `~/.config/duet/allowed_signers`. Details:
+[SECURITY.md](SECURITY.md) (Supply chain).
 
 ## Development
 
