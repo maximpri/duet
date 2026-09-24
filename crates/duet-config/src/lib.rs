@@ -246,6 +246,15 @@ pub const REGISTRY: &[Setting] = &[
         "Public results larger than this become a handle + summary."
     ),
     s!(
+        "sensitivity.local_brief",
+        Bool,
+        "true",
+        Owner,
+        Any,
+        false,
+        "At run start the local model reads the sensitive files against the task and briefs the frontier (values withheld)."
+    ),
+    s!(
         "sensitivity.bulky_file_tokens",
         Int {
             min: 256,

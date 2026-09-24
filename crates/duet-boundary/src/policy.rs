@@ -54,6 +54,8 @@ pub struct Policy {
     pub detect_pii: bool,
     pub detect_entropy: bool,
     pub bulky_tokens: usize,
+    /// Brief the frontier on the sensitive files at run start (needs a local model).
+    pub local_brief: bool,
     /// Threshold for a public file the model explicitly read (`0` disables offloading).
     pub bulky_file_tokens: usize,
     /// Source the frontier sees as signatures only (`ip.interface_only`).

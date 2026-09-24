@@ -131,6 +131,35 @@ impl LocalReader {
         )
     }
 
+    /// What in `files` (path, text) matters for `objective`: causes, formats,
+    /// anomalies and counts an engineer doing that task needs, without values.
+    pub async fn brief(
+        &self,
+        objective: &str,
+        files: &[(String, String)],
+    ) -> Result<Digest, ProviderError> {
+        let mut content = String::new();
+        for (path, text) in files {
+            content.push_str(&format!("===== {path}\n{}", numbered(text)));
+        }
+        let prompt = format!(
+            "{}Another engineer must do this task without seeing these files:\n<task>\n{objective}\n</task>\n\
+Write what in these files matters for that task: every distinct problem, failure or anomaly they show \
+(with the file and line numbers and how often it occurs), the formats and conventions the code must \
+handle, and anything that contradicts what the task or code assumes. Be specific and complete; do not \
+copy personal data, secrets or business figures. Return only {{\"summary\": ..., \"facts\": [...]}}; \
+leave every other field out.",
+            framed("the sensitive files", 0, 1, &content)
+        );
+        let v = self.ask(prompt, &["summary"], 2000).await?;
+        let mut d: Digest = serde_json::from_value(v).unwrap_or(Digest {
+            summary: String::new(),
+            facts: vec![],
+        });
+        d.summary = truncate(&d.summary, MAX_SUMMARY * 2);
+        Ok(d)
+    }
+
     /// Summary of `text` (chunked if large).
     pub async fn digest(&self, source: &str, text: &str) -> Result<Digest, ProviderError> {
         let chunks = chunk(&numbered(text));

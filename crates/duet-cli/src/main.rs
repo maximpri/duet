@@ -212,6 +212,7 @@ fn policy(cfg: &Config) -> Result<Policy> {
         detect_entropy: cfg.bool("sensitivity.detect_entropy")?,
         bulky_tokens: cfg.int("sensitivity.bulky_tokens")? as usize,
         bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens")? as usize,
+        local_brief: cfg.bool("sensitivity.local_brief")?,
         interface_only: cfg.list("ip.interface_only")?,
         sealed: cfg.list("ip.sealed")?,
     })

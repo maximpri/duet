@@ -119,6 +119,8 @@ struct State {
     /// Detector matches the frontier wrote itself (never replaced unless the
     /// same value is also in the vault).
     authored: std::collections::HashSet<String>,
+    /// The local model's task-focused brief of the sensitive files, if written.
+    brief: Option<String>,
 }
 
 pub struct Engine {
@@ -145,6 +147,9 @@ const PATTERN_CHARS: usize = 160;
 static PLACEHOLDER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"⟨[^⟩]*⟩").expect("static regex"));
 static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+").expect("static regex"));
+/// Local calls for the task brief, and characters read of each sensitive file for it.
+const MAX_BRIEF_CALLS: usize = 3;
+const BRIEF_FILE_CHARS: usize = 20_000;
 /// Questions answered per `ask_local` call.
 pub const MAX_QUESTIONS: usize = 6;
 /// Lines `read_raw` returns when no end is given, and at most per call.
@@ -186,6 +191,7 @@ impl Engine {
                 sensitive_files: Vec::new(),
                 ip: protected::IpState::open(run_dir),
                 authored: Default::default(),
+                brief: None,
             }),
         }))
     }
@@ -212,6 +218,7 @@ impl Engine {
             }
         }
         let mut primed = 0;
+        let mut briefable = Vec::new();
         for f in files {
             let path = Path::new(f);
             if !self.is_sensitive(path) {
@@ -220,7 +227,7 @@ impl Engine {
             let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) else {
                 continue;
             };
-            let text = String::from_utf8_lossy(&bytes);
+            let text = String::from_utf8_lossy(&bytes).into_owned();
             let mut st = self.lock();
             st.sensitive_files.push(f.clone());
             st.overlap.add_sensitive(&text);
@@ -228,10 +235,57 @@ impl Engine {
                 let _ = self.tokenized_view(&mut st, f, &text);
             } else {
                 let _ = self.sanitize(&mut st, &text, f, true);
+                briefable.push((f.clone(), text));
             }
             primed += 1;
         }
+        self.write_brief(objective, &briefable);
         primed + self.ip_prime(workspace, all_files)
+    }
+
+    /// Has the local model read the sensitive files against the task and write
+    /// what matters for it, so the frontier starts informed instead of learning
+    /// the data one `ask_local` round trip at a time. Files are bundled into at
+    /// most `MAX_BRIEF_CALLS` calls; the result is cleaned like any local output.
+    fn write_brief(&self, objective: &str, files: &[(String, String)]) {
+        let Some(local) = &self.local else { return };
+        if files.is_empty() || !self.policy.local_brief {
+            return;
+        }
+        let mut bundles: Vec<Vec<(String, String)>> = vec![Vec::new()];
+        let mut size = 0;
+        for (path, text) in files {
+            let part: String = text.chars().take(BRIEF_FILE_CHARS).collect();
+            if size + part.len() > crate::local::CHUNK_CHARS && size > 0 {
+                if bundles.len() == MAX_BRIEF_CALLS {
+                    break;
+                }
+                bundles.push(Vec::new());
+                size = 0;
+            }
+            size += part.len();
+            if let Some(b) = bundles.last_mut() {
+                b.push((path.clone(), part));
+            }
+        }
+        let mut notes = Vec::new();
+        for bundle in &bundles {
+            match Self::block_on(local.brief(objective, bundle)) {
+                Ok(d) => {
+                    let mut st = self.lock();
+                    let origin = "local brief";
+                    notes.push(self.clean_local(&mut st, &d.summary, origin));
+                    for f in &d.facts {
+                        notes.push(format!("- {}", self.clean_local(&mut st, f, origin)));
+                    }
+                }
+                Err(e) => notes.push(format!(
+                    "[local brief unavailable: {}]",
+                    e.message.chars().take(160).collect::<String>()
+                )),
+            }
+        }
+        self.lock().brief = Some(notes.join("\n"));
     }
 
     /// Sensitive by policy, or derived from sensitive data by a command.
@@ -355,7 +409,6 @@ impl Engine {
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(f))
     }
 
-    /// Sensitive content: handle, sanitized error lines, local summary.
     /// A map of a long sensitive text: its lines grouped by shape (sanitized,
     /// digits as `#`, placeholders as `⟨…⟩`), most frequent first. Only shapes
     /// that repeat are shown — repeated lines are structure (log templates,
@@ -407,6 +460,7 @@ impl Engine {
         out
     }
 
+    /// Sensitive content: handle, sanitized error lines, local summary.
     fn handle_view(&self, source_label: &str, text: &str) -> String {
         self.set_class(ViewClass::HandleSummary);
         let handle = {
@@ -1017,6 +1071,12 @@ handle for ask_local; run_command with sensitive_data runs programs on them): {}
             ));
         }
         out.push_str(&Self::ip_note(&st));
+        if let Some(brief) = &st.brief {
+            out.push_str(&format!(
+                "\n\nBrief of the sensitive files for this task, written by the local model (values withheld; \
+ask_local for details):\n{brief}"
+            ));
+        }
         out
     }
 }
@@ -1501,6 +1561,44 @@ mod prime_tests {
             "{task}"
         );
         assert!(task.contains("sensitive_data"), "{task}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_task_carries_a_cleaned_local_brief_of_the_sensitive_files() {
+        let reply = json!({
+            "summary": "logs/run.log shows carrier KSX weights in pounds since 2026-08-03 (lines 10-40).",
+            "facts": ["Disputes were raised by priya.tolvenrin@mailbox-9.net for 3 invoices"]
+        })
+        .to_string();
+        let (local, received) = crate::testing::scripted_local(vec![reply]);
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        std::fs::create_dir_all(ws.join("logs")).unwrap();
+        std::fs::write(
+            ws.join("logs/run.log"),
+            "WARN KSX weight 12.1 for priya.tolvenrin@mailbox-9.net\n",
+        )
+        .unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["logs/**".into()],
+            detect_pii: true,
+            local_brief: true,
+            ..Policy::default()
+        };
+        let e = Engine::open(&d.path().join("run"), policy, Some(local)).unwrap();
+        e.prime(
+            &ws,
+            &["logs/run.log".to_string()],
+            "Fix the August billing.",
+        );
+        let task = e.sanitize_objective("Fix the August billing.");
+        assert!(
+            task.contains("Brief of the sensitive files") && task.contains("weights in pounds"),
+            "{task}"
+        );
+        assert!(!task.contains("priya.tolvenrin"), "{task}");
+        let sent = received.bodies()[0].to_string();
+        assert!(sent.contains("Fix the August billing.") && sent.contains("KSX weight"));
     }
 
     #[test]
