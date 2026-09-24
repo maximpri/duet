@@ -23,15 +23,14 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 
 1. **Measure first.** The benchmark exists before the agent. Nothing proceeds past a failed gate.
 2. **One variable per measured run.**
-3. **Line budgets per crate** (§4). Exceeding one requires an explicit decision.
-4. **Novelty and provenance.** No code, formats, prompts, tool schemas or design documents from any
+3. **Novelty and provenance.** No code, formats, prompts, tool schemas or design documents from any
    coding agent. Each v1 file is checked before porting (agent-name/format grep, git history).
    Excluded: v1's patch envelope (`src/tools/patch.rs`), the Codex CLI transport and presets, and v1
    documents comparing other agents. Public API wire formats are protocols and are allowed.
    `tools/gate.sh` fails on agent names or formats in `crates/`, except the eval lane adapters.
-5. **Rust only.** No Python anywhere, including the evaluation harness.
-6. **License GPL-3.0**, SPDX headers, dependency licenses checked by cargo-deny.
-7. **No hosted CI.** `tools/gate.sh` is the gate: fmt, clippy `-D warnings`, `cargo test`,
+4. **Rust only.** No Python anywhere, including the evaluation harness.
+5. **License GPL-3.0**, SPDX headers, dependency licenses checked by cargo-deny.
+6. **No hosted CI.** `tools/gate.sh` is the gate: fmt, clippy `-D warnings`, `cargo test`,
    cargo-deny, provenance grep, eval self-tests.
 
 ## 3. Decisions log
@@ -61,6 +60,8 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Gate 3 outcome (operator, pre-agreed): not strictly cheaper after attempts A–C, so cost is reported as a measured privacy premium (paired ratio vs the orchestrator alone with its interval, ~1.4×); quality non-inferiority and zero leaks stay required. The local task brief (attempt C) raised cost and is off by default |
 | 2026-09-24 | M5 is judged by two judges of different families, both through the operator's CLI subscriptions: Claude (Claude CLI) and OpenAI (Codex CLI). Every run is judged by both; gates use the mean; the report shows each judge and flags runs judged by their own family (operator) |
 | 2026-09-24 | Red-team pass parked until last (operator): it is the final step before the benchmark is published; it no longer blocks other work (M5 runs may proceed, publication of `docs/BENCHMARK.md` waits for it) |
+| 2026-09-24 | Line budgets removed (operator): no per-crate line limits; the 2026-09-23 duet-boundary budget decision is superseded |
+| 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -68,24 +69,24 @@ Resolved 2026-09-23: GLM prompt caching works on the z.ai coding endpoint. `glm-
 28,546-token prompt sent twice reported `cached_tokens` 0 then 28,544 (cache read $0.26/M vs input
 $1.40/M). No fallback frontier is needed.
 
-## 4. Repository layout and budgets
+## 4. Repository layout
 
-| Path | Contents | Production lines |
-|---|---|---|
-| `crates/duet-provider` | Model APIs, streaming, retry, credentials, usage, pricing | ~6.5K |
-| `crates/duet-fs` | Guarded file access, atomic writes, lock, spill, `.duet` registry | ~1.1K |
-| `crates/duet-sandbox` | Seatbelt/bwrap, env allowlist, process-tree control | ~1.0K |
-| `crates/duet-git` | Private store, single git helper | ~0.6K |
-| `crates/duet-config` | Settings registry, scopes, tighten-only rule, `duet config` | ~0.8K |
-| `crates/duet-boundary` | Security engine (incl. bulky offload and IP levels) | ~5K |
-| `crates/duet-agent` | Frontier loop, tools, transcript, context manager, ledger | ~3.0K |
-| `crates/duet-cli` | CLI commands, setup | ~1.0K |
-| `crates/duet-tui` | Registry-generated screens, run and audit views | ~2.5K |
-| `crates/duet-evals` | `duet-eval` harness | ~3.5K |
-| `tools/gate.sh` | Local gate | — |
-| `docs/` | This plan, target state, dogfood suite, `security.txt`, `evidence/`; `BENCHMARK.md` (M5). `ARCHITECTURE.md` and `SECURITY.md` are at the root | — |
+| Path | Contents |
+|---|---|
+| `crates/duet-provider` | Model APIs, streaming, retry, credentials, usage, pricing |
+| `crates/duet-fs` | Guarded file access, atomic writes, lock, spill, `.duet` registry |
+| `crates/duet-sandbox` | Seatbelt/bwrap, env allowlist, process-tree control |
+| `crates/duet-git` | Private store, single git helper |
+| `crates/duet-config` | Settings registry, scopes, tighten-only rule, `duet config` |
+| `crates/duet-boundary` | Security engine (incl. bulky offload and IP levels) |
+| `crates/duet-agent` | Frontier loop, tools, transcript, context manager, ledger |
+| `crates/duet-cli` | CLI commands, setup |
+| `crates/duet-tui` | Registry-generated screens, run and audit views |
+| `crates/duet-evals` | `duet-eval` harness |
+| `crates/duet-release` | Release tooling: offline SBOM generator (`duet-sbom`) |
+| `tools/gate.sh` | Local gate |
+| `docs/` | This plan, target state, dogfood suite, `security.txt`, `evidence/`; `BENCHMARK.md` (M5). `ARCHITECTURE.md` and `SECURITY.md` are at the root |
 
-Total ≈ 23K lines of production Rust.
 
 ## 5. Milestones
 
@@ -429,7 +430,7 @@ OpenAI judge).
 | Tasks too easy or too hard to discriminate | Pilot calibration band (30–90% hidden-test pass for the reference); sealed task versions |
 | Protected-code quality | Scoped to marked paths; frontier keeps spec and tests; cost reported |
 | Others copy the idea | Edge is measured guarantees and a published benchmark |
-| Scope creep | Line budgets, gates, one variable per run |
+| Scope creep | Gates, one variable per run |
 
 ## 8. Verification
 

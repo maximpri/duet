@@ -90,7 +90,6 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
 
 Dependency direction: `provider`, `fs` ← `boundary` ← `agent` (with `fs`, `sandbox`, `git`) ←
 `cli`; `config` and `git` use `fs`; `agent` never depends on `provider`. `evals` links no duet crate.
-Approximate size: 23K lines of production Rust.
 
 ### 3.2 Privacy by construction
 
