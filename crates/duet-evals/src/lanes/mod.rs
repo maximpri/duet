@@ -749,6 +749,32 @@ mod tests {
     }
 
     #[test]
+    fn duet_lanes_keep_operator_approval_off() {
+        // Eval runs have no terminal: with `oversight.approve` on, duet refuses
+        // to start. Each Duet lane therefore uses its own owner config (never the
+        // operator's, which may turn approval on) and never sets it.
+        for lane in load_lanes(None).unwrap() {
+            if lane.kind != LaneKind::Duet {
+                continue;
+            }
+            assert_eq!(
+                lane.env.get("DUET_CONFIG_HOME").map(String::as_str),
+                Some("{run_dir}/duet-config"),
+                "{}",
+                lane.name
+            );
+            for f in &lane.files {
+                let t: toml::Table = toml::from_str(&f.content).unwrap();
+                let approve = t
+                    .get("oversight")
+                    .and_then(|o| o.get("approve"))
+                    .and_then(toml::Value::as_str);
+                assert!(matches!(approve, None | Some("off")), "{}", lane.name);
+            }
+        }
+    }
+
+    #[test]
     fn ip_marks_become_duet_project_config() {
         let dir = tempfile::tempdir().unwrap();
         crate::task::tests_support::fixture(dir.path());

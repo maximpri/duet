@@ -898,6 +898,10 @@ impl Presenter for Engine {
         }
     }
 
+    fn path_sensitive(&self, path: &Path) -> bool {
+        self.is_sensitive(path)
+    }
+
     fn hidden_from_commands(&self, workspace: &Path) -> Vec<std::path::PathBuf> {
         let mut out: Vec<std::path::PathBuf> = self
             .policy

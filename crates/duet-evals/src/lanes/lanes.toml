@@ -14,6 +14,10 @@
 # per-run owner config sets `local.allow_plaintext = true`: the operator accepts
 # unencrypted traffic on that LAN segment. Planted canaries, not real data,
 # cross it during evaluations.
+#
+# Every Duet lane has its own owner config (`DUET_CONFIG_HOME` in the run
+# directory), so operator approval (`oversight.approve`) stays off: eval runs have
+# no terminal, and duet refuses to start one with approval on.
 
 [[lane]]
 name = "duet-passthrough"

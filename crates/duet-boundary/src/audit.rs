@@ -70,6 +70,18 @@ pub enum AuditEvent {
         attempt: u32,
         checks_passed: bool,
     },
+    /// The operator was asked to approve an action (`oversight.approve`). Holds
+    /// the tool, the risk class and the target path of a write; never the
+    /// command text, the content or the specification.
+    Approval {
+        tool: String,
+        risk: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        approved: bool,
+        /// `operator`, or `no_terminal` when nobody could be asked (denied).
+        decided_by: String,
+    },
     /// An owner or project setting changed (`duet config set`).
     ConfigChange {
         key: String,
@@ -92,6 +104,7 @@ impl AuditEvent {
             AuditEvent::SensitiveCommand { .. } => "sensitive_command",
             AuditEvent::BlockedSend { .. } => "blocked_send",
             AuditEvent::ProtectedEdit { .. } => "protected_edit",
+            AuditEvent::Approval { .. } => "approval",
             AuditEvent::ConfigChange { .. } => "config_change",
         }
     }

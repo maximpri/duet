@@ -44,6 +44,9 @@ pub enum Direction {
     OnlyFalse,
     /// Numbers: a project may only lower it.
     OnlyLower,
+    /// Choices: only toward a later option (the options are listed from the
+    /// least to the most strict).
+    OnlyLaterChoice,
 }
 
 pub struct Setting {
@@ -395,6 +398,15 @@ pub const REGISTRY: &[Setting] = &[
         false,
         "Days to keep audit logs."
     ),
+    s!(
+        "oversight.approve",
+        Choice(&["off", "risky", "all"]),
+        r#""off""#,
+        Owner,
+        OnlyLaterChoice,
+        true,
+        "Ask the operator at the terminal before an action: `risky` (sensitive_data commands, edit_protected, writes outside source/test files) or `all` (every command and write). Runs without a terminal then refuse to start."
+    ),
 ];
 
 pub fn setting(key: &str) -> Option<&'static Setting> {
@@ -515,6 +527,16 @@ fn tightens(s: &Setting, base: &Value, new: &Value) -> Result<(), &'static str> 
             (Some(b), Some(n)) if n <= b => Ok(()),
             _ => Err("lower it"),
         },
+        OnlyLaterChoice => {
+            let Choice(opts) = s.kind else {
+                return Err("choose a stricter option");
+            };
+            let rank = |v: &Value| v.as_str().and_then(|x| opts.iter().position(|o| *o == x));
+            match (rank(base), rank(new)) {
+                (Some(b), Some(n)) if n >= b => Ok(()),
+                _ => Err("choose a stricter option"),
+            }
+        }
     }
 }
 
@@ -1098,6 +1120,38 @@ mod tests {
                 .origin("limits.frontier_usd"),
             Some(Origin::Project)
         );
+    }
+
+    #[test]
+    fn approval_is_owner_only_and_turning_it_down_needs_confirmation() {
+        let (_d, o, p) = files("", "[oversight]\napprove = \"all\"\n");
+        assert!(matches!(
+            Config::load(&o, Some(&p)),
+            Err(ConfigError::OwnerOnly { .. })
+        ));
+        let (_d, o, p) = files("", "");
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(c.str("oversight.approve").unwrap(), "off");
+        let v = |s: &str| Value::String(s.into());
+        assert!(
+            c.set_owner_checked("oversight.approve", v("bogus"), false)
+                .is_err()
+        );
+        // Stricter needs no confirmation; less strict does.
+        c.set_owner_checked("oversight.approve", v("risky"), false)
+            .unwrap();
+        c.set_owner_checked("oversight.approve", v("all"), false)
+            .unwrap();
+        for down in ["risky", "off"] {
+            assert!(matches!(
+                c.set_owner_checked("oversight.approve", v(down), false),
+                Err(ConfigError::NeedsConfirm { .. })
+            ));
+        }
+        let change = c
+            .set_owner_checked("oversight.approve", v("off"), true)
+            .unwrap();
+        assert!(change.weakens.unwrap().contains("operator"));
     }
 
     #[test]

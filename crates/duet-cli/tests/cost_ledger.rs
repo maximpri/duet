@@ -106,6 +106,7 @@ async fn run(dir: &Path, presenter: &dyn Presenter, script: Vec<(&str, Value)>) 
         max_output_tokens: 1000,
         reasoning_effort: None,
         price: Box::new(|u| (u.input as f64 + 4.0 * u.output as f64) / 1e6),
+        oversight: duet_agent::Oversight::default(),
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

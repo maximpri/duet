@@ -98,6 +98,11 @@ pub trait Presenter: Send + Sync {
     fn path_visible(&self, _path: &std::path::Path) -> bool {
         true
     }
+    /// Whether the content of this path is sensitive (policy globs, or derived
+    /// from sensitive data during the run).
+    fn path_sensitive(&self, _path: &std::path::Path) -> bool {
+        false
+    }
     /// Workspace paths ordinary commands may not read (enforced by the sandbox).
     fn hidden_from_commands(&self, _workspace: &std::path::Path) -> Vec<PathBuf> {
         Vec::new()

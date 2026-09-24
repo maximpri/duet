@@ -26,6 +26,19 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub const ALL: [Kind; 10] = [
+        Kind::Secret,
+        Kind::Email,
+        Kind::Phone,
+        Kind::Card,
+        Kind::NationalId,
+        Kind::Iban,
+        Kind::Ip,
+        Kind::Name,
+        Kind::Data,
+        Kind::Code,
+    ];
+
     pub fn tag(self) -> &'static str {
         match self {
             Kind::Secret => "secret",

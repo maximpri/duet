@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
+use duet_agent::disclosure::Disclosure;
 use duet_agent::{RunConfig, Terminal};
 use duet_boundary::audit::{AuditEvent, AuditLog, anchor_path, describe_line, verify_report};
 use duet_boundary::engine::Engine;
@@ -19,6 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+mod approve;
 mod doctor;
 mod setup;
 
@@ -125,6 +127,13 @@ enum AuditCmd {
     },
     /// Verify the audit log's hash chain and its anchor in the owner state directory.
     Verify { run_id: String },
+    /// What the boundary withheld from the frontier in a run, by class (counts
+    /// and kinds only, never values).
+    Disclosure {
+        run_id: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -324,6 +333,8 @@ fn policy(cfg: &Config) -> Result<Policy> {
 async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32> {
     let _lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
     let cfg = load_config(&ws)?;
+    // Before anything starts: with approval on and no terminal, the run is refused.
+    let oversight = approve::oversight(&cfg)?;
     let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
     duet_fs::private::ensure_private_dir(&run_dir)?;
     duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
@@ -401,6 +412,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         max_output_tokens: 32_768,
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
+        oversight,
     };
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn duet_boundary::view::Presenter = match &engine {
@@ -428,10 +440,12 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         }
         .into(),
     });
+    let disclosure = read_disclosure(&ws, &manifest.run_id, Some(&stats.ledger));
     let summary = serde_json::json!({
         "run_id": manifest.run_id,
         "terminal": terminal,
         "stats": stats,
+        "disclosure": disclosure,
     });
     duet_fs::private::write_private(
         &run_dir.join("summary.json"),
@@ -443,6 +457,24 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         Terminal::Failed { .. } => 1,
         Terminal::BudgetStopped { .. } => 3,
     })
+}
+
+/// The disclosure report of a run, from its audit log and its cost ledger
+/// (given, or read from the run's summary). `None` without an audit log.
+fn read_disclosure(
+    ws: &Path,
+    run_id: &str,
+    ledger: Option<&duet_agent::ledger::Ledger>,
+) -> Option<Disclosure> {
+    let log = ws.join(".duet/audit").join(format!("{run_id}.jsonl"));
+    let lines = duet_boundary::audit::read(&log).ok()?;
+    let stored = || -> Option<duet_agent::ledger::Ledger> {
+        let path = ws.join(".duet/runs").join(run_id).join("summary.json");
+        let summary: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+        serde_json::from_value(summary.get("stats")?.get("ledger")?.clone()).ok()
+    };
+    let stored = if ledger.is_none() { stored() } else { None };
+    Some(Disclosure::build(&lines, ledger.or(stored.as_ref())))
 }
 
 /// The owner's log of settings changes.
@@ -515,6 +547,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 _ => bail!("give the task as text or with --objective-file (not both)"),
             };
             let cfg = load_config(&ws)?;
+            // Refused before bootstrap probes anything.
+            approve::require_terminal(&cfg)?;
             let local = match mode {
                 Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
                     Ok(found) => found.map(|b| LocalOverride {
@@ -556,6 +590,15 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     for line in text.lines().filter(|l| !l.is_empty()) {
                         println!("{}", describe_line(line));
                     }
+                }
+            }
+            AuditCmd::Disclosure { run_id, json } => {
+                let report = read_disclosure(&ws, checked_run_id(&run_id)?, None)
+                    .with_context(|| format!("no audit log for {run_id}"))?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    print!("{}", report.render(&run_id));
                 }
             }
             AuditCmd::Verify { run_id } => {

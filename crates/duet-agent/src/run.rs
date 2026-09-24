@@ -44,6 +44,8 @@ pub struct RunConfig {
     pub reasoning_effort: Option<String>,
     /// Prices a response's usage in dollars.
     pub price: Box<dyn Fn(&Usage) -> f64 + Send + Sync>,
+    /// Operator approval of risky actions (`oversight.approve`).
+    pub oversight: crate::oversight::Oversight,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -346,6 +348,14 @@ async fn drive(
                     "error: arguments are not valid JSON: {}",
                     call.raw_arguments.chars().take(200).collect::<String>()
                 )
+            } else if let Err(e) = crate::oversight::review(
+                &cfg.oversight,
+                &call.name,
+                &call.arguments,
+                presenter,
+                Some(frontier.audit()),
+            ) {
+                format!("error: {e}")
             } else {
                 match tools::dispatch(&mut ctx, &call.name, &call.arguments).await {
                     Outcome::Result(text) => text,

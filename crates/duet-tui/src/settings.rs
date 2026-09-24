@@ -20,7 +20,7 @@ pub fn screen_of(key: &str) -> Option<Tab> {
         "frontier" | "local" => Some(Tab::Models),
         "sensitivity" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
-        "limits" | "context" | "checks" | "sandbox" => Some(Tab::Limits),
+        "limits" | "context" | "checks" | "sandbox" | "oversight" => Some(Tab::Limits),
         "data" => Some(Tab::Data),
         _ => None,
     }
@@ -55,6 +55,7 @@ fn scope_text(s: &Setting) -> String {
                 Direction::AddOnly => "add entries",
                 Direction::OnlyTrue => "turn it on",
                 Direction::OnlyFalse => "turn it off",
+                Direction::OnlyLaterChoice => "choose a stricter option",
                 _ => "lower it",
             }
         ),
@@ -126,8 +127,8 @@ fn help_for(tab: Tab) -> &'static str {
     match tab {
         Tab::Limits => {
             "Budgets and bounds for each run: frontier spend, wall clock, finish attempts, command timeouts, \
-the checks run at finish, context masking and sandbox network access. A project may only lower budgets \
-and may only turn the sandbox network off."
+the checks run at finish, context masking, sandbox network access and operator approval \
+(oversight.approve, owner only). A project may only lower budgets and may only turn the sandbox network off."
         }
         _ => {
             "Retention of raw run data (handles, transcripts, vault) and of audit logs. `duet purge` deletes \
