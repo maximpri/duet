@@ -59,6 +59,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Secure by Design is core for duet (operator): cross-cutting SbD track added (§5); SbD-1 and a red-team pass must pass before the public benchmark (M5) |
 | 2026-09-24 | M5 external lanes run on the operator's CLI subscriptions, not API keys (operator): Claude Code via a `claude setup-token` subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) with an isolated config dir; Codex via a dedicated eval `CODEX_HOME` logged in once with ChatGPT (never a copy of the main login: refresh-token rotation). Both must route through the leak proxy; verified by a one-run smoke test per lane before M5 |
 | 2026-09-24 | Gate 3 outcome (operator, pre-agreed): not strictly cheaper after attempts A–C, so cost is reported as a measured privacy premium (paired ratio vs the orchestrator alone with its interval, ~1.4×); quality non-inferiority and zero leaks stay required. The local task brief (attempt C) raised cost and is off by default |
+| 2026-09-24 | M5 is judged by two judges of different families, both through the operator's CLI subscriptions: Claude (Claude CLI) and OpenAI (Codex CLI). Every run is judged by both; gates use the mean; the report shows each judge and flags runs judged by their own family (operator) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
