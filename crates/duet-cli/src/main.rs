@@ -5,15 +5,13 @@
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
 use duet_agent::{RunConfig, Terminal};
-use duet_boundary::audit::{
-    AnchorCheck, AuditEvent, AuditLog, Line, Verification, anchor_path, check_anchor, verify,
-};
+use duet_boundary::audit::{AuditEvent, AuditLog, anchor_path, describe_line, verify_report};
 use duet_boundary::engine::Engine;
 use duet_boundary::local::LocalReader;
 use duet_boundary::policy::Policy;
 use duet_boundary::view::PassThrough;
 use duet_boundary::{GatedFrontier, OutboundGate};
-use duet_config::Config;
+use duet_config::{Config, Target};
 use duet_provider::{ChatProvider, ProviderConfig, Role};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -445,88 +443,17 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
 
 /// The owner's log of settings changes.
 pub(crate) fn config_audit_path() -> PathBuf {
-    duet_config::owner_state_dir().join("config-audit.jsonl")
-}
-
-/// One line of `duet audit show`.
-fn show_line(line: &str) -> String {
-    let time = |ms: u128| {
-        time::OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
-            .map(|t| {
-                format!(
-                    "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-                    t.year(),
-                    u8::from(t.month()),
-                    t.day(),
-                    t.hour(),
-                    t.minute(),
-                    t.second()
-                )
-            })
-            .unwrap_or_default()
-    };
-    match duet_boundary::audit::parse_line(line) {
-        Some(Line::Request(r)) => format!(
-            "#{:<4} {}  request         {} {} ({} bytes){}",
-            r.seq,
-            time(r.unix_ms),
-            r.endpoint,
-            r.model,
-            serde_json::to_vec(&r.request).map_or(0, |b| b.len()),
-            if r.interventions.is_empty() {
-                String::new()
-            } else {
-                format!("; {} intervention(s)", r.interventions.len())
-            }
-        ),
-        Some(Line::Event(e)) => {
-            let mut fields = serde_json::to_value(&e.event).unwrap_or_default();
-            if let Some(m) = fields.as_object_mut() {
-                m.remove("kind");
-            }
-            format!(
-                "#{:<4} {}  {:<15} {fields}",
-                e.seq,
-                time(e.unix_ms),
-                e.event.kind()
-            )
-        }
-        None => format!("unparseable: {}", line.chars().take(80).collect::<String>()),
-    }
+    duet_config::config_audit_log(&duet_config::owner_state_dir())
 }
 
 /// `duet audit verify`: the chain, then the anchor. Returns the exit code.
 fn verify_run(path: &Path, anchor: &Path) -> Result<i32> {
-    match verify(path).with_context(|| format!("no audit log at {}", path.display()))? {
-        Verification::Intact { records } => println!("chain intact: {records} records"),
-        Verification::Broken { at_seq, reason } => {
-            println!("BROKEN at record {at_seq}: {reason}");
-            return Ok(1);
-        }
+    let (code, lines) = verify_report(path, anchor)
+        .with_context(|| format!("no audit log at {}", path.display()))?;
+    for l in lines {
+        println!("{l}");
     }
-    Ok(match check_anchor(path, anchor)? {
-        AnchorCheck::Matches => {
-            println!("anchor matches ({})", anchor.display());
-            0
-        }
-        AnchorCheck::Extends { unanchored } => {
-            println!(
-                "anchor matches; {unanchored} later record(s) were never anchored (an interrupted append)"
-            );
-            0
-        }
-        AnchorCheck::Mismatch(reason) => {
-            println!("REWRITTEN OR TRUNCATED since it was anchored: {reason}");
-            1
-        }
-        AnchorCheck::Missing => {
-            println!(
-                "no anchor at {}: a rewritten log cannot be detected (run predates anchoring, or another state directory)",
-                anchor.display()
-            );
-            2
-        }
-    })
+    Ok(code)
 }
 
 fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Result<()> {
@@ -623,7 +550,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     print!("{text}");
                 } else {
                     for line in text.lines().filter(|l| !l.is_empty()) {
-                        println!("{}", show_line(line));
+                        println!("{}", describe_line(line));
                     }
                 }
             }
@@ -652,9 +579,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     project,
                     confirm,
                 } => {
-                    let v: toml::Value = toml::from_str::<toml::Table>(&format!("v = {value}"))
-                        .with_context(|| format!("{value} is not a TOML value"))?["v"]
-                        .clone();
+                    let v = duet_config::parse_value(&value)
+                        .with_context(|| format!("{value} is not a TOML value"))?;
                     if !project {
                         std::process::exit(setup::apply_owner(
                             &mut cfg,
@@ -663,16 +589,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
                         )?);
                     }
                     // A project may only tighten, so nothing here needs confirming.
-                    let old = cfg.value(&key)?.clone();
-                    cfg.set_project(&key, v.clone())?;
-                    AuditLog::open(&config_audit_path())?.event(AuditEvent::ConfigChange {
-                        key: key.clone(),
-                        file: "project".into(),
-                        old: old.to_string(),
-                        new: v.to_string(),
-                        weakens: None,
-                        confirmed: confirm,
-                    })?;
+                    let change = cfg.apply(Target::Project, &key, v, confirm)?;
+                    setup::record_change(&config_audit_path(), &change, Target::Project, confirm)?;
                     println!("{key} = {}", cfg.value(&key)?);
                 }
                 ConfigCmd::Preset {

@@ -5,8 +5,9 @@
 use crate::config_audit_path;
 use anyhow::Result;
 use duet_boundary::audit::{AuditEvent, AuditLog};
-use duet_config::{Config, Origin};
+use duet_config::{Change, Config, Origin, Target};
 use duet_provider::backends::{self, PRESETS, Pick, Server};
+use std::path::Path;
 use std::time::Duration;
 use toml::Value;
 
@@ -17,12 +18,11 @@ use toml::Value;
 pub fn apply_owner(cfg: &mut Config, changes: &[(&str, Value)], confirm: bool) -> Result<i32> {
     let mut refused = Vec::new();
     for (key, new) in changes {
-        let s = duet_config::setting(key)
-            .ok_or_else(|| duet_config::ConfigError::Unknown((*key).into()))?;
-        let old = cfg.value(key)?;
-        if let Some(weakens) = duet_config::loosening(s, old, new) {
+        let p = cfg.propose(Target::Owner, key, new.clone())?;
+        if let Some(weakens) = &p.weakens {
             refused.push(format!(
-                "  {key}\n  - {old}\n  + {new}\n\n  weakens: {weakens}\n"
+                "  {key}\n  - {}\n  + {}\n\n  weakens: {weakens}\n",
+                p.old, p.new
             ));
         }
     }
@@ -35,18 +35,24 @@ pub fn apply_owner(cfg: &mut Config, changes: &[(&str, Value)], confirm: bool) -
         return Ok(2);
     }
     for (key, new) in changes {
-        let change = cfg.set_owner_checked(key, new.clone(), confirm)?;
-        AuditLog::open(&config_audit_path())?.event(AuditEvent::ConfigChange {
-            key: change.key,
-            file: "owner".into(),
-            old: change.old.to_string(),
-            new: change.new.to_string(),
-            weakens: change.weakens,
-            confirmed: confirm,
-        })?;
+        let change = cfg.apply(Target::Owner, key, new.clone(), confirm)?;
+        record_change(&config_audit_path(), &change, Target::Owner, confirm)?;
         println!("{key} = {}", cfg.value(key)?);
     }
     Ok(0)
+}
+
+/// Appends an applied change to the owner's config audit log at `log`.
+pub fn record_change(log: &Path, change: &Change, target: Target, confirmed: bool) -> Result<()> {
+    AuditLog::open(log)?.event(AuditEvent::ConfigChange {
+        key: change.key.clone(),
+        file: target.as_str().into(),
+        old: change.old.to_string(),
+        new: change.new.to_string(),
+        weakens: change.weakens.clone(),
+        confirmed,
+    })?;
+    Ok(())
 }
 
 /// `duet config preset`: without a name, the preset table; with one, the

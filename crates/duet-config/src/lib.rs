@@ -592,6 +592,48 @@ pub fn owner_state_dir() -> PathBuf {
     home.join(".local/state/duet")
 }
 
+/// The owner's log of settings changes (`config-audit.jsonl`) in `state_dir`.
+pub fn config_audit_log(state_dir: &Path) -> PathBuf {
+    state_dir.join("config-audit.jsonl")
+}
+
+/// Parses a value written as a TOML literal (`5.0`, `true`, `"text"`, `["a", "b"]`).
+pub fn parse_value(text: &str) -> Result<Value, ConfigError> {
+    toml::from_str::<toml::Table>(&format!("v = {text}"))
+        .ok()
+        .and_then(|mut t| t.remove("v"))
+        .ok_or_else(|| ConfigError::Parse(text.into(), "not a TOML value".into()))
+}
+
+/// Which file a change is written to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// The owner's config (trusted): any registered key; loosening needs confirmation.
+    Owner,
+    /// The project's `.duet/config.toml`: project-scoped keys, tightening only.
+    Project,
+}
+
+impl Target {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Target::Owner => "owner",
+            Target::Project => "project",
+        }
+    }
+}
+
+/// A checked but unapplied change: the effective value it replaces and, when
+/// it loosens privacy, what it weakens (then applying it needs confirmation).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Proposal {
+    pub key: &'static str,
+    pub target: Target,
+    pub old: Value,
+    pub new: Value,
+    pub weakens: Option<String>,
+}
+
 /// An applied owner-config change, for the owner's audit log.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Change {
@@ -673,6 +715,73 @@ impl Config {
             .flatten()
             .filter_map(|v| v.as_str().map(str::to_owned))
             .collect())
+    }
+
+    /// Checks a change without writing it. The project file refuses owner-only
+    /// keys and any loosening outright; for the owner file the proposal says
+    /// what the change would weaken (see [`loosening`]).
+    pub fn propose(
+        &self,
+        target: Target,
+        key: &str,
+        value: Value,
+    ) -> Result<Proposal, ConfigError> {
+        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        validate(s, &value)?;
+        let old = self.values[s.key].0.clone();
+        let weakens = match target {
+            Target::Owner => loosening(s, &old, &value),
+            Target::Project => {
+                let file = self
+                    .project_path
+                    .as_ref()
+                    .map_or("project config".into(), |p| p.display().to_string());
+                if s.scope == Owner {
+                    return Err(ConfigError::OwnerOnly {
+                        file,
+                        key: key.into(),
+                    });
+                }
+                tightens(s, &old, &value).map_err(|rule| ConfigError::Loosening {
+                    file,
+                    key: key.into(),
+                    value: value.to_string(),
+                    rule,
+                })?;
+                None
+            }
+        };
+        Ok(Proposal {
+            key: s.key,
+            target,
+            old,
+            new: value,
+            weakens,
+        })
+    }
+
+    /// Applies a change to its target file (see [`Config::set_owner_checked`]
+    /// and [`Config::set_project`]); `confirmed` is required for loosening.
+    pub fn apply(
+        &mut self,
+        target: Target,
+        key: &str,
+        value: Value,
+        confirmed: bool,
+    ) -> Result<Change, ConfigError> {
+        match target {
+            Target::Owner => self.set_owner_checked(key, value, confirmed),
+            Target::Project => {
+                let old = self.value(key)?.clone();
+                self.set_project(key, value.clone())?;
+                Ok(Change {
+                    key: key.into(),
+                    old,
+                    new: value,
+                    weakens: None,
+                })
+            }
+        }
     }
 
     /// Sets a value in the owner file like [`Config::set_owner`], but refuses a
@@ -947,6 +1056,47 @@ mod tests {
                 .unwrap()
                 .bool("local.allow_plaintext")
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn proposals_match_what_apply_enforces() {
+        let (_d, o, p) = files("", "");
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        let off = parse_value("false").unwrap();
+        let owner = c
+            .propose(Target::Owner, "sensitivity.detect_pii", off.clone())
+            .unwrap();
+        assert!(owner.weakens.is_some());
+        assert!(matches!(
+            c.propose(Target::Project, "sensitivity.detect_pii", off.clone()),
+            Err(ConfigError::Loosening { .. })
+        ));
+        assert!(matches!(
+            c.propose(
+                Target::Project,
+                "local.model",
+                parse_value("\"x\"").unwrap()
+            ),
+            Err(ConfigError::OwnerOnly { .. })
+        ));
+        assert!(parse_value("not toml").is_err());
+        assert!(matches!(
+            c.apply(Target::Owner, "sensitivity.detect_pii", off.clone(), false),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        let lower = parse_value("1.5").unwrap();
+        let tighter = c
+            .propose(Target::Project, "limits.frontier_usd", lower.clone())
+            .unwrap();
+        assert_eq!(tighter.weakens, None);
+        c.apply(Target::Project, "limits.frontier_usd", lower, false)
+            .unwrap();
+        assert_eq!(
+            Config::load(&o, Some(&p))
+                .unwrap()
+                .origin("limits.frontier_usd"),
+            Some(Origin::Project)
         );
     }
 

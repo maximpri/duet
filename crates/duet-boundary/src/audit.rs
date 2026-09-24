@@ -448,6 +448,90 @@ pub fn verify(path: &Path) -> Result<Verification, FsError> {
     })
 }
 
+/// `unix_ms` as `YYYY-MM-DD HH:MM:SS` (UTC).
+pub fn format_time(unix_ms: u128) -> String {
+    time::OffsetDateTime::from_unix_timestamp_nanos(unix_ms as i128 * 1_000_000)
+        .map(|t| {
+            format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                t.year(),
+                u8::from(t.month()),
+                t.day(),
+                t.hour(),
+                t.minute(),
+                t.second()
+            )
+        })
+        .unwrap_or_default()
+}
+
+/// One human-readable line for a log line (`duet audit show`, the TUI).
+pub fn describe_line(line: &str) -> String {
+    match parse_line(line) {
+        Some(Line::Request(r)) => format!(
+            "#{:<4} {}  request         {} {} ({} bytes){}",
+            r.seq,
+            format_time(r.unix_ms),
+            r.endpoint,
+            r.model,
+            serde_json::to_vec(&r.request).map_or(0, |b| b.len()),
+            if r.interventions.is_empty() {
+                String::new()
+            } else {
+                format!("; {} intervention(s)", r.interventions.len())
+            }
+        ),
+        Some(Line::Event(e)) => {
+            let mut fields = serde_json::to_value(&e.event).unwrap_or_default();
+            if let Some(m) = fields.as_object_mut() {
+                m.remove("kind");
+            }
+            format!(
+                "#{:<4} {}  {:<15} {fields}",
+                e.seq,
+                format_time(e.unix_ms),
+                e.event.kind()
+            )
+        }
+        None => format!("unparseable: {}", line.chars().take(80).collect::<String>()),
+    }
+}
+
+/// The chain, then the anchor, as report lines and an exit code (0 intact and
+/// anchored, 1 broken or rewritten, 2 no anchor to compare with).
+pub fn verify_report(path: &Path, anchor: &Path) -> Result<(i32, Vec<String>), FsError> {
+    let mut out = Vec::new();
+    match verify(path)? {
+        Verification::Intact { records } => out.push(format!("chain intact: {records} records")),
+        Verification::Broken { at_seq, reason } => {
+            out.push(format!("BROKEN at record {at_seq}: {reason}"));
+            return Ok((1, out));
+        }
+    }
+    let (code, line) = match check_anchor(path, anchor)? {
+        AnchorCheck::Matches => (0, format!("anchor matches ({})", anchor.display())),
+        AnchorCheck::Extends { unanchored } => (
+            0,
+            format!(
+                "anchor matches; {unanchored} later record(s) were never anchored (an interrupted append)"
+            ),
+        ),
+        AnchorCheck::Mismatch(reason) => (
+            1,
+            format!("REWRITTEN OR TRUNCATED since it was anchored: {reason}"),
+        ),
+        AnchorCheck::Missing => (
+            2,
+            format!(
+                "no anchor at {}: a rewritten log cannot be detected (run predates anchoring, or another state directory)",
+                anchor.display()
+            ),
+        ),
+    };
+    out.push(line);
+    Ok((code, out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
