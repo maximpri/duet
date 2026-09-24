@@ -23,6 +23,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 pub mod judge_cli;
+pub mod preflight;
 
 pub const LANES_TOML: &str = include_str!("lanes.toml");
 
@@ -79,6 +80,17 @@ pub struct Lane {
     /// cannot nest sandboxes, and Duet sandboxes its own commands.
     #[serde(default = "yes")]
     pub sandbox: bool,
+    /// Directories outside the run the sandboxed agent may write (expanded), such
+    /// as a dedicated login directory whose tokens the agent refreshes.
+    #[serde(default)]
+    pub writable: Vec<String>,
+    /// Whether a quota wait may probe `upstream` with the lane's API key. Lanes
+    /// on a CLI subscription have no key to probe with.
+    #[serde(default = "yes")]
+    pub probe: bool,
+    /// Prerequisites `duet-eval preflight` checks without calling a model.
+    #[serde(default)]
+    pub preflight: preflight::Requirements,
 }
 
 fn yes() -> bool {
@@ -115,6 +127,8 @@ pub fn find_lane<'a>(lanes: &'a [Lane], name: &str) -> Result<&'a Lane> {
 
 struct Vars<'a> {
     workspace: &'a Path,
+    /// The operator's home (the harness's `HOME`; agents get a per-run `HOME`).
+    operator_home: &'a Path,
     run_dir: &'a Path,
     proxy_url: &'a str,
     objective: &'a str,
@@ -127,6 +141,7 @@ fn expand(template: &str, v: &Vars<'_>) -> String {
         .replace("{workspace}", &v.workspace.to_string_lossy())
         .replace("{run_dir}", &v.run_dir.to_string_lossy())
         .replace("{proxy_url}", v.proxy_url)
+        .replace("{operator_home}", &v.operator_home.to_string_lossy())
         .replace("{objective}", v.objective)
         .replace("{model}", v.model)
         .replace("{duet_bin}", v.duet_bin)
@@ -265,6 +280,14 @@ pub async fn program_version(program: &str) -> Option<String> {
     let text = String::from_utf8_lossy(&out.stdout);
     let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
     Some(line.chars().take(200).collect())
+}
+
+/// The operator's home directory, for `{operator_home}` in lane definitions.
+pub fn operator_home() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .context("HOME is not set")
 }
 
 /// The duet binary built alongside this harness (never a `duet` found elsewhere).
@@ -483,8 +506,10 @@ async fn launch(
 ) -> Result<LaunchOutcome> {
     let lane = cfg.lane;
     let duet_bin = duet_bin()?;
+    let home = operator_home()?;
     let vars = Vars {
         workspace: ws,
+        operator_home: &home,
         run_dir,
         proxy_url,
         objective: &cfg.package.objective,
@@ -505,7 +530,24 @@ async fn launch(
     }
 
     let mut command = if cfg.sandbox && lane.sandbox {
-        let profile = sandbox_profile(&[run_dir], &lane.allow_hosts);
+        // Seatbelt matches resolved paths, so the directories are canonicalized.
+        let extra = lane
+            .writable
+            .iter()
+            .map(|w| {
+                let dir = PathBuf::from(expand(w, &vars));
+                dir.canonicalize().with_context(|| {
+                    format!(
+                        "lane {}: writable directory {} is missing (see duet-eval preflight)",
+                        lane.name,
+                        dir.display()
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let mut writable = vec![run_dir];
+        writable.extend(extra.iter().map(PathBuf::as_path));
+        let profile = sandbox_profile(&writable, &lane.allow_hosts);
         let profile_path = run_dir.join("sandbox.sb");
         fs::write(&profile_path, profile)?;
         let mut c = tokio::process::Command::new("/usr/bin/sandbox-exec");
@@ -559,7 +601,7 @@ async fn launch(
     })
 }
 
-fn which(program: &str) -> Option<PathBuf> {
+pub fn which(program: &str) -> Option<PathBuf> {
     if program.contains('/') {
         return Some(PathBuf::from(program)).filter(|p| p.exists());
     }
@@ -592,6 +634,8 @@ mod tests {
             "duet-hybrid",
             "duet-local-only",
             "pi-glm",
+            "claude-code",
+            "codex",
         ] {
             assert!(find_lane(&lanes, required).is_ok(), "{required}");
         }
@@ -681,6 +725,7 @@ mod tests {
     fn expands_placeholders() {
         let v = Vars {
             workspace: Path::new("/w"),
+            operator_home: Path::new("/home/op"),
             run_dir: Path::new("/r"),
             proxy_url: "http://127.0.0.1:9",
             objective: "fix it",
@@ -688,8 +733,11 @@ mod tests {
             duet_bin: "/bin/duet",
         };
         assert_eq!(
-            expand("{run_dir}/x {proxy_url} {model} {objective}", &v),
-            "/r/x http://127.0.0.1:9 m fix it"
+            expand(
+                "{run_dir}/x {proxy_url} {model} {objective} {operator_home}/.e",
+                &v
+            ),
+            "/r/x http://127.0.0.1:9 m fix it /home/op/.e"
         );
     }
 
@@ -772,6 +820,13 @@ mod infra_tests {
 /// Blocks until the lane's provider accepts a minimal request again (after a
 /// quota or rate limit), probing every five minutes, for at most `max_wait`.
 pub async fn wait_until_available(lane: &Lane, max_wait: Duration) -> bool {
+    if !lane.probe {
+        eprintln!(
+            "lane {} cannot be probed (subscription); re-run the batch later",
+            lane.name
+        );
+        return false;
+    }
     let started = Instant::now();
     let key = lane
         .env_passthrough

@@ -107,6 +107,18 @@ enum Cmd {
         #[arg(long, default_value = "crates/duet-evals/pricing.toml")]
         prices: PathBuf,
     },
+    /// Check lanes' prerequisites without calling any model: program and version,
+    /// required environment (values never printed), login files, proxy routing,
+    /// and DNS for the proxy's upstream.
+    Preflight {
+        #[arg(long, value_delimiter = ',', required = true)]
+        lanes: Vec<String>,
+        #[arg(long)]
+        lanes_file: Option<PathBuf>,
+        /// Skip the DNS lookup of each lane's upstream.
+        #[arg(long)]
+        no_dns: bool,
+    },
     /// Harness self-test: proxy, canaries, statistics and pricing.
     Selftest,
 }
@@ -328,6 +340,38 @@ async fn main() -> Result<()> {
                 };
                 batch_report(batch, &pairs)?;
             }
+        }
+        Cmd::Preflight {
+            lanes: names,
+            lanes_file,
+            no_dns,
+        } => {
+            let all = lanes::load_lanes(lanes_file.as_deref())?;
+            let home = lanes::operator_home()?;
+            let env = |k: &str| std::env::var(k).ok();
+            let cx = lanes::preflight::Context {
+                operator_home: &home,
+                env: &env,
+                resolve: !no_dns,
+            };
+            let mut failed = Vec::new();
+            for name in &names {
+                let lane = lanes::find_lane(&all, name)?;
+                let checks = lanes::preflight::check(lane, &cx).await;
+                print!("{}", lanes::preflight::render(lane, &checks));
+                if checks
+                    .iter()
+                    .any(|c| c.status == lanes::preflight::Status::Fail)
+                {
+                    failed.push(name.as_str());
+                }
+            }
+            ensure!(
+                failed.is_empty(),
+                "preflight failed for {}",
+                failed.join(", ")
+            );
+            println!("preflight ok: {}", names.join(", "));
         }
         Cmd::Selftest => selftest().await?,
     }
