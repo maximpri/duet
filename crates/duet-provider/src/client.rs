@@ -11,7 +11,10 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use futures_util::stream::BoxStream;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tokio::time::Instant;
 
 /// The raw HTTP exchange, abstracted so tests can script provider behaviour.
 pub struct HttpReply {
@@ -109,9 +112,15 @@ pub struct ProviderConfig {
     pub first_byte_timeout: Duration,
     /// Deadline between stream chunks once output has started.
     pub idle_timeout: Duration,
-    pub max_attempts: u32,
-    /// Wall-clock bound on all retries of one request.
-    pub retry_budget: Duration,
+    /// Attempts per request; `None` (the default) retries infrastructure
+    /// failures in place until `deadline` or `cancel` stops them.
+    pub max_attempts: Option<u32>,
+    /// When retrying must stop: the run's wall-clock budget. A request still
+    /// failing then ends with [`ErrorKind::Deadline`]; an attempt in flight is
+    /// cut off at it.
+    pub deadline: Option<Instant>,
+    /// Set when the run is interrupted; retries stop with [`ErrorKind::Cancelled`].
+    pub cancel: Option<Arc<AtomicBool>>,
     /// Multiplier on backoff delays (1.0 in production; 0.0 in tests).
     pub backoff_scale: f64,
     /// Recover a tool call written as text (useful for some local models).
@@ -129,11 +138,22 @@ impl ProviderConfig {
             role,
             first_byte_timeout: Duration::from_secs(600),
             idle_timeout: Duration::from_secs(180),
-            max_attempts: 6,
-            retry_budget: Duration::from_secs(900),
+            max_attempts: None,
+            deadline: None,
+            cancel: None,
             backoff_scale: 1.0,
         }
     }
+}
+
+/// How often a retry wait looks at the cancel flag.
+const CANCEL_POLL: Duration = Duration::from_millis(200);
+
+fn deadline_error(last: &str) -> ProviderError {
+    ProviderError::new(
+        ErrorKind::Deadline,
+        format!("the run's wall-clock budget ended while retrying ({last})"),
+    )
 }
 
 /// A model endpoint speaking Chat Completions.
@@ -182,7 +202,9 @@ impl ChatProvider {
         Ok(h)
     }
 
-    /// Sends `req`, retrying transient failures in place.
+    /// Sends `req`, retrying transient failures in place. Only the deadline,
+    /// the cancel flag or `max_attempts` end the retries; errors a fresh attempt
+    /// cannot fix (credentials, an invalid request) are returned at once.
     pub async fn create(&self, req: &Request) -> Result<Response, ProviderError> {
         let body = serde_json::to_vec(&build_body(&self.config.model, req, true))
             .map_err(|e| ProviderError::new(ErrorKind::Malformed, e.to_string()))?;
@@ -191,8 +213,19 @@ impl ChatProvider {
         let started = Instant::now();
         let mut attempts = AttemptUsage::default();
         loop {
+            if self.cancelled() {
+                return Err(ProviderError::new(ErrorKind::Cancelled, "interrupted"));
+            }
             attempts.attempts += 1;
-            match self.attempt(&url, &headers, &body, req).await {
+            let attempt = self.attempt(&url, &headers, &body, req);
+            let result = match self.config.deadline {
+                Some(at) => match tokio::time::timeout_at(at, attempt).await {
+                    Ok(r) => r,
+                    Err(_) => return Err(deadline_error("the request was still in flight")),
+                },
+                None => attempt.await,
+            };
+            match result {
                 Ok(mut response) => {
                     attempts.billed = response.usage;
                     response.attempts = attempts;
@@ -206,9 +239,11 @@ impl ChatProvider {
                         failed.output += estimate_tokens(err.partial_output_bytes);
                         failed.status = UsageStatus::Estimated;
                     }
-                    let out_of_budget = attempts.attempts >= self.config.max_attempts
-                        || started.elapsed() >= self.config.retry_budget;
-                    if !err.is_retryable() || out_of_budget {
+                    let capped = self
+                        .config
+                        .max_attempts
+                        .is_some_and(|max| attempts.attempts >= max);
+                    if !err.is_retryable() || capped {
                         return Err(err);
                     }
                     let jitter = f64::from(started.elapsed().subsec_nanos() % 1000) / 1000.0;
@@ -216,9 +251,43 @@ impl ChatProvider {
                         .retry_after
                         .unwrap_or_else(|| backoff(attempts.attempts - 1, jitter))
                         .mul_f64(self.config.backoff_scale);
-                    tokio::time::sleep(delay).await;
+                    self.pause(delay, &err).await?;
                 }
             }
+        }
+    }
+
+    fn cancelled(&self) -> bool {
+        self.config
+            .cancel
+            .as_ref()
+            .is_some_and(|c| c.load(Ordering::SeqCst))
+    }
+
+    /// Waits `delay` before the next attempt, watching the cancel flag; fails
+    /// when the deadline comes first.
+    async fn pause(&self, delay: Duration, last: &ProviderError) -> Result<(), ProviderError> {
+        let wake = Instant::now() + delay;
+        if let Some(at) = self.config.deadline
+            && wake >= at
+        {
+            tokio::time::sleep_until(at).await;
+            return Err(deadline_error(&last.to_string()));
+        }
+        loop {
+            if self.cancelled() {
+                return Err(ProviderError::new(ErrorKind::Cancelled, "interrupted"));
+            }
+            let now = Instant::now();
+            if now >= wake {
+                return Ok(());
+            }
+            let step = if self.config.cancel.is_some() {
+                (wake - now).min(CANCEL_POLL)
+            } else {
+                wake - now
+            };
+            tokio::time::sleep(step).await;
         }
     }
 

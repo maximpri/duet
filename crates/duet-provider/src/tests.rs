@@ -203,7 +203,7 @@ async fn context_overflow_is_classified_and_not_retried() {
 }
 
 #[tokio::test]
-async fn gives_up_after_max_attempts() {
+async fn an_explicit_attempt_cap_is_honoured() {
     let s = Script::new(
         (0..6)
             .map(|_| Scripted::Reply {
@@ -213,8 +213,203 @@ async fn gives_up_after_max_attempts() {
             })
             .collect(),
     );
-    let e = provider(&s).create(&request()).await.unwrap_err();
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    cfg.backoff_scale = 0.0;
+    cfg.max_attempts = Some(6);
+    let e = ChatProvider::new(cfg, Box::new(s))
+        .unwrap()
+        .create(&request())
+        .await
+        .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Status(503));
+}
+
+/// Fails every request the same way and counts them; `cancel_after` sets the
+/// cancel flag once that many requests were made.
+#[derive(Clone)]
+struct Down {
+    status: Option<u16>,
+    seen: Arc<Mutex<u32>>,
+    cancel: Option<(u32, Arc<std::sync::atomic::AtomicBool>)>,
+}
+
+impl Down {
+    fn new(status: Option<u16>) -> Self {
+        Self {
+            status,
+            seen: Arc::default(),
+            cancel: None,
+        }
+    }
+    fn seen(&self) -> u32 {
+        *self.seen.lock().unwrap()
+    }
+}
+
+impl Transport for Down {
+    fn post(
+        &self,
+        _url: String,
+        _headers: Vec<(String, String)>,
+        _body: Vec<u8>,
+    ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
+        let n = {
+            let mut seen = self.seen.lock().unwrap();
+            *seen += 1;
+            *seen
+        };
+        if let Some((after, flag)) = &self.cancel
+            && n >= *after
+        {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        let status = self.status;
+        Box::pin(async move {
+            match status {
+                None => Err(ProviderError::new(
+                    ErrorKind::Transport,
+                    "connection refused",
+                )),
+                Some(status) => Ok(HttpReply {
+                    status,
+                    headers: vec![],
+                    body: futures_util::stream::iter([Ok(Bytes::from_static(b"unavailable"))])
+                        .boxed(),
+                }),
+            }
+        })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn infrastructure_failures_retry_without_an_attempt_cap() {
+    // Thirty failures of every retryable kind, then the provider is back.
+    let mut replies: Vec<Scripted> = Vec::new();
+    for i in 0..30 {
+        replies.push(match i % 5 {
+            0 => Scripted::ConnectError,
+            1 => Scripted::Reply {
+                status: 429,
+                headers: vec![],
+                chunks: vec![Ok("quota")],
+            },
+            2 => Scripted::Reply {
+                status: 500 + (i as u16 % 100),
+                headers: vec![],
+                chunks: vec![Ok("server error")],
+            },
+            3 => Scripted::Reply {
+                status: 200,
+                headers: vec![],
+                chunks: vec![
+                    Ok("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"),
+                    Err("stream cut"),
+                ],
+            },
+            _ => Scripted::Reply {
+                status: 529,
+                headers: vec![],
+                chunks: vec![Ok("overloaded")],
+            },
+        });
+    }
+    replies.push(ok());
+    let s = Script::new(replies);
+    // Production backoff (not scaled away): time is paused, so waits are instant.
+    let cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    assert_eq!(cfg.max_attempts, None, "no attempt cap by default");
+    let started = tokio::time::Instant::now();
+    let r = ChatProvider::new(cfg, Box::new(s))
+        .unwrap()
+        .create(&request())
+        .await
+        .unwrap();
+    assert_eq!(r.attempts.attempts, 31);
+    // The wait between attempts is capped: 30 waits of at most 66 s.
+    let waited = started.elapsed();
+    assert!(waited <= Duration::from_secs(30 * 66), "{waited:?}");
+    assert!(
+        waited >= Duration::from_secs(10 * 54),
+        "backoff grew: {waited:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_persistent_outage_retries_until_the_deadline() {
+    for status in [None, Some(503), Some(429)] {
+        let down = Down::new(status);
+        let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+        let started = tokio::time::Instant::now();
+        cfg.deadline = Some(started + Duration::from_secs(3600));
+        let e = ChatProvider::new(cfg, Box::new(down.clone()))
+            .unwrap()
+            .create(&request())
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Deadline, "{status:?}: {e}");
+        assert!(!e.is_retryable());
+        // It kept probing for the whole hour (about once a minute at the cap)
+        // and stopped at the deadline, not before.
+        assert!(down.seen() > 50, "{status:?}: {} attempts", down.seen());
+        assert_eq!(started.elapsed(), Duration::from_secs(3600));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_attempt_in_flight_is_cut_off_at_the_deadline() {
+    struct Hang;
+    impl Transport for Hang {
+        fn post(
+            &self,
+            _url: String,
+            _headers: Vec<(String, String)>,
+            _body: Vec<u8>,
+        ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
+            Box::pin(futures_util::future::pending())
+        }
+    }
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    let started = tokio::time::Instant::now();
+    cfg.deadline = Some(started + Duration::from_secs(90));
+    let e = ChatProvider::new(cfg, Box::new(Hang))
+        .unwrap()
+        .create(&request())
+        .await
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Deadline);
+    assert_eq!(started.elapsed(), Duration::from_secs(90));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_interrupt_stops_retries() {
+    let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let mut down = Down::new(Some(503));
+    down.cancel = Some((3, flag.clone()));
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    cfg.cancel = Some(flag);
+    let e = ChatProvider::new(cfg, Box::new(down.clone()))
+        .unwrap()
+        .create(&request())
+        .await
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Cancelled);
+    assert_eq!(down.seen(), 3);
+}
+
+#[tokio::test]
+async fn invalid_requests_are_not_retried() {
+    for status in [400, 404, 422] {
+        let down = Down::new(Some(status));
+        let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+        cfg.backoff_scale = 0.0;
+        let e = ChatProvider::new(cfg, Box::new(down.clone()))
+            .unwrap()
+            .create(&request())
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Status(status));
+        assert_eq!(down.seen(), 1, "{status} was retried");
+    }
 }
 
 #[tokio::test]

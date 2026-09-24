@@ -16,10 +16,15 @@ pub fn parse_retry_after(value: &str, now: OffsetDateTime) -> Option<Duration> {
     Some(Duration::from_secs(delta.whole_seconds().max(0) as u64))
 }
 
-/// Exponential backoff: 0.5 s doubling, capped at 8 s, with ±10% jitter from `jitter` in [0, 1).
+/// Longest wait between attempts. Retries have no attempt cap, so a long
+/// outage is probed about once a minute until it ends or the run's budget does.
+pub const MAX_BACKOFF_SECONDS: f64 = 60.0;
+
+/// Exponential backoff: 0.5 s doubling, capped at [`MAX_BACKOFF_SECONDS`], with
+/// ±10% jitter from `jitter` in [0, 1).
 pub fn backoff(attempt: u32, jitter: f64) -> Duration {
-    let base = 0.5 * 2f64.powi(attempt.min(10) as i32);
-    let capped = base.min(8.0);
+    let base = 0.5 * 2f64.powi(attempt.min(16) as i32);
+    let capped = base.min(MAX_BACKOFF_SECONDS);
     Duration::from_secs_f64(capped * (0.9 + 0.2 * jitter.clamp(0.0, 1.0)))
 }
 
@@ -46,7 +51,8 @@ mod tests {
     #[test]
     fn backoff_grows_and_caps() {
         assert!(backoff(0, 0.5) < backoff(1, 0.5));
-        assert!(backoff(20, 1.0) <= Duration::from_secs_f64(8.8));
-        assert!(backoff(20, 0.0) >= Duration::from_secs_f64(7.2));
+        assert!(backoff(20, 1.0) <= Duration::from_secs_f64(66.0));
+        assert!(backoff(20, 0.0) >= Duration::from_secs_f64(54.0));
+        assert!(backoff(u32::MAX, 0.5) <= Duration::from_secs_f64(66.0));
     }
 }

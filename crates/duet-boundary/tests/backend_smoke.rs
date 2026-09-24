@@ -48,7 +48,7 @@ async fn smoke(backend: &str) {
         },
     );
     pc.first_byte_timeout = Duration::from_secs(300);
-    pc.max_attempts = 2;
+    pc.max_attempts = Some(2);
     let reader = LocalReader::new(ChatProvider::with_reqwest(pc).expect("loopback endpoint"));
 
     let digest = reader.digest("app.log", LOG).await.expect("digest");

@@ -23,6 +23,11 @@ pub enum ErrorKind {
     ContextOverflow,
     /// The endpoint is not allowed for this role (e.g. a cloud host as "local").
     Forbidden,
+    /// The configured deadline (the run's wall-clock budget) passed while the
+    /// request was being retried or was in flight.
+    Deadline,
+    /// The run was interrupted while the request was being retried.
+    Cancelled,
 }
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -49,7 +54,9 @@ impl ProviderError {
         }
     }
 
-    /// Transient failures that a fresh attempt can fix.
+    /// Transient failures that a fresh attempt can fix: nothing reached the
+    /// model, the connection or stream broke, the server was overloaded or
+    /// rate-limited, or any 5xx.
     pub fn is_retryable(&self) -> bool {
         match self.kind {
             ErrorKind::Transport
@@ -57,12 +64,14 @@ impl ProviderError {
             | ErrorKind::Truncated
             | ErrorKind::Timeout => true,
             ErrorKind::Status(code) => {
-                matches!(code, 408 | 409 | 425 | 429 | 500 | 502 | 503 | 504 | 529)
+                matches!(code, 408 | 409 | 425 | 429 | 500..=599)
             }
             ErrorKind::Malformed
             | ErrorKind::Auth
             | ErrorKind::ContextOverflow
-            | ErrorKind::Forbidden => false,
+            | ErrorKind::Forbidden
+            | ErrorKind::Deadline
+            | ErrorKind::Cancelled => false,
         }
     }
 }
