@@ -1,0 +1,9 @@
+# security.txt template (RFC 9116) for Duet. Serve it at
+# https://<domain>/.well-known/security.txt once the placeholders are filled.
+# TODO(operator): replace <domain>, set Expires (at most one year ahead), and
+# sign the file (OpenPGP clear-sign) if a project key exists.
+Contact: mailto:security@<domain>
+Expires: 2027-09-24T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://<domain>/SECURITY.md#reporting-a-vulnerability
+Canonical: https://<domain>/.well-known/security.txt

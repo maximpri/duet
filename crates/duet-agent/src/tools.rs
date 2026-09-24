@@ -3,6 +3,7 @@
 //! so the request prefix never changes.
 
 use crate::journal::WriteJournal;
+use duet_boundary::audit::{AuditEvent, AuditHandle};
 use duet_boundary::model::ToolSpec;
 use duet_boundary::view::{Presenter, Source};
 use duet_fs::{FsError, Precondition};
@@ -28,6 +29,16 @@ pub struct Ctx<'a> {
     pub command_timeout: Duration,
     pub network: bool,
     pub checks: &'a [String],
+    /// The run's audit log, for security events (sandbox denials, sensitive commands).
+    pub audit: Option<&'a AuditHandle>,
+}
+
+impl Ctx<'_> {
+    pub(crate) fn record(&self, event: AuditEvent) {
+        if let Some(a) = self.audit {
+            a.record(event);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -452,6 +463,11 @@ pub(crate) async fn sandboxed(
     timeout: Duration,
     access: Access,
 ) -> Result<duet_sandbox::Output, String> {
+    let access_name = match access {
+        Access::Ordinary => "ordinary",
+        Access::Checks => "checks",
+        Access::SensitiveData => "sensitive_data",
+    };
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
         scratch: ctx.workspace.join(".duet/tmp"),
@@ -472,14 +488,22 @@ pub(crate) async fn sandboxed(
             Access::SensitiveData => Vec::new(),
         },
     };
-    duet_sandbox::run(
+    let restricted = !spec.deny_read.is_empty();
+    let o = duet_sandbox::run(
         ctx.sandbox,
         &spec,
         &["/bin/sh".into(), "-c".into(), command.into()],
         ctx.workspace,
     )
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if restricted && o.shows_denial() {
+        ctx.record(AuditEvent::SandboxDenial {
+            command: command.to_owned(),
+            access: access_name.to_owned(),
+        });
+    }
+    Ok(o)
 }
 
 pub(crate) fn render_output(o: &duet_sandbox::Output) -> Vec<u8> {
@@ -535,6 +559,11 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
             .map(|(p, _)| p.clone())
             .collect();
         ctx.presenter.mark_sensitive(ctx.workspace, &changed);
+        ctx.record(AuditEvent::SensitiveCommand {
+            command: command.to_owned(),
+            exit_code: o.exit_code,
+            derived_files: changed.iter().map(|p| p.display().to_string()).collect(),
+        });
         Source::SensitiveCommand {
             command: command.to_owned(),
             exit_code: o.exit_code,
@@ -702,6 +731,8 @@ mod sensitive_command_tests {
         let engine = Engine::open(&run, policy, None).unwrap();
         let git = Git::locate().unwrap();
         let mut journal = WriteJournal::open(&run).unwrap();
+        let audit_path = run.join("audit.jsonl");
+        let audit = AuditHandle::new(duet_boundary::audit::AuditLog::open(&audit_path).unwrap());
         let mut ctx = Ctx {
             workspace: &ws,
             run_dir: &run,
@@ -712,6 +743,7 @@ mod sensitive_command_tests {
             command_timeout: Duration::from_secs(30),
             network: false,
             checks: &[],
+            audit: Some(&audit),
         };
 
         // Any encoding of the data is out of reach of an ordinary command.
@@ -747,5 +779,22 @@ mod sensitive_command_tests {
             !after.contains(BALANCE) && after.contains("Operation not permitted"),
             "{after}"
         );
+
+        // The audit log names the decisions, never the data.
+        let log = std::fs::read_to_string(&audit_path).unwrap();
+        assert!(!log.contains(BALANCE), "{log}");
+        let kinds: Vec<String> = duet_boundary::audit::read(&audit_path)
+            .unwrap()
+            .into_iter()
+            .filter_map(|l| match l {
+                duet_boundary::audit::Line::Event(e) => Some(e.event.kind().to_owned()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            ["sandbox_denial", "sensitive_command", "sandbox_denial"]
+        );
+        assert!(log.contains("\"derived_files\":[\"totals.txt\"]"), "{log}");
     }
 }

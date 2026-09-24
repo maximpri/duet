@@ -498,6 +498,47 @@ mod tests {
     }
 
     #[test]
+    fn duet_lanes_opt_in_explicitly_to_weaker_settings() {
+        for lane in load_lanes(None).unwrap() {
+            if lane.kind != LaneKind::Duet {
+                continue;
+            }
+            let passthrough = lane.argv.windows(2).any(|w| w == ["--mode", "passthrough"]);
+            assert_eq!(
+                passthrough,
+                lane.argv.iter().any(|a| a == "--no-privacy"),
+                "{}: passthrough needs --no-privacy and nothing else may pass it",
+                lane.name
+            );
+            // A lane whose owner config reaches a remote local model over plain
+            // HTTP must opt in, or duet refuses the endpoint.
+            for f in &lane.files {
+                let Ok(t) = toml::from_str::<toml::Table>(&f.content) else {
+                    continue;
+                };
+                let Some(local) = t.get("local").and_then(toml::Value::as_table) else {
+                    continue;
+                };
+                let url = local
+                    .get("base_url")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or("");
+                let loopback = ["http://127.", "http://localhost", "http://[::1]"]
+                    .iter()
+                    .any(|p| url.starts_with(p));
+                if url.starts_with("http://") && !loopback {
+                    assert_eq!(
+                        local.get("allow_plaintext").and_then(toml::Value::as_bool),
+                        Some(true),
+                        "{}",
+                        lane.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn ip_marks_become_duet_project_config() {
         let dir = tempfile::tempdir().unwrap();
         crate::task::tests_support::fixture(dir.path());

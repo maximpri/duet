@@ -40,8 +40,12 @@ your repository ──► security engine ──────┘
   ask the local model questions about them (`ask_local`), but never sees the raw content.
 - **Protected source code** can be shown as interfaces only (signatures, types, docs) or hidden
   entirely. Edits to protected code are implemented locally against tests the frontier writes.
-- **Everything that leaves** is logged in a hash-chained audit log: `duet audit show <run>`,
+- **Everything that leaves** is logged in a hash-chained audit log, together with the security
+  decisions of the run, and its head is anchored outside the repository: `duet audit show <run>`,
   `duet audit verify <run>`.
+- **Secure by default:** loosening a privacy setting needs `--confirm` and is recorded; the
+  boundary-off passthrough mode needs `--no-privacy`; a LAN model over plain HTTP is refused unless
+  the owner opts in.
 
 Duet withholds sensitive content; it does not obfuscate it. What the frontier can still infer —
 that a file exists, its shape, the intent of your task — is documented in `SECURITY.md`.

@@ -335,6 +335,7 @@ async fn drive(
                 command_timeout: cfg.command_timeout,
                 network: cfg.network,
                 checks: &cfg.checks,
+                audit: Some(frontier.audit()),
             };
             // Only what this call shows counts for it.
             let _ = presenter.take_view_class();

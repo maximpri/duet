@@ -585,7 +585,10 @@ mod engine_tests {
         let cfg = ProviderConfig::new(
             "http://127.0.0.1:9/v1",
             "local",
-            Role::Local { allowlist: vec![] },
+            Role::Local {
+                allowlist: vec![],
+                allow_plaintext: false,
+            },
         );
         let reader = LocalReader::new(ChatProvider::new(cfg, Box::new(Replies(reply))).unwrap());
         let (_d, e) = engine(Some(reader));

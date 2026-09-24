@@ -166,6 +166,12 @@ followed by an append to the audit log.
   re-checked; the frontier never sees the original.
 - **Audit record:** `{seq, prev_hash, request_sha256, bytes (placeholder-substituted), blocked[],
   provider, model, terms}`; `duet audit verify` recomputes the chain.
+- **Audit events** share the chain: run start (boundary on/off) and end, local-endpoint trust,
+  sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
+  sends (check name), protected edits. Names, paths and outcomes only, never content.
+- **Anchor:** after every append the chain head (record count, last hash) is written to
+  `<owner state>/audit-anchors/<workspace>/<run-id>.json`, outside the workspace; `duet audit
+  verify` reports a log rewritten or truncated since, and a run refuses to continue such a log.
 
 ### 5.5 Write-back
 
@@ -206,6 +212,9 @@ git; reset behaviour defined per entry).
     writes.jsonl              pending/applied records for crash recovery
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
 ~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
+~/.local/state/duet/          owner state ($DUET_CONFIG_HOME/state when set), mode 0700
+  audit-anchors/<ws>/<run>.json   chain head of each run's audit log
+  config-audit.jsonl          hash-chained log of `duet config set` changes
 ```
 
 ## 8. Safety primitives
@@ -263,7 +272,8 @@ superiority, zero leaks).
 
 1. No code path reaches the network with a frontier request except through `OutboundGate`.
 2. No vault value, canary or ≥24-token span of a sensitive handle appears in any audit record.
-3. The local provider's endpoint is loopback or owner-allowlisted.
+3. The local provider's endpoint is loopback or owner-allowlisted, and a remote one uses TLS unless
+   the owner set `local.allow_plaintext`.
 4. Project configuration cannot loosen privacy or set owner-only keys.
 5. The system prompt and tool list are byte-identical for every turn of a run.
 6. A tool call is never persisted or sent without its result.

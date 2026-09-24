@@ -5,7 +5,9 @@
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
 use duet_agent::{RunConfig, Terminal};
-use duet_boundary::audit::{AuditLog, Verification, verify};
+use duet_boundary::audit::{
+    AnchorCheck, AuditEvent, AuditLog, Line, Verification, anchor_path, check_anchor, verify,
+};
 use duet_boundary::engine::Engine;
 use duet_boundary::local::LocalReader;
 use duet_boundary::policy::Policy;
@@ -61,6 +63,10 @@ enum Cmd {
         /// Override the frontier model for this run.
         #[arg(long)]
         frontier_model: Option<String>,
+        /// Acknowledge that `--mode passthrough` turns the privacy boundary off
+        /// (required for that mode).
+        #[arg(long)]
+        no_privacy: bool,
     },
     /// Continue an interrupted run.
     Resume { run_id: String },
@@ -95,9 +101,14 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum AuditCmd {
-    /// Print every outbound request of a run.
-    Show { run_id: String },
-    /// Verify the audit log's hash chain.
+    /// List a run's outbound requests and security events.
+    Show {
+        run_id: String,
+        /// Print the log's JSON lines as stored.
+        #[arg(long)]
+        raw: bool,
+    },
+    /// Verify the audit log's hash chain and its anchor in the owner state directory.
     Verify { run_id: String },
 }
 
@@ -115,6 +126,10 @@ enum ConfigCmd {
         /// Write to the project's .duet/config.toml instead of the owner config.
         #[arg(long)]
         project: bool,
+        /// Apply a change that loosens privacy (it is recorded in the owner's
+        /// config audit log). Without it such a change is shown and refused.
+        #[arg(long)]
+        confirm: bool,
     },
 }
 
@@ -164,13 +179,20 @@ fn frontier_provider(cfg: &Config, url: &str, model: &str) -> Result<ChatProvide
     Ok(ChatProvider::with_reqwest(pc)?)
 }
 
-fn local_provider(cfg: &Config) -> Result<ChatProvider> {
+/// The local model provider and the audit event recording why its endpoint is
+/// trusted. A remote host over plain HTTP is refused unless the owner opted in.
+fn local_provider(cfg: &Config) -> Result<(ChatProvider, AuditEvent)> {
     let url = cfg.str("local.base_url")?;
+    let allowlist = cfg.list("local.allowlist")?;
+    let allow_plaintext = cfg.bool("local.allow_plaintext")?;
+    let trust = duet_provider::endpoint::check_local_endpoint(&url, &allowlist, allow_plaintext)
+        .map_err(|e| anyhow::anyhow!(e.message))?;
     let mut pc = ProviderConfig::new(
         &url,
         &cfg.str("local.model")?,
         Role::Local {
-            allowlist: cfg.list("local.allowlist")?,
+            allowlist,
+            allow_plaintext,
         },
     );
     let key_env = cfg.str("local.api_key_env")?;
@@ -179,11 +201,40 @@ fn local_provider(cfg: &Config) -> Result<ChatProvider> {
     }
     if duet_provider::endpoint::is_plaintext_remote(&url) {
         eprintln!(
-            "warning: the local model endpoint {url} is a remote host over plain HTTP; sensitive content would cross the network unencrypted"
+            "warning: the local model endpoint {url} is a remote host over plain HTTP (allowed by local.allow_plaintext); sensitive content crosses the network unencrypted"
         );
     }
-    Ok(ChatProvider::with_reqwest(pc)?)
+    let host = duet_provider::endpoint::host_port(&url)
+        .map(|(h, p)| format!("{h}:{p}"))
+        .unwrap_or_default();
+    let event = AuditEvent::EndpointTrust {
+        role: "local".into(),
+        host,
+        trust: trust.as_str().into(),
+    };
+    Ok((ChatProvider::with_reqwest(pc)?, event))
 }
+
+/// Where the anchor of a run's audit log lives (owner state directory).
+fn run_anchor(ws: &Path, run_id: &str) -> PathBuf {
+    anchor_path(&duet_config::owner_state_dir(), ws, run_id)
+}
+
+fn checked_run_id(run_id: &str) -> Result<&str> {
+    ensure!(
+        !run_id.is_empty() && !run_id.contains('/') && !run_id.contains(".."),
+        "invalid run id"
+    );
+    Ok(run_id)
+}
+
+const PASSTHROUGH_BANNER: &str = "\
+=====================================================================
+ PRIVACY BOUNDARY OFF (passthrough mode)
+ File contents, command output, secrets and personal data are sent to
+ the frontier provider unfiltered. Use it only on repositories with
+ nothing sensitive, as a reference lane.
+=====================================================================";
 
 fn gated(
     ws: &Path,
@@ -191,7 +242,11 @@ fn gated(
     provider: ChatProvider,
     engine: Option<&Arc<Engine>>,
 ) -> Result<GatedFrontier> {
-    let audit = AuditLog::open(&ws.join(".duet/audit").join(format!("{run_id}.jsonl")))?;
+    let audit = AuditLog::open_anchored(
+        &ws.join(".duet/audit").join(format!("{run_id}.jsonl")),
+        &run_anchor(ws, run_id),
+        run_id,
+    )?;
     let mut gate = OutboundGate::new(audit);
     if let Some(e) = engine {
         let (filter, check) = e.outbound();
@@ -234,12 +289,20 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     let _ = git.exclude_state_dir(&ws);
     let sandbox = duet_sandbox::detect()?;
 
+    if manifest.mode == Mode::Passthrough {
+        eprintln!("{PASSTHROUGH_BANNER}");
+    }
+    let mut trust = None;
     let engine = match manifest.mode {
-        Mode::Hybrid => Some(Engine::open(
-            &run_dir,
-            policy(&cfg)?,
-            Some(LocalReader::new(local_provider(&cfg)?)),
-        )?),
+        Mode::Hybrid => {
+            let (local, event) = local_provider(&cfg)?;
+            trust = Some(event);
+            Some(Engine::open(
+                &run_dir,
+                policy(&cfg)?,
+                Some(LocalReader::new(local)),
+            )?)
+        }
         _ => None,
     };
     let (driver, price_model) = match manifest.mode {
@@ -247,7 +310,11 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
             frontier_provider(&cfg, &manifest.frontier_url, &manifest.frontier_model)?,
             manifest.frontier_model.clone(),
         ),
-        Mode::LocalOnly => (local_provider(&cfg)?, String::new()),
+        Mode::LocalOnly => {
+            let (local, event) = local_provider(&cfg)?;
+            trust = Some(event);
+            (local, String::new())
+        }
     };
     if let Some(e) = &engine {
         let files = git.list_files(&ws).unwrap_or_default();
@@ -255,6 +322,13 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         eprintln!("security engine: indexed {primed} sensitive file(s)");
     }
     let frontier = gated(&ws, &manifest.run_id, driver, engine.as_ref())?;
+    frontier.audit().record(AuditEvent::RunStart {
+        mode: format!("{:?}", manifest.mode).to_lowercase(),
+        boundary: manifest.mode != Mode::Passthrough,
+    });
+    if let Some(event) = trust {
+        frontier.audit().record(event);
+    }
     let price = duet_provider::price::builtin(&price_model);
     if price.is_none() && !price_model.is_empty() {
         eprintln!(
@@ -297,6 +371,15 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         duet_agent::run(&run_cfg, &frontier, presenter, &git, resume, &interrupted).await;
     // Local model work of this invocation (a resumed run reports only its own).
     stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
+    // The final event also anchors the log's final head.
+    frontier.audit().record(AuditEvent::RunEnd {
+        terminal: match &terminal {
+            Terminal::Completed { .. } => "completed",
+            Terminal::Failed { .. } => "failed",
+            Terminal::BudgetStopped { .. } => "budget_stopped",
+        }
+        .into(),
+    });
     let summary = serde_json::json!({
         "run_id": manifest.run_id,
         "terminal": terminal,
@@ -311,6 +394,92 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         Terminal::Completed { .. } => 0,
         Terminal::Failed { .. } => 1,
         Terminal::BudgetStopped { .. } => 3,
+    })
+}
+
+/// The owner's log of settings changes.
+fn config_audit_path() -> PathBuf {
+    duet_config::owner_state_dir().join("config-audit.jsonl")
+}
+
+/// One line of `duet audit show`.
+fn show_line(line: &str) -> String {
+    let time = |ms: u128| {
+        time::OffsetDateTime::from_unix_timestamp_nanos(ms as i128 * 1_000_000)
+            .map(|t| {
+                format!(
+                    "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                    t.year(),
+                    u8::from(t.month()),
+                    t.day(),
+                    t.hour(),
+                    t.minute(),
+                    t.second()
+                )
+            })
+            .unwrap_or_default()
+    };
+    match duet_boundary::audit::parse_line(line) {
+        Some(Line::Request(r)) => format!(
+            "#{:<4} {}  request         {} {} ({} bytes){}",
+            r.seq,
+            time(r.unix_ms),
+            r.endpoint,
+            r.model,
+            serde_json::to_vec(&r.request).map_or(0, |b| b.len()),
+            if r.interventions.is_empty() {
+                String::new()
+            } else {
+                format!("; {} intervention(s)", r.interventions.len())
+            }
+        ),
+        Some(Line::Event(e)) => {
+            let mut fields = serde_json::to_value(&e.event).unwrap_or_default();
+            if let Some(m) = fields.as_object_mut() {
+                m.remove("kind");
+            }
+            format!(
+                "#{:<4} {}  {:<15} {fields}",
+                e.seq,
+                time(e.unix_ms),
+                e.event.kind()
+            )
+        }
+        None => format!("unparseable: {}", line.chars().take(80).collect::<String>()),
+    }
+}
+
+/// `duet audit verify`: the chain, then the anchor. Returns the exit code.
+fn verify_run(path: &Path, anchor: &Path) -> Result<i32> {
+    match verify(path).with_context(|| format!("no audit log at {}", path.display()))? {
+        Verification::Intact { records } => println!("chain intact: {records} records"),
+        Verification::Broken { at_seq, reason } => {
+            println!("BROKEN at record {at_seq}: {reason}");
+            return Ok(1);
+        }
+    }
+    Ok(match check_anchor(path, anchor)? {
+        AnchorCheck::Matches => {
+            println!("anchor matches ({})", anchor.display());
+            0
+        }
+        AnchorCheck::Extends { unanchored } => {
+            println!(
+                "anchor matches; {unanchored} later record(s) were never anchored (an interrupted append)"
+            );
+            0
+        }
+        AnchorCheck::Mismatch(reason) => {
+            println!("REWRITTEN OR TRUNCATED since it was anchored: {reason}");
+            1
+        }
+        AnchorCheck::Missing => {
+            println!(
+                "no anchor at {}: a rewritten log cannot be detected (run predates anchoring, or another state directory)",
+                anchor.display()
+            );
+            2
+        }
     })
 }
 
@@ -349,7 +518,19 @@ async fn main() -> Result<()> {
             mode,
             frontier_url,
             frontier_model,
+            no_privacy,
         } => {
+            match (mode, no_privacy) {
+                (Mode::Passthrough, false) => bail!(
+                    "--mode passthrough turns the privacy boundary off: everything the model reads, \
+including secrets and personal data, is sent to the frontier provider unfiltered. \
+Add --no-privacy to confirm, or use --mode hybrid."
+                ),
+                (Mode::Hybrid | Mode::LocalOnly, true) => {
+                    bail!("--no-privacy only applies to --mode passthrough")
+                }
+                _ => {}
+            }
             let objective = match (objective, objective_file) {
                 (Some(o), None) => o,
                 (None, Some(f)) => std::fs::read_to_string(&f)
@@ -375,25 +556,25 @@ async fn main() -> Result<()> {
             std::process::exit(execute(ws, manifest, true).await?);
         }
         Cmd::Audit { action } => match action {
-            AuditCmd::Show { run_id } => {
-                let path = ws.join(".duet/audit").join(format!("{run_id}.jsonl"));
-                print!(
-                    "{}",
-                    std::fs::read_to_string(&path)
-                        .with_context(|| format!("no audit log for {run_id}"))?
-                );
-            }
-            AuditCmd::Verify { run_id } => {
-                let path = ws.join(".duet/audit").join(format!("{run_id}.jsonl"));
-                match verify(&path)? {
-                    Verification::Intact { records } => {
-                        println!("intact: {records} outbound requests")
-                    }
-                    Verification::Broken { at_seq, reason } => {
-                        println!("BROKEN at record {at_seq}: {reason}");
-                        std::process::exit(1);
+            AuditCmd::Show { run_id, raw } => {
+                let path = ws
+                    .join(".duet/audit")
+                    .join(format!("{}.jsonl", checked_run_id(&run_id)?));
+                let text = std::fs::read_to_string(&path)
+                    .with_context(|| format!("no audit log for {run_id}"))?;
+                if raw {
+                    print!("{text}");
+                } else {
+                    for line in text.lines().filter(|l| !l.is_empty()) {
+                        println!("{}", show_line(line));
                     }
                 }
+            }
+            AuditCmd::Verify { run_id } => {
+                let path = ws
+                    .join(".duet/audit")
+                    .join(format!("{}.jsonl", checked_run_id(&run_id)?));
+                std::process::exit(verify_run(&path, &run_anchor(&ws, &run_id))?);
             }
         },
         Cmd::Config { action } => {
@@ -412,15 +593,49 @@ async fn main() -> Result<()> {
                     key,
                     value,
                     project,
+                    confirm,
                 } => {
                     let v: toml::Value = toml::from_str::<toml::Table>(&format!("v = {value}"))
                         .with_context(|| format!("{value} is not a TOML value"))?["v"]
                         .clone();
-                    if project {
-                        cfg.set_project(&key, v)?
+                    let old = cfg.value(&key)?.clone();
+                    let event = if project {
+                        // A project may only tighten, so nothing here needs confirming.
+                        cfg.set_project(&key, v.clone())?;
+                        AuditEvent::ConfigChange {
+                            key: key.clone(),
+                            file: "project".into(),
+                            old: old.to_string(),
+                            new: v.to_string(),
+                            weakens: None,
+                            confirmed: confirm,
+                        }
                     } else {
-                        cfg.set_owner(&key, v)?
-                    }
+                        match cfg.set_owner_checked(&key, v, confirm) {
+                            Ok(change) => AuditEvent::ConfigChange {
+                                key: change.key,
+                                file: "owner".into(),
+                                old: change.old.to_string(),
+                                new: change.new.to_string(),
+                                weakens: change.weakens,
+                                confirmed: confirm,
+                            },
+                            Err(duet_config::ConfigError::NeedsConfirm {
+                                key,
+                                old,
+                                new,
+                                weakens,
+                            }) => {
+                                eprintln!(
+                                    "policy change not applied: it loosens privacy\n\n  {key}\n  - {old}\n  + {new}\n\n  weakens: {weakens}\n\nRe-run with --confirm to apply it; the change is recorded in {}.",
+                                    config_audit_path().display()
+                                );
+                                std::process::exit(2);
+                            }
+                            Err(e) => return Err(e.into()),
+                        }
+                    };
+                    AuditLog::open(&config_audit_path())?.event(event)?;
                     println!("{key} = {}", cfg.value(&key)?);
                 }
             }
@@ -431,7 +646,7 @@ async fn main() -> Result<()> {
         }
         Cmd::LocalEval { sizes, seed, out } => {
             let cfg = load_config(&ws)?;
-            let reader = LocalReader::new(local_provider(&cfg)?);
+            let reader = LocalReader::new(local_provider(&cfg)?.0);
             let fixtures = duet_boundary::local_eval::fixtures(seed, &sizes);
             let report = duet_boundary::local_eval::run(&reader, &fixtures, |o| {
                 eprintln!(

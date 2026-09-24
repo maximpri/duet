@@ -119,6 +119,19 @@ pub struct Output {
     pub duration: Duration,
 }
 
+impl Output {
+    /// Whether the output shows the sandbox refusing an operation. Seatbelt
+    /// refuses with `EPERM`, which programs print as "Operation not permitted".
+    /// Under bubblewrap a denied path is an empty directory or an empty file,
+    /// so a refusal leaves no trace in the output and is not reported.
+    pub fn shows_denial(&self) -> bool {
+        const EPERM: &[u8] = b"Operation not permitted";
+        [&self.stdout, &self.stderr]
+            .iter()
+            .any(|b| b.windows(EPERM.len()).any(|w| w == EPERM))
+    }
+}
+
 fn quote(p: &Path) -> Result<String, SandboxError> {
     let s = p
         .to_str()
@@ -460,6 +473,7 @@ mod tests {
         }
         assert!(all.contains("public"), "{all}");
         assert!(!ws.join("copy.txt").exists());
+        assert!(o.shows_denial());
     }
 
     #[tokio::test]

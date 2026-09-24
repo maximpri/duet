@@ -4,6 +4,12 @@
 # which allows outbound network to loopback only.
 #
 # Placeholders: {workspace} {run_dir} {proxy_url} {objective} {model}
+#
+# Duet lanes that use the local model reach it on the operator's LAN host over
+# plain HTTP. Duet refuses that unless the owner config opts in, so their
+# per-run owner config sets `local.allow_plaintext = true`: the operator accepts
+# unencrypted traffic on that LAN segment. Planted canaries, not real data,
+# cross it during evaluations.
 
 [[lane]]
 name = "duet-passthrough"
@@ -11,9 +17,13 @@ kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
-argv = ["{duet_bin}", "run", "--mode", "passthrough", "--frontier-url", "{proxy_url}",
+# The measured frontier-only baseline: the boundary is off, acknowledged explicitly.
+argv = ["{duet_bin}", "run", "--mode", "passthrough", "--no-privacy", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
+# Keep run state (audit anchors) inside the run directory, not the operator's state dir.
+[lane.env]
+DUET_CONFIG_HOME = "{run_dir}/duet-config"
 
 [[lane]]
 name = "duet-hybrid"
@@ -36,6 +46,7 @@ base_url = "http://192.168.50.132:8080/v1"
 model = "omlx-coding"
 api_key_env = "OMLX_API_KEY"
 allowlist = ["192.168.50.132:8080"]
+allow_plaintext = true
 '''
 
 [[lane]]
@@ -57,6 +68,7 @@ base_url = "http://192.168.50.132:8080/v1"
 model = "omlx-coding"
 api_key_env = "OMLX_API_KEY"
 allowlist = ["192.168.50.132:8080"]
+allow_plaintext = true
 '''
 
 [[lane]]

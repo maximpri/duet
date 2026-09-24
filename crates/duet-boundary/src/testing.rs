@@ -95,6 +95,7 @@ pub fn scripted_local(replies: Vec<String>) -> (LocalReader, Received) {
         "scripted",
         Role::Local {
             allowlist: Vec::new(),
+            allow_plaintext: false,
         },
     );
     cfg.backoff_scale = 0.0;

@@ -150,6 +150,15 @@ pub const REGISTRY: &[Setting] = &[
         "Non-loopback host:port values the local role may use."
     ),
     s!(
+        "local.allow_plaintext",
+        Bool,
+        "false",
+        Owner,
+        OnlyFalse,
+        true,
+        "Allow plain HTTP to an allowlisted non-loopback local model host (sensitive content crosses the network unencrypted); prefer TLS or an SSH tunnel."
+    ),
+    s!(
         "local.watts",
         Float {
             min: 0.0,
@@ -405,6 +414,13 @@ pub enum ConfigError {
         value: String,
         rule: &'static str,
     },
+    #[error("{key}: {old} -> {new} loosens privacy ({weakens}); re-run with --confirm to apply it")]
+    NeedsConfirm {
+        key: String,
+        old: String,
+        new: String,
+        weakens: String,
+    },
     #[error("{key}: {message}")]
     Invalid { key: String, message: String },
     #[error("{0}: {1}")]
@@ -502,6 +518,21 @@ fn tightens(s: &Setting, base: &Value, new: &Value) -> Result<(), &'static str> 
     }
 }
 
+/// What changing `s` from `old` to `new` would weaken, or `None` when the
+/// change keeps or tightens privacy. A change against the setting's tighten
+/// direction always loosens; for a setting without a direction, any change to a
+/// `confirm` setting counts (it redirects content or spends money).
+pub fn loosening(s: &Setting, old: &Value, new: &Value) -> Option<String> {
+    if old == new {
+        return None;
+    }
+    match tightens(s, old, new) {
+        Err(rule) => Some(format!("{}; tightening would {rule}", s.help)),
+        Ok(()) if s.direction == Any && s.confirm => Some(s.help.to_owned()),
+        Ok(()) => None,
+    }
+}
+
 fn flatten(prefix: &str, table: &toml::Table, out: &mut Vec<(String, Value)>) {
     for (k, v) in table {
         let key = if prefix.is_empty() {
@@ -543,6 +574,32 @@ pub fn owner_config_path() -> PathBuf {
         .map(PathBuf::from)
         .unwrap_or_default();
     home.join(".config/duet/config.toml")
+}
+
+/// The owner's private state directory (audit anchors, the config audit log),
+/// outside every workspace: `$DUET_CONFIG_HOME/state` when that is set, else
+/// `$XDG_STATE_HOME/duet`, else `~/.local/state/duet`.
+pub fn owner_state_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("DUET_CONFIG_HOME") {
+        return PathBuf::from(dir).join("state");
+    }
+    if let Some(dir) = std::env::var_os("XDG_STATE_HOME").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir).join("duet");
+    }
+    let home = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    home.join(".local/state/duet")
+}
+
+/// An applied owner-config change, for the owner's audit log.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Change {
+    pub key: String,
+    pub old: Value,
+    pub new: Value,
+    /// What it weakened, when it loosened privacy (then it was confirmed).
+    pub weakens: Option<String>,
 }
 
 impl Config {
@@ -616,6 +673,36 @@ impl Config {
             .flatten()
             .filter_map(|v| v.as_str().map(str::to_owned))
             .collect())
+    }
+
+    /// Sets a value in the owner file like [`Config::set_owner`], but refuses a
+    /// change that loosens privacy (see [`loosening`]) unless `confirmed`.
+    /// Tightening needs no confirmation.
+    pub fn set_owner_checked(
+        &mut self,
+        key: &str,
+        value: Value,
+        confirmed: bool,
+    ) -> Result<Change, ConfigError> {
+        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        validate(s, &value)?;
+        let old = self.values[s.key].0.clone();
+        let weakens = loosening(s, &old, &value);
+        if let (Some(w), false) = (&weakens, confirmed) {
+            return Err(ConfigError::NeedsConfirm {
+                key: key.into(),
+                old: old.to_string(),
+                new: value.to_string(),
+                weakens: w.clone(),
+            });
+        }
+        self.set_owner(key, value.clone())?;
+        Ok(Change {
+            key: key.into(),
+            old,
+            new: value,
+            weakens,
+        })
     }
 
     /// Sets a value in the owner file (validated; written atomically).
@@ -737,6 +824,7 @@ mod tests {
             "[local]\nbase_url = \"https://cloud.example/v1\"\n",
             "[local]\nallowlist = [\"evil.example:443\"]\n",
             "[sensitivity]\nraw_ok_commands = [\"cat\"]\n",
+            "[local]\nallow_plaintext = true\n",
         ] {
             let (_d, o, p) = files("", bad);
             assert!(
@@ -808,6 +896,57 @@ mod tests {
                 .list("local.allowlist")
                 .unwrap(),
             vec!["192.168.50.132:8080"]
+        );
+    }
+
+    #[test]
+    fn loosening_needs_confirmation_and_tightening_does_not() {
+        let (_d, o, p) = files("", "");
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        // Against the tighten direction.
+        for (key, v) in [
+            ("sensitivity.detect_pii", Value::Boolean(false)),
+            ("sandbox.network", Value::Boolean(true)),
+            ("limits.frontier_usd", Value::Float(50.0)),
+            ("local.allow_plaintext", Value::Boolean(true)),
+            ("sensitivity.globs", Value::Array(vec![])),
+        ] {
+            let e = c.set_owner_checked(key, v.clone(), false).unwrap_err();
+            assert!(matches!(e, ConfigError::NeedsConfirm { .. }), "{key}: {e}");
+            assert!(e.to_string().contains("--confirm"), "{e}");
+            assert_eq!(c.origin(key), Some(Origin::Default), "{key} was applied");
+        }
+        // A `confirm` setting without a direction: any change.
+        assert!(matches!(
+            c.set_owner_checked(
+                "frontier.base_url",
+                Value::String("https://other.example/v1".into()),
+                false
+            ),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        // Tightening and privacy-neutral changes apply directly.
+        let mut globs = c.list("sensitivity.globs").unwrap();
+        globs.push("reports/**".into());
+        let globs = Value::Array(globs.into_iter().map(Value::String).collect());
+        let change = c
+            .set_owner_checked("sensitivity.globs", globs, false)
+            .unwrap();
+        assert_eq!(change.weakens, None);
+        c.set_owner_checked("limits.frontier_usd", Value::Float(1.0), false)
+            .unwrap();
+        c.set_owner_checked("local.model", Value::String("other".into()), false)
+            .unwrap();
+        // Confirmed loosening applies and says what it weakened.
+        let change = c
+            .set_owner_checked("local.allow_plaintext", Value::Boolean(true), true)
+            .unwrap();
+        assert!(change.weakens.unwrap().contains("plain HTTP"));
+        assert!(
+            Config::load(&o, None)
+                .unwrap()
+                .bool("local.allow_plaintext")
+                .unwrap()
         );
     }
 

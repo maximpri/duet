@@ -266,7 +266,10 @@ fn local_role_refuses_non_loopback_endpoints() {
     let cfg = ProviderConfig::new(
         "https://api.z.ai/api/coding/paas/v4",
         "m",
-        Role::Local { allowlist: vec![] },
+        Role::Local {
+            allowlist: vec![],
+            allow_plaintext: false,
+        },
     );
     let e = ChatProvider::new(cfg, Box::new(Script::new(vec![])))
         .err()
@@ -286,7 +289,10 @@ async fn local_role_recovers_text_tool_calls() {
     let mut cfg = ProviderConfig::new(
         "http://127.0.0.1:8080/v1",
         "m",
-        Role::Local { allowlist: vec![] },
+        Role::Local {
+            allowlist: vec![],
+            allow_plaintext: false,
+        },
     );
     cfg.backoff_scale = 0.0;
     let p = ChatProvider::new(cfg, Box::new(s)).unwrap();
@@ -372,6 +378,7 @@ async fn live_local_tool_round_trip_and_prefix_reuse() {
         "omlx-coding",
         Role::Local {
             allowlist: vec![host],
+            allow_plaintext: true,
         },
     );
     cfg.api_key_env = Some("OMLX_API_KEY".into());

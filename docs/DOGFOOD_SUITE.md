@@ -162,6 +162,10 @@ on a seed see identical canaries. Placeholders in task files use `{{canary:<kind
 
 All lanes receive the same `objective.md`, the same starter and the same per-run canary seed.
 
+`duet-passthrough` runs with `--no-privacy` (passthrough requires the acknowledgement; requests are
+unchanged). `duet-hybrid` and `duet-local-only` reach the operator's LAN model over plain HTTP, so
+their per-run owner config sets `local.allow_plaintext = true` (only canaries cross that link).
+
 ## 8. Statistics and sample sizes
 
 - **Pairing.** Each run of a task uses a seed that fixes the canaries and fixture variations;

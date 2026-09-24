@@ -9,6 +9,7 @@
 //! check gives the local model its raw output and one more attempt.
 
 use crate::tools::{Ctx, MAX_READ_BYTES, fs_err, run_checks, string_arg};
+use duet_boundary::audit::AuditEvent;
 use duet_boundary::view::{ImplementRequest, Source};
 use duet_fs::Precondition;
 use serde_json::{Map, Value};
@@ -95,6 +96,11 @@ pub async fn edit_protected(
         let (failed, report) = run_checks(ctx, &commands).await;
         let shown = ctx.presenter.present(&Source::Checks, &report);
         let verdict = if failed { "FAILED" } else { "passed" };
+        ctx.record(AuditEvent::ProtectedEdit {
+            path: rel.display().to_string(),
+            attempt: attempt as u32,
+            checks_passed: !failed,
+        });
         if !failed || attempt == ATTEMPTS {
             return Ok(format!(
                 "{raw}: the local model's change was written (attempt {attempt} of {ATTEMPTS}); {}.\n\
@@ -185,6 +191,7 @@ mod tests {
             command_timeout: Duration::from_secs(30),
             network: false,
             checks: &[],
+            audit: None,
         };
 
         // Ordinary commands cannot read protected source; edits must go through edit_protected.

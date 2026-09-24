@@ -259,7 +259,7 @@ and hashes only (default retention 90 days).
   configurable by the owner.
 - **Local:** Ollama, LM Studio, llama.cpp, vLLM, oMLX — loopback, or a LAN host the owner explicitly
   allowlists (the operator's current setup: oMLX `omlx-coding` on `192.168.50.132:8080`); non-loopback
-  plain HTTP triggers a `duet doctor` warning. The default local model is
+  plain HTTP is refused unless the owner sets `local.allow_plaintext = true`. The default local model is
   chosen by a micro-evaluation (error-line recall ≥ 0.95, planted-fact accuracy ≥ 0.90, schema
   validity ≥ 0.99, prefill ≥ 500 tok/s at 16K context).
 

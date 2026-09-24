@@ -88,8 +88,12 @@ impl Transport for ReqwestTransport {
 pub enum Role {
     /// Receives only gated, boundary-checked content.
     Frontier,
-    /// Reads sensitive content; must be loopback or an owner-allowlisted host.
-    Local { allowlist: Vec<String> },
+    /// Reads sensitive content; must be loopback or an owner-allowlisted host,
+    /// and a remote host needs TLS unless the owner allows plain HTTP.
+    Local {
+        allowlist: Vec<String>,
+        allow_plaintext: bool,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -143,8 +147,12 @@ impl ChatProvider {
         config: ProviderConfig,
         transport: Box<dyn Transport>,
     ) -> Result<Self, ProviderError> {
-        if let Role::Local { allowlist } = &config.role {
-            check_local_endpoint(&config.base_url, allowlist)?;
+        if let Role::Local {
+            allowlist,
+            allow_plaintext,
+        } = &config.role
+        {
+            check_local_endpoint(&config.base_url, allowlist, *allow_plaintext)?;
         }
         Ok(Self { config, transport })
     }
