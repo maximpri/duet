@@ -123,6 +123,23 @@ pub fn load_lanes(override_path: Option<&Path>) -> Result<Vec<Lane>> {
     Ok(table.lane)
 }
 
+/// The model family behind a recorded run: as recorded, else the built-in
+/// lane of the same name (records made before families were kept).
+pub fn lane_family(record: &RunRecord) -> Option<String> {
+    if let Some(f) = record
+        .provenance
+        .as_ref()
+        .and_then(|p| p.lane_family.clone())
+    {
+        return Some(f);
+    }
+    let built_in = load_lanes(None).ok()?;
+    built_in
+        .into_iter()
+        .find(|l| l.name == record.lane)
+        .and_then(|l| l.family)
+}
+
 pub fn find_lane<'a>(lanes: &'a [Lane], name: &str) -> Result<&'a Lane> {
     lanes
         .iter()
@@ -666,6 +683,16 @@ mod tests {
             let lane = find_lane(&lanes, name).unwrap();
             assert_eq!(lane.family.as_deref(), Some(family), "{name}");
         }
+        // Records made before families were kept fall back to the built-in lane.
+        let record: RunRecord = serde_json::from_value(serde_json::json!({
+            "task": "S1", "lane": "claude-code", "lane_kind": "external", "seed": 1,
+            "run_id": "S1-claude-code-s1", "exit_code": 0, "timed_out": false,
+            "wall_seconds": 1.0, "grade": null, "leaks": [], "frontier_requests": 0,
+            "usage_by_model": {}, "unreported_requests": 0, "frontier_cost_usd": null,
+            "electricity_usd": 0.0, "total_cost_usd": null, "error": null
+        }))
+        .unwrap();
+        assert_eq!(lane_family(&record).as_deref(), Some("anthropic"));
     }
 
     #[test]

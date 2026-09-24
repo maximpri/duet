@@ -393,20 +393,25 @@ fn batch_report(batch: &Path, gate: &[(String, String)]) -> Result<()> {
     let records = report::load_records(batch)?;
     ensure!(!records.is_empty(), "no runs in {}", batch.display());
     let summaries = report::summarize(&records);
-    let judges = report::load_judges(batch)?;
+    // A batch report requires every judge seen in the batch; `report --final` requires both.
+    let judging = report::judging(&records, &report::load_judges(batch)?, None);
     let mut verdicts = Vec::new();
     for (c, r) in gate {
-        match report::gate(&records, &judges, c, r) {
+        match report::gate(&records, &judging.scores, c, r) {
             Some(v) => verdicts.push(v),
             None => eprintln!("no paired runs for {c}:{r}"),
         }
     }
     let invalid: Vec<&lanes::RunRecord> = records.iter().filter(|r| r.invalid.is_some()).collect();
-    let md = report::render_markdown(&summaries, &verdicts, &invalid);
+    let md = report::render_markdown(&summaries, &verdicts, &invalid, &judging);
     fs::write(batch.join("report.md"), &md)?;
     fs::write(
         batch.join("verdicts.json"),
         serde_json::to_string_pretty(&verdicts)?,
+    )?;
+    fs::write(
+        batch.join("judging.json"),
+        serde_json::to_string_pretty(&judging)?,
     )?;
     print!("{md}");
     Ok(())

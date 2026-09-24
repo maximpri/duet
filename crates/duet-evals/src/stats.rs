@@ -189,6 +189,26 @@ pub fn pairs_for_non_inferiority(sd: f64, margin: f64) -> usize {
     ((Z_ALPHA + Z_BETA).powi(2) * sd * sd / (margin * margin)).ceil() as usize
 }
 
+/// Pearson correlation of paired values; `None` below two pairs or when
+/// either side is constant.
+pub fn pearson(pairs: &[(f64, f64)]) -> Option<f64> {
+    let n = pairs.len();
+    if n < 2 {
+        return None;
+    }
+    let (ma, mb) = pairs
+        .iter()
+        .fold((0.0, 0.0), |(a, b), (x, y)| (a + x, b + y));
+    let (ma, mb) = (ma / n as f64, mb / n as f64);
+    let (mut cov, mut va, mut vb) = (0.0, 0.0, 0.0);
+    for (x, y) in pairs {
+        cov += (x - ma) * (y - mb);
+        va += (x - ma).powi(2);
+        vb += (y - mb).powi(2);
+    }
+    (va > 0.0 && vb > 0.0).then(|| cov / (va * vb).sqrt())
+}
+
 pub fn sample_sd(values: &[f64]) -> f64 {
     let n = values.len();
     if n < 2 {
@@ -212,6 +232,16 @@ impl SplitMix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pearson_correlation() {
+        let r = pearson(&[(1.0, 2.0), (2.0, 4.0), (3.0, 6.5)]).unwrap();
+        assert!(r > 0.99 && r <= 1.0, "{r}");
+        let r = pearson(&[(1.0, 3.0), (2.0, 2.0), (3.0, 1.0)]).unwrap();
+        assert!((r + 1.0).abs() < 1e-12);
+        assert_eq!(pearson(&[(1.0, 1.0)]), None);
+        assert_eq!(pearson(&[(1.0, 1.0), (2.0, 1.0)]), None);
+    }
 
     #[test]
     fn identical_lanes_are_non_inferior_and_not_cheaper() {

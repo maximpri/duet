@@ -22,7 +22,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 
 /// A batch directory with its run and judged-run counts.
 pub type BatchCounts = (PathBuf, usize, usize);
@@ -33,12 +33,13 @@ pub struct LoadedRun {
     pub record: RunRecord,
     /// The run directory as reached through the batch argument.
     pub dir: PathBuf,
-    pub judge: Option<Judgement>,
+    /// Judgements by judge name.
+    pub judges: BTreeMap<String, Judgement>,
     /// Canaries planted in the run, by kind (values are never read into the report).
     pub canaries_by_kind: BTreeMap<String, usize>,
     /// Duet's ledger, from the run's own summary when present, else the record.
     pub ledger: Option<DuetLedger>,
-    /// SHA-256 over the run's raw record and judge file.
+    /// SHA-256 over the run's raw record and judge files.
     pub digest: String,
 }
 
@@ -85,7 +86,7 @@ pub fn load(batches: &[PathBuf]) -> Result<(Vec<LoadedRun>, Vec<BatchCounts>)> {
                 );
             }
             count += 1;
-            judged += usize::from(run.judge.is_some());
+            judged += usize::from(!run.judges.is_empty());
             runs.insert(key, run);
         }
         info.push((batch.clone(), count, judged));
@@ -99,16 +100,10 @@ fn load_run(dir: &Path) -> Result<LoadedRun> {
         .with_context(|| format!("parsing {}/run.json", dir.display()))?;
     let mut hasher = Sha256::new();
     hasher.update(&raw);
-    let judge = match fs::read(dir.join("judge.json")) {
-        Ok(bytes) => {
-            hasher.update(&bytes);
-            Some(
-                serde_json::from_slice(&bytes)
-                    .with_context(|| format!("parsing {}/judge.json", dir.display()))?,
-            )
-        }
-        Err(_) => None,
-    };
+    let judges = crate::judge::load_run(dir)?;
+    for (_, bytes) in &judges.files {
+        hasher.update(bytes);
+    }
     let mut canaries_by_kind = BTreeMap::new();
     if let Ok(text) = fs::read_to_string(dir.join("manifest.json"))
         && let Ok(m) = serde_json::from_str::<Manifest>(&text)
@@ -126,7 +121,7 @@ fn load_run(dir: &Path) -> Result<LoadedRun> {
     Ok(LoadedRun {
         record,
         dir: dir.to_path_buf(),
-        judge,
+        judges: judges.by_judge,
         canaries_by_kind,
         ledger,
         digest: hex::encode(hasher.finalize()),
@@ -156,7 +151,7 @@ pub struct Metrics {
     pub hidden_pass_rate: Option<Interval>,
     pub successes: usize,
     pub success_rate: f64,
-    /// Judge score out of 30 over judged runs.
+    /// Mean of the judges, out of 30, over fully judged runs.
     pub judge: Option<Interval>,
     pub leaks: LeakStats,
     /// Mean total cost (frontier at list price plus electricity); `None` if any run is unpriced.
@@ -193,10 +188,13 @@ pub struct GateBlock {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct JudgeSetup {
+    pub judge: String,
+    pub family: String,
     pub backend: String,
     pub model: String,
     pub rubric_version: String,
     pub repeats: usize,
+    pub cli_version: Option<String>,
     pub artifacts: usize,
 }
 
@@ -260,6 +258,8 @@ pub struct FinalReport {
     pub inputs_sha256: String,
     pub lanes: Vec<LaneBlock>,
     pub gates: Vec<GateBlock>,
+    /// Both judges' scores, their agreement and self-judged lanes.
+    pub judging: report::Judging,
     pub method: Method,
     pub versions: BTreeMap<String, LaneVersions>,
     pub runs: Vec<RunRow>,
@@ -270,7 +270,11 @@ fn pass_rate(r: &RunRecord) -> f64 {
 }
 
 /// Metrics over `runs` (valid runs of one lane, optionally one task).
-fn metrics(runs: &[&LoadedRun], reference: &BTreeMap<(String, u64), &LoadedRun>) -> Metrics {
+fn metrics(
+    runs: &[&LoadedRun],
+    reference: &BTreeMap<(String, u64), &LoadedRun>,
+    judge_scores: &BTreeMap<String, f64>,
+) -> Metrics {
     let n = runs.len();
     let boot = |xs: &[f64], seed| stats::bootstrap_mean(xs, BOOTSTRAP_ITERS, ALPHA, seed);
     let rates: Vec<f64> = runs.iter().map(|r| pass_rate(&r.record)).collect();
@@ -280,7 +284,7 @@ fn metrics(runs: &[&LoadedRun], reference: &BTreeMap<(String, u64), &LoadedRun>)
         .count();
     let judged: Vec<f64> = runs
         .iter()
-        .filter_map(|r| r.judge.as_ref().map(|j| j.mean_total))
+        .filter_map(|r| judge_scores.get(&r.record.run_id).copied())
         .collect();
     let mut leaks = LeakStats::default();
     for r in runs {
@@ -402,6 +406,18 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
         .map(|r| ((r.record.task.clone(), r.record.seed), *r))
         .collect();
 
+    let records: Vec<RunRecord> = runs.iter().map(|r| r.record.clone()).collect();
+    let judgements: report::Judgements = runs
+        .iter()
+        .filter(|r| !r.judges.is_empty())
+        .map(|r| (r.record.run_id.clone(), r.judges.clone()))
+        .collect();
+    // The public benchmark needs both judges on every run (PLAN §3, 2026-09-24).
+    let judging = report::judging(
+        &records,
+        &judgements,
+        Some(crate::lanes::judge_cli::FINAL_JUDGES),
+    );
     let mut by_lane: BTreeMap<&str, Vec<&LoadedRun>> = BTreeMap::new();
     for r in &valid {
         by_lane.entry(r.record.lane.as_str()).or_default().push(r);
@@ -416,25 +432,20 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
             LaneBlock {
                 lane: (*lane).to_owned(),
                 kind: rs[0].record.lane_kind,
-                overall: metrics(rs, &reference),
+                overall: metrics(rs, &reference, &judging.scores),
                 by_task: tasks
                     .into_iter()
-                    .map(|(t, trs)| (t.to_owned(), metrics(&trs, &reference)))
+                    .map(|(t, trs)| (t.to_owned(), metrics(&trs, &reference, &judging.scores)))
                     .collect(),
             }
         })
         .collect();
 
-    let records: Vec<RunRecord> = runs.iter().map(|r| r.record.clone()).collect();
-    let judges: BTreeMap<String, f64> = runs
-        .iter()
-        .filter_map(|r| Some((r.record.run_id.clone(), r.judge.as_ref()?.mean_total)))
-        .collect();
     let gates =
         opts.gates
             .iter()
             .filter_map(|(c, r)| {
-                let verdict = report::gate(&records, &judges, c, r)?;
+                let verdict = report::gate(&records, &judging.scores, c, r)?;
                 let key = |x: &LoadedRun| (x.record.task.clone(), x.record.seed);
                 let refs: BTreeMap<_, &LoadedRun> = valid
                     .iter()
@@ -464,14 +475,26 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
             *canaries_planted.entry(k.clone()).or_insert(0) += n;
         }
     }
-    let mut judge_setups: BTreeMap<(String, String, String, usize), usize> = BTreeMap::new();
-    for j in valid.iter().filter_map(|r| r.judge.as_ref()) {
+    type SetupKey = (
+        String,
+        String,
+        String,
+        String,
+        String,
+        usize,
+        Option<String>,
+    );
+    let mut judge_setups: BTreeMap<SetupKey, usize> = BTreeMap::new();
+    for j in valid.iter().flat_map(|r| r.judges.values()) {
         *judge_setups
             .entry((
+                j.judge.clone(),
+                j.family.clone(),
                 j.backend.clone(),
                 j.model.clone(),
                 j.rubric_version.clone(),
                 j.repeats.len(),
+                j.cli_version.clone(),
             ))
             .or_insert(0) += 1;
     }
@@ -495,12 +518,20 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
         judges: judge_setups
             .into_iter()
             .map(
-                |((backend, model, rubric_version, repeats), artifacts)| JudgeSetup {
-                    backend,
-                    model,
-                    rubric_version,
-                    repeats,
+                |(
+                    (judge, family, backend, model, rubric_version, repeats, cli_version),
                     artifacts,
+                )| {
+                    JudgeSetup {
+                        judge,
+                        family,
+                        backend,
+                        model,
+                        rubric_version,
+                        repeats,
+                        cli_version,
+                        artifacts,
+                    }
                 },
             )
             .collect(),
@@ -572,6 +603,7 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
         inputs_sha256: hex::encode(all.finalize()),
         lanes,
         gates,
+        judging,
         method,
         versions,
         runs: runs
@@ -630,7 +662,7 @@ fn pass_fail(ok: bool) -> &'static str {
 
 fn metrics_header(first: &str) -> String {
     format!(
-        "| {first} | Runs | Hidden pass rate % | Success | Judge /30 | Leaks: runs / canaries | Leak-rate bound | Mean cost | Cost ratio | Wall s | Frontier in / out | Local in / out |\n\
+        "| {first} | Runs | Hidden pass rate % | Success | Judges' mean /30 | Leaks: runs / canaries | Leak-rate bound | Mean cost | Cost ratio | Wall s | Frontier in / out | Local in / out |\n\
          |---|---|---|---|---|---|---|---|---|---|---|---|\n"
     )
 }
@@ -692,7 +724,7 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
              Hidden pass rate Δ {:+.1} pp, one-sided lower bound {:+.1} pp (reference margin −{:.0} pp; pairs needed {}).",
             match v.quality_pass {
                 Some(ok) => pass_fail(ok),
-                None => "UNDECIDED (not judged)",
+                None => "UNDECIDED (not fully judged)",
             },
             match (&v.judge, v.judge_non_inferior) {
                 (Some(j), Some(ok)) => format!(
@@ -702,7 +734,7 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
                     r.method.judge_margin,
                     pass_fail(ok)
                 ),
-                _ => "not every pair is judged".into(),
+                _ => "not every pair is judged by both judges".into(),
             },
             v.tasks_behind,
             v.tasks_compared,
@@ -726,7 +758,8 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
         );
     }
 
-    s.push_str("## Lanes\n\n");
+    s.push_str(&report::render_judging(&r.judging));
+    s.push_str("\n## Lanes\n\n");
     s.push_str(&metrics_header("Lane"));
     for l in &r.lanes {
         s.push_str(&metrics_row(
@@ -824,8 +857,17 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
             .iter()
             .map(|j| {
                 format!(
-                    "`{}` via {} (rubric `{}`, {} repeat(s), {} artifacts)",
-                    j.model, j.backend, j.rubric_version, j.repeats, j.artifacts
+                    "{} ({} family): `{}` via {}{} (rubric `{}`, {} repeat(s), {} artifacts)",
+                    j.judge,
+                    j.family,
+                    j.model,
+                    j.backend,
+                    j.cli_version
+                        .as_deref()
+                        .map_or(String::new(), |v| format!(" {v}")),
+                    j.rubric_version,
+                    j.repeats,
+                    j.artifacts
                 )
             })
             .collect::<Vec<_>>()
@@ -833,9 +875,10 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
     };
     let _ = writeln!(
         s,
-        "- **Judge.** {judges}. Current rubric version `{}`: correctness risk, maintainability and scope \
-         discipline, 0–10 each; the judge sees only the objective and the diff, with canary values \
-         redacted and agent names scrubbed.",
+        "- **Judges.** Two judges of different model families score every run; a run's judge score is \
+         their mean, and a run missing either is excluded from the judge gate. {judges}. Current rubric \
+         version `{}`: correctness risk, maintainability and scope discipline, 0–10 each; each judge sees \
+         only the objective and the diff, with canary values redacted and agent names scrubbed.",
         m.current_rubric_version
     );
     let _ = writeln!(
@@ -914,10 +957,18 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
             b.path, b.link, b.runs, b.judged
         );
     }
-    s.push_str(
-        "\nEach run directory holds `run.json` (the record), `judge.json`, `manifest.json` (the planted \
-         canaries), `proxy/` (every request and response body), `grade/` and the final `workspace/`. \
-         The JSON twin of this report lists every run with its path and SHA-256.\n",
+    let judge_files = crate::lanes::judge_cli::FINAL_JUDGES
+        .iter()
+        .map(|n| format!("`{}`", crate::lanes::judge_cli::file_name(n)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let _ = writeln!(
+        s,
+        "\nEach run directory holds `run.json` (the record), {judge_files} (one per judge; older \
+         batches hold a single `{}`), `manifest.json` (the planted canaries), `proxy/` (every request \
+         and response body), `grade/` and the final `workspace/`. The JSON twin of this report lists \
+         every run with its path and SHA-256.",
+        crate::lanes::judge_cli::LEGACY_FILE
     );
     s
 }
@@ -1003,21 +1054,24 @@ mod tests {
         }
     }
 
-    fn judgement(total: f64) -> Judgement {
+    use crate::lanes::judge_cli::{ANTHROPIC_JUDGE, JudgeSpec, OPENAI_JUDGE, file_name};
+
+    fn judgement(spec: &JudgeSpec, total: f64) -> Judgement {
         Judgement {
             rubric_version: "r1".into(),
-            backend: "claude-cli".into(),
+            backend: spec.backend.into(),
             model: "judge-model".into(),
             repeats: vec![],
             mean_total: total,
             usage: crate::cost::Usage::default(),
             cost_usd: 0.0,
-            judge: String::new(),
-            family: String::new(),
-            cli_version: None,
+            judge: spec.name.into(),
+            family: spec.family.into(),
+            cli_version: Some("9.9".into()),
         }
     }
 
+    /// Writes the run and, with `judge`, both judges' files scoring `judge ± 1`.
     fn write_run(batch: &Path, r: &RunRecord, judge: Option<f64>) {
         let dir = batch.join(&r.run_id);
         fs::create_dir_all(&dir).unwrap();
@@ -1027,11 +1081,13 @@ mod tests {
         )
         .unwrap();
         if let Some(t) = judge {
-            fs::write(
-                dir.join("judge.json"),
-                serde_json::to_string_pretty(&judgement(t)).unwrap(),
-            )
-            .unwrap();
+            for (spec, total) in [(ANTHROPIC_JUDGE, t + 1.0), (OPENAI_JUDGE, t - 1.0)] {
+                fs::write(
+                    dir.join(file_name(spec.name)),
+                    serde_json::to_string_pretty(&judgement(&spec, total)).unwrap(),
+                )
+                .unwrap();
+            }
         }
     }
 
@@ -1152,11 +1208,14 @@ verified = true
             "| [",
             "abc123",
             "email: 1",
+            "## Judges\n\n2 judges:",
+            "Agreement, ",
         ] {
             assert!(md.contains(needle), "missing {needle:?} in\n{md}");
         }
         let v: serde_json::Value = serde_json::from_slice(&json1).unwrap();
-        assert_eq!(v["schema"], 1);
+        assert_eq!(v["schema"], 2);
+        assert_eq!(v["judging"]["required"].as_array().unwrap().len(), 2);
         assert_eq!(v["gates"][0]["candidate"], "duet-hybrid");
     }
 
@@ -1179,5 +1238,40 @@ verified = true
         let batches = fixture(d.path());
         let err = load(&[batches[0].clone(), batches[0].clone()]).unwrap_err();
         assert!(err.to_string().contains("appears twice"), "{err}");
+    }
+
+    #[test]
+    fn the_benchmark_requires_both_judges_on_every_run() {
+        let d = tempfile::tempdir().unwrap();
+        let batches = fixture(d.path());
+        let run = batches[0].join("S1-duet-hybrid-s2");
+        fs::remove_file(run.join(file_name(OPENAI_JUDGE.name))).unwrap();
+        let r = build_from(d.path(), &batches);
+        assert_eq!(r.judging.incomplete.len(), 1);
+        assert_eq!(r.judging.incomplete[0].run_id, "S1-duet-hybrid-s2");
+        assert_eq!(r.gates[0].verdict.quality_pass, None);
+        let hybrid = r.lanes.iter().find(|l| l.lane == "duet-hybrid").unwrap();
+        assert_eq!(hybrid.overall.judge.unwrap().estimate, 21.0);
+        let md = render_markdown(&r, "duet-eval report --final");
+        assert!(md.contains("1 incompletely judged run(s)"), "{md}");
+        assert!(md.contains("UNDECIDED"), "{md}");
+
+        // A single-judge batch from before there were two judges: every run is incomplete.
+        let old = d.path().join("old");
+        let rec = rec("S1", "duet-hybrid", 1, 1.0, 0.01, 0);
+        write_run(&old, &rec, None);
+        let mut legacy = judgement(&ANTHROPIC_JUDGE, 20.0);
+        legacy.judge.clear();
+        legacy.family.clear();
+        fs::write(
+            old.join(&rec.run_id)
+                .join(crate::lanes::judge_cli::LEGACY_FILE),
+            serde_json::to_string(&legacy).unwrap(),
+        )
+        .unwrap();
+        let r = build_from(d.path(), &[old]);
+        assert_eq!(r.judging.judges.len(), 1);
+        assert_eq!(r.judging.incomplete[0].missing, [OPENAI_JUDGE.name]);
+        assert!(r.judging.scores.is_empty());
     }
 }

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Aggregates run records into per-lane tables and pre-registered gate verdicts.
 
+use crate::judge::Judgement;
 use crate::lanes::RunRecord;
 use crate::stats::{self, PairedSummary};
 use anyhow::Result;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::path::Path;
@@ -176,25 +177,348 @@ pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
         .collect()
 }
 
-/// Mean judge score per run directory.
-pub fn load_judges(batch_dir: &Path) -> Result<BTreeMap<String, f64>> {
+/// Every judgement in a batch: run id → judge name → judgement.
+pub type Judgements = BTreeMap<String, BTreeMap<String, Judgement>>;
+
+/// Every run directory's judgements (see [`crate::judge::load_run`]).
+pub fn load_judges(batch_dir: &Path) -> Result<Judgements> {
     let mut out = BTreeMap::new();
     for entry in fs::read_dir(batch_dir)? {
         let dir = entry?.path();
-        if superseded(&dir) {
+        if superseded(&dir) || !dir.is_dir() {
             continue;
         }
-        let path = dir.join("judge.json");
-        if path.is_file() {
-            let j: crate::judge::Judgement = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let run = crate::judge::load_run(&dir)?;
+        if !run.by_judge.is_empty() {
             let id = dir
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            out.insert(id, j.mean_total);
+            out.insert(id, run.by_judge);
         }
     }
     Ok(out)
+}
+
+/// One judge as used across the reported runs.
+#[derive(Debug, Clone, Serialize)]
+pub struct JudgeUse {
+    pub judge: String,
+    pub family: String,
+    pub runs: usize,
+    pub backends: BTreeSet<String>,
+    pub models: BTreeSet<String>,
+    pub cli_versions: BTreeSet<String>,
+}
+
+/// One lane's judge scores.
+#[derive(Debug, Clone, Serialize)]
+pub struct LaneJudging {
+    pub lane: String,
+    /// Model family of the lane (see `Lane::family`).
+    pub family: Option<String>,
+    pub runs: usize,
+    /// Runs scored by every required judge.
+    pub fully_judged: usize,
+    /// Mean score out of 30 per judge, over the runs that judge scored.
+    pub by_judge: BTreeMap<String, f64>,
+    /// Mean of the per-run judge means over fully judged runs (what gates use).
+    pub mean: Option<f64>,
+    /// Judges of the lane's own family, with the number of runs each scored.
+    pub self_judged: BTreeMap<String, usize>,
+}
+
+/// How closely two judges agree on the runs both scored.
+#[derive(Debug, Clone, Serialize)]
+pub struct Agreement {
+    pub a: String,
+    pub b: String,
+    pub runs: usize,
+    /// Mean |score_a − score_b| out of 30.
+    pub mean_abs_diff: f64,
+    /// Pearson correlation of the two judges' scores; `None` when undefined.
+    pub correlation: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct IncompleteRun {
+    pub run_id: String,
+    pub missing: Vec<String>,
+}
+
+/// Judge scores across valid runs. A run counts in the judge gate only when
+/// every required judge scored it; its score is then the mean of its judges.
+#[derive(Debug, Clone, Serialize)]
+pub struct Judging {
+    pub judges: Vec<JudgeUse>,
+    /// Judges a run needs for its score to count.
+    pub required: Vec<String>,
+    pub lanes: Vec<LaneJudging>,
+    pub agreement: Vec<Agreement>,
+    /// Runs some required judge has not scored; excluded from the judge gate.
+    pub incomplete: Vec<IncompleteRun>,
+    /// Runs no judge scored (not judged yet, or nothing changed).
+    pub unjudged: usize,
+    /// Per fully judged run: the mean of its judges, out of 30.
+    pub scores: BTreeMap<String, f64>,
+}
+
+/// Summarizes `judgements` over the valid `records`. `required` is the set of
+/// judges every run needs; `None` means every judge seen in the batch.
+pub fn judging(
+    records: &[RunRecord],
+    judgements: &Judgements,
+    required: Option<&[&str]>,
+) -> Judging {
+    let valid: Vec<&RunRecord> = records.iter().filter(|r| r.invalid.is_none()).collect();
+    let empty = BTreeMap::new();
+    let of = |r: &RunRecord| judgements.get(&r.run_id).unwrap_or(&empty);
+    let mut uses: BTreeMap<String, JudgeUse> = BTreeMap::new();
+    for r in &valid {
+        for (name, j) in of(r) {
+            let u = uses.entry(name.clone()).or_insert_with(|| JudgeUse {
+                judge: name.clone(),
+                family: j.family.clone(),
+                runs: 0,
+                backends: BTreeSet::new(),
+                models: BTreeSet::new(),
+                cli_versions: BTreeSet::new(),
+            });
+            u.runs += 1;
+            u.backends.insert(j.backend.clone());
+            u.models.insert(j.model.clone());
+            u.cli_versions.extend(j.cli_version.clone());
+        }
+    }
+    let required: Vec<String> = match required {
+        Some(r) => r.iter().map(|s| (*s).to_owned()).collect(),
+        None => uses.keys().cloned().collect(),
+    };
+    let mut scores = BTreeMap::new();
+    let mut incomplete = Vec::new();
+    let mut unjudged = 0;
+    for r in &valid {
+        let js = of(r);
+        if js.is_empty() {
+            unjudged += 1;
+            continue;
+        }
+        let missing: Vec<String> = required
+            .iter()
+            .filter(|n| !js.contains_key(*n))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            incomplete.push(IncompleteRun {
+                run_id: r.run_id.clone(),
+                missing,
+            });
+        } else if !required.is_empty() {
+            let mean = js.values().map(|j| j.mean_total).sum::<f64>() / js.len() as f64;
+            scores.insert(r.run_id.clone(), mean);
+        }
+    }
+    let mut by_lane: BTreeMap<&str, Vec<&RunRecord>> = BTreeMap::new();
+    for r in &valid {
+        by_lane.entry(r.lane.as_str()).or_default().push(r);
+    }
+    let mean = |xs: &[f64]| (!xs.is_empty()).then(|| xs.iter().sum::<f64>() / xs.len() as f64);
+    let lanes = by_lane
+        .into_iter()
+        .map(|(lane, rs)| {
+            let family = crate::lanes::lane_family(rs[0]);
+            let mut per_judge: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+            let mut self_judged = BTreeMap::new();
+            for r in &rs {
+                for (name, j) in of(r) {
+                    per_judge
+                        .entry(name.clone())
+                        .or_default()
+                        .push(j.mean_total);
+                    if family.as_deref() == Some(j.family.as_str()) {
+                        *self_judged.entry(name.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+            let full: Vec<f64> = rs
+                .iter()
+                .filter_map(|r| scores.get(&r.run_id).copied())
+                .collect();
+            LaneJudging {
+                lane: lane.to_owned(),
+                family,
+                runs: rs.len(),
+                fully_judged: full.len(),
+                by_judge: per_judge
+                    .iter()
+                    .filter_map(|(n, xs)| Some((n.clone(), mean(xs)?)))
+                    .collect(),
+                mean: mean(&full),
+                self_judged,
+            }
+        })
+        .collect();
+    let names: Vec<&String> = uses.keys().collect();
+    let mut agreement = Vec::new();
+    for (i, a) in names.iter().enumerate() {
+        for b in &names[i + 1..] {
+            let pairs: Vec<(f64, f64)> = valid
+                .iter()
+                .filter_map(|r| {
+                    let js = of(r);
+                    Some((js.get(*a)?.mean_total, js.get(*b)?.mean_total))
+                })
+                .collect();
+            if pairs.is_empty() {
+                continue;
+            }
+            agreement.push(Agreement {
+                a: (*a).clone(),
+                b: (*b).clone(),
+                runs: pairs.len(),
+                mean_abs_diff: pairs.iter().map(|(x, y)| (x - y).abs()).sum::<f64>()
+                    / pairs.len() as f64,
+                correlation: stats::pearson(&pairs),
+            });
+        }
+    }
+    Judging {
+        judges: uses.into_values().collect(),
+        required,
+        lanes,
+        agreement,
+        incomplete,
+        unjudged,
+        scores,
+    }
+}
+
+/// The judges section shared by the batch report and the benchmark.
+pub fn render_judging(j: &Judging) -> String {
+    let mut s = String::from(
+        "## Judges
+
+",
+    );
+    if j.judges.is_empty() {
+        s.push_str(
+            "No run was judged.
+",
+        );
+        return s;
+    }
+    let list = |xs: &BTreeSet<String>| xs.iter().cloned().collect::<Vec<_>>().join(", ");
+    let described = j
+        .judges
+        .iter()
+        .map(|u| {
+            let versions = if u.cli_versions.is_empty() {
+                String::new()
+            } else {
+                format!(", CLI {}", list(&u.cli_versions))
+            };
+            format!(
+                "**{}** ({} family; {} `{}`{versions}; {} runs)",
+                u.judge,
+                u.family,
+                list(&u.backends),
+                list(&u.models),
+                u.runs
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let n = j.judges.len();
+    let _ = writeln!(
+        s,
+        "{n} judge{}: {described}. {}\n",
+        if n == 1 { "" } else { "s" },
+        if j.required.len() > 1 {
+            let (last, rest) = j.required.split_last().expect("more than one");
+            format!(
+                "Gates use each run's mean over its judges; a run counts only when {} {} and {last} scored it.",
+                if rest.len() == 1 { "both" } else { "all of" },
+                rest.join(", ")
+            )
+        } else {
+            "Gates use its score.".to_owned()
+        }
+    );
+    s.push_str("| Lane | Family | Runs | Fully judged |");
+    for u in &j.judges {
+        let _ = write!(s, " {} /30 |", u.judge);
+    }
+    s.push_str(" Mean /30 | Self-judged |\n|---|---|---|---|");
+    s.push_str(&"---|".repeat(j.judges.len()));
+    s.push_str("---|---|\n");
+    for l in &j.lanes {
+        let _ = write!(
+            s,
+            "| {} | {} | {} | {} |",
+            l.lane,
+            l.family.as_deref().unwrap_or("unknown"),
+            l.runs,
+            l.fully_judged
+        );
+        for u in &j.judges {
+            let _ = write!(
+                s,
+                " {} |",
+                l.by_judge
+                    .get(&u.judge)
+                    .map_or("—".into(), |m| format!("{m:.1}"))
+            );
+        }
+        let flagged = if l.self_judged.is_empty() {
+            "no".to_owned()
+        } else {
+            l.self_judged
+                .iter()
+                .map(|(n, k)| format!("**yes**: {n} ({k} runs)"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let _ = writeln!(
+            s,
+            " {} | {flagged} |",
+            l.mean.map_or("—".into(), |m| format!("{m:.1}"))
+        );
+    }
+    s.push_str(
+        "\nSelf-judged: the judge shares the lane's model family and may favour it; each judge's \
+         column shows the scores separately.\n",
+    );
+    for a in &j.agreement {
+        let _ = writeln!(
+            s,
+            "\nAgreement, {} vs {} ({} runs scored by both): mean absolute difference {:.2}/30, \
+             Pearson correlation {}.",
+            a.a,
+            a.b,
+            a.runs,
+            a.mean_abs_diff,
+            a.correlation
+                .map_or("undefined".into(), |r| format!("{r:.2}"))
+        );
+    }
+    if !j.incomplete.is_empty() {
+        let _ = writeln!(
+            s,
+            "\n{} incompletely judged run(s), excluded from the judge gate:\n",
+            j.incomplete.len()
+        );
+        for r in &j.incomplete {
+            let _ = writeln!(s, "- `{}`: missing {}", r.run_id, r.missing.join(", "));
+        }
+    }
+    if j.unjudged > 0 {
+        let _ = writeln!(
+            s,
+            "\n{} run(s) have no judgement (not judged yet, or no changes).",
+            j.unjudged
+        );
+    }
+    s
 }
 
 /// Pairs `candidate` and `reference` runs on (task, seed) and applies the gates.
@@ -284,6 +608,7 @@ pub fn render_markdown(
     summaries: &[LaneSummary],
     verdicts: &[GateVerdict],
     invalid: &[&RunRecord],
+    judging: &Judging,
 ) -> String {
     let mut s = String::from("# Evaluation report\n\n## Lanes\n\n");
     if !invalid.is_empty() {
@@ -368,6 +693,8 @@ input: the size of each tool result summed over every request that carried it, b
             );
         }
     }
+    s.push('\n');
+    s.push_str(&render_judging(judging));
     if !verdicts.is_empty() {
         s.push_str("\n## Gates\n\n");
         for v in verdicts {
@@ -380,7 +707,7 @@ input: the size of each tool result summed over every request that carried it, b
                 match v.quality_pass {
                     Some(true) => "PASS",
                     Some(false) => "FAIL",
-                    None => "undecided (not judged)",
+                    None => "undecided (not fully judged)",
                 },
                 match (&v.judge, v.judge_non_inferior) {
                     (Some(j), Some(ok)) => format!(
@@ -389,7 +716,7 @@ input: the size of each tool result summed over every request that carried it, b
                         j.lower,
                         if ok { "PASS" } else { "FAIL" }
                     ),
-                    _ => "not judged".into(),
+                    _ => "not every pair is fully judged".into(),
                 },
                 100.0 * v.quality.mean_diff,
                 100.0 * v.quality.lower,
@@ -509,7 +836,7 @@ mod tests {
                 .ledger
                 .is_none()
         );
-        let md = render_markdown(&summaries, &[], &[]);
+        let md = render_markdown(&summaries, &[], &[], &judging(&rs, &BTreeMap::new(), None));
         assert!(md.contains("## Duet cost ledger"), "{md}");
         assert!(
             md.contains("| hybrid | 2 | 10.0 | 50.0K | 20.0K | 0.0K | 0.0K | 0.0K | 5.0K | 2.0 (3.0) | 0.0 | 1.0 | 30s | $0.0100 / $0.0000 |"),
@@ -529,7 +856,12 @@ mod tests {
         let v = gate(&rs, &BTreeMap::new(), "hybrid", "pass").unwrap();
         assert!(v.quality_non_inferior && v.privacy_pass);
         assert_eq!(v.cost_strictly_lower, Some(true));
-        let md = render_markdown(&summarize(&rs), &[v], &[]);
+        let md = render_markdown(
+            &summarize(&rs),
+            &[v],
+            &[],
+            &judging(&rs, &BTreeMap::new(), None),
+        );
         assert!(md.contains("hybrid vs pass") && md.contains("PASS"));
     }
 
@@ -582,5 +914,166 @@ mod tests {
                 .quality_pass,
             None
         );
+    }
+
+    use crate::lanes::judge_cli::{ANTHROPIC_JUDGE, OPENAI_JUDGE};
+
+    fn judgement(spec: &crate::lanes::judge_cli::JudgeSpec, total: f64) -> Judgement {
+        Judgement {
+            rubric_version: "r1".into(),
+            backend: spec.backend.into(),
+            model: spec.default_model.into(),
+            repeats: vec![],
+            mean_total: total,
+            usage: crate::cost::Usage::default(),
+            cost_usd: 0.0,
+            judge: spec.name.into(),
+            family: spec.family.into(),
+            cli_version: Some("1.0".into()),
+        }
+    }
+
+    fn with_family(mut r: RunRecord, family: &str) -> RunRecord {
+        r.provenance = Some(crate::lanes::Provenance {
+            lane_family: Some(family.into()),
+            ..Default::default()
+        });
+        r
+    }
+
+    /// Two lanes of different families, each judged by both judges.
+    fn two_judge_batch() -> (Vec<RunRecord>, Judgements) {
+        let (a, o) = (ANTHROPIC_JUDGE.name, OPENAI_JUDGE.name);
+        let mut records = Vec::new();
+        let mut js = Judgements::new();
+        for seed in 1..=4 {
+            let x = seed as f64;
+            for (lane, family, sa, so) in [
+                ("cand", "anthropic", 20.0 + x, 18.0 + x),
+                ("ref", "zhipu", 19.0 + x, 18.0 + 2.0 * x),
+            ] {
+                let r = with_family(rec(lane, seed, 1.0, 0.01, 0), family);
+                js.insert(
+                    r.run_id.clone(),
+                    [
+                        (a.to_owned(), judgement(&ANTHROPIC_JUDGE, sa)),
+                        (o.to_owned(), judgement(&OPENAI_JUDGE, so)),
+                    ]
+                    .into(),
+                );
+                records.push(r);
+            }
+        }
+        (records, js)
+    }
+
+    #[test]
+    fn gates_use_the_mean_of_both_judges() {
+        let (records, js) = two_judge_batch();
+        let j = judging(&records, &js, None);
+        assert_eq!(j.required.len(), 2);
+        assert!(j.incomplete.is_empty());
+        // cand seed 1: (21 + 19) / 2.
+        assert!((j.scores["S1-cand-s1"] - 20.0).abs() < 1e-12);
+        let cand = j.lanes.iter().find(|l| l.lane == "cand").unwrap();
+        assert!((cand.by_judge[ANTHROPIC_JUDGE.name] - 22.5).abs() < 1e-12);
+        assert!((cand.by_judge[OPENAI_JUDGE.name] - 20.5).abs() < 1e-12);
+        assert!((cand.mean.unwrap() - 21.5).abs() < 1e-12);
+        let v = gate(&records, &j.scores, "cand", "ref").unwrap();
+        // ref means are (19 + x + 18 + 2x) / 2 = 18.5 + 1.5x → 22.25; cand 21.5.
+        assert!((v.judge.unwrap().mean_diff - (21.5 - 22.25)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn agreement_and_self_judged_lanes_are_reported() {
+        let (records, js) = two_judge_batch();
+        let j = judging(&records, &js, None);
+        let [agree] = j.agreement.as_slice() else {
+            panic!("{:?}", j.agreement)
+        };
+        assert_eq!(agree.runs, 8);
+        // |Δ| per run: cand 2 each; ref |1 - x| = 0, 1, 2, 3.
+        assert!((agree.mean_abs_diff - (8.0 + 6.0) / 8.0).abs() < 1e-12);
+        assert!(agree.correlation.unwrap() > 0.0);
+        let cand = j.lanes.iter().find(|l| l.lane == "cand").unwrap();
+        assert_eq!(cand.self_judged[ANTHROPIC_JUDGE.name], 4);
+        assert_eq!(cand.self_judged.len(), 1);
+        let rf = j.lanes.iter().find(|l| l.lane == "ref").unwrap();
+        assert!(rf.self_judged.is_empty());
+        let md = render_judging(&j);
+        assert!(md.starts_with("## Judges\n\n2 judges:"), "{md}");
+        assert!(
+            md.contains(&format!("**yes**: {} (4 runs)", ANTHROPIC_JUDGE.name)),
+            "{md}"
+        );
+        assert!(md.contains("mean absolute difference 1.75/30"), "{md}");
+        assert!(
+            md.contains("| cand | anthropic | 4 | 4 | 22.5 | 20.5 | 21.5 |"),
+            "{md}"
+        );
+    }
+
+    #[test]
+    fn a_run_missing_a_judge_is_listed_and_kept_out_of_the_judge_gate() {
+        let (records, mut js) = two_judge_batch();
+        js.get_mut("S1-cand-s2").unwrap().remove(OPENAI_JUDGE.name);
+        let j = judging(&records, &js, None);
+        assert_eq!(j.incomplete.len(), 1);
+        assert_eq!(j.incomplete[0].missing, [OPENAI_JUDGE.name]);
+        assert!(!j.scores.contains_key("S1-cand-s2"));
+        let cand = j.lanes.iter().find(|l| l.lane == "cand").unwrap();
+        assert_eq!(cand.fully_judged, 3);
+        // Every pair must be fully judged for the judge gate to decide.
+        let v = gate(&records, &j.scores, "cand", "ref").unwrap();
+        assert!(v.judge.is_none() && v.quality_pass.is_none());
+        let md = render_judging(&j);
+        assert!(md.contains("1 incompletely judged run(s)"), "{md}");
+        assert!(
+            md.contains(&format!("- `S1-cand-s2`: missing {}", OPENAI_JUDGE.name)),
+            "{md}"
+        );
+    }
+
+    #[test]
+    fn a_single_judge_batch_still_reports_and_gates() {
+        let (records, mut js) = two_judge_batch();
+        for by in js.values_mut() {
+            by.remove(OPENAI_JUDGE.name);
+        }
+        let j = judging(&records, &js, None);
+        assert_eq!(j.required, [ANTHROPIC_JUDGE.name]);
+        assert!(j.incomplete.is_empty() && j.agreement.is_empty());
+        assert!((j.scores["S1-cand-s1"] - 21.0).abs() < 1e-12);
+        assert!(render_judging(&j).contains("1 judge: "));
+        assert!(
+            gate(&records, &j.scores, "cand", "ref")
+                .unwrap()
+                .judge
+                .is_some()
+        );
+        // The benchmark requires both judges: the same batch is then incomplete.
+        let both = [ANTHROPIC_JUDGE.name, OPENAI_JUDGE.name];
+        let j = judging(&records, &js, Some(&both));
+        assert_eq!(j.incomplete.len(), 8);
+        assert!(j.scores.is_empty());
+    }
+
+    #[test]
+    fn legacy_judge_files_load_as_the_claude_judge() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("S1-cand-s1");
+        fs::create_dir(&dir).unwrap();
+        let mut legacy = judgement(&ANTHROPIC_JUDGE, 24.0);
+        legacy.judge.clear();
+        legacy.family.clear();
+        fs::write(
+            dir.join("judge.json"),
+            serde_json::to_string(&legacy).unwrap(),
+        )
+        .unwrap();
+        let js = load_judges(d.path()).unwrap();
+        let j = &js["S1-cand-s1"][ANTHROPIC_JUDGE.name];
+        assert_eq!(j.family, ANTHROPIC_JUDGE.family);
+        assert_eq!(j.mean_total, 24.0);
     }
 }

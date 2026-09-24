@@ -49,6 +49,9 @@ pub const SPECS: &[JudgeSpec] = &[ANTHROPIC_JUDGE, OPENAI_JUDGE, API_JUDGE];
 /// `duet-eval judge` runs both families unless told otherwise.
 pub const DEFAULT_JUDGES: &str = "claude-cli,codex-cli";
 
+/// Judges every run must have for the public benchmark (`report --final`).
+pub const FINAL_JUDGES: &[&str] = &[ANTHROPIC_JUDGE.name, OPENAI_JUDGE.name];
+
 /// Judgements written before there were two judges; read as the judge its
 /// `backend` field names (in practice the Claude judge).
 pub const LEGACY_FILE: &str = "judge.json";
