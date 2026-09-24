@@ -8,7 +8,9 @@
 
 use serde_json::Value;
 
-const CONTEXT_KEYS: [&str; 5] = [
+// LM Studio reports both the loaded window and the model's maximum; the loaded one comes first.
+const CONTEXT_KEYS: [&str; 6] = [
+    "loaded_context_length",
     "max_model_len",
     "context_length",
     "max_context_length",
@@ -50,8 +52,21 @@ pub fn context_from_models_listing(listing: &Value, model: &str) -> Option<u64> 
 }
 
 /// Context window in a llama.cpp `/props`, Ollama `/api/show` or LM Studio model object.
+/// Ollama's served window (`num_ctx` in the model's parameters) wins over the
+/// model's trained maximum when it is set.
 pub fn context_from_native(document: &Value) -> Option<u64> {
-    find_context(document)
+    let num_ctx = document
+        .get("parameters")
+        .and_then(Value::as_str)
+        .and_then(|p| {
+            p.lines().find_map(|l| {
+                let mut words = l.split_whitespace();
+                (words.next() == Some("num_ctx"))
+                    .then(|| words.next()?.parse().ok())
+                    .flatten()
+            })
+        });
+    num_ctx.or_else(|| find_context(document))
 }
 
 /// Queries `base_url` (ending in `/v1`) for `model`'s context window.
@@ -122,6 +137,51 @@ mod tests {
         assert_eq!(
             context_from_native(&json!({"id":"m","max_context_length":131072})),
             Some(131072)
+        );
+        assert_eq!(
+            context_from_native(
+                &json!({"max_context_length":131072,"loaded_context_length":32768})
+            ),
+            Some(32768)
+        );
+        assert_eq!(
+            context_from_native(&json!({
+                "parameters":"stop \"<|im_end|>\"\nnum_ctx 16384",
+                "model_info":{"qwen3.context_length":40960}
+            })),
+            Some(16384)
+        );
+    }
+
+    #[tokio::test]
+    async fn probes_listing_then_native_endpoints() {
+        use crate::mock_http::MockServer;
+        let vllm = MockServer::start(&[(
+            "GET /v1/models",
+            200,
+            r#"{"data":[{"id":"q","max_model_len":65536}]}"#,
+        )]);
+        assert_eq!(
+            probe_context_window(&vllm.base_url(), "q", None).await,
+            Some(65536)
+        );
+        let ollama = MockServer::start(&[
+            ("GET /v1/models", 200, r#"{"data":[{"id":"q:8b"}]}"#),
+            (
+                "POST /api/show",
+                200,
+                r#"{"model_info":{"qwen3.context_length":40960}}"#,
+            ),
+        ]);
+        assert_eq!(
+            probe_context_window(&ollama.base_url(), "q:8b", Some("k")).await,
+            Some(40960)
+        );
+        assert!(ollama.seen().iter().all(|r| r.bearer));
+        let silent = MockServer::start(&[("GET /v1/models", 200, r#"{"data":[{"id":"m"}]}"#)]);
+        assert_eq!(
+            probe_context_window(&silent.base_url(), "m", None).await,
+            None
         );
     }
 }

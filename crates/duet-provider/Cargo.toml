@@ -24,5 +24,9 @@ sha2.workspace = true
 hex.workspace = true
 bytes = "1"
 
+[features]
+# A scripted loopback HTTP server for tests in dependent crates.
+test-support = []
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
