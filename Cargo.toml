@@ -1,8 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# Dogfood fixtures and run workspaces are separate crates graded in isolation.
-exclude = ["tasks", "results"]
+# Dogfood fixtures and run workspaces are separate crates graded in isolation;
+# fuzz/ is its own workspace (libFuzzer targets, run by tools/fuzz.sh).
+exclude = ["tasks", "results", "fuzz"]
 
 [workspace.package]
 version = "0.1.0"

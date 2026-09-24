@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# libFuzzer targets for the code that reads untrusted input or guards the
+# boundary. Needs a nightly toolchain and cargo-fuzz; run with tools/fuzz.sh.
+# Not a member of the main workspace, which stays on stable.
+[package]
+name = "duet-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+duet-boundary = { path = "../crates/duet-boundary" }
+duet-provider = { path = "../crates/duet-provider" }
+serde_json = "1"
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "sse"
+path = "fuzz_targets/sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "chat_recover"
+path = "fuzz_targets/chat_recover.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vault"
+path = "fuzz_targets/vault.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "overlap"
+path = "fuzz_targets/overlap.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "detect"
+path = "fuzz_targets/detect.rs"
+test = false
+doc = false
+bench = false

@@ -233,8 +233,9 @@ impl Vault {
         out
     }
 
-    /// `text` with every known token replaced by a space (unknown bracketed
-    /// text is kept: it may be anything, including a value).
+    /// `text` with every known token replaced by NUL, so no value is found
+    /// across a removed token (unknown bracketed text is kept: it may be
+    /// anything, including a value).
     pub fn strip_tokens(&self, text: &str) -> String {
         let known = &self.matcher().tokens;
         let mut out = String::with_capacity(text.len());
@@ -242,7 +243,7 @@ impl Vault {
         for (s, e) in Self::token_spans(text) {
             if known.contains(&text[s..e]) {
                 out.push_str(&text[last..s]);
-                out.push(' ');
+                out.push('\0');
                 last = e;
             }
         }
@@ -357,7 +358,7 @@ mod tests {
         assert_eq!(v.tokenize(&t), (t.clone(), 0), "idempotent");
         assert_eq!(v.detokenize(&t).0, text);
         assert_eq!(v.detokenize(&format!("⟨{t}")).0, format!("⟨{text}"));
-        assert_eq!(v.strip_tokens(&t), "key  , mode  , name  ");
+        assert_eq!(v.strip_tokens(&t), "key \0, mode \0, name \0");
     }
 
     #[test]
