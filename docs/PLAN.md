@@ -1,6 +1,6 @@
 # Duet v2 — Implementation Plan
 
-Status: approved 2026-09-23; in progress (M3). Progress: §10. Target state: [TARGET_STATE.md](TARGET_STATE.md).
+Status: approved 2026-09-23; in progress (Gate 3 of M4; SbD-2 next). Progress: §10. Target state: [TARGET_STATE.md](TARGET_STATE.md).
 
 ## 1. Why v2
 
@@ -80,7 +80,7 @@ $1.40/M). No fallback frontier is needed.
 | `crates/duet-tui` | Registry-generated screens, run and audit views | ~2.5K |
 | `crates/duet-evals` | `duet-eval` harness | ~3.5K |
 | `tools/gate.sh` | Local gate | — |
-| `docs/` | This plan, target state, `SECURITY.md`, `BENCHMARK.md`, `evidence/` | — |
+| `docs/` | This plan, target state, dogfood suite, `security.txt`, `evidence/`; `BENCHMARK.md` (M5). `ARCHITECTURE.md` and `SECURITY.md` are at the root | — |
 
 Total ≈ 23K lines of production Rust.
 
@@ -101,16 +101,15 @@ rewritten in Rust.
 
 | Module | Purpose |
 |---|---|
-| `tasks.rs` | Loads task packages (`task.toml`, `objective.md`, `starter/`, `holdout/`, `assets/`, `seal.toml`) per [DOGFOOD_SUITE.md](DOGFOOD_SUITE.md) |
-| `grade.rs` | Sealed grading (primary quality): verify input seal, stage candidate, run visible and hidden tests sandboxed, scan the final workspace for secret-sink violations, write `sealed-grade.json` |
-| `rubric.rs` | Secondary code-quality rubric: correctness risk, maintainability, scope discipline (3 × 10), versioned by hash; no anchoring |
-| `judge.rs` | Claude judge (`claude-opus-5-5`, pinned per gate) through the operator's logged-in `claude` CLI by default (`--backend claude-cli`); `codex-cli` and `api` backends also available. Two repeats per artifact, each in an empty temporary directory with the rubric as system prompt and structured output; agent names scrubbed and canaries redacted; judge cost recorded |
-| `canaries.rs` | Per-run unique, realistic canaries (no marker) in `.env`, data files, logs, a protected path, source code, and non-secret-looking business facts; injection canaries |
-| `leakproxy.rs` | Logging reverse proxy (hyper) in front of every lane's frontier endpoint; scans every request body; writes `leaks.jsonl`; independently checks duet's audit log |
-| `lanes.rs` | `duet-passthrough` (frontier-only), `duet-hybrid`, `duet-local-only`; black-box external lanes `pi-glm`, `claude-code`, `codex` |
+| `task.rs` | Loads task packages (`task.toml`, `objective.md`, `starter/`, `holdout/`, `assets/`, `seal.toml`) per [DOGFOOD_SUITE.md](DOGFOOD_SUITE.md) |
+| `grade.rs` | Sealed grading (hidden-test pass rate): verify input seal, stage candidate, run visible and hidden tests sandboxed, scan the final workspace for secret-sink violations; the grade goes into the run record (`run.json`) |
+| `judge.rs` | Code-quality rubric: correctness risk, maintainability, scope discipline (3 × 10), versioned by hash; no anchoring. Claude judge (`claude-opus-5-5`, pinned per gate) through the operator's logged-in `claude` CLI by default (`--backend claude-cli`); `codex-cli` and `api` backends also available. Two repeats per artifact, each in an empty temporary directory with the rubric as system prompt and structured output; agent names scrubbed and canaries redacted; judge cost recorded |
+| `canary.rs` | Per-run unique, realistic canaries (no marker) in `.env`, data files, logs, a protected path, source code, and non-secret-looking business facts; injection canaries |
+| `leakproxy.rs` | Logging reverse proxy (hyper) in front of every lane's frontier endpoint; scans every request body; writes `leaks.jsonl` (independent of Duet's own audit log) |
+| `lanes/` | `lanes.toml`: `duet-passthrough` (frontier-only), `duet-hybrid`, `duet-local-only`; black-box external lanes `pi-glm`, `claude-code`, `codex` |
 | `pricing.toml` | Verified list prices incl. cache read/write, with source URL and date |
-| `energy.rs` | Watts × local busy seconds (configured or sampled wattage) |
-| `stats.rs` | Paired bootstrap by run (10k resamples); non-inferiority on hidden-test pass rate (margin −5 pp) and on judge score (margin −2), superiority on cost, exact binomial upper bound on leak rate; judge repeats nested within artifact |
+| `cost.rs`, `ledger.rs` | Dollars at list price plus electricity (watts × local busy seconds); Duet's per-run cost ledger read from `summary.json` |
+| `stats.rs` | Paired bootstrap by run (10k resamples); non-inferiority bounds on hidden-test pass rate (margin −5 pp, reported) and judge score (margin −2), superiority on cost, exact binomial upper bound on leak rate; judge repeats nested within artifact. The quality verdict is the judge bound plus the per-task majority rule (§3) |
 | `report.rs` | Per-lane tables, gate verdict JSON, dashboard |
 
 **M0.3 Dogfood suite** — full design in [DOGFOOD_SUITE.md](DOGFOOD_SUITE.md). Tasks of increasing
@@ -172,9 +171,10 @@ Fixed while porting (each with a failing-first test):
 8. Native context probes: llama.cpp `/props`, Ollama `/api/show`, LM Studio `/api/v0/models`.
 9. Local-role loopback enforcement.
 
-Also in M1: **local-model micro-evaluation** (~40 fixtures: logs, CSVs, configs) to choose the local
-model: error-line recall ≥ 0.95, planted-fact accuracy ≥ 0.90, schema validity ≥ 0.99, 0 leaks. Prefill
-speed is reported, not gated (operator, 2026-09-23: slow first reads are expected).
+Planned here, run in M3 (§10 scope changes): **local-model micro-evaluation** (`duet local-eval`;
+generated logs, CSVs, configs) to choose the local model: error-line recall ≥ 0.95, planted-fact
+accuracy ≥ 0.90, schema validity ≥ 0.99, 0 leaks. Prefill speed is reported, not gated (operator,
+2026-09-23: slow first reads are expected).
 
 **Acceptance:** `cargo test -p duet-provider`; live tests (`DUET_LIVE_GLM=1 DUET_LIVE_LOCAL=1 cargo
 test -p duet-provider -- --ignored live_`) for a tool-call round trip, reported cached tokens and
@@ -210,40 +210,55 @@ New:
 The boundary runs in pass-through: the gate audits and scans with an empty policy.
 
 **Gate 1 — harness health.** `duet-passthrough` vs `pi-glm` (same GLM model), paired on S0, S1, S2 and M1:
-hidden-test pass rate non-inferior (−5 pp) and judge score non-inferior (−2). On failure, only harness work proceeds.
+quality non-inferior by the rule in §3 (judge lower bound > −2/30; not behind on hidden-test pass
+rate on a majority of tasks). On failure, only harness work proceeds. Passed on `glm-5.3-flash` (§10).
 
 ### M3 — Security engine (days 16–22)
 
+As built (details: ARCHITECTURE §5):
 - **Classification:** path and source policy; secret detectors (v1 `src/redact.rs` patterns after
-  provenance check, plus missing formats and entropy); PII detectors; local assist for data files;
-  taint.
-- **Transformation:** placeholder vault; tokenized views; handle store; digester (deterministic
-  prepass keeping error lines, then local summary, then redaction); metadata masking
-  (`dir/⟨file:hN⟩.ext`, counts-only search, git history sensitive, public-only `diff` tool).
-- **Local-role contracts:** digest, answer and PII-flag schemas; constrained output where supported;
-  retry once, then `unanswerable`; extract-only mode; outputs wrapped and declared as data.
-- **Outbound gate:** tokenize → re-scan → overlap filter (8-token windows, ≥3 consecutive matches,
-  public-span exemption) → canary check → block|send → hash-chained audit; `duet audit show|verify`.
+  provenance check, plus missing formats and entropy); PII detectors; name, person/address-field
+  and long-number detectors on sensitive text; taint of files written by `sensitive_data` commands.
+- **Transformation:** placeholder vault with aliases for other spellings; tokenized views; handle
+  store; digests (deterministic error lines and repeated line shapes, then local summary, then
+  redaction); priming of every sensitive file at run start; the task names the sensitive paths.
+- **Command access:** sensitive paths unreadable to commands (OS sandbox) unless `sensitive_data`
+  (output held as a handle, written files become sensitive, persisted across resume).
+- **Local-role contracts:** digest and answer fields in one shared schema, content first (prompt
+  cache reuse); constrained output where supported; retry once, then unavailable; outputs sanitized
+  as sensitive text. `ask_local` takes up to 6 questions per call.
+- **Outbound gate:** re-sanitize every message including the frontier's own text and tool-call
+  arguments → copied-span filter (8-token windows, ≥3 consecutive matches, public-span exemption) →
+  final known-value check (block) → hash-chained audit; `duet audit show|verify`. Canaries are
+  found by the leak proxy, not by Duet.
 - **Write-back:** local placeholder resolution; secret-sink check.
 - **Tests:** unit tests per detector; vault round trip; gate blocking; hash-chain verification;
-  property test that no canary survives the gate; injection canaries; end-to-end hybrid runs on S1, S2, M1–M3 and L1
-  with the proxy.
+  injection canaries; end-to-end hybrid runs on S1, S2, M1–M3 and L1 with the proxy. The property
+  test that no canary survives the gate is part of SbD-2 (not yet written).
 
 **Gate 2 — privacy without quality loss** (S1, S2, M1, M2, M3, L1). Zero leaks and zero secret-sink
-violations across all hybrid runs (audit log and proxy);
-quality non-inferior to passthrough. Ablations, one at a time: command-output digest vs raw for
+violations across all hybrid runs (leak proxy and grader);
+quality non-inferior to passthrough (rule in §3). Passed on `glm-5.3-flash` (§10). Ablations, one at a time: command-output digest vs raw for
 allowlisted commands; digest length. If quality fails after two improvement iterations, the claim
 becomes "best quality at zero leakage" with the measured cost stated.
 
 ### M4 — Bulky offload and cost (days 23–26)
 
-- `PublicBulky` class (threshold starts at 2K tokens) with `read_raw` ranges; masking tuned.
-- Cost ledger per run: frontier tokens by class (raw, tokenized, digest, answer), local busy
-  seconds, electricity, dollars at list price.
+- `PublicBulky` class with head, outline and `read_raw` ranges: outputs, listings and searches over
+  `sensitivity.bulky_tokens` (2K); files the model reads over `sensitivity.bulky_file_tokens` (12K);
+  no local summary of bulky source. Turn-wise masking with stubs.
+- Cost ledger per run (`summary.json`): frontier tokens carried by class (raw, tokenized, handle
+  summary, local answer, bulky handle), `ask_local` calls, local busy seconds, dollars at list
+  price; `duet-eval report` shows it per lane.
+- Local task brief at run start (`sensitivity.local_brief`, attempt C).
 
-**Gate 3 — strictly cheaper** (S0–M3, L1). Paired cost difference vs passthrough with upper 95% bound < 0, with
-quality still non-inferior and zero leaks. If it fails after tuning, the owner decides between
-relaxing to "no more expensive" and a pricier frontier.
+**Gate 3 — strictly cheaper** (S0–M3, L1). Paired cost difference vs passthrough (the orchestrator
+alone on the same model) with upper 95% bound < 0, with quality still non-inferior and zero leaks.
+Attempts A and B failed: privacy forces extra frontier turns (asking about data the frontier cannot
+read, e.g. 66 vs 45 requests on L3 in attempt B, ~1.4× the cost), and offload works but does not
+outweigh them. Attempt C (local task brief) is running. Operator decision: if C is still not
+cheaper, Gate 3 becomes a measured privacy premium (cost ratio reported with its interval, about
+1.4× so far) instead of a pass/fail gate.
 
 ### M4.5 — IP levels (days 27–31)
 
@@ -271,7 +286,7 @@ except through the gate (type-level); project config can only tighten; credentia
 name only; 0600 run data; hash-chained audit of every outbound byte; canaries plus an independent leak
 proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, bans, sources).
 
-**SbD-1 — secure defaults and evidence (before M5)**
+**SbD-1 — secure defaults and evidence (before M5)** — done (`aa91182`, §10)
 - Refuse plaintext HTTP to a non-loopback local model unless the owner sets
   `local.allow_plaintext = true` (loopback and TLS are always allowed); `duet doctor`-style message on refusal.
 - Loosening a privacy setting (registry `confirm` keys, or a value against its tighten direction) through
@@ -307,7 +322,8 @@ an advisory, and covered by a regression test before the next release.
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`
-and `pi-glm` through the proxy. Publish `docs/BENCHMARK.md`: quality, leaks, cost and wall clock
+and `pi-glm` through the proxy (`claude-code` and `codex` on the operator's CLI subscriptions, §3;
+`lanes.toml` is switched and each lane smoke-tested before the runs). Publish `docs/BENCHMARK.md`: quality, leaks, cost and wall clock
 with confidence intervals; judge and model versions; canary method; raw data. Numbers regenerate
 with `duet-eval report --final`.
 
@@ -346,7 +362,7 @@ with `duet-eval report --final`.
 | Digests omit detail the frontier needs | `ask_local` follow-ups; deterministic error-line prepass; `read_raw` for public content; Gate 2 ablations |
 | Secret in source escapes path policy | Content detectors on every outbound byte; canaries planted in source |
 | Local model copies raw values or is prompt-injected | Extract-only schema; overlap filter; deterministic redaction; injection canaries |
-| Cost gate against a cheap GLM baseline | Measure baseline and caching in M0.4; bulky offload, masking, caching; owner decision at Gate 3 |
+| Cost gate against a cheap GLM baseline | Measure baseline and caching in M0.4; bulky offload, masking, caching, local brief; if still not cheaper, report a measured privacy premium (operator) |
 | Local latency | Micro-eval selects a fast model with working prefix cache; wall clock reported |
 | Judge noise | Primary quality is deterministic hidden tests; judge only for secondary code quality, two repeats, pinned |
 | Tasks too easy or too hard to discriminate | Pilot calibration band (30–90% hidden-test pass for the reference); sealed task versions |
@@ -359,13 +375,14 @@ with `duet-eval report --final`.
 | When | Command / check |
 |---|---|
 | Every commit | `tools/gate.sh` |
-| M0 | `duet-eval selftest`; `duet-eval run --lanes pi-glm,claude-code,codex --tasks S0,S1,S2,M1,M2,M3,L1 --n 5 && duet-eval report` |
-| M1 | `cargo test -p duet-provider`; live tests; local micro-eval report |
-| M2 | Sandbox escape tests (`.git` write, `/run` socket, detached child); `duet run --task M1 --mode passthrough` reaches `Completed`; resume after kill; Gate 1 report |
-| M3 | `duet run --mode hybrid` on the Gate 2 tasks; `duet audit verify <run>`; `leaks.jsonl` empty; Gate 2 report |
+| M0 | `duet-eval selftest`; `duet-eval validate`; `duet-eval check <task>`; `duet-eval run --lanes pi-glm --task S0,S1,S2,M1,M2,M3,L1 --seeds 1-5 --out <batch> && duet-eval report <batch>` |
+| M1 | `cargo test -p duet-provider`; live tests |
+| M2 | Sandbox escape tests (`.git` write, `/run` socket, detached child); `duet run --mode passthrough --no-privacy --objective-file <task>` reaches `Completed`; resume after kill; Gate 1 report (`duet-eval judge`, `duet-eval report --gate duet-passthrough:pi-glm`) |
+| M3 | `duet local-eval`; `duet run --mode hybrid` on the Gate 2 tasks; `duet audit verify <run>`; `leaks.jsonl` empty; Gate 2 report |
 | M4 | Gate 3 report |
 | M4.5 | L2 runs; IP-canary report |
-| M5 | `duet-eval report --final` regenerates `docs/BENCHMARK.md` |
+| SbD | SbD gate: SbD-1 tests, red-team pass, fuzzing (SbD-2) |
+| M5 | Lane smoke tests on subscriptions; `duet-eval report --final` (to be added) regenerates `docs/BENCHMARK.md` |
 | M6 | TUI snapshot tests; per-backend live smoke tests; X1 and X2 runs |
 
 ## 9. Prerequisites
@@ -378,20 +395,23 @@ with `duet-eval report --final`.
 | Local | oMLX on a LAN host (OpenAI-compatible) | `http://192.168.50.132:8080/v1` | `omlx-coding` (also `:mechanical`, `:semantic`); 65,536-token context | bearer, `OMLX_API_KEY` |
 
 Consequences for the design:
-- The local server is **not loopback**: it is a LAN host over plain HTTP. It must be added to the
-  owner allowlist for the local role, and `SECURITY.md` treats that host and network path as
-  trusted. Recommended: an SSH tunnel or TLS to it, so sensitive content does not cross the LAN in
-  clear text; `duet doctor` warns when the local endpoint is unencrypted and non-loopback.
-- The local context is 65,536 tokens: the digester chunks handles larger than ~48K tokens and merges
-  chunk digests; `ask_local` retrieves the relevant chunks first.
+- The local server is **not loopback**: it is a LAN host over plain HTTP. It must be in the owner
+  allowlist for the local role, and since SbD-1 plain HTTP to it is refused unless the owner sets
+  `local.allow_plaintext` (the operator opted in; recorded in the config audit log, and every run
+  warns). `SECURITY.md` treats that host and network path as trusted. Recommended: an SSH tunnel or
+  TLS to it, so sensitive content does not cross the LAN in clear text.
+- The local context is 65,536 tokens: the digester chunks handles into ~60K-character pieces (~33K
+  tokens of log text) and merges chunk digests; `ask_local` answers from the most relevant chunk.
 - The z.ai coding endpoint is a subscription plan; cost gates still use API list prices.
 
 Prerequisites:
 
-- z.ai API key (GLM frontier).
-- Anthropic API key (judge; `claude-code` lane through the proxy via `ANTHROPIC_BASE_URL`).
-- OpenAI API key for the `codex` lane (API-key mode so traffic can pass through the proxy).
-- A local model server (Ollama, LM Studio, llama.cpp, vLLM or oMLX) on loopback.
+- z.ai API key (GLM frontier, `pi-glm` lane).
+- The operator's logged-in `claude` CLI (judge). For M5: a `claude setup-token` subscription token
+  for the `claude-code` lane and a dedicated ChatGPT-logged-in `CODEX_HOME` for the `codex` lane
+  (§3); no Anthropic or OpenAI API keys.
+- An OpenAI-compatible local model server (oMLX, LM Studio, llama.cpp, vLLM or Ollama) on loopback
+  or an allowlisted host.
 
 ## 10. Progress
 

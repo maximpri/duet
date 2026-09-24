@@ -14,9 +14,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
 | Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
 | Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
-| Other command output | Scanned | Shown with detected and known values replaced (large output: handle + summary) |
+| Other command output, including `git log` / `git show` | Scanned | Shown with detected and known values and copied spans replaced (over 6,000 characters: handle + summary) |
 | Large public results (files, allowlisted command output, searches, listings) | Public | Handle + first lines and outline; ranges on request (`read_raw`), scanned like any public content |
-| Git history (`git log`, `git show`, `git diff`) | Sensitive | Handle + local summary; a public-only `diff` tool |
 | Source code marked Interface-only | Protected | Signatures, types and doc comments; bodies withheld |
 | Source code marked Sealed | Protected | Existence only |
 
@@ -48,18 +47,24 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 ## Enforcement
 
 1. **Classification** of every tool result by independent layers (path, source, secret and PII
-   detectors, local assist, taint, IP marks). Any layer can mark content sensitive; none can unmark
+   detectors, name/field/number detectors on sensitive text, taint, IP marks). Any layer can mark content sensitive; none can unmark
    it.
 2. **Transformation** into placeholders, handles and summaries before content enters the
-   frontier's context.
+   frontier's context. At run start every sensitive file is indexed (its values into the vault, its
+   text into the copied-span index), so later echoes of it are caught wherever they appear; the task
+   names the sensitive paths, and the local model's brief of them for the task (values withheld,
+   cleaned like any local output) is appended to it (`sensitivity.local_brief`).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
-   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. A command that
+   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding (the working-tree
+   files; copies inside git history are not covered, see Known limits). A command that
    must read them is run with `sensitive_data`; its output is then held locally like a data file, and
    every file it creates or changes is treated as sensitive from then on.
    **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
-3. **One outbound gate**, the only code path to the frontier: known values are re-tokenized, the
-   payload is re-scanned, copied spans of sensitive content (≈24+ tokens) are removed, and nothing
-   is sent while any check fails.
+3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
+   including the frontier's own text and tool-call arguments (known values and their other
+   spellings re-tokenized, detectors re-run), copied spans of sensitive content (≈24+ tokens) are
+   removed, and a final check over the whole request blocks it if any known value remains: the
+   request is not sent and the run stops.
 4. **Hash-chained audit log** of every outbound request (placeholder-substituted) and of the
    security decisions taken during the run: local-endpoint trust, sandbox denials, `sensitive_data`
    commands (command, exit code, files marked derived), blocked sends (which check), protected
@@ -70,7 +75,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
    truncated, not only an edited record. `duet audit show <run>` lists requests and events.
 5. **Write-back rules**: secrets are resolved locally and only into places where secrets belong.
 6. **Local data hygiene**: raw handles, transcripts and the placeholder vault are mode 0600 under
-   `.duet/runs/`, deleted after the retention period or by `duet purge`.
+   `.duet/runs/`; `duet purge` deletes runs older than `data.retention_days` (or one run, or all).
+   Deletion is not yet automatic.
 
 ## Secure defaults
 
@@ -150,6 +156,11 @@ the provider records every request. A release requires zero canaries in outbound
   that also appears in sensitive content stays replaced wherever it appears.
 - Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
   as derived data (they are build output); a program that stores derived data there escapes that rule.
+- Git history is not access-controlled: commands can read `.git`, so a committed copy of a
+  sensitive or protected file (current or earlier) can be printed with `git show` and is then
+  filtered only like other command output: known values, detectable shapes and ≥24-token copied
+  spans are replaced, but a re-encoded copy is not recognized. Keep sensitive files out of
+  version control.
 
 ## Prompt injection: residual risk
 
@@ -166,7 +177,8 @@ paraphrase; the protected-source limits above apply. **Review the diff before ru
 deploying what a run produced.**
 
 **Still prevented.**
-- Reading sensitive paths or protected source through commands (OS sandbox), in any encoding.
+- Reading sensitive paths or protected source in the working tree through commands (OS sandbox),
+  in any encoding (git history: see Known limits).
 - Network access from commands (sandbox; `sandbox.network` is off and a project cannot turn it on).
 - Writing `.git` or `.duet` (policy, audit log, vault, run state) from tools or commands.
 - Sending a known sensitive value, a detected secret or personal datum, or a copied span of

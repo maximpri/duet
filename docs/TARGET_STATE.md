@@ -1,7 +1,7 @@
 # Duet v2 — Target State
 
-Status: design, approved 2026-09-23. Implementation has not started.
-Companion document: [PLAN.md](PLAN.md).
+Status: approved 2026-09-23. Describes the finished product; implemented through M4.5 and SbD-1
+(progress: [PLAN.md](PLAN.md) §10). Parts not built yet are marked *(M5)* / *(M6)*.
 
 ## 1. North star
 
@@ -16,9 +16,9 @@ logged, and independently verifiable.
 
 | Criterion | Definition |
 |---|---|
-| **Quality** | Non-inferior to the same frontier model running alone on the dogfood suite ([DOGFOOD_SUITE.md](DOGFOOD_SUITE.md)): hidden-test pass rate within 5 percentage points (one-sided 95% lower bound of the paired difference > −5 pp); secondary code-quality score within 2 points on a 30-point rubric |
+| **Quality** | Non-inferior to the same frontier model running alone on the dogfood suite ([DOGFOOD_SUITE.md](DOGFOOD_SUITE.md)), decided by the judge: one-sided 95% lower bound of the paired code-quality difference > −2 on a 30-point rubric, and not behind on hidden-test pass rate on a majority of tasks (pass rate is reported with its interval; all-or-nothing tasks make a −5 pp margin need hundreds of pairs) |
 | **Sensitivity** | Zero planted canaries from sensitive sources in outbound traffic, verified independently by a logging proxy; 100% of outbound bytes in a hash-chained audit log |
-| **Cost** | Strictly cheaper than frontier-only: paired upper 95% bound of (duet − frontier-only) cost < 0, where cost = frontier API list price including cache reads/writes + measured local electricity |
+| **Cost** | Strictly cheaper than frontier-only (Duet passthrough on the same model): paired upper 95% bound of (duet − frontier-only) cost < 0, where cost = frontier API list price including cache reads/writes + measured local electricity. Not met so far (Gate 3, PLAN §5 M4): privacy costs extra frontier turns that offload has not outweighed |
 | **Termination** | Every run ends as `Completed`, `Failed{reason}` or `BudgetStopped`; infrastructure failures retry in place; interrupted runs are resumable |
 | **IP** | Zero IP canaries (protected function bodies) in outbound traffic; the quality cost of protected-code edits is measured and published |
 
@@ -53,22 +53,22 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
             ┌──────────────────────────── duet run ─────────────────────────────┐
  user task ─► FRONTIER LOOP  (one append-only conversation, fixed sorted tools)   │
             │   read_file · list_files · search · diff · edit_file · write_file   │
-            │   run_command · ask_local · read_raw · finish                       │
+            │   run_command · ask_local · read_raw · finish · (edit_protected)    │
             │        │ every tool result                                         │
             │        ▼                                                           │
             │   CLASSIFY ─► TRANSFORM                                            │
             │     public + small      ─► raw                                     │
             │     secret-bearing      ─► tokenized view   KEY=⟨secret:KEY#1⟩     │
             │     sensitive data/logs ─► handle + digest  h12: 4,112 lines, …    │
-            │     public + bulky      ─► handle + digest  (+ read_raw ranges)    │
+            │     public + bulky      ─► handle + head/outline (+ read_raw)      │
             │     protected code      ─► skeleton, bodies as ⟨body:h31⟩          │
             │        ▲                                                           │
-            │        │ ask_local(h, question)        LOCAL MODEL (loopback only)  │
+            │        │ ask_local(h, questions)    LOCAL MODEL (loopback/allowlist)│
             │        └──────────────────────────────  reads raw, answers in a    │
             │                                          fixed schema; no tools     │
             │   OUTBOUND GATE (sole path to frontier)                            │
             │     tokenize known values → scan secrets/PII → overlap filter      │
-            │     → canary check → block|send → hash-chained audit log           │
+            │     → known-value check → block|send → hash-chained audit log      │
             │   WRITE-BACK: placeholders resolved locally; secret-sink check     │
             └────────────────────────────────────────────────────────────────────┘
 ```
@@ -77,26 +77,30 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
 
 | Crate | Responsibility |
 |---|---|
-| `duet-provider` | Model APIs: OpenAI-compatible Chat Completions (z.ai, LM Studio, llama.cpp, vLLM), Responses (Ollama, oMLX, OpenAI), Anthropic Messages; streaming, retry, credentials, usage with cache read/write, pricing |
-| `duet-fs` | Handle-relative file access (`O_NOFOLLOW`, `openat`, `renameat`), durable atomic writes, private files, workspace lock, spill store, `.duet` path registry |
-| `duet-sandbox` | macOS Seatbelt / Linux bwrap command sandbox, environment allowlist, process-tree capture and kill |
+| `duet-provider` | Model APIs: OpenAI-compatible Chat Completions (z.ai, oMLX, LM Studio, llama.cpp, vLLM, Ollama); Responses and Anthropic Messages *(M6)*; streaming, retry, credentials, local-endpoint trust, usage with cache read/write, pricing |
+| `duet-fs` | Handle-relative file access (`O_NOFOLLOW`, `openat`, `renameat`), durable atomic writes, private files, workspace lock, `.duet` path registry |
+| `duet-sandbox` | macOS Seatbelt / Linux bwrap command sandbox (sensitive paths unreadable), environment allowlist, output spill, process-tree capture and kill |
 | `duet-git` | Private checkpoint store and the single hygienic git helper |
 | `duet-config` | Typed settings registry, owner/project scopes, tighten-only project rule |
-| `duet-boundary` | Security engine: classification, transformation, placeholder vault, handle store, digests, `ask_local`, outbound gate, audit log |
+| `duet-boundary` | Security engine: classification, transformation, placeholder vault, handle store, digests and brief, `ask_local`, bulky offload, IP levels, outbound gate, audit log, local micro-eval |
 | `duet-agent` | Frontier loop, tool registry, transcript, context manager, termination, checks, cost ledger |
-| `duet-cli` | `run`, `resume`, `audit`, `purge`, `config`, `doctor`, `setup` |
-| `duet-tui` | Registry-generated configuration screens, live run view, audit viewer |
+| `duet-cli` | `run`, `resume`, `audit show/verify`, `config list/get/set`, `purge`, `local-eval`; `doctor`, `setup` *(M6)* |
+| `duet-tui` | Registry-generated configuration screens, live run view, audit viewer *(M6)* |
 | `duet-evals` | `duet-eval`: canary tasks, lanes, leak proxy, judge, statistics, pricing, energy, reports |
 
-Dependency direction: `fs`, `sandbox`, `git`, `config` ← `provider` ← `boundary` ← `agent` ←
-`cli`, `tui`. Approximate size: 23K lines of production Rust.
+Dependency direction: `provider`, `fs` ← `boundary` ← `agent` (with `fs`, `sandbox`, `git`) ←
+`cli`; `config` and `git` use `fs`; `agent` never depends on `provider`. `evals` links no duet crate.
+Approximate size: 23K lines of production Rust.
 
 ### 3.2 Privacy by construction
 
 - The agent crate cannot construct a frontier provider. It receives only a `GatedFrontier`, which
   exists solely as the output of `OutboundGate::wrap(provider)`.
 - The local role refuses any endpoint whose host is not loopback or explicitly allowlisted by the
-  owner, so a cloud endpoint mislabelled as "local" is rejected.
+  owner, so a cloud endpoint mislabelled as "local" is rejected; plain HTTP to a non-loopback host
+  is refused unless the owner sets `local.allow_plaintext`.
+- Commands cannot read sensitive or protected paths (OS sandbox), unless run with `sensitive_data`,
+  whose output stays local and whose written files become sensitive.
 - Credentials, endpoints, the local-model address and any loosening of the sensitivity policy can
   be set only in the owner's user configuration, never by a repository's project configuration.
 
@@ -107,20 +111,23 @@ Dependency direction: `fs`, `sandbox`, `git`, `config` ← `provider` ← `bound
 - **Tools.**
   | Tool | Behaviour |
   |---|---|
-  | `read_file(path, start?, end?)` | Result passes through the boundary |
-  | `list_files`, `search` | Classified per file; sensitive files appear as `dir/⟨file:hN⟩.ext`; search reports counts only for sensitive files |
-  | `diff` | Working-tree diff of public files only |
+  | `read_file(path, start_line?, end_line?)` | Result passes through the boundary |
+  | `list_files(dir?)`, `search(pattern, dir?)` | Tracked files (`git ls-files`); search shows only the location of a match in a sensitive file, and matches in protected files are marked |
+  | `diff` | Working-tree diff, sanitized; protected files' changes omitted |
   | `edit_file(path, edits[{old,new}])` | Duet's own edit format: exact-anchor replacements applied all-or-nothing; placeholders resolved locally |
   | `write_file(path, content)` | Guarded atomic write; placeholders resolved locally |
-  | `run_command(argv)` | Sandboxed; output sensitive by default (handle + digest) unless the command is on the raw-output allowlist |
-  | `ask_local(handle, question)` | Local model answers from raw content in a fixed schema |
-  | `read_raw(handle, start?, end?)` | Raw ranges of public-bulky handles only |
+  | `run_command(command, timeout_seconds?, sensitive_data?)` | Sandboxed, no network, sensitive paths unreadable. Output is sanitized (over 6,000 characters: handle + digest) unless the command is on the raw-output allowlist. With `sensitive_data` it may read sensitive paths; its output becomes a handle and the files it writes become sensitive |
+  | `ask_local(handle, questions[≤6])` | Local model answers from raw content in a fixed schema, one answer per question |
+  | `read_raw(handle, start_line?, end_line?)` | Ranges (≤500 lines) of public-bulky handles only |
   | `edit_protected(path, spec, tests?, command?)` | Only when IP levels are configured: the local model implements the spec in a protected file; the host writes it and runs the checks; pass/fail and recognised result lines return |
-  | `finish(summary)` | Host runs the task's declared checks; results return through the boundary; the frontier may continue up to `max_finish_attempts` |
+  | `finish(summary)` | Host runs `checks.commands` (sandboxed); results return through the boundary; the frontier may continue up to `limits.max_finish_attempts` |
+- **Run start.** In hybrid mode the task gets a note naming the sensitive paths and, by default
+  (`sensitivity.local_brief`), the local model's brief of the sensitive files for this task,
+  with values withheld.
 - **Loop rules.** Tool errors return as results. A length-truncated response never executes tool
-  calls. A tool call is never separated from its result. Long outputs spill to files referenced in
-  the result.
-- **Termination.** `Completed{checks}`, `Failed{reason}`, `BudgetStopped{which}`. Provider and
+  calls. A tool call is never separated from its result. Command output beyond an in-memory cap
+  spills to a file in the run directory.
+- **Termination.** `Completed{summary}`, `Failed{reason}`, `BudgetStopped{which}`. Provider and
   local-server failures retry in place with backoff. Ctrl-C finishes the current write and ends in
   a resumable `Failed{interrupted}`; `duet resume <run>` reapplies or rolls back pending writes and
   continues.
@@ -132,9 +139,11 @@ The frontier works on a small curated view; the full content lives locally.
 - Sensitive or bulky tool results enter the conversation as **handles** with short digests. Full
   bytes live in `.duet/runs/<id>/handles/`, readable only by the local model (or via `read_raw` for
   public content).
-- The conversation only grows at the end. When it passes ~70% of the frontier's context window, old
-  tool results are replaced **in one batch** by their handle stubs, e.g.
-  `[masked: h12, 3.1K tokens — ask_local / read_raw]`. Batching limits cache invalidation.
+- The conversation only grows at the end. When it passes `context.mask_at` (70%) of the frontier's
+  context window, old tool results are replaced **in one batch**, whole turns at a time (the last
+  4 turns kept), by stubs naming the call and its handle, e.g.
+  `[masked: run_command `cargo test` → h7, ~3100 tokens removed …]`. Batching limits cache
+  invalidation.
 - Nothing is lost: the frontier can reopen any handle. No summaries replace history.
 
 ## 6. Security engine
@@ -146,12 +155,12 @@ mark content sensitive; none can unmark it.
 
 | Layer | Basis |
 |---|---|
-| Path policy | Globs: `.env*`, `*.pem`, `*.key`, `secrets/**`, `data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`, `logs/**`, `*.log`, owner-protected paths |
-| Source policy | Command output and `git log/diff/show` are sensitive by default; owner-allowlisted commands may return raw output |
-| Secret detectors | Key formats, JWTs, private-key blocks, credential assignments, connection strings, entropy near key-like names |
-| PII detectors | Email, phone, card numbers (Luhn), national IDs, IBAN, IP addresses |
-| Local assist | For data files and logs: names, addresses and free text that patterns miss |
-| Taint | Anything derived from a sensitive handle inherits its sensitivity |
+| Path policy | Globs: `.env*`, `**/.env*`, `*.pem`, `*.key`, `secrets/**`, `data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`, `logs/**`, `*.log`, plus `sensitivity.protected_paths` |
+| Source policy | Command output is sensitive by default; owner-allowlisted commands may return raw (still scanned) output; `sensitive_data` output is always sensitive |
+| Secret detectors | Key formats, JWTs, private-key blocks, credential assignments, connection-string passwords, entropy near key-like names |
+| PII detectors | Email (reserved example domains skipped), phone, card numbers (Luhn), national IDs, IBAN, IP addresses |
+| Sensitive-text detectors | In sensitive content: person names, values of person/address fields whatever their shape, long numbers |
+| Taint | Files written by a `sensitive_data` command become sensitive |
 | IP level | Paths marked Interface-only or Sealed |
 
 Classes: `PublicSmall`, `SecretBearing`, `SensitiveData`, `PublicBulky`, `Protected`.
@@ -162,49 +171,58 @@ Classes: `PublicSmall`, `SecretBearing`, `SensitiveData`, `PublicBulky`, `Protec
 |---|---|
 | PublicSmall | Raw content |
 | SecretBearing | Tokenized view preserving structure; values replaced by placeholders |
-| SensitiveData | Handle + digest; any quoted values replaced by placeholders |
-| PublicBulky | Handle + digest; `read_raw` ranges available |
+| SensitiveData | Handle + error lines and repeated line shapes (values replaced) + local digest |
+| PublicBulky | Handle + first lines + deterministic outline (local digest for command output only); `read_raw` ranges |
 | Protected (Interface-only) | Skeleton: signatures, types, doc comments, public constants; bodies as handles |
 | Protected (Sealed) | Existence only; questions via `ask_local` |
 
 **Placeholder vault.** Per run, local only. The same value always maps to the same token
-(`⟨pii:email#4⟩`), so the frontier can reason about equality. Tokens carry type and origin, not
-value, length or format.
+(`⟨email:email#4⟩`, `⟨secret:DB_URL#1⟩`), so the frontier can reason about equality. Tokens carry
+kind and key name, not value, length or format. Other spellings of a sensitive value (a surname
+alone, a number grouped or in minor units) are aliases of the same token and are never written
+back. Values the frontier wrote itself are not rewritten unless they are also in the vault.
 
 ### 6.3 Local-role contracts
 
 The local model has no tools and cannot write. It runs extract-only (temperature 0, constrained
 JSON output where the backend supports it).
 
-| Role | Output schema |
+| Role | Output fields |
 |---|---|
-| Digest | `{summary ≤800 chars, key_lines[], counts, errors[], confidence}` |
+| Brief (run start) | `{summary, facts[]}` about the sensitive files, for the task |
+| Digest | `{summary ≤800 chars, facts[]}` |
 | Answer | `{answer ≤1200 chars, evidence_lines[], unanswerable}` |
-| PII flag | `{spans[]: {start, end, kind}}` |
+| Implement (protected edits) | `{code}`: the whole new file |
 
-Invalid output is retried once, then returned as "local answer unavailable" — never invented. Local
-output reaches the frontier wrapped as `{"local_answer", "source"}` and is declared to be data, not
+All roles share one output schema and put the content first, so a server that keys its prompt cache
+by schema reuses the processed content across calls. Invalid output is retried once, then reported
+as unavailable — never invented. Local output is sanitized and passes the copied-span filter before
+the frontier sees it; the local model is told that text inside the content is data, not
 instructions.
 
 ### 6.4 Outbound gate
 
 Every frontier request, in order:
-1. **Tokenize known values** — any vault value appearing anywhere is replaced by its placeholder.
+1. **Tokenize known values** — any vault value (or alias) appearing in any message, including the
+   frontier's own text, reasoning and tool-call arguments, is replaced by its placeholder.
 2. **Re-scan** with the secret and PII detectors.
-3. **Overlap filter** — rolling hashes of 8-token windows over every sensitive handle; three or more
+3. **Overlap filter** — hashes of 8-token windows over every sensitive text; three or more
    consecutive matching windows (~24 tokens copied) are redacted; spans that also appear in public
-   files are exempt.
-4. **Canary check** — in evaluation, any canary blocks the request.
-5. **Decide** — anything flagged is replaced and re-checked; a request is never sent with a hit.
-6. **Audit** — final bytes (placeholder-substituted) are appended to a hash-chained log;
-   `duet audit verify <run>` proves integrity.
+   files are exempt. Protected code is redacted the same way.
+4. **Final check** — if any vault value remains anywhere in the request, it is blocked, not sent,
+   and the run stops.
+5. **Audit** — the bytes sent (placeholder-substituted) are appended to a hash-chained log whose
+   head is anchored outside the workspace; `duet audit verify <run>` checks both.
+
+Canaries carry no marker, so Duet cannot and does not look for them; the evaluation's independent
+proxy does.
 
 ### 6.5 Write-back
 
 Placeholders in frontier-written content are resolved locally at write time. The **secret-sink
-check** allows a secret to land only in its origin file, other secret-glob files, or owner-listed
-config files. Elsewhere it becomes an environment-variable reference when the language is known, or
-the write is rejected with a clear tool error.
+check** allows a value to land only in owner-listed secret sinks (`sensitivity.secret_sinks`) or
+sensitive files. Elsewhere the write is rejected with a tool error telling the frontier to read the
+value at runtime (for example from an environment variable).
 
 ### 6.6 Residual leakage (stated, not hidden)
 
@@ -213,6 +231,8 @@ the write is rejected with a clear tool error.
 - Open source code is visible to the frontier; mark paths protected to withhold them.
 - The task description and skeletons reveal intent and architecture.
 - Misclassification of a novel secret format — measured by canaries, not assumed away.
+- Committed copies of sensitive files in git history are filtered like command output, not
+  access-controlled (`SECURITY.md`, Known limits).
 
 ## 7. Intellectual property levels
 
@@ -231,8 +251,9 @@ reported separately. IP canaries (unique function bodies) must never cross.
   (owner-only or project), direction rule (projects may only tighten privacy), help text,
   confirm-on-change flag. A test fails on any setting read outside the registry.
 - **Files.** Owner: `~/.config/duet/config.toml`. Project: `.duet/config.toml`.
-- **CLI.** `duet config get|set|list`, usable without the TUI.
-- **TUI screens** (generated from the registry):
+- **CLI.** `duet config get|set|list`, usable without the TUI. A loosening `set` needs `--confirm`
+  and is recorded in the owner's hash-chained config audit log.
+- **TUI screens** *(M6)* (generated from the registry):
 
 | Screen | Contents |
 |---|---|
@@ -249,19 +270,22 @@ reported separately. IP canaries (unique function bodies) must never cross.
 
 ## 9. Local data hygiene
 
-Handles, transcripts and spill files live in `.duet/runs/<id>/` with mode 0600, deleted after
-`retention_days` (default 14) or by `duet purge`. The audit log stores placeholder-substituted text
-and hashes only (default retention 90 days).
+Handles, transcripts, the vault and spill files live in `.duet/runs/<id>/` with mode 0600;
+`duet purge` deletes runs older than `data.retention_days` (default 14). The audit log stores
+placeholder-substituted text and hashes only (`data.audit_retention_days`, default 90). Automatic
+deletion on both periods is *(M6)*.
 
 ## 10. Supported models
 
-- **Frontier:** z.ai GLM flagship by default; any OpenAI-compatible, Responses or Anthropic endpoint
-  configurable by the owner.
-- **Local:** Ollama, LM Studio, llama.cpp, vLLM, oMLX — loopback, or a LAN host the owner explicitly
-  allowlists (the operator's current setup: oMLX `omlx-coding` on `192.168.50.132:8080`); non-loopback
-  plain HTTP is refused unless the owner sets `local.allow_plaintext = true`. The default local model is
-  chosen by a micro-evaluation (error-line recall ≥ 0.95, planted-fact accuracy ≥ 0.90, schema
-  validity ≥ 0.99, prefill ≥ 500 tok/s at 16K context).
+- **Frontier:** z.ai `glm-5.3-flash` by default (coding endpoint, `frontier.reasoning_effort`
+  medium); any OpenAI-compatible Chat Completions endpoint configurable by the owner; Responses and
+  Anthropic endpoints *(M6)*.
+- **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
+  Ollama) — loopback, or a host the owner explicitly allowlists; non-loopback plain HTTP is refused
+  unless the owner sets `local.allow_plaintext = true`. The model is chosen with `duet local-eval`
+  (planted-fact accuracy ≥ 0.90, error-line recall ≥ 0.95, schema validity ≥ 0.99, zero leaks;
+  prefill speed reported, not gated). Default: oMLX `omlx-coding` (Qwen 3.8 27B), which scored 1.00
+  on accuracy, evidence, recall and schema with 0 leaks.
 
 ## 11. What duet v2 deliberately does not have
 

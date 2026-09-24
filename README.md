@@ -2,8 +2,9 @@
 
 **Frontier-level coding results, with sensitive information processed only by a local model.**
 
-> Status: **design stage.** The architecture and plan are approved; implementation has not started.
-> Nothing below is usable yet. See [docs/PLAN.md](docs/PLAN.md) for progress.
+> Status: **in development, not released.** The `duet` CLI, the security engine, IP levels and the
+> evaluation harness work; the privacy and quality gates have passed, the cost gate has not. Setup,
+> `duet doctor` and the TUI come later (M6). Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
 
 ## What it is
 
@@ -13,7 +14,8 @@ credentials, customer data, production logs, regulated data, or your most valuab
 - A **frontier model** plans, decides every step and writes the code, so you get frontier-quality
   work.
 - A **local model** on your machine is the only model that ever reads sensitive content. It
-  summarizes and answers questions about it; it never acts.
+  summarizes it, answers questions about it and rewrites protected code on request; it has no tools
+  and never decides what to do next.
 - A **single outbound gate** checks every byte before it leaves your machine and records it in a
   tamper-evident audit log you can inspect.
 
@@ -36,8 +38,15 @@ your repository ──► security engine ──────┘
 - **Secrets** appear to the frontier as placeholders like `⟨secret:DB_URL#1⟩`. When it writes code
   or config using a placeholder, Duet fills in the real value locally, and only in places where a
   secret belongs.
-- **Logs, data files and command output** appear as short summaries with a handle. The frontier can
-  ask the local model questions about them (`ask_local`), but never sees the raw content.
+- **Logs and data files** appear as a handle with error lines and values replaced, their repeated
+  line shapes and a local summary. The frontier asks the local model questions about them
+  (`ask_local`), but never sees the raw content. At the start of a run the local model also briefs
+  the frontier on what the sensitive files show for the task, with values withheld.
+- **Commands cannot read sensitive files** (OS sandbox). A command that must, such as the program
+  run on the real data, is marked `sensitive_data`: its output stays local behind a handle and the
+  files it writes become sensitive.
+- **Large public results** (long files, outputs, listings, searches) appear as the first lines and
+  an outline; the frontier reads the ranges it needs.
 - **Protected source code** can be shown as interfaces only (signatures, types, docs) or hidden
   entirely. Edits to protected code are implemented locally against tests the frontier writes.
 - **Everything that leaves** is logged in a hash-chained audit log, together with the security
@@ -54,33 +63,47 @@ that a file exists, its shape, the intent of your task — is documented in `SEC
 
 | Goal | Measure |
 |---|---|
-| Frontier-level results | On a suite of tasks from 15-minute fixes to multi-hour changes, passes as many hidden tests as the same frontier model alone (within 5 percentage points) |
-| Sensitive data stays local | Zero planted canaries in outbound traffic, checked by Duet's audit log and an independent proxy |
-| Cheaper | Lower total cost than the frontier model alone (API prices incl. caching, plus local electricity) |
+| Frontier-level results | On a suite of tasks from 15-minute fixes to multi-hour changes, code quality (blind judge) within 2/30 of the same frontier model alone, and hidden-test pass rate not behind it on most tasks |
+| Sensitive data stays local | Zero planted canaries in outbound traffic, measured by an independent logging proxy; every request is also in Duet's audit log |
+| Cheaper | Lower total cost than the same frontier model alone (API list prices incl. caching, plus local electricity) |
 | Reliable | Every run ends as completed, failed with a reason, or budget-stopped; interrupted runs resume |
 
-Results will be published in `docs/BENCHMARK.md`, with raw data and the method needed to reproduce
-them.
+So far (frontier `glm-5.3-flash`): quality matched the frontier alone, and no planted canary left
+in 18 of 18 hybrid runs, while the frontier alone sent canaries in all 18. Cost is not yet met: privacy costs
+extra frontier turns, because the frontier must ask about data it cannot read, and offloading
+bulky content to the local model saves less than those turns cost (about 1.4× the frontier alone in
+the latest measurement). If that holds, Duet will state it as a measured privacy premium rather
+than claim to be cheaper. Full results will be published in `docs/BENCHMARK.md` (milestone M5),
+with raw data and the method needed to reproduce them.
 
-## Planned usage
+## Usage
 
 ```sh
-duet setup                      # choose frontier model and detect local model servers
-duet run "fix the failing billing export"
-duet audit show <run>           # see exactly what was sent to the frontier
+duet run "fix the failing billing export"      # hybrid mode (the default)
+duet audit show <run>           # see exactly what was sent to the frontier, and the security events
+duet audit verify <run>         # check the hash chain and its anchor
 duet resume <run>               # continue an interrupted run
-duet config set sensitivity.globs+ "reports/**"
-duet tui                        # configure everything interactively; watch runs live
+duet config list                # every setting, its value and where it came from
+duet config set --project ip.interface_only '["src/pricing/**"]'
+duet local-eval                 # measure the configured local model in its reading roles
+duet purge                      # delete raw run data older than the retention period
 ```
+
+`duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
+evaluation baseline). Planned for M6: `duet setup`, `duet doctor` and `duet tui`.
 
 ### Models
 
-- **Frontier:** z.ai GLM by default; any OpenAI-compatible, Responses or Anthropic endpoint.
-- **Local:** Ollama, LM Studio, llama.cpp, vLLM or oMLX, running on your machine (loopback only).
+- **Frontier:** z.ai `glm-5.3-flash` by default; any OpenAI-compatible Chat Completions endpoint.
+  Responses and Anthropic Messages endpoints are planned (M6).
+- **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
+  Ollama) on loopback, or on a host the owner allowlists; plain HTTP to a non-loopback host needs
+  `local.allow_plaintext`. The default, `omlx-coding` (Qwen 3.8 27B on oMLX), was chosen with
+  `duet local-eval`.
 
 ### Configuration
 
-Every setting is defined in one registry and editable from the TUI or `duet config`:
+Every setting is defined in one registry and editable with `duet config` (and the TUI, in M6):
 models, sensitivity rules and detectors, protected paths and IP levels, budgets, retention.
 Credentials and endpoints live only in your user config (`~/.config/duet/config.toml`); a
 repository's `.duet/config.toml` can make privacy stricter but never looser.
@@ -93,11 +116,11 @@ repository's `.duet/config.toml` can make privacy stricter but never looser.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Crates, types, turn lifecycle, boundary internals, state on disk, invariants |
 | [docs/PLAN.md](docs/PLAN.md) | Milestones, gates, evaluation method, risks, verification |
 | [docs/DOGFOOD_SUITE.md](docs/DOGFOOD_SUITE.md) | Test tasks by complexity tier, canaries, metrics, statistics |
-| `SECURITY.md` | Threat model (written in milestone M0) |
+| [SECURITY.md](SECURITY.md) | Threat model, secure defaults, known limits, advisories, reporting a vulnerability |
 
 ## Building
 
-Rust only. Not yet buildable. Once scaffolded:
+Rust only.
 
 ```sh
 cargo build --release
