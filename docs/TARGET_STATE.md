@@ -85,7 +85,7 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
 | `duet-boundary` | Security engine: classification, transformation, placeholder vault, handle store, digests and brief, `ask_local`, bulky offload, IP levels, outbound gate, audit log, local micro-eval |
 | `duet-agent` | Frontier loop, tool registry, transcript, context manager, termination, checks, cost ledger |
 | `duet-cli` | `run`, `resume`, `audit show/verify`, `config list/get/set/preset`, `purge`, `local-eval`, `doctor`; no-config loopback bootstrap for `run` |
-| `duet-tui` | Registry-generated configuration screens, live run view, audit viewer *(M6)* |
+| `duet-tui` | Registry-generated configuration screens, live run view, audit viewer |
 | `duet-evals` | `duet-eval`: canary tasks, lanes, leak proxy, judge, statistics, pricing, energy, reports |
 
 Dependency direction: `provider`, `fs` ← `boundary` ← `agent` (with `fs`, `sandbox`, `git`) ←
@@ -260,15 +260,15 @@ reported separately. IP canaries (unique function bodies) must never cross.
   git, disk, run audit chains and anchors, retention); offline by default, `--online` adds model
   listings and the local context window, never a model call; `--json`; exit code is the worst result.
   Frontier presets (z.ai, Anthropic, OpenAI), a cache-reuse check and an update check *(M6)*.
-- **TUI screens** *(M6)* (generated from the registry):
+- **TUI screens** (`duet tui`; settings screens generated from the registry):
 
 | Screen | Contents |
 |---|---|
-| Models | Frontier provider/model; local backend auto-detection (Ollama, LM Studio, llama.cpp, vLLM, oMLX); connection, cache and prefill-speed tests |
-| Sensitivity | Globs, per-detector toggles, custom patterns with a live tester, raw-output commands, secret-sink allowlist |
+| Models | Frontier and local settings; `duet doctor` (offline, `--online` on request). Local backend auto-detection in the TUI and connection, cache and prefill-speed tests *(M6)* |
+| Sensitivity | Globs, per-detector toggles, raw-output commands, secret-sink allowlist, local brief, bulky thresholds; a live tester for a path (sensitive, secret sink, IP level, matching patterns). Custom detector patterns *(M6)* |
 | IP levels | File tree marking Open / Interface-only / Sealed; skeleton preview |
 | Limits | Frontier budget, wall clock, local wattage, bulky threshold, masking point |
-| Data | Retention, purge |
+| Data | Retention (purge from the TUI *(M6)*; `duet purge` today) |
 | Audit | Per-run outbound view, block events, hash-chain verification |
 | Run | Live turns and tool calls; feed of withheld content and reasons |
 

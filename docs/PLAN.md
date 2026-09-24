@@ -368,6 +368,14 @@ OpenAI judge).
   Audit, Run; confirmation, policy diff and audit on any loosening; value origins shown; owner-only
   keys never written to project config; snapshot tests per screen. (Run and Audit included; operator kept
   the whole TUI in M6.)
+  *Built (branch `tui`):* `duet tui` (ratatui, crossterm backend) with Models (doctor offline; `--online`
+  on request), Sensitivity (path tester), IP levels (git file tree, interface-only/sealed marks,
+  skeleton preview), Limits, Data, Audit (records, stored request summaries, chain + anchor verify) and
+  Run (follows transcript and audit; read-only). Edits share `Config::propose` / `apply` with `duet config
+  set`: loosening shows the diff and needs `y`, the project file refuses owner-only keys and loosening,
+  every applied change is appended to the config audit log; each value shows its origin. `TestBackend`
+  tests per screen and per edit flow. *Open:* local backend auto-detection and connection/cache/prefill
+  tests on Models, custom detector patterns, purge from Data, starting runs from the TUI.
 - Setup and presets for Ollama, LM Studio, llama.cpp, vLLM, oMLX, z.ai, Anthropic, OpenAI; no-config
   bootstrap detecting local servers on default ports; `duet doctor` with cache-reuse check.
   *Built (branch `m6doctor`):* local presets (`duet config preset`: Ollama, LM Studio, llama.cpp,

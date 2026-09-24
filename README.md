@@ -4,7 +4,7 @@
 
 > Status: **in development, not released.** The `duet` CLI, the security engine, IP levels and the
 > evaluation harness work; the privacy and quality gates have passed; cost is reported as a measured privacy premium. Local
-> backend presets, a no-config bootstrap and `duet doctor` exist; the TUI comes later (M6). Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
+> backend presets, a no-config bootstrap, `duet doctor` and the `duet tui` terminal UI exist. Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
 
 ## What it is
 
@@ -87,12 +87,26 @@ duet config set --project ip.interface_only '["src/pricing/**"]'
 duet config preset              # local backends: default ports, where they report models and context
 duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
 duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
+duet tui                        # settings, IP levels, audit viewer and run view in the terminal
 duet local-eval                 # measure the configured local model in its reading roles
 duet purge                      # delete raw run data older than the retention period
 ```
 
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
-evaluation baseline). Planned for M6: `duet tui`.
+evaluation baseline).
+
+**`duet tui`** has seven screens: Models (frontier and local settings, with `duet doctor`
+offline; `o` adds the `--online` checks), Sensitivity (globs, detectors, raw-output commands,
+secret sinks, bulky thresholds, and a tester that shows whether a path is sensitive and which
+pattern matched), IP levels (the workspace tree as git sees it, so `.gitignore` applies; `i` / `s`
+mark a file or directory interface-only / sealed, with a preview of the skeleton the frontier would
+see), Limits, Data, Audit (each run's records and outbound request summaries as stored, and `v` to
+verify the hash chain and its anchor) and Run (follows a run's turns, tool calls and withheld
+content as they are written; read-only). The settings screens are generated from the registry and
+show where each value comes from (default, owner or project). Edits take the same path as
+`duet config set`: a change that loosens privacy shows its diff and needs `y`, `p` switches edits
+to the project file (which only tightens and never takes owner-only keys), and every applied change
+is recorded in the owner's config audit log.
 
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
@@ -123,7 +137,7 @@ Live smoke tests, one per local backend, run with
 
 ### Configuration
 
-Every setting is defined in one registry and editable with `duet config` (and the TUI, in M6):
+Every setting is defined in one registry and editable with `duet config` or `duet tui`:
 models, sensitivity rules and detectors, protected paths and IP levels, budgets, retention.
 Credentials and endpoints live only in your user config (`~/.config/duet/config.toml`); a
 repository's `.duet/config.toml` can make privacy stricter but never looser.

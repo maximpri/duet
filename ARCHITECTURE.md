@@ -1,7 +1,7 @@
 # Duet v2 Architecture
 
 Status: implemented through milestone M4.5 and SbD-1 ([docs/PLAN.md](docs/PLAN.md) §10), except
-where marked *planned*. `duet-tui` is an empty crate until M6. Goals and success criteria:
+where marked *planned*. `duet-tui` (M6) is built. Goals and success criteria:
 [docs/TARGET_STATE.md](docs/TARGET_STATE.md).
 
 ## 1. Shape of the system
@@ -45,7 +45,8 @@ duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git 
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
-pricing and usage parsing. duet-tui has no dependencies yet (M6).
+pricing and usage parsing. duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
+ratatui); duet-cli links it for `duet tui` and supplies `duet doctor` as a callback.
 ```
 
 | Crate | Owns | Must never |
@@ -274,7 +275,7 @@ struct Setting { key, kind: Bool | Int{min,max} | Float{min,max} | Str | List | 
 
 Loading merges defaults → owner file → project file, rejecting owner-only keys in project files
 and any project value that loosens privacy; reading an unregistered key is an error. `duet config
-list|get|set` is driven by the registry (the TUI will be too, M6). `duet config set` refuses a
+list|get|set` and `duet tui` are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
 change that loosens privacy (a `confirm` setting, or a value against its direction) without
 `--confirm`, prints the diff and appends every applied change to the owner's `config-audit.jsonl`.
 
