@@ -57,6 +57,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | The ratatui TUI (all screens, including Run and Audit) stays in M6, after the privacy and cost gates (operator) |
 | 2026-09-23 | duet-boundary budget raised from ~3.2K to ~5K production lines (it absorbed M4 bulky offload and M4.5 IP levels; measured ~4.55K); further growth needs another decision (operator) |
 | 2026-09-24 | Secure by Design is core for duet (operator): cross-cutting SbD track added (§5); SbD-1 and a red-team pass must pass before the public benchmark (M5) |
+| 2026-09-24 | M5 external lanes run on the operator's CLI subscriptions, not API keys (operator): Claude Code via a `claude setup-token` subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) with an isolated config dir; Codex via a dedicated eval `CODEX_HOME` logged in once with ChatGPT (never a copy of the main login: refresh-token rotation). Both must route through the leak proxy; verified by a one-run smoke test per lane before M5 |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
