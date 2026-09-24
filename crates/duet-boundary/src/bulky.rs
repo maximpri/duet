@@ -313,6 +313,7 @@ mod engine_tests {
             detect_pii: true,
             detect_entropy: true,
             bulky_tokens: 2000,
+            bulky_file_tokens: 2000,
             ..Policy::default()
         }
     }
@@ -588,11 +589,28 @@ mod engine_tests {
         );
         let reader = LocalReader::new(ChatProvider::new(cfg, Box::new(Replies(reply))).unwrap());
         let (_d, e) = engine(Some(reader));
-        let text = numbered(&source_lines(300), 1);
-        let shown = e.present(&file("src/ledger.rs", false), text.as_bytes());
+        // Bulky public command output gets a local summary ...
+        let output: String = (0..900)
+            .map(|i| format!("   Compiling crate_{i} v0.1.0\n"))
+            .collect();
+        let shown = e.present(
+            &Source::Command {
+                command: "cargo check".into(),
+                exit_code: Some(0),
+            },
+            output.as_bytes(),
+        );
         assert!(
             shown.contains("Summary by the local model: Reconciliation code"),
             "{shown}"
+        );
+        // ... bulky source only its outline: reading a range beats a summary.
+        let text = numbered(&source_lines(300), 1);
+        let source = e.present(&file("src/ledger.rs", false), text.as_bytes());
+        assert!(
+            source.contains("too long to show whole")
+                && !source.contains("Summary by the local model"),
+            "{source}"
         );
         assert!(
             shown.contains("- maintainer ") && !shown.contains(EMAIL),

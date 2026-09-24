@@ -246,6 +246,18 @@ pub const REGISTRY: &[Setting] = &[
         "Public results larger than this become a handle + summary."
     ),
     s!(
+        "sensitivity.bulky_file_tokens",
+        Int {
+            min: 256,
+            max: 1_000_000
+        },
+        "12000",
+        Owner,
+        Any,
+        false,
+        "A public file the model asked to read is shown whole up to this size; larger files become a handle with an outline."
+    ),
+    s!(
         "ip.interface_only",
         List,
         "[]",

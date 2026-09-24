@@ -137,6 +137,14 @@ pub struct Engine {
 pub const MAX_KEY_LINES: usize = 12;
 /// Command output up to this size is shown sanitized instead of summarized.
 pub const INLINE_OUTPUT_CHARS: usize = 6000;
+/// Sensitive texts longer than this also get a map of repeated line shapes.
+const PATTERN_MIN_LINES: usize = 40;
+/// Line shapes listed, and characters shown of each.
+const MAX_PATTERNS: usize = 20;
+const PATTERN_CHARS: usize = 160;
+static PLACEHOLDER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"⟨[^⟩]*⟩").expect("static regex"));
+static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+").expect("static regex"));
 /// Questions answered per `ask_local` call.
 pub const MAX_QUESTIONS: usize = 6;
 /// Lines `read_raw` returns when no end is given, and at most per call.
@@ -348,6 +356,57 @@ impl Engine {
     }
 
     /// Sensitive content: handle, sanitized error lines, local summary.
+    /// A map of a long sensitive text: its lines grouped by shape (sanitized,
+    /// digits as `#`, placeholders as `⟨…⟩`), most frequent first. Only shapes
+    /// that repeat are shown — repeated lines are structure (log templates,
+    /// record layouts); one-off prose stays behind the handle.
+    fn line_patterns(&self, st: &mut State, lines: &[&str], label: &str) -> String {
+        let mut groups: std::collections::HashMap<String, (usize, usize)> = Default::default();
+        for (i, line) in lines.iter().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let short: String = line.chars().take(400).collect();
+            let clean = self.sanitize(st, &short, label, true);
+            let shape = PLACEHOLDER.replace_all(&clean, "⟨…⟩");
+            let shape = DIGITS.replace_all(&shape, "#");
+            let shape: String = shape
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .chars()
+                .take(PATTERN_CHARS)
+                .collect();
+            let e = groups.entry(shape).or_insert((0, i + 1));
+            e.0 += 1;
+        }
+        let mut repeated: Vec<(String, usize, usize)> = groups
+            .into_iter()
+            .filter(|(_, (n, _))| *n >= 2)
+            .map(|(s, (n, first))| (s, n, first))
+            .collect();
+        if repeated.is_empty() {
+            return String::new();
+        }
+        repeated.sort_by(|a, b| b.1.cmp(&a.1).then(a.2.cmp(&b.2)));
+        let covered: usize = repeated.iter().map(|r| r.1).sum();
+        let mut out = format!(
+            "Repeated line shapes ({} shapes covering {covered} of {} lines; digits as #, sensitive values as ⟨…⟩):\n",
+            repeated.len(),
+            lines.len()
+        );
+        for (shape, n, first) in repeated.iter().take(MAX_PATTERNS) {
+            out.push_str(&format!("  ×{n:<5} first at line {first:<6} {shape}\n"));
+        }
+        if repeated.len() > MAX_PATTERNS {
+            out.push_str(&format!(
+                "  … {} more shapes\n",
+                repeated.len() - MAX_PATTERNS
+            ));
+        }
+        out
+    }
+
     fn handle_view(&self, source_label: &str, text: &str) -> String {
         self.set_class(ViewClass::HandleSummary);
         let handle = {
@@ -392,6 +451,9 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             if error_lines.len() > MAX_KEY_LINES {
                 out.push_str(&format!("  … {} more\n", error_lines.len() - MAX_KEY_LINES));
             }
+        }
+        if lines.len() > PATTERN_MIN_LINES {
+            out.push_str(&self.line_patterns(&mut st, &lines, source_label));
         }
         match digest {
             Some(Ok(d)) => {
@@ -475,10 +537,11 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             return self.clean_public(&mut st, text, label);
         };
         self.set_class(ViewClass::BulkyHandle);
+        // Source gets its deterministic outline only: a local summary of public
+        // code costs minutes of local prefill and tells the frontier less than
+        // reading the range it needs.
         let digest = match (shape, &self.local) {
-            (Shape::Source | Shape::Output, Some(l)) => {
-                Some(Self::block_on(l.digest(label, &body)))
-            }
+            (Shape::Output, Some(l)) => Some(Self::block_on(l.digest(label, &body))),
             _ => None,
         };
         let id = &handle.id;
@@ -679,10 +742,12 @@ impl Presenter for Engine {
                 self.lock().overlap.add_public(&text);
                 // A range the model asked for is shown unless it is longer
                 // than one `read_raw` call returns.
+                // A file the model asked for is shown whole up to its own, larger
+                // threshold: offloading it would only cost another turn to read it.
                 let offload = if *ranged {
                     text.lines().count() > MAX_RAW_LINES
                 } else {
-                    self.offload(&text)
+                    bulky::is_bulky(&text, self.policy.bulky_file_tokens)
                 };
                 if offload {
                     return self.bulky_view(&label, &text, Shape::Source);
@@ -1075,6 +1140,7 @@ mod tests {
             detect_pii: true,
             detect_entropy: true,
             bulky_tokens: 2000,
+            bulky_file_tokens: 2000,
             ..Policy::default()
         }
     }
@@ -1435,6 +1501,47 @@ mod prime_tests {
             "{task}"
         );
         assert!(task.contains("sensitive_data"), "{task}");
+    }
+
+    #[test]
+    fn long_sensitive_logs_get_a_map_of_repeated_line_shapes() {
+        let (_d, e) = primed_engine(&[("data/placeholder.csv", "x\n")], "");
+        let mut log = String::new();
+        for i in 0..60 {
+            log.push_str(&format!(
+                "2026-08-{:02}T10:{:02}:00Z INFO billing: carrier KSX parcel P{} weight {}.{} kg for kim.berg{}@mailbox-2.net\n",
+                1 + i % 28,
+                i,
+                1000 + i,
+                i,
+                i % 10,
+                i
+            ));
+        }
+        log.push_str("Dispute note: Priya Tolvenrin says the August invoice doubled after the tariff change.\n");
+        for i in 0..5 {
+            log.push_str(&format!(
+                "2026-08-30T11:00:0{i}Z WARN zones: postcode 9{i}10 not in any range\n"
+            ));
+        }
+        let shown = e.present(
+            &Source::File {
+                path: "data/run.log".into(),
+                ranged: false,
+            },
+            log.as_bytes(),
+        );
+        assert!(
+            shown.contains("×60") && shown.contains("INFO billing: carrier KSX parcel P#"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("×5") && shown.contains("not in any range"),
+            "{shown}"
+        );
+        for secret in ["kim.berg", "Tolvenrin", "doubled after the tariff"] {
+            assert!(!shown.contains(secret), "{secret} leaked: {shown}");
+        }
     }
 
     #[test]

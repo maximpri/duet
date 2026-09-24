@@ -54,6 +54,8 @@ pub struct Policy {
     pub detect_pii: bool,
     pub detect_entropy: bool,
     pub bulky_tokens: usize,
+    /// Threshold for a public file the model explicitly read (`0` disables offloading).
+    pub bulky_file_tokens: usize,
     /// Source the frontier sees as signatures only (`ip.interface_only`).
     pub interface_only: Vec<String>,
     /// Source whose content the frontier never sees (`ip.sealed`).

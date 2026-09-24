@@ -151,6 +151,7 @@ async fn bulky_files_reach_the_frontier_as_a_preview_and_are_charged_as_such() {
         detect_secrets: true,
         detect_pii: true,
         bulky_tokens: 2000,
+        bulky_file_tokens: 2000,
         ..Policy::default()
     };
     let engine = Engine::open(&d.path().join("run"), policy, None).unwrap();
