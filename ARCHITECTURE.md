@@ -92,7 +92,7 @@ enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which 
 0. Run start (hybrid): prime the engine. Public files and the task seed the public-word list;
    every sensitive file (git ls-files, ≤2 MB) is read once: its values enter the vault and its
    text the copied-span index. The task gets a note naming the sensitive paths (commands cannot
-   read them) and, with `sensitivity.local_brief`, the local model's brief of those files for the
+   read them) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
    task (≤3 local calls, values withheld, cleaned like any local output).
 1. ContextManager builds the request: fixed system prompt + fixed sorted tools + transcript
    (whole old turns replaced by stubs once over `context.mask_at` of the window).

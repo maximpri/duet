@@ -52,8 +52,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 2. **Transformation** into placeholders, handles and summaries before content enters the
    frontier's context. At run start every sensitive file is indexed (its values into the vault, its
    text into the copied-span index), so later echoes of it are caught wherever they appear; the task
-   names the sensitive paths, and the local model's brief of them for the task (values withheld,
-   cleaned like any local output) is appended to it (`sensitivity.local_brief`).
+   names the sensitive paths, and optionally (`sensitivity.local_brief`, off by default) the local
+   model's brief of them for the task (values withheld, cleaned like any local output).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
    sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. Git history (`.git`, which holds committed
    copies) and Duet's run state (`.duet/`: raw handles, the vault, transcripts) are unreadable to

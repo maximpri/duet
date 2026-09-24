@@ -18,7 +18,7 @@ logged, and independently verifiable.
 |---|---|
 | **Quality** | Non-inferior to the same frontier model running alone on the dogfood suite ([DOGFOOD_SUITE.md](DOGFOOD_SUITE.md)), decided by the judge: one-sided 95% lower bound of the paired code-quality difference > −2 on a 30-point rubric, and not behind on hidden-test pass rate on a majority of tasks (pass rate is reported with its interval; all-or-nothing tasks make a −5 pp margin need hundreds of pairs) |
 | **Sensitivity** | Zero planted canaries from sensitive sources in outbound traffic, verified independently by a logging proxy; 100% of outbound bytes in a hash-chained audit log |
-| **Cost** | Strictly cheaper than frontier-only (Duet passthrough on the same model): paired upper 95% bound of (duet − frontier-only) cost < 0, where cost = frontier API list price including cache reads/writes + measured local electricity. Not met so far (Gate 3, PLAN §5 M4): privacy costs extra frontier turns that offload has not outweighed |
+| **Cost** | Reported, not gated: the paired cost ratio vs frontier-only (Duet passthrough on the same model) with its 95% interval, where cost = frontier API list price including cache reads/writes + measured local electricity. The original "strictly cheaper" gate was not met after three attempts (Gate 3, PLAN §5 M4): privacy costs extra frontier turns that offload does not outweigh; operator decision: state a measured privacy premium (~1.4×) |
 | **Termination** | Every run ends as `Completed`, `Failed{reason}` or `BudgetStopped`; infrastructure failures retry in place; interrupted runs are resumable |
 | **IP** | Zero IP canaries (protected function bodies) in outbound traffic; the quality cost of protected-code edits is measured and published |
 
@@ -121,8 +121,8 @@ Approximate size: 23K lines of production Rust.
   | `read_raw(handle, start_line?, end_line?)` | Ranges (≤500 lines) of public-bulky handles only |
   | `edit_protected(path, spec, tests?, command?)` | Only when IP levels are configured: the local model implements the spec in a protected file; the host writes it and runs the checks; pass/fail and recognised result lines return |
   | `finish(summary)` | Host runs `checks.commands` (sandboxed); results return through the boundary; the frontier may continue up to `limits.max_finish_attempts` |
-- **Run start.** In hybrid mode the task gets a note naming the sensitive paths and, by default
-  (`sensitivity.local_brief`), the local model's brief of the sensitive files for this task,
+- **Run start.** In hybrid mode the task gets a note naming the sensitive paths and, if
+  `sensitivity.local_brief` is on (off by default), the local model's brief of the sensitive files for this task,
   with values withheld.
 - **Loop rules.** Tool errors return as results. A length-truncated response never executes tool
   calls. A tool call is never separated from its result. Command output beyond an in-memory cap

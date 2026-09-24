@@ -257,7 +257,7 @@ pub const REGISTRY: &[Setting] = &[
     s!(
         "sensitivity.local_brief",
         Bool,
-        "true",
+        "false",
         Owner,
         Any,
         false,

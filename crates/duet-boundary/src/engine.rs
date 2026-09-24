@@ -312,12 +312,20 @@ impl Engine {
             .map(|f| (f.start, f.end, f.kind, f.label))
             .collect();
         if sensitive {
+            // A title-case run whose every word also occurs in public content (the
+            // task, public files) is a phrase, not a person: real names do not
+            // appear in public code. Without this, prose from the local model
+            // ("Payment Events") entered the vault and blocked the task text.
+            let public = &st.public_words;
             for m in NAME.find_iter(text) {
                 // A stop word splits the run; each remaining run of 2+ words is a name.
                 let mut run: Option<(usize, usize, usize)> = None; // (start, end, words)
                 let mut flush = |run: &mut Option<(usize, usize, usize)>| {
                     if let Some((s, e, n)) = run.take()
                         && n >= 2
+                        && !WORD
+                            .find_iter(&text[s..e])
+                            .all(|w| public.contains(&w.as_str().to_lowercase()))
                     {
                         spans.push((s, e, Kind::Name, None));
                     }
@@ -1573,7 +1581,7 @@ mod prime_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn the_task_carries_a_cleaned_local_brief_of_the_sensitive_files() {
         let reply = json!({
-            "summary": "logs/run.log shows carrier KSX weights in pounds since 2026-08-03 (lines 10-40).",
+            "summary": "logs/run.log shows carrier KSX weights in pounds since 2026-08-03 (lines 10-40); the Monthly Billing run was withdrawn.",
             "facts": ["Disputes were raised by priya.tolvenrin@mailbox-9.net for 3 invoices"]
         })
         .to_string();
@@ -1596,16 +1604,27 @@ mod prime_tests {
         e.prime(
             &ws,
             &["logs/run.log".to_string()],
-            "Fix the August billing.",
+            "Fix the Monthly Billing for August.",
         );
-        let task = e.sanitize_objective("Fix the August billing.");
+        let task = e.sanitize_objective("Fix the Monthly Billing for August.");
         assert!(
             task.contains("Brief of the sensitive files") && task.contains("weights in pounds"),
             "{task}"
         );
         assert!(!task.contains("priya.tolvenrin"), "{task}");
+        // A phrase shared by the task and the brief is not a person: the task
+        // reaches the frontier (the final check does not block it).
+        assert!(task.contains("the Monthly Billing run"), "{task}");
+        let (_, check) = e.outbound();
+        assert!(
+            check
+                .check(&json!({"messages": [{"role": "user", "content": task}]}))
+                .is_ok()
+        );
         let sent = received.bodies()[0].to_string();
-        assert!(sent.contains("Fix the August billing.") && sent.contains("KSX weight"));
+        assert!(
+            sent.contains("Fix the Monthly Billing for August.") && sent.contains("KSX weight")
+        );
     }
 
     #[test]

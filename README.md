@@ -3,7 +3,7 @@
 **Frontier-level coding results, with sensitive information processed only by a local model.**
 
 > Status: **in development, not released.** The `duet` CLI, the security engine, IP levels and the
-> evaluation harness work; the privacy and quality gates have passed, the cost gate has not. Setup,
+> evaluation harness work; the privacy and quality gates have passed; cost is reported as a measured privacy premium. Setup,
 > `duet doctor` and the TUI come later (M6). Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
 
 ## What it is
@@ -69,11 +69,10 @@ that a file exists, its shape, the intent of your task — is documented in `SEC
 | Reliable | Every run ends as completed, failed with a reason, or budget-stopped; interrupted runs resume |
 
 So far (frontier `glm-5.3-flash`): quality matched the frontier alone, and no planted canary left
-in 18 of 18 hybrid runs, while the frontier alone sent canaries in all 18. Cost is not yet met: privacy costs
+in 18 of 18 hybrid runs, while the frontier alone sent canaries in all 18. Duet is not cheaper than the frontier alone: privacy costs
 extra frontier turns, because the frontier must ask about data it cannot read, and offloading
-bulky content to the local model saves less than those turns cost (about 1.4× the frontier alone in
-the latest measurement). If that holds, Duet will state it as a measured privacy premium rather
-than claim to be cheaper. Full results will be published in `docs/BENCHMARK.md` (milestone M5),
+bulky content to the local model saves less than those turns cost. Duet therefore states a measured
+privacy premium (about 1.4× the frontier alone on the measured tasks) rather than claiming savings. Full results will be published in `docs/BENCHMARK.md` (milestone M5),
 with raw data and the method needed to reproduce them.
 
 ## Usage

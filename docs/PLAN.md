@@ -58,6 +58,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | duet-boundary budget raised from ~3.2K to ~5K production lines (it absorbed M4 bulky offload and M4.5 IP levels; measured ~4.55K); further growth needs another decision (operator) |
 | 2026-09-24 | Secure by Design is core for duet (operator): cross-cutting SbD track added (§5); SbD-1 and a red-team pass must pass before the public benchmark (M5) |
 | 2026-09-24 | M5 external lanes run on the operator's CLI subscriptions, not API keys (operator): Claude Code via a `claude setup-token` subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) with an isolated config dir; Codex via a dedicated eval `CODEX_HOME` logged in once with ChatGPT (never a copy of the main login: refresh-token rotation). Both must route through the leak proxy; verified by a one-run smoke test per lane before M5 |
+| 2026-09-24 | Gate 3 outcome (operator, pre-agreed): not strictly cheaper after attempts A–C, so cost is reported as a measured privacy premium (paired ratio vs the orchestrator alone with its interval, ~1.4×); quality non-inferiority and zero leaks stay required. The local task brief (attempt C) raised cost and is off by default |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -250,15 +251,17 @@ becomes "best quality at zero leakage" with the measured cost stated.
 - Cost ledger per run (`summary.json`): frontier tokens carried by class (raw, tokenized, handle
   summary, local answer, bulky handle), `ask_local` calls, local busy seconds, dollars at list
   price; `duet-eval report` shows it per lane.
-- Local task brief at run start (`sensitivity.local_brief`, attempt C).
+- Local task brief at run start (`sensitivity.local_brief`; attempt C raised cost, so off by default).
 
 **Gate 3 — strictly cheaper** (S0–M3, L1). Paired cost difference vs passthrough (the orchestrator
 alone on the same model) with upper 95% bound < 0, with quality still non-inferior and zero leaks.
 Attempts A and B failed: privacy forces extra frontier turns (asking about data the frontier cannot
 read, e.g. 66 vs 45 requests on L3 in attempt B, ~1.4× the cost), and offload works but does not
-outweigh them. Attempt C (local task brief) is running. Operator decision: if C is still not
-cheaper, Gate 3 becomes a measured privacy premium (cost ratio reported with its interval, about
-1.4× so far) instead of a pass/fail gate.
+outweigh them. Attempt C (local task brief) raised cost further (L3 $0.25 vs $0.18 per run; more
+`ask_local` calls, not fewer) and is off by default. **Outcome (operator decision): Gate 3 is a
+measured privacy premium** — the paired cost ratio vs the orchestrator alone is reported with its
+interval (~1.4× on the measured tasks) instead of a pass/fail gate; quality non-inferiority and zero
+leaks remain required.
 
 ### M4.5 — IP levels (days 27–31)
 
@@ -431,6 +434,7 @@ Prerequisites:
 | 2026-09-23 | **Gate 2 (Flash): PASS** | `duet-hybrid` (verification batch, build `a5346f4`) vs `duet-passthrough`, S1/S2/M1/M2/M3/L1 × 3 seeds, all runs valid (`results/gate2`). Privacy: 0 leaks and 0 sink violations in 18/18 hybrid runs (passthrough: 3,130 canaries across 18/18). Quality: judge Δ +0.1/30, lower bound −0.8; hidden pass rate 97.9% vs 98.3%, Δ −0.5 pp, lower bound −1.5 pp; behind on 1/6 tasks. Cost (not part of Gate 2): $0.0310 vs $0.0130 per run, wall 496 s vs 239 s — the M4 problem. |
 | 2026-09-24 | Gate 3 attempt A: FAIL | Build `aeda66e` (M4 + M4.5 + authored-values fix), hybrid vs passthrough on L3 × 3 and S1/S2/M1 × 3 (`results/gate3a`). 0 leaks. Cost $0.066 vs $0.039 per run; S1 now cheaper than passthrough ($0.0054 vs $0.0058). L3 hybrid: pass 96/76/20% (seed 3 crashed in the copied-span filter, fixed `79fedc3`), $0.10–0.25 vs $0.09–0.15, 67–84 min vs 7–8 min, 81–95 turns vs 36–51 — from 9–11 read_raw after offloaded source files and 21–30 ask_local on a 1,450-line log. Before it: turn fixes cut M1 requests 53→30 (hybrid 2.4×→1.9× passthrough cost); remaining gap traced to 3.7× uncached input from prompt-cache breaks (frontier-authored test data vaulted, fixed `aeda66e`). Attempt B (`9a8026c`): requested files shown whole up to 12K tokens without a local summary; long sensitive texts show repeated line shapes. |
 | 2026-09-24 | SbD-1 (merged `aa91182`) | Plaintext non-loopback local model refused unless owner opts in (operator opted in for the LAN host, recorded in the config audit log); loosening via `duet config set` needs `--confirm` and is hash-chain audited; passthrough needs `--no-privacy` + banner; run audit records security events without content; audit heads anchored outside the workspace (`duet audit verify` detects rewrites); SECURITY.md disclosure policy (contact placeholder kept by operator decision), advisories DUET-2026-001…005 with CWE root causes, prompt-injection residual risk. SbD gate still needs SbD-2 red team and fuzzing. |
+| 2026-09-24 | Gate 3 attempt C + outcome | Build `4384ca0` (local task brief), `results/gate3c`. 0 leaks. L3 96/96/96%, $0.38/$0.17/$0.20 (mean $0.25 vs attempt B $0.18, passthrough $0.12), 72–91 min; ask_local 10.0 calls/run (B: 5.8). S2 seeds 2–3 invalid: the brief cleaning vaulted a title-case phrase also in the task, and the final check blocked the first send (fail-closed; fixed: title-case runs made only of public words are not names). Outcome: measured privacy premium; brief off by default. Also found in the docs audit and fixed: commands could read `.git` and `.duet/` (DUET-2026-006, `74f17a8`). |
 
 Scope changes, with reasons:
 - **Anthropic Messages and Responses dialects move to M6.** The frontier (z.ai GLM) and the local
