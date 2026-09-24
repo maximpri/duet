@@ -181,13 +181,128 @@ pub struct Anchor {
     pub unix_ms: u128,
 }
 
-/// Where the anchor of `run_id` in `workspace` lives under the owner state directory.
-pub fn anchor_path(state_dir: &Path, workspace: &Path, run_id: &str) -> PathBuf {
+/// Where the anchors of one run's audit log live under the owner state
+/// directory.
+///
+/// An anchor is filed under the run id and the hash of the log's first record
+/// (`audit-anchors/runs/<run-id>/<first>.json`). Both belong to the run itself,
+/// so the anchor still applies after the workspace is moved or re-mounted.
+/// Anchors written in the earlier layout, under a hash of the workspace path
+/// (`audit-anchors/<workspace>/<run-id>.json`), are still read.
+#[derive(Debug, Clone)]
+pub struct RunAnchors {
+    root: PathBuf,
+    run_id: String,
+    workspace: PathBuf,
+}
+
+/// The anchors of `run_id` under `state_dir`; `workspace` is used only to find
+/// an anchor written in the earlier layout.
+pub fn run_anchors(state_dir: &Path, workspace: &Path, run_id: &str) -> RunAnchors {
+    RunAnchors {
+        root: state_dir.join("audit-anchors"),
+        run_id: run_id.to_owned(),
+        workspace: workspace.to_path_buf(),
+    }
+}
+
+/// Where the earlier layout filed the anchor of `run_id` in `workspace`: under
+/// a hash of the workspace path, which changes when the workspace moves.
+pub fn legacy_anchor_path(state_dir: &Path, workspace: &Path, run_id: &str) -> PathBuf {
+    legacy_dir(&state_dir.join("audit-anchors"), workspace).join(format!("{run_id}.json"))
+}
+
+fn legacy_dir(root: &Path, workspace: &Path) -> PathBuf {
     let ws = hex::encode(Sha256::digest(workspace.to_string_lossy().as_bytes()));
-    state_dir
-        .join("audit-anchors")
-        .join(&ws[..16])
-        .join(format!("{run_id}.json"))
+    root.join(&ws[..16])
+}
+
+/// The anchor a log is compared with.
+enum Found {
+    /// This log's anchor (file and content).
+    Anchor(PathBuf, Anchor),
+    /// The run has anchors, but none for this log's first record: the start
+    /// of the log was rewritten, or the log was emptied.
+    Other(String),
+    /// An anchor exists but cannot be read.
+    Unreadable(String),
+    None,
+}
+
+impl RunAnchors {
+    fn run_dir(&self) -> PathBuf {
+        self.root.join("runs").join(&self.run_id)
+    }
+
+    /// The anchor file of the log whose first record hashes to `first`.
+    fn path_for(&self, first: &str) -> PathBuf {
+        self.run_dir()
+            .join(format!("{}.json", &first[..first.len().min(16)]))
+    }
+
+    /// Where this run's anchors are searched, for messages.
+    pub fn describe(&self) -> String {
+        self.run_dir().display().to_string()
+    }
+
+    /// The anchor of a log with these line digests: the current layout first,
+    /// then the earlier one under this workspace, then the earlier one under
+    /// any workspace (a workspace moved since the run).
+    fn find(&self, digests: &[String]) -> Found {
+        let current: Vec<PathBuf> = std::fs::read_dir(self.run_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .collect();
+        if let Some(first) = digests.first() {
+            let own = self.path_for(first);
+            if current.contains(&own) {
+                return match read_anchor(&own) {
+                    Ok(Some(a)) => Found::Anchor(own, a),
+                    Ok(None) => Found::None,
+                    Err(reason) => Found::Unreadable(reason),
+                };
+            }
+        }
+        if !current.is_empty() {
+            return Found::Other(if digests.is_empty() {
+                "truncated: the log is empty, but the run was anchored".into()
+            } else {
+                "rewritten: the first entry matches none of the run's anchors".into()
+            });
+        }
+        let name = format!("{}.json", self.run_id);
+        let own_legacy = legacy_dir(&self.root, &self.workspace).join(&name);
+        let mut legacy = vec![own_legacy.clone()];
+        legacy.extend(
+            std::fs::read_dir(&self.root)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path().join(&name))
+                .filter(|p| *p != own_legacy),
+        );
+        let mut fallback = None;
+        for path in legacy {
+            match read_anchor(&path) {
+                Ok(Some(a)) => {
+                    // Several workspaces may have used this run id: prefer
+                    // the anchor this log agrees with.
+                    if !matches!(compare(&a, digests), AnchorCheck::Mismatch(_)) {
+                        return Found::Anchor(path, a);
+                    }
+                    fallback.get_or_insert(Found::Anchor(path, a));
+                }
+                Ok(None) => {}
+                Err(reason) => {
+                    fallback.get_or_insert(Found::Unreadable(reason));
+                }
+            }
+        }
+        fallback.unwrap_or(Found::None)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -238,27 +353,36 @@ fn read_anchor(path: &Path) -> Result<Option<Anchor>, String> {
 }
 
 /// Checks the log at `path` against its anchor.
-pub fn check_anchor(path: &Path, anchor: &Path) -> Result<AnchorCheck, FsError> {
-    let anchor = match read_anchor(anchor) {
-        Ok(Some(a)) => a,
-        Ok(None) => return Ok(AnchorCheck::Missing),
-        Err(reason) => return Ok(AnchorCheck::Mismatch(reason)),
-    };
+pub fn check_anchor(path: &Path, anchors: &RunAnchors) -> Result<AnchorCheck, FsError> {
+    Ok(check_found(path, anchors)?.0)
+}
+
+/// The check, and the anchor file it compared with.
+fn check_found(
+    path: &Path,
+    anchors: &RunAnchors,
+) -> Result<(AnchorCheck, Option<PathBuf>), FsError> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(FsError::io("read", path, e)),
     };
     let digests: Vec<String> = text.lines().filter(|l| !l.is_empty()).map(digest).collect();
-    Ok(compare(&anchor, &digests))
+    Ok(match anchors.find(&digests) {
+        Found::Anchor(file, a) => (compare(&a, &digests), Some(file)),
+        Found::Other(reason) | Found::Unreadable(reason) => (AnchorCheck::Mismatch(reason), None),
+        Found::None => (AnchorCheck::Missing, None),
+    })
 }
 
 pub struct AuditLog {
     path: PathBuf,
     seq: u64,
     prev: String,
-    /// Anchor file and run id, when the head is anchored.
-    anchor: Option<(PathBuf, String)>,
+    /// Digest of the first record, under which the anchor is filed.
+    first: Option<String>,
+    /// The run's anchors, when the head is anchored.
+    anchor: Option<RunAnchors>,
 }
 
 impl AuditLog {
@@ -268,6 +392,7 @@ impl AuditLog {
             duet_fs::private::ensure_private_dir(parent)?;
         }
         let lines = duet_fs::private::read_lines_repairing(path)?;
+        let first = lines.first().map(|l| digest(l));
         let (seq, prev) = match lines.last() {
             Some(last) => (
                 parse_line(last).map_or(lines.len() as u64, |l| l.seq()),
@@ -279,29 +404,37 @@ impl AuditLog {
             path: path.to_path_buf(),
             seq,
             prev,
+            first,
             anchor: None,
         })
     }
 
-    /// Opens the log and anchors its head at `anchor` after every append.
-    /// Refuses to continue a log that no longer matches an existing anchor,
-    /// so a rewritten log is never re-anchored as if it were genuine.
-    pub fn open_anchored(path: &Path, anchor: &Path, run_id: &str) -> Result<Self, FsError> {
+    /// Opens the log and anchors its head among the run's `anchors` after
+    /// every append. Refuses to continue a log that no longer matches an
+    /// existing anchor, so a rewritten log is never re-anchored as if it were
+    /// genuine.
+    pub fn open_anchored(path: &Path, anchors: &RunAnchors) -> Result<Self, FsError> {
         let mut log = Self::open(path)?;
-        if let Ok(Some(a)) = read_anchor(anchor) {
-            let digests: Vec<String> = duet_fs::private::read_lines_repairing(path)?
-                .iter()
-                .map(|l| digest(l))
-                .collect();
-            if let AnchorCheck::Mismatch(reason) = compare(&a, &digests) {
-                return Err(FsError::io(
-                    "continue audit log",
-                    path,
-                    format!("it was rewritten or truncated since it was anchored ({reason})"),
-                ));
-            }
+        let digests: Vec<String> = duet_fs::private::read_lines_repairing(path)?
+            .iter()
+            .map(|l| digest(l))
+            .collect();
+        let refused = match anchors.find(&digests) {
+            Found::Anchor(_, a) => match compare(&a, &digests) {
+                AnchorCheck::Mismatch(reason) => Some(reason),
+                _ => None,
+            },
+            Found::Other(reason) => Some(reason),
+            Found::Unreadable(_) | Found::None => None,
+        };
+        if let Some(reason) = refused {
+            return Err(FsError::io(
+                "continue audit log",
+                path,
+                format!("it was rewritten or truncated since it was anchored ({reason})"),
+            ));
         }
-        log.anchor = Some((anchor.to_path_buf(), run_id.to_owned()));
+        log.anchor = Some(anchors.clone());
         log.write_anchor()?;
         Ok(log)
     }
@@ -311,22 +444,25 @@ impl AuditLog {
         (self.seq, &self.prev)
     }
 
+    /// Writes the head to the anchor filed under the run id and the first
+    /// record; an empty log has nothing to anchor yet.
     fn write_anchor(&self) -> Result<(), FsError> {
-        let Some((path, run_id)) = &self.anchor else {
+        let (Some(anchors), Some(first)) = (&self.anchor, &self.first) else {
             return Ok(());
         };
+        let path = anchors.path_for(first);
         if let Some(parent) = path.parent() {
             duet_fs::private::ensure_private_dir(parent)?;
         }
         let anchor = Anchor {
-            run_id: run_id.clone(),
+            run_id: anchors.run_id.clone(),
             log: self.path.display().to_string(),
             records: self.seq,
             head: self.prev.clone(),
             unix_ms: now_ms(),
         };
         duet_fs::private::write_private(
-            path,
+            &path,
             &serde_json::to_vec_pretty(&anchor).unwrap_or_default(),
         )
     }
@@ -335,6 +471,7 @@ impl AuditLog {
         duet_fs::private::append_line(&self.path, &line)?;
         self.seq = seq;
         self.prev = digest(&line);
+        self.first.get_or_insert_with(|| self.prev.clone());
         self.write_anchor()
     }
 
@@ -512,7 +649,7 @@ pub fn describe_line(line: &str) -> String {
 
 /// The chain, then the anchor, as report lines and an exit code (0 intact and
 /// anchored, 1 broken or rewritten, 2 no anchor to compare with).
-pub fn verify_report(path: &Path, anchor: &Path) -> Result<(i32, Vec<String>), FsError> {
+pub fn verify_report(path: &Path, anchors: &RunAnchors) -> Result<(i32, Vec<String>), FsError> {
     let mut out = Vec::new();
     match verify(path)? {
         Verification::Intact { records } => out.push(format!("chain intact: {records} records")),
@@ -521,8 +658,10 @@ pub fn verify_report(path: &Path, anchor: &Path) -> Result<(i32, Vec<String>), F
             return Ok((1, out));
         }
     }
-    let (code, line) = match check_anchor(path, anchor)? {
-        AnchorCheck::Matches => (0, format!("anchor matches ({})", anchor.display())),
+    let (check, file) = check_found(path, anchors)?;
+    let file = file.map_or_else(|| anchors.describe(), |f| f.display().to_string());
+    let (code, line) = match check {
+        AnchorCheck::Matches => (0, format!("anchor matches ({file})")),
         AnchorCheck::Extends { unanchored } => (
             0,
             format!(
@@ -536,8 +675,7 @@ pub fn verify_report(path: &Path, anchor: &Path) -> Result<(i32, Vec<String>), F
         AnchorCheck::Missing => (
             2,
             format!(
-                "no anchor at {}: a rewritten log cannot be detected (run predates anchoring, or another state directory)",
-                anchor.display()
+                "no anchor at {file}: a rewritten log cannot be detected (run predates anchoring, or another state directory)"
             ),
         ),
     };
@@ -644,8 +782,8 @@ mod tests {
     fn anchor_detects_a_rewritten_or_truncated_log() {
         let d = tempfile::tempdir().unwrap();
         let p = d.path().join("ws/.duet/audit/r3.jsonl");
-        let a = anchor_path(&d.path().join("state"), &d.path().join("ws"), "r3");
-        let mut log = AuditLog::open_anchored(&p, &a, "r3").unwrap();
+        let a = run_anchors(&d.path().join("state"), &d.path().join("ws"), "r3");
+        let mut log = AuditLog::open_anchored(&p, &a).unwrap();
         for i in 0..3 {
             log.append("https://f/v1", "m", json!({"n": i}), vec![])
                 .unwrap();
@@ -657,7 +795,11 @@ mod tests {
         assert_eq!(check_anchor(&p, &a).unwrap(), AnchorCheck::Matches);
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
-            std::fs::metadata(&a).unwrap().permissions().mode() & 0o777,
+            std::fs::metadata(anchor_file(&d.path().join("state"), "r3"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
             0o600
         );
         let original = std::fs::read_to_string(&p).unwrap();
@@ -680,7 +822,7 @@ mod tests {
             matches!(check_anchor(&p, &a).unwrap(), AnchorCheck::Mismatch(r) if r.starts_with("rewritten"))
         );
         // Continuing the forged log is refused rather than re-anchored.
-        assert!(AuditLog::open_anchored(&p, &a, "r3").is_err());
+        assert!(AuditLog::open_anchored(&p, &a).is_err());
 
         // Truncation, even at a record boundary.
         let first_two: Vec<&str> = original.lines().take(2).collect();
@@ -701,8 +843,150 @@ mod tests {
             AnchorCheck::Extends { unanchored: 1 }
         );
         assert_eq!(
-            check_anchor(&p, &d.path().join("none.json")).unwrap(),
+            check_anchor(
+                &p,
+                &run_anchors(&d.path().join("other"), &d.path().join("ws"), "r3")
+            )
+            .unwrap(),
             AnchorCheck::Missing
         );
+    }
+
+    /// The single anchor file of `run_id` in the current layout.
+    fn anchor_file(state: &Path, run_id: &str) -> PathBuf {
+        let dir = state.join("audit-anchors/runs").join(run_id);
+        let files: Vec<PathBuf> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1, "{files:?}");
+        files.into_iter().next().unwrap()
+    }
+
+    fn write_run(log: &Path, anchors: &RunAnchors, n: u64) {
+        let mut a = AuditLog::open_anchored(log, anchors).unwrap();
+        a.event(AuditEvent::RunStart {
+            mode: "hybrid".into(),
+            boundary: true,
+        })
+        .unwrap();
+        for i in 0..n {
+            a.append("https://f/v1", "m", json!({"n": i}), vec![])
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn anchors_survive_a_moved_workspace() {
+        let d = tempfile::tempdir().unwrap();
+        let state = d.path().join("state");
+        let (old_ws, new_ws) = (d.path().join("ws"), d.path().join("moved/ws"));
+        write_run(
+            &old_ws.join(".duet/audit/r4.jsonl"),
+            &run_anchors(&state, &old_ws, "r4"),
+            2,
+        );
+        // The anchor is filed by run, not by workspace.
+        anchor_file(&state, "r4");
+        std::fs::create_dir_all(new_ws.parent().unwrap()).unwrap();
+        std::fs::rename(&old_ws, &new_ws).unwrap();
+
+        let log = new_ws.join(".duet/audit/r4.jsonl");
+        let anchors = run_anchors(&state, &new_ws, "r4");
+        assert_eq!(check_anchor(&log, &anchors).unwrap(), AnchorCheck::Matches);
+        let (code, lines) = verify_report(&log, &anchors).unwrap();
+        assert_eq!(code, 0, "{lines:?}");
+
+        // Resuming in the new place continues the same anchor.
+        AuditLog::open_anchored(&log, &anchors)
+            .unwrap()
+            .event(AuditEvent::RunEnd {
+                terminal: "completed".into(),
+            })
+            .unwrap();
+        assert_eq!(check_anchor(&log, &anchors).unwrap(), AnchorCheck::Matches);
+        let original = std::fs::read_to_string(&log).unwrap();
+
+        // A re-chained rewrite is still detected, whether it keeps the first
+        // record or not.
+        let first = original.lines().next().unwrap().to_owned();
+        std::fs::write(&log, first + "\n").unwrap();
+        let mut rechained = AuditLog::open(&log).unwrap();
+        for i in 0..3 {
+            rechained
+                .append("https://f/v1", "m", json!({"n": i + 20}), vec![])
+                .unwrap();
+        }
+        assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 4 });
+        assert!(matches!(
+            check_anchor(&log, &anchors).unwrap(),
+            AnchorCheck::Mismatch(r) if r.starts_with("rewritten")
+        ));
+        std::fs::remove_file(&log).unwrap();
+        let mut forged = AuditLog::open(&log).unwrap();
+        forged
+            .append("https://f/v1", "m", json!({"n": 9}), vec![])
+            .unwrap();
+        assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 1 });
+        assert!(matches!(
+            check_anchor(&log, &anchors).unwrap(),
+            AnchorCheck::Mismatch(r) if r.starts_with("rewritten")
+        ));
+        let (code, _) = verify_report(&log, &anchors).unwrap();
+        assert_eq!(code, 1);
+        assert!(AuditLog::open_anchored(&log, &anchors).is_err());
+        std::fs::write(&log, "").unwrap();
+        assert!(matches!(
+            check_anchor(&log, &anchors).unwrap(),
+            AnchorCheck::Mismatch(r) if r.starts_with("truncated")
+        ));
+    }
+
+    #[test]
+    fn anchors_in_the_earlier_layout_are_still_read() {
+        let d = tempfile::tempdir().unwrap();
+        let state = d.path().join("state");
+        let ws = d.path().join("ws");
+        let log = ws.join(".duet/audit/r6.jsonl");
+        write_run(&log, &run_anchors(&state, &ws, "r6"), 2);
+        // Move the anchor to where the earlier layout filed it.
+        let legacy = legacy_anchor_path(&state, &ws, "r6");
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::rename(anchor_file(&state, "r6"), &legacy).unwrap();
+        std::fs::remove_dir(state.join("audit-anchors/runs/r6")).unwrap();
+
+        let anchors = run_anchors(&state, &ws, "r6");
+        assert_eq!(check_anchor(&log, &anchors).unwrap(), AnchorCheck::Matches);
+        // Also after the workspace moved, since the run id finds it.
+        let moved = d.path().join("elsewhere");
+        std::fs::rename(&ws, &moved).unwrap();
+        let log = moved.join(".duet/audit/r6.jsonl");
+        let anchors = run_anchors(&state, &moved, "r6");
+        assert_eq!(check_anchor(&log, &anchors).unwrap(), AnchorCheck::Matches);
+
+        // A rewrite is detected against the earlier-layout anchor.
+        let original = std::fs::read_to_string(&log).unwrap();
+        let first: Vec<&str> = original.lines().take(1).collect();
+        std::fs::write(&log, first.join("\n") + "\n").unwrap();
+        assert!(matches!(
+            check_anchor(&log, &anchors).unwrap(),
+            AnchorCheck::Mismatch(r) if r.starts_with("truncated")
+        ));
+        std::fs::write(&log, &original).unwrap();
+
+        // Resuming writes the current layout, which then takes precedence.
+        AuditLog::open_anchored(&log, &anchors)
+            .unwrap()
+            .event(AuditEvent::RunEnd {
+                terminal: "completed".into(),
+            })
+            .unwrap();
+        anchor_file(&state, "r6");
+        assert_eq!(check_anchor(&log, &anchors).unwrap(), AnchorCheck::Matches);
+        std::fs::write(&log, &original).unwrap();
+        assert!(matches!(
+            check_anchor(&log, &anchors).unwrap(),
+            AnchorCheck::Mismatch(r) if r.starts_with("truncated")
+        ));
     }
 }

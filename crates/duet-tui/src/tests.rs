@@ -6,7 +6,7 @@
 use crate::app::{App, DoctorLine, Mode, Paths, Tab};
 use crate::settings::{keys, screen_of};
 use duet_agent::transcript::{Entry, Transcript};
-use duet_boundary::audit::{self, AuditEvent, AuditLog, Line as Record, anchor_path};
+use duet_boundary::audit::{self, AuditEvent, AuditLog, Line as Record, run_anchors};
 use duet_boundary::model::{Item, ToolCall, Usage};
 use duet_boundary::view::ViewClass;
 use duet_config::{Config, Origin, REGISTRY};
@@ -423,7 +423,7 @@ fn ip_screen_marks_paths_and_previews_the_skeleton() {
 fn audited_run(app: &App, id: &str) -> std::path::PathBuf {
     let ws = &app.paths.workspace;
     let log = ws.join(".duet/audit").join(format!("{id}.jsonl"));
-    let mut a = AuditLog::open_anchored(&log, &anchor_path(&app.paths.state, ws, id), id).unwrap();
+    let mut a = AuditLog::open_anchored(&log, &run_anchors(&app.paths.state, ws, id)).unwrap();
     a.event(AuditEvent::RunStart {
         mode: "hybrid".into(),
         boundary: true,

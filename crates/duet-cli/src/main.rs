@@ -6,7 +6,9 @@ use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand, ValueEnum};
 use duet_agent::disclosure::Disclosure;
 use duet_agent::{RunConfig, Terminal};
-use duet_boundary::audit::{AuditEvent, AuditLog, anchor_path, describe_line, verify_report};
+use duet_boundary::audit::{
+    AuditEvent, AuditLog, RunAnchors, describe_line, run_anchors, verify_report,
+};
 use duet_boundary::engine::Engine;
 use duet_boundary::local::LocalReader;
 use duet_boundary::policy::Policy;
@@ -272,9 +274,9 @@ fn local_provider(
     Ok((ChatProvider::with_reqwest(pc)?, event))
 }
 
-/// Where the anchor of a run's audit log lives (owner state directory).
-pub(crate) fn run_anchor(ws: &Path, run_id: &str) -> PathBuf {
-    anchor_path(&duet_config::owner_state_dir(), ws, run_id)
+/// The anchors of a run's audit log (owner state directory).
+pub(crate) fn run_anchor(ws: &Path, run_id: &str) -> RunAnchors {
+    run_anchors(&duet_config::owner_state_dir(), ws, run_id)
 }
 
 fn checked_run_id(run_id: &str) -> Result<&str> {
@@ -302,7 +304,6 @@ fn gated(
     let audit = AuditLog::open_anchored(
         &ws.join(".duet/audit").join(format!("{run_id}.jsonl")),
         &run_anchor(ws, run_id),
-        run_id,
     )?;
     let mut gate = OutboundGate::new(audit);
     if let Some(e) = engine {
@@ -483,8 +484,8 @@ pub(crate) fn config_audit_path() -> PathBuf {
 }
 
 /// `duet audit verify`: the chain, then the anchor. Returns the exit code.
-fn verify_run(path: &Path, anchor: &Path) -> Result<i32> {
-    let (code, lines) = verify_report(path, anchor)
+fn verify_run(path: &Path, anchors: &RunAnchors) -> Result<i32> {
+    let (code, lines) = verify_report(path, anchors)
         .with_context(|| format!("no audit log at {}", path.display()))?;
     for l in lines {
         println!("{l}");

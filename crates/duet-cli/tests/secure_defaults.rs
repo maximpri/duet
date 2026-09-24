@@ -4,7 +4,7 @@
 //! model over plain HTTP is refused, and `audit verify` detects a rewritten log.
 //! Nothing here contacts a model server: every refusal happens before one.
 
-use duet_boundary::audit::{AuditEvent, AuditLog, Line, Verification, anchor_path, read, verify};
+use duet_boundary::audit::{AuditEvent, AuditLog, Line, Verification, read, run_anchors, verify};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -161,10 +161,10 @@ fn a_remote_local_model_over_plain_http_is_refused() {
     assert!(text(&o).contains("owner's config"), "{}", text(&o));
 }
 
-fn write_run_log(e: &Env, run_id: &str) -> (PathBuf, PathBuf) {
+fn write_run_log(e: &Env, run_id: &str) -> PathBuf {
     let log = e.ws.join(".duet/audit").join(format!("{run_id}.jsonl"));
-    let anchor = anchor_path(&e.home.join("state"), &e.ws, run_id);
-    let mut a = AuditLog::open_anchored(&log, &anchor, run_id).unwrap();
+    let anchor = run_anchors(&e.home.join("state"), &e.ws, run_id);
+    let mut a = AuditLog::open_anchored(&log, &anchor).unwrap();
     a.event(AuditEvent::RunStart {
         mode: "hybrid".into(),
         boundary: true,
@@ -176,7 +176,7 @@ fn write_run_log(e: &Env, run_id: &str) -> (PathBuf, PathBuf) {
         terminal: "completed".into(),
     })
     .unwrap();
-    (log, anchor)
+    log
 }
 
 fn rechain(log: &Path) {
@@ -191,7 +191,7 @@ fn rechain(log: &Path) {
 #[test]
 fn audit_verify_checks_the_anchor_and_show_lists_events() {
     let e = env();
-    let (log, _anchor) = write_run_log(&e, "r1");
+    let log = write_run_log(&e, "r1");
     let ok = duet(&e, &["audit", "verify", "r1"]);
     assert!(ok.status.success(), "{}", text(&ok));
     assert!(text(&ok).contains("anchor matches"));

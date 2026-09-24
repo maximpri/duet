@@ -4,7 +4,7 @@
 //! answer model listings only, and the one run that starts stops at the missing
 //! frontier key before any request.
 
-use duet_boundary::audit::{AuditEvent, AuditLog, Verification, anchor_path, verify};
+use duet_boundary::audit::{AuditEvent, AuditLog, Verification, run_anchors, verify};
 use duet_provider::mock_http::MockServer;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -185,8 +185,7 @@ fn doctor_verifies_recent_audit_logs_and_anchors() {
     let write = |id: &str, anchored: bool| {
         let log = e.ws.join(".duet/audit").join(format!("{id}.jsonl"));
         let mut a = if anchored {
-            AuditLog::open_anchored(&log, &anchor_path(&e.home.join("state"), &e.ws, id), id)
-                .unwrap()
+            AuditLog::open_anchored(&log, &run_anchors(&e.home.join("state"), &e.ws, id)).unwrap()
         } else {
             AuditLog::open(&log).unwrap()
         };

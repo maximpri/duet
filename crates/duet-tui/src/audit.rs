@@ -4,7 +4,7 @@
 //! anchor verification.
 
 use crate::app::Paths;
-use duet_boundary::audit::{Line as Record, anchor_path, describe_line, parse_line, verify_report};
+use duet_boundary::audit::{Line as Record, describe_line, parse_line, run_anchors, verify_report};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -97,8 +97,8 @@ impl AuditView {
             return;
         };
         let log = audit_dir(&paths.workspace).join(format!("{id}.jsonl"));
-        let anchor = anchor_path(&paths.state, &paths.workspace, &id);
-        self.verified = Some(match verify_report(&log, &anchor) {
+        let anchors = run_anchors(&paths.state, &paths.workspace, &id);
+        self.verified = Some(match verify_report(&log, &anchors) {
             Ok((code, lines)) => (id, code, lines),
             Err(e) => (id, 1, vec![e.to_string()]),
         });

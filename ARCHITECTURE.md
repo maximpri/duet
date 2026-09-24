@@ -193,8 +193,11 @@ The gate applies filters to the request, then checks, then appends to the audit 
   sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
   sends (check name), protected edits. Names, paths and outcomes only, never content.
 - **Anchor:** after every append the chain head (record count, last hash) is written to
-  `<owner state>/audit-anchors/<workspace>/<run-id>.json`, outside the workspace; `duet audit
-  verify` reports a log rewritten or truncated since, and a run refuses to continue such a log.
+  `<owner state>/audit-anchors/runs/<run-id>/<first-record hash>.json`, outside the workspace.
+  The key belongs to the run, not to the workspace path, so a moved or re-mounted workspace still
+  verifies; anchors in the earlier layout (`audit-anchors/<workspace hash>/<run-id>.json`) are still
+  read. `duet audit verify` reports a log rewritten or truncated since, and a run refuses to
+  continue such a log.
 
 Canaries are not known to Duet (they carry no marker); the evaluation's leak proxy finds them.
 
@@ -244,7 +247,7 @@ git; reset behaviour defined per entry).
   lock, tmp/                  workspace lock; sandbox scratch space
 ~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
 ~/.local/state/duet/          owner state ($DUET_CONFIG_HOME/state when set), mode 0700
-  audit-anchors/<ws>/<run>.json   chain head of each run's audit log
+  audit-anchors/runs/<run>/<first>.json   chain head of each run's audit log
   config-audit.jsonl          hash-chained log of `duet config set` changes
 ```
 
