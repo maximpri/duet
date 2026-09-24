@@ -171,12 +171,32 @@ Lanes are defined in `crates/duet-evals/src/lanes/lanes.toml`; every lane's mode
 through the leak proxy (external agents run in a sandbox whose network allows loopback only). Runs decided
 by infrastructure (quota, a 4xx on every request) are marked invalid, excluded and re-run.
 
-External lanes and credentials: `pi-glm` uses `ZAI_API_KEY`. For M5, `claude-code` and `codex`
-will run on the operator's CLI subscriptions, not API keys: Claude Code with a `claude setup-token`
-subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) and an isolated config directory; Codex with a
-dedicated evaluation `CODEX_HOME` logged in once with ChatGPT. Both must still route through the
-leak proxy, verified by a one-run smoke test per lane before M5 (`lanes.toml` still has the older
-API-key definitions until then).
+External lanes and credentials: `pi-glm` uses `ZAI_API_KEY`. `claude-code` and `codex` run on the
+operator's CLI subscriptions, not API keys (§3 of the plan, 2026-09-24):
+
+- `claude-code`: the long-lived subscription token printed by `claude setup-token`, exported as
+  `CLAUDE_CODE_OAUTH_TOKEN` (passed through, never written to disk by the harness); a per-run
+  `CLAUDE_CONFIG_DIR` inside the run directory; `ANTHROPIC_BASE_URL` points at the leak proxy,
+  whose upstream is `https://api.anthropic.com`.
+- `codex`: a dedicated evaluation login in `CODEX_HOME=~/.duet-eval/codex` (`~` is the operator's
+  home, expanded at run time), created once with `CODEX_HOME=~/.duet-eval/codex codex login`.
+  Never a copy of the main `~/.codex/auth.json`: refresh tokens rotate, and a copy logs one of the
+  two out. With a ChatGPT login Codex talks to the ChatGPT backend, so the proxy's upstream is
+  `https://chatgpt.com/backend-api/codex`; the lane points Codex at the proxy with the
+  `openai_base_url` config override and `OPENAI_BASE_URL`, disables request compression (the proxy
+  refuses request bodies it cannot scan) and lets the sandbox write only the eval login directory
+  outside the run. These keys were read from the installed build's configuration table
+  (codex-cli 0.156.1), not from its docs.
+
+Both lanes are smoke-tested with one run before M5: the run's `proxy/requests.jsonl` must show the
+model requests with status 200. The sandbox allows loopback only, so a lane that ignored its proxy
+settings cannot reach its provider (the run is invalid) rather than bypass the proxy. Subscription
+lanes are not probed with an API key during quota waits; their invalid runs are retried on the next
+invocation. Before a batch, `duet-eval preflight --lanes claude-code,codex` checks without any model
+call that each lane's program is on PATH (and its version), the required environment variables are
+set (values are never printed), the login directory exists and is not the main login or a copy of
+it, the lane routes through the proxy, and the upstream host resolves; it prints what to do for
+anything missing.
 
 `duet-passthrough` runs with `--no-privacy` (passthrough requires the acknowledgement; requests are
 unchanged). `duet-hybrid` and `duet-local-only` reach the operator's LAN model over plain HTTP, so

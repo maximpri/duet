@@ -325,10 +325,21 @@ an advisory, and covered by a regression test before the next release.
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`
-and `pi-glm` through the proxy (`claude-code` and `codex` on the operator's CLI subscriptions, §3;
-`lanes.toml` is switched and each lane smoke-tested before the runs). Publish `docs/BENCHMARK.md`: quality, leaks, cost and wall clock
-with confidence intervals; judge and model versions; canary method; raw data. Numbers regenerate
-with `duet-eval report --final`.
+and `pi-glm` through the proxy (`claude-code` and `codex` on the operator's CLI subscriptions, §3).
+The subscription lanes are in `lanes.toml` (`claude-code` via `CLAUDE_CODE_OAUTH_TOKEN` and an isolated
+config dir; `codex` via the dedicated `~/.duet-eval/codex` login, upstream the ChatGPT backend);
+`duet-eval preflight --lanes ...` checks their prerequisites without model calls, and each lane is
+smoke-tested with one run (proxy log shows its model requests) before the runs. Runs record the duet_v2
+commit they ran from (`DUET_EVAL_GIT_COMMIT` from the runner, else `git rev-parse HEAD`) and the agent's
+version.
+
+Publish `docs/BENCHMARK.md` with `duet-eval report --final <batch...>` (runs paired across batches by task,
+seed and lane; a JSON twin is written beside it): per lane and per task hidden pass rate, full success,
+judge score, leaks (canaries by kind, exact binomial bound), cost with the paired ratio against
+`duet-passthrough` (the privacy premium), wall clock, frontier and local tokens, each with 95% intervals;
+the gate verdicts under the current rules; the method (canaries, proxy, judge model and rubric version,
+pricing with source and date, statistics); model, build and agent versions; and links to the raw data
+with per-run digests. The same raw data regenerates the same bytes.
 
 ### M6 — Product hardening
 
