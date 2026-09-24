@@ -338,7 +338,15 @@ with `duet-eval report --final`.
   the whole TUI in M6.)
 - Setup and presets for Ollama, LM Studio, llama.cpp, vLLM, oMLX, z.ai, Anthropic, OpenAI; no-config
   bootstrap detecting local servers on default ports; `duet doctor` with cache-reuse check.
-- One live smoke test per local backend.
+  *Built (branch `m6doctor`):* local presets (`duet config preset`: Ollama, LM Studio, llama.cpp,
+  vLLM, oMLX, mlx_lm.server; audited, `--confirm` for the endpoint change); the loopback-only
+  bootstrap in `duet run` (single unambiguous server for one run, else the exact config commands;
+  never writes config); `duet doctor` (offline by default, `--online` for listings and the local
+  context window, `--json`, exit code = worst result). *Open:* frontier presets (z.ai, Anthropic,
+  OpenAI — the latter two need their dialects), the cache-reuse check (needs model calls; `duet
+  local-eval` measures it today), an update check (needs a release channel, SbD-3).
+- One live smoke test per local backend. *Built:* ignored tests in
+  `crates/duet-boundary/tests/backend_smoke.rs`, gated by `DUET_LIVE_<BACKEND>_URL`; not yet run live.
 - Large repositories: dogfood tasks X1 and X2 (real open-source repositories with injected
   sensitive assets), repository map, search scaling.
 

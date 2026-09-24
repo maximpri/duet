@@ -84,7 +84,7 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
 | `duet-config` | Typed settings registry, owner/project scopes, tighten-only project rule |
 | `duet-boundary` | Security engine: classification, transformation, placeholder vault, handle store, digests and brief, `ask_local`, bulky offload, IP levels, outbound gate, audit log, local micro-eval |
 | `duet-agent` | Frontier loop, tool registry, transcript, context manager, termination, checks, cost ledger |
-| `duet-cli` | `run`, `resume`, `audit show/verify`, `config list/get/set`, `purge`, `local-eval`; `doctor`, `setup` *(M6)* |
+| `duet-cli` | `run`, `resume`, `audit show/verify`, `config list/get/set/preset`, `purge`, `local-eval`, `doctor`; no-config loopback bootstrap for `run` |
 | `duet-tui` | Registry-generated configuration screens, live run view, audit viewer *(M6)* |
 | `duet-evals` | `duet-eval`: canary tasks, lanes, leak proxy, judge, statistics, pricing, energy, reports |
 
@@ -249,8 +249,17 @@ reported separately. IP canaries (unique function bodies) must never cross.
   (owner-only or project), direction rule (projects may only tighten privacy), help text,
   confirm-on-change flag. A test fails on any setting read outside the registry.
 - **Files.** Owner: `~/.config/duet/config.toml`. Project: `.duet/config.toml`.
-- **CLI.** `duet config get|set|list`, usable without the TUI. A loosening `set` needs `--confirm`
-  and is recorded in the owner's hash-chained config audit log.
+- **CLI.** `duet config get|set|list|preset`, usable without the TUI. A loosening `set` or `preset`
+  needs `--confirm` and is recorded in the owner's hash-chained config audit log. Presets cover
+  Ollama, LM Studio, llama.cpp, vLLM, oMLX and mlx_lm.server on loopback.
+- **Bootstrap.** With no owner `local.base_url`, `duet run` probes 127.0.0.1 on the preset ports
+  only, uses a single unambiguous server for that run (recorded in `run.json`), and otherwise prints
+  the `duet config set` commands; it never writes configuration.
+- **Doctor.** `duet doctor` reports pass/warn/fail with a fix per check (configuration and origins,
+  config audit, loosened settings, frontier endpoint and key presence, local-endpoint trust, sandbox,
+  git, disk, run audit chains and anchors, retention); offline by default, `--online` adds model
+  listings and the local context window, never a model call; `--json`; exit code is the worst result.
+  Frontier presets (z.ai, Anthropic, OpenAI), a cache-reuse check and an update check *(M6)*.
 - **TUI screens** *(M6)* (generated from the registry):
 
 | Screen | Contents |

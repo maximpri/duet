@@ -3,8 +3,8 @@
 **Frontier-level coding results, with sensitive information processed only by a local model.**
 
 > Status: **in development, not released.** The `duet` CLI, the security engine, IP levels and the
-> evaluation harness work; the privacy and quality gates have passed; cost is reported as a measured privacy premium. Setup,
-> `duet doctor` and the TUI come later (M6). Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
+> evaluation harness work; the privacy and quality gates have passed; cost is reported as a measured privacy premium. Local
+> backend presets, a no-config bootstrap and `duet doctor` exist; the TUI comes later (M6). Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
 
 ## What it is
 
@@ -84,12 +84,33 @@ duet audit verify <run>         # check the hash chain and its anchor
 duet resume <run>               # continue an interrupted run
 duet config list                # every setting, its value and where it came from
 duet config set --project ip.interface_only '["src/pricing/**"]'
+duet config preset              # local backends: default ports, where they report models and context
+duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
+duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
 duet local-eval                 # measure the configured local model in its reading roles
 duet purge                      # delete raw run data older than the retention period
 ```
 
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
-evaluation baseline). Planned for M6: `duet setup`, `duet doctor` and `duet tui`.
+evaluation baseline). Planned for M6: `duet tui`.
+
+**Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
+server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
+`DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on
+offer (saying so, and recording it in the run). With several, or none, it prints the exact
+`duet config set` commands and stops. It never writes configuration: `duet config preset <name>`
+does that, through the same `--confirm` and audit path as any endpoint change.
+
+**`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
+than their defaults, the frontier endpoint and whether its key variable is set (the value is never
+printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git, disk
+space, the audit chains and anchors of the latest runs, and run data past retention. It uses no
+network by default. `--online` adds one model listing per configured server (and the local model's
+context window); it never calls a model. Exit code: 0 pass, 1 warn, 2 fail.
+
+Live smoke tests, one per local backend, run with
+`DUET_LIVE_OLLAMA_URL=http://127.0.0.1:11434/v1 cargo test -p duet-boundary --test backend_smoke -- --ignored`
+(also `LMSTUDIO`, `LLAMACPP`, `VLLM`, `OMLX`, `MLX`; `DUET_LIVE_<BACKEND>_MODEL` picks the model).
 
 ### Models
 
