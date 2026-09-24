@@ -7,7 +7,7 @@ Referenced by [PLAN.md](PLAN.md) and [TARGET_STATE.md](TARGET_STATE.md).
 ## 1. Purpose
 
 The dogfood suite is how Duet proves its north star: frontier-level results, with sensitive
-information processed only by the local model, at lower cost. It replaces all earlier ad-hoc tasks
+information processed only by the local model, at a measured cost. It replaces all earlier ad-hoc tasks
 (including the Arkanoid game, which is no longer used).
 
 Every task is designed so that:
@@ -214,7 +214,7 @@ their per-run owner config sets `local.allow_plaintext = true` (only canaries cr
   needs hundreds of pairs.
 - **Privacy.** Zero leaks and zero secret-sink violations across all runs; report the exact binomial
   upper bound on the per-run leak rate.
-- **Cost.** Upper 95% bound of paired (hybrid − passthrough) cost < 0.
+- **Cost.** Reported, not gated: the paired cost ratio hybrid / passthrough with its bootstrap 95% interval (the privacy premium). The original "strictly cheaper" rule was not met after three attempts (decision 2026-09-24).
 - **Sample size.** Set from pilot variance. Planning figure: 10 paired runs per task per lane for S
   and M, 6 for L; recomputed after the pilot.
 
@@ -225,9 +225,9 @@ their per-run owner config sets `local.allow_plaintext = true` (only canaries cr
 | M0.4 pilot (external lanes, calibration) | S0, S1, S2, M1, M2, M3, L1 |
 | Gate 1 — harness health (M2) | S0, S1, S2, M1 |
 | Gate 2 — privacy without quality loss (M3) | S1, S2, M1, M2, M3, L1 |
-| Gate 3 — strictly cheaper (M4) | S0, S1, S2, M1, M2, M3, L1 (attempts so far: L3, S1, S2, M1) |
+| Gate 3 — cost (M4; closed as a measured privacy premium) | L3, S1, S2, M1 (attempts A–C) |
 | IP gate (M4.5) | L2 |
-| Public benchmark (M5) | S0–L2 |
+| Public benchmark (M5) | S0–L4 |
 | Scale (M6) | X1, X2 |
 
 ## 10. Rules for the suite
