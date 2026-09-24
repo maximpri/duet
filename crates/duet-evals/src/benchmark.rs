@@ -1012,6 +1012,9 @@ mod tests {
             mean_total: total,
             usage: crate::cost::Usage::default(),
             cost_usd: 0.0,
+            judge: String::new(),
+            family: String::new(),
+            cli_version: None,
         }
     }
 

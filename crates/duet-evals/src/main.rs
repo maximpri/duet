@@ -75,16 +75,23 @@ enum Cmd {
         #[arg(long, default_value_t = 120.0)]
         local_watts: f64,
     },
-    /// Judge the code quality of every run in a batch.
+    /// Judge the code quality of every run in a batch, once per judge; each
+    /// judge's result is stored separately in the run directory.
     Judge {
         batch: PathBuf,
-        /// Judge backend: a logged-in assistant CLI (see lanes/judge_cli.rs) or `api` (ANTHROPIC_API_KEY).
-        #[arg(long, default_value = "claude-cli")]
-        backend: String,
-        #[arg(long, default_value = "claude-opus-5-5")]
-        model: String,
+        /// Judges: logged-in assistant CLIs of two model families (see
+        /// lanes/judge_cli.rs), or `api` (ANTHROPIC_API_KEY) in place of the Claude CLI.
+        #[arg(long, value_delimiter = ',', default_value = lanes::judge_cli::DEFAULT_JUDGES)]
+        judges: Vec<String>,
+        /// A judge's model as backend=model, e.g. claude-cli=claude-opus-5-5 (repeatable);
+        /// every judge has a default (lanes/judge_cli.rs).
+        #[arg(long = "model")]
+        models: Vec<String>,
         #[arg(long, default_value_t = 2)]
         repeats: usize,
+        /// Judge again runs a judge has already scored (its file is replaced).
+        #[arg(long)]
+        rejudge: bool,
     },
     /// Summarize a batch and apply the gates. With --final, write the public
     /// benchmark (Markdown and JSON) from one or more batches, paired by task, seed and lane.
@@ -301,15 +308,19 @@ async fn main() -> Result<()> {
         }
         Cmd::Judge {
             batch,
-            backend,
-            model,
+            judges,
+            models,
             repeats,
+            rejudge,
         } => {
-            let backend = match backend.as_str() {
-                "api" => judge::Backend::Api(judge::JudgeClient::from_env(&model)?),
-                cli => judge::Backend::External(lanes::judge_cli::JudgeCli::parse(cli, &model)?),
-            };
-            judge_batch(&cli.tasks, &batch, &backend, repeats).await?
+            let backends = judges
+                .iter()
+                .map(|name| {
+                    let spec = lanes::judge_cli::spec_for_backend(name)?;
+                    judge::Backend::new(&spec, &lanes::judge_cli::model_for(&spec, &models)?)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            judge_batch(&cli.tasks, &batch, &backends, repeats, rejudge).await?
         }
         Cmd::Report {
             batches,
@@ -515,17 +526,13 @@ fn check_task(t: &task::TaskPackage) -> Result<()> {
 async fn judge_batch(
     tasks: &Path,
     batch: &Path,
-    client: &judge::Backend,
+    judges: &[judge::Backend],
     repeats: usize,
+    rejudge: bool,
 ) -> Result<()> {
-    for rec in report::load_records(batch)? {
-        let run_dir = batch.join(&rec.run_id);
-        let out = run_dir.join("judge.json");
-        if out.exists() {
-            continue;
-        }
+    let written = judge::judge_runs(batch, judges, repeats, rejudge, |rec, run_dir| {
         let t = load_task(tasks, &rec.task)?;
-        let manifest = lanes::manifest_of(&run_dir)?;
+        let manifest = lanes::manifest_of(run_dir)?;
         let baseline = std::env::temp_dir().join(format!("duet-eval-base-{}", rec.run_id));
         if baseline.exists() {
             fs::remove_dir_all(&baseline)?;
@@ -533,16 +540,10 @@ async fn judge_batch(
         workspace::prepare(&t, rec.seed, &rec.run_id, &baseline)?;
         let d = judge::diff(&baseline, &run_dir.join("workspace"))?;
         fs::remove_dir_all(&baseline)?;
-        if d.trim().is_empty() {
-            println!("{}: no changes; skipped", rec.run_id);
-            continue;
-        }
-        let j = client
-            .judge(&t.objective, &judge::scrub(&d, &manifest), repeats)
-            .await?;
-        println!("{}: {:.1}/30", rec.run_id, j.mean_total);
-        fs::write(out, serde_json::to_string_pretty(&j)?)?;
-    }
+        Ok((!d.trim().is_empty()).then(|| (t.objective.clone(), judge::scrub(&d, &manifest))))
+    })
+    .await?;
+    println!("{written} judgement(s) written");
     Ok(())
 }
 
@@ -585,4 +586,20 @@ async fn selftest() -> Result<()> {
     }
     println!("selftest ok: canaries, proxy, statistics, pricing");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn judge_defaults_to_both_judge_families() {
+        let cli = Cli::try_parse_from(["duet-eval", "judge", "b"]).unwrap();
+        let Cmd::Judge { judges, models, .. } = cli.command else {
+            panic!("not judge");
+        };
+        assert_eq!(judges.len(), 2);
+        assert_eq!(judges.join(","), lanes::judge_cli::DEFAULT_JUDGES);
+        assert!(models.is_empty());
+    }
 }
