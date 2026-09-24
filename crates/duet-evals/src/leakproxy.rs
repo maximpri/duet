@@ -7,6 +7,10 @@
 //! anything the agent reports about itself. Responses stream through unchanged
 //! and are stored so token usage can be recomputed from the provider's own
 //! numbers.
+//!
+//! A request body the proxy cannot read as sent (any `Content-Encoding` other
+//! than identity, such as a zstd-compressed request) is refused with 415 and
+//! never forwarded: an unscannable request would be an unmeasured leak.
 
 use crate::canary::Manifest;
 use anyhow::{Context, Result};
@@ -141,11 +145,39 @@ async fn forward(state: &State, req: Request<Incoming>) -> Result<Response<Proxy
         .map_or("/", |p| p.as_str())
         .to_owned();
 
+    fs::write(state.log_dir.join(format!("requests/{seq:05}.body")), &body)?;
+    if let Some(encoding) = parts
+        .headers
+        .get(hyper::header::CONTENT_ENCODING)
+        .map(|v| {
+            String::from_utf8_lossy(v.as_bytes())
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .filter(|e| !e.is_empty() && e != "identity")
+    {
+        let status = StatusCode::UNSUPPORTED_MEDIA_TYPE;
+        log_request(
+            state,
+            seq,
+            &parts.method,
+            path,
+            &body,
+            status.as_u16(),
+            Vec::new(),
+        )?;
+        let mut resp = Response::new(full(Bytes::from(format!(
+            "duet-eval proxy: request body with content-encoding {encoding} cannot be scanned; \
+             disable request compression in the agent"
+        ))));
+        *resp.status_mut() = status;
+        return Ok(resp);
+    }
+
     // Scan and store before anything leaves the machine.
     let text = String::from_utf8_lossy(&body);
     let leaked: Vec<_> = state.manifest.find_in(&text);
     let leaked_names: Vec<String> = leaked.iter().map(|c| c.name.clone()).collect();
-    fs::write(state.log_dir.join(format!("requests/{seq:05}.body")), &body)?;
     if !leaked.is_empty() {
         let mut f = append(&state.log_dir.join("leaks.jsonl"))?;
         for c in &leaked {
@@ -177,23 +209,7 @@ async fn forward(state: &State, req: Request<Incoming>) -> Result<Response<Proxy
         .with_context(|| format!("forwarding to {url}"))?;
     let status = resp.status().as_u16();
 
-    let record = RequestRecord {
-        seq,
-        unix_ms: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis()),
-        method: parts.method.to_string(),
-        path,
-        bytes: body.len(),
-        sha256: hex::encode(Sha256::digest(&body)),
-        status,
-        leaked: leaked_names,
-    };
-    writeln!(
-        append(&state.log_dir.join("requests.jsonl"))?,
-        "{}",
-        serde_json::to_string(&record)?
-    )?;
+    log_request(state, seq, &parts.method, path, &body, status, leaked_names)?;
 
     let mut builder = Response::builder().status(status);
     for (name, value) in resp.headers() {
@@ -215,6 +231,35 @@ async fn forward(state: &State, req: Request<Incoming>) -> Result<Response<Proxy
             chunk.map(Frame::data)
         });
     Ok(builder.body(BodyExt::boxed(StreamBody::new(stream)))?)
+}
+
+fn log_request(
+    state: &State,
+    seq: u64,
+    method: &hyper::Method,
+    path: String,
+    body: &[u8],
+    status: u16,
+    leaked: Vec<String>,
+) -> Result<()> {
+    let record = RequestRecord {
+        seq,
+        unix_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis()),
+        method: method.to_string(),
+        path,
+        bytes: body.len(),
+        sha256: hex::encode(Sha256::digest(body)),
+        status,
+        leaked,
+    };
+    writeln!(
+        append(&state.log_dir.join("requests.jsonl"))?,
+        "{}",
+        serde_json::to_string(&record)?
+    )?;
+    Ok(())
 }
 
 fn append(path: &Path) -> Result<fs::File> {
@@ -330,6 +375,36 @@ mod tests {
         assert_eq!(leaks[0].seq, 2);
         assert_eq!(leaks[0].canary, "API_KEY");
         assert!(dir.path().join("responses/00001.body").exists());
+        proxy.stop();
+    }
+
+    #[tokio::test]
+    async fn refuses_request_bodies_it_cannot_scan() {
+        let upstream = fake_upstream().await;
+        let dir = tempfile::tempdir().unwrap();
+        let proxy = start(
+            "127.0.0.1:0".parse().unwrap(),
+            &format!("http://{upstream}"),
+            Generator::new("M1", 1).manifest("r", 1),
+            dir.path(),
+        )
+        .await
+        .unwrap();
+        let resp = reqwest::Client::new()
+            .post(format!("{}/responses", proxy.base_url()))
+            .header("content-encoding", "zstd")
+            .body(vec![0x28, 0xb5, 0x2f, 0xfd, 0, 0])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status().as_u16(), 415);
+        let requests = read_requests(dir.path()).unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].status, 415);
+        assert!(
+            !dir.path().join("responses/00001.body").exists(),
+            "never forwarded"
+        );
         proxy.stop();
     }
 }
