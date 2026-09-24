@@ -147,6 +147,22 @@ cargo build --release
 tools/gate.sh        # formatting, lints, tests, license and provenance checks
 ```
 
+## Development
+
+There is no hosted CI: `tools/gate.sh` is the gate, and every commit must pass it.
+
+```sh
+tools/install-hooks.sh --pre-commit   # pre-push: full gate; pre-commit: tools/gate.sh --fast
+tools/gate.sh --fast                  # format, license, privacy and provenance checks (seconds)
+PROPTEST_CASES=5000 cargo test -p duet-boundary --test no_canary   # a deeper property run
+tools/fuzz.sh 60                      # each fuzz target for 60 s (see tools/fuzz.sh --help)
+```
+
+The hooks are not installed automatically; `tools/install-hooks.sh --uninstall` removes them and
+`--no-verify` skips them once. Property tests run in the gate with small case counts;
+`PROPTEST_CASES` raises them. Fuzzing is not part of the gate (it needs time, and cargo-fuzz needs a
+nightly toolchain; without one `tools/fuzz.sh` builds the targets on stable).
+
 ## License
 
 GPL-3.0-or-later.
