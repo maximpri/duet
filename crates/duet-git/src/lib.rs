@@ -59,6 +59,11 @@ impl Git {
         Ok(Self { binary })
     }
 
+    /// The resolved git binary.
+    pub fn binary(&self) -> &Path {
+        &self.binary
+    }
+
     /// Runs git with hardening flags; `env` adds variables after the environment is cleared.
     pub fn run(
         &self,

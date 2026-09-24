@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! `duet config preset` and the no-config bootstrap through the binary, against
-//! a scripted loopback server. No test calls a model: servers answer model
-//! listings only, and the one run that starts stops at the missing
+//! `duet doctor`, `duet config preset` and the no-config bootstrap through the
+//! binary, against a scripted loopback server. No test calls a model: servers
+//! answer model listings only, and the one run that starts stops at the missing
 //! frontier key before any request.
 
-use duet_boundary::audit::{Verification, verify};
+use duet_boundary::audit::{AuditEvent, AuditLog, Verification, anchor_path, verify};
 use duet_provider::mock_http::MockServer;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -63,6 +63,154 @@ fn text(o: &Output) -> String {
 
 fn owner_config(e: &Env, toml: &str) {
     std::fs::write(e.home.join("config.toml"), toml).unwrap();
+}
+
+/// `duet doctor --json` and the status of each named check.
+fn doctor(e: &Env, args: &[&str], vars: &[(&str, &str)]) -> (i32, Value) {
+    let mut all = vec!["doctor", "--json"];
+    all.extend_from_slice(args);
+    let o = duet_with(e, &all, vars);
+    let v: Value = serde_json::from_slice(&o.stdout).unwrap_or_else(|_| panic!("{}", text(&o)));
+    (o.status.code().unwrap(), v)
+}
+
+fn status<'a>(report: &'a Value, name: &str) -> &'a str {
+    report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == name)
+        .unwrap_or_else(|| panic!("no check {name}: {report}"))["status"]
+        .as_str()
+        .unwrap()
+}
+
+fn configured(e: &Env, server: &MockServer, model: &str) {
+    owner_config(
+        e,
+        &format!(
+            "[frontier]\nbase_url = \"{u}\"\n[local]\nbase_url = \"{u}\"\nmodel = \"{model}\"\n",
+            u = server.base_url()
+        ),
+    );
+}
+
+const LISTING: &str = r#"{"data":[{"id":"coder","max_model_len":65536},{"id":"glm-5.3-flash"}]}"#;
+
+#[test]
+fn offline_doctor_uses_no_network_and_never_prints_the_key() {
+    let e = env();
+    let server = MockServer::start(&[("GET /v1/models", 200, LISTING)]);
+    configured(&e, &server, "coder");
+    let (code, report) = doctor(&e, &[], &[]);
+    assert_eq!(status(&report, "frontier key"), "fail", "{report}");
+    assert_eq!(code, 2);
+    assert_eq!(status(&report, "local endpoint"), "pass");
+    assert_eq!(status(&report, "local server"), "skip");
+    assert_eq!(status(&report, "frontier model"), "skip");
+    assert_eq!(status(&report, "sandbox"), "pass");
+    assert_eq!(status(&report, "git"), "pass");
+    assert_eq!(status(&report, "audit"), "pass");
+
+    let secret = "sk-doctor-test-4f9a1c";
+    let (_, report) = doctor(&e, &[], &[("ZAI_API_KEY", secret)]);
+    assert_eq!(status(&report, "frontier key"), "pass");
+    let o = duet_with(&e, &["doctor"], &[("ZAI_API_KEY", secret)]);
+    assert!(!text(&o).contains(secret) && !report.to_string().contains(secret));
+    assert!(text(&o).contains("PASS  frontier key"), "{}", text(&o));
+    assert!(
+        server.seen().is_empty(),
+        "offline doctor contacted {:?}",
+        server.seen()
+    );
+    assert!(!e.ws.join(".duet").exists(), "doctor wrote workspace state");
+}
+
+#[test]
+fn online_doctor_lists_models_and_context_without_model_calls() {
+    let e = env();
+    let server = MockServer::start(&[("GET /v1/models", 200, LISTING)]);
+    configured(&e, &server, "coder");
+    let (code, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    for (name, want) in [
+        ("frontier model", "pass"),
+        ("local server", "pass"),
+        ("local context", "pass"),
+    ] {
+        assert_eq!(status(&report, name), want, "{name}: {report}");
+    }
+    // Loopback plain HTTP to the frontier is allowed; nothing else warns.
+    assert!(code <= 1, "{report}");
+    let seen = server.seen();
+    assert!(seen.iter().all(|r| r.method == "GET"), "{seen:?}");
+    assert!(seen.iter().any(|r| r.path == "/v1/models" && r.bearer));
+
+    // A model the server does not list fails with the fix naming one it does.
+    configured(&e, &server, "missing");
+    let (code, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert_eq!(code, 2);
+    assert_eq!(status(&report, "local server"), "fail");
+    let check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "local server")
+        .unwrap();
+    assert!(check["fix"].as_str().unwrap().contains("coder"), "{check}");
+}
+
+#[test]
+fn doctor_fails_a_refused_local_endpoint_and_does_not_contact_it() {
+    let e = env();
+    // TEST-NET-1 (never routed), allowlisted but plain HTTP without the opt-in.
+    owner_config(
+        &e,
+        "[local]\nbase_url = \"http://192.0.2.1:9/v1\"\nallowlist = [\"192.0.2.1:9\"]\n",
+    );
+    let (code, report) = doctor(&e, &["--online"], &[]);
+    assert_eq!(code, 2);
+    assert_eq!(status(&report, "local endpoint"), "fail");
+    assert_eq!(status(&report, "local server"), "skip");
+    let o = duet(&e, &["doctor"]);
+    assert!(
+        text(&o).contains("local.allow_plaintext = true"),
+        "{}",
+        text(&o)
+    );
+}
+
+#[test]
+fn doctor_verifies_recent_audit_logs_and_anchors() {
+    let e = env();
+    let write = |id: &str, anchored: bool| {
+        let log = e.ws.join(".duet/audit").join(format!("{id}.jsonl"));
+        let mut a = if anchored {
+            AuditLog::open_anchored(&log, &anchor_path(&e.home.join("state"), &e.ws, id), id)
+                .unwrap()
+        } else {
+            AuditLog::open(&log).unwrap()
+        };
+        a.event(AuditEvent::RunStart {
+            mode: "hybrid".into(),
+            boundary: true,
+        })
+        .unwrap();
+        a.append("https://f/v1", "m", serde_json::json!({"n": 1}), vec![])
+            .unwrap();
+        log
+    };
+    let log = write("r1", true);
+    assert_eq!(status(&doctor(&e, &[], &[]).1, "audit"), "pass");
+    write("r2", false);
+    assert_eq!(status(&doctor(&e, &[], &[]).1, "audit"), "warn");
+    // An edited record breaks the chain.
+    let edited = std::fs::read_to_string(&log)
+        .unwrap()
+        .replace("\"n\":1", "\"n\":2");
+    std::fs::write(&log, edited).unwrap();
+    let (code, report) = doctor(&e, &[], &[]);
+    assert_eq!(status(&report, "audit"), "fail", "{report}");
+    assert_eq!(code, 2);
 }
 
 #[test]

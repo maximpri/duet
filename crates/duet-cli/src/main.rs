@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+mod doctor;
 mod setup;
 
 #[derive(Parser)]
@@ -98,6 +99,16 @@ enum Cmd {
         /// Write the full report (per-fixture outcomes) here as JSON.
         #[arg(long)]
         out: Option<PathBuf>,
+    },
+    /// Check configuration, endpoints, sandbox, git, disk and audit logs; print
+    /// pass/warn/fail with a fix for each. Exit code: 0 pass, 1 warn, 2 fail.
+    Doctor {
+        /// Also contact the configured servers (model listings and context
+        /// windows only; never a model call). Without it doctor uses no network.
+        #[arg(long)]
+        online: bool,
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -251,7 +262,7 @@ fn local_provider(
 }
 
 /// Where the anchor of a run's audit log lives (owner state directory).
-fn run_anchor(ws: &Path, run_id: &str) -> PathBuf {
+pub(crate) fn run_anchor(ws: &Path, run_id: &str) -> PathBuf {
     anchor_path(&duet_config::owner_state_dir(), ws, run_id)
 }
 
@@ -727,6 +738,15 @@ Add --no-privacy to confirm, or use --mode hybrid."
             if let Some(p) = out {
                 std::fs::write(p, serde_json::to_vec_pretty(&report)?)?;
             }
+        }
+        Cmd::Doctor { online, json } => {
+            let checks = doctor::run(&ws, online).await;
+            if json {
+                println!("{}", doctor::render_json(&checks, online));
+            } else {
+                print!("{}", doctor::render_text(&checks, online));
+            }
+            std::process::exit(doctor::exit_code(&checks));
         }
     }
     Ok(())
