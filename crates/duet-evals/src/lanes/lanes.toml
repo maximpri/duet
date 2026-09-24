@@ -5,6 +5,10 @@
 #
 # Placeholders: {workspace} {run_dir} {proxy_url} {objective} {model}
 #
+# `family` is the vendor family of the model that writes the lane's code (Duet
+# lanes: the frontier model's; external lanes: their vendor's). The report flags
+# runs judged by a judge of the same family.
+#
 # Duet lanes that use the local model reach it on the operator's LAN host over
 # plain HTTP. Duet refuses that unless the owner config opts in, so their
 # per-run owner config sets `local.allow_plaintext = true`: the operator accepts
@@ -17,6 +21,7 @@ kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
+family = "zhipu"
 # The measured frontier-only baseline: the boundary is off, acknowledged explicitly.
 argv = ["{duet_bin}", "run", "--mode", "passthrough", "--no-privacy", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
@@ -31,6 +36,7 @@ kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
+family = "zhipu"
 argv = ["{duet_bin}", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
         "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["ZAI_API_KEY", "OMLX_API_KEY"]
@@ -55,6 +61,8 @@ kind = "duet"
 sandbox = false
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
+# No frontier model: the local model writes the code, and no judge shares its family.
+family = "local"
 argv = ["{duet_bin}", "run", "--mode", "local-only", "--objective-file", "{run_dir}/objective.md"]
 env_passthrough = ["OMLX_API_KEY"]
 allow_hosts = ["192.168.50.132:8080"]
@@ -76,6 +84,7 @@ name = "pi-glm"
 kind = "external"
 upstream = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
+family = "zhipu"
 argv = ["pi", "--offline", "--print", "--mode", "json", "--provider", "zai-proxy",
         "--model", "{model}", "--thinking", "medium", "--no-extensions", "--no-skills",
         "--no-prompt-templates", "--no-context-files", "--no-approve",
@@ -118,6 +127,7 @@ name = "claude-code"
 kind = "external"
 upstream = "https://api.anthropic.com"
 model = "claude-sonnet-5"
+family = "anthropic"
 # Subscription token from `claude setup-token`; no API key to probe with.
 probe = false
 argv = ["claude", "-p", "{objective}", "--model", "{model}", "--output-format", "json",
@@ -145,6 +155,7 @@ kind = "external"
 # api.openai.com, so that is the proxy's upstream.
 upstream = "https://chatgpt.com/backend-api/codex"
 model = "gpt-5.5"
+family = "openai"
 probe = false
 # `openai_base_url` (config key) and OPENAI_BASE_URL override the built-in
 # provider's base URL for either login mode. Request compression is disabled:

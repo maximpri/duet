@@ -66,6 +66,11 @@ pub struct Lane {
     pub kind: LaneKind,
     pub upstream: String,
     pub model: String,
+    /// Vendor family of the model that writes the lane's code (Duet lanes: the
+    /// frontier model's; external lanes: their vendor's). A judge of the same
+    /// family is flagged as judging its own family.
+    #[serde(default)]
+    pub family: Option<String>,
     pub argv: Vec<String>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
@@ -229,6 +234,9 @@ pub struct Provenance {
     pub lane_upstream: String,
     /// First line of the lane program's `--version`.
     pub agent_version: Option<String>,
+    /// The lane's model family (see [`Lane::family`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane_family: Option<String>,
 }
 
 /// The duet_v2 commit this run is attributed to (see [`Provenance::git_commit`]).
@@ -408,6 +416,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         lane_model: cfg.lane.model.clone(),
         lane_upstream: cfg.lane.upstream.clone(),
         agent_version,
+        lane_family: cfg.lane.family.clone(),
     };
 
     let outcome = launch(&cfg, &run_dir, &ws, &proxy_url).await;
@@ -638,6 +647,24 @@ mod tests {
             "codex",
         ] {
             assert!(find_lane(&lanes, required).is_ok(), "{required}");
+        }
+    }
+
+    #[test]
+    fn built_in_lanes_declare_their_model_family() {
+        let lanes = load_lanes(None).unwrap();
+        for lane in &lanes {
+            assert!(lane.family.is_some(), "{} has no family", lane.name);
+        }
+        for (name, family) in [
+            ("duet-passthrough", "zhipu"),
+            ("duet-hybrid", "zhipu"),
+            ("pi-glm", "zhipu"),
+            ("claude-code", "anthropic"),
+            ("codex", "openai"),
+        ] {
+            let lane = find_lane(&lanes, name).unwrap();
+            assert_eq!(lane.family.as_deref(), Some(family), "{name}");
         }
     }
 

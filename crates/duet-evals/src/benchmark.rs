@@ -998,6 +998,7 @@ mod tests {
                 lane_model: "glm-5.3-flash".into(),
                 lane_upstream: "https://example.invalid".into(),
                 agent_version: None,
+                lane_family: None,
             }),
         }
     }
