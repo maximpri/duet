@@ -56,6 +56,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-23 | Cost gate reference confirmed: hybrid vs the orchestrator alone (`duet-passthrough`, same frontier model, currently `glm-5.3-flash`), paired; not vs Pi or another model (operator) |
 | 2026-09-23 | The ratatui TUI (all screens, including Run and Audit) stays in M6, after the privacy and cost gates (operator) |
 | 2026-09-23 | duet-boundary budget raised from ~3.2K to ~5K production lines (it absorbed M4 bulky offload and M4.5 IP levels; measured ~4.55K); further growth needs another decision (operator) |
+| 2026-09-24 | Secure by Design is core for duet (operator): cross-cutting SbD track added (§5); SbD-1 and a red-team pass must pass before the public benchmark (M5) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -254,6 +255,53 @@ relaxing to "no more expensive" and a pricier frontier.
 - Dogfood task **L2 `pricing-crown-jewel`**.
 
 **Gate:** zero IP-canary leakage. Quality cost of protected edits reported, not gated.
+
+### SbD — Secure by Design (core, cross-cutting)
+
+Duet's product is a security promise: sensitive information never reaches the cloud model. Secure by
+Design (CISA and partner agencies' principles and pledge) applies to that promise itself: it holds by
+construction and by default, is proven by independent measurement, is honest about its limits, and is
+backed by a process for reporting and fixing failures. The track runs alongside the milestones; nothing
+ships publicly (M5) before SbD-1 passes.
+
+Already in place: memory-safe Rust with `unsafe_code = "forbid"`; hybrid, sandbox on and network off by
+default; commands cannot read sensitive paths (OS-enforced); the agent crate cannot reach the frontier
+except through the gate (type-level); project config can only tighten; credentials by environment-variable
+name only; 0600 run data; hash-chained audit of every outbound byte; canaries plus an independent leak
+proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, bans, sources).
+
+**SbD-1 — secure defaults and evidence (before M5)**
+- Refuse plaintext HTTP to a non-loopback local model unless the owner sets
+  `local.allow_plaintext = true` (loopback and TLS are always allowed); `duet doctor`-style message on refusal.
+- Loosening a privacy setting (registry `confirm` keys, or a value against its tighten direction) through
+  `duet config set` needs an explicit `--confirm`, prints the policy diff, and is recorded in an owner
+  audit log. Passthrough mode needs an explicit flag and prints a banner (the boundary is off).
+- Audit events beyond outbound requests: sandbox denials, `sensitive_data` runs, blocked sends, policy
+  and config changes, local-endpoint trust decisions, protected-code decisions.
+- Tamper evidence: each run's final chain head is anchored outside the workspace (owner state
+  directory); `duet audit verify` checks the anchor, so a rewritten log is detected, not only an edited record.
+- `SECURITY.md`: disclosure policy (contact, response times, safe harbour), `security.txt`, commitment
+  to publish advisories with CWE root causes; a changelog of the leak classes fixed so far.
+- Prompt-injection residual risk documented (the frontier can be steered by hostile public content
+  inside the sandbox; what the sandbox and write path still prevent).
+
+**SbD-2 — eliminate classes, verify independently (with M5)**
+- Fuzzing (cargo-fuzz) of the SSE parser, JSON/tool-call recovery, vault tokenize/detokenize, the
+  copied-span filter and detectors; property test "no canary survives the gate" over generated content.
+- Adversarial review of the boundary before the public benchmark (a red-team pass with fresh canaries,
+  encodings and injection), findings fixed at the class level.
+- Pre-commit / pre-push hook running `tools/gate.sh` (no hosted CI by operator decision).
+
+**SbD-3 — supply chain and oversight (with M6)**
+- Versioned, signed releases; SBOM (CycloneDX); security advisory channel; `duet doctor` flags outdated
+  versions.
+- Optional approval mode for risky actions (`sensitive_data` commands, writes outside sources/tests).
+- Per-run disclosure report: what was withheld, by class (extends the M4 cost ledger).
+- Frontier provider data-retention terms documented in the threat model.
+
+**SbD gate (before M5):** every SbD-1 item done with tests; red-team pass (SbD-2) with zero canary
+leaks; `SECURITY.md` complete. Any disclosure path found later is fixed at the class level, published as
+an advisory, and covered by a regression test before the next release.
 
 ### M5 — Public benchmark (days 32–35)
 
