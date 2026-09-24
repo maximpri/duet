@@ -343,3 +343,46 @@ fn bootstrap_uses_a_single_server_for_this_run_only() {
         one.seen()
     );
 }
+
+fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
+    report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == name)
+        .unwrap_or_else(|| panic!("no check {name}: {report}"))
+}
+
+#[test]
+fn doctor_shows_the_approval_mode_and_warns_without_release_keys() {
+    let e = env();
+    let (_, report) = doctor(&e, &[], &[]);
+    let approval = check(&report, "approval");
+    assert_eq!(approval["status"], "pass");
+    assert!(approval["detail"].as_str().unwrap().starts_with("off"));
+    let keys = check(&report, "release keys");
+    assert_eq!(keys["status"], "warn", "{keys}");
+    assert!(keys["fix"].as_str().unwrap().contains("verify-release.sh"));
+
+    owner_config(&e, "[oversight]\napprove = \"risky\"\n");
+    std::fs::write(
+        e.home.join("allowed_signers"),
+        "# release signers\nrelease@duet namespaces=\"duet-release\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample\n",
+    )
+    .unwrap();
+    let (_, report) = doctor(&e, &[], &[]);
+    assert!(
+        check(&report, "approval")["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("risky")
+    );
+    let keys = check(&report, "release keys");
+    assert_eq!(keys["status"], "pass", "{keys}");
+    assert!(
+        keys["detail"]
+            .as_str()
+            .unwrap()
+            .starts_with("1 release signer")
+    );
+}

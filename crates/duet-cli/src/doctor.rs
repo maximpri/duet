@@ -149,6 +149,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
     match &cfg {
         Some(c) => {
             out.push(posture(c));
+            out.push(approval(c));
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
         }
@@ -158,6 +159,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
             "configuration did not load",
         )),
     }
+    out.push(release_signers());
     out.push(sandbox());
     out.extend(git(ws));
     out.push(disk(ws));
@@ -259,6 +261,75 @@ fn posture(c: &Config) -> Check {
         ),
     )
     .fix("review with `duet config list`; restore a default with `duet config set <key> <default>`")
+}
+
+/// Whether the operator approves risky actions (`oversight.approve`).
+fn approval(c: &Config) -> Check {
+    match c.str("oversight.approve").unwrap_or_default().as_str() {
+        "off" => check(
+            "approval",
+            Status::Pass,
+            "off: actions run without asking (set oversight.approve to risky or all to be asked at the terminal)",
+        ),
+        "risky" => check(
+            "approval",
+            Status::Pass,
+            "risky: sensitive_data commands, edit_protected and writes outside source/test files wait for y/N; runs need a terminal",
+        ),
+        other => check(
+            "approval",
+            Status::Pass,
+            format!("{other}: every command and write waits for y/N; runs need a terminal"),
+        ),
+    }
+}
+
+/// Where the owner keeps the public keys trusted to sign releases.
+pub fn release_signers_path() -> std::path::PathBuf {
+    duet_config::owner_config_path().with_file_name("allowed_signers")
+}
+
+/// Whether release verification material is present (warn-only).
+fn release_signers() -> Check {
+    let path = release_signers_path();
+    let fix = format!(
+        "save the published release signer line (`<identity> namespaces=\"duet-release\" <public key>`) to {}, then check a download with tools/verify-release.sh <release dir>",
+        path.display()
+    );
+    match std::fs::read_to_string(&path) {
+        Ok(text) => {
+            let signers = text
+                .lines()
+                .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'))
+                .count();
+            if signers == 0 {
+                check(
+                    "release keys",
+                    Status::Warn,
+                    format!("{} lists no signer", path.display()),
+                )
+                .fix(fix)
+            } else {
+                check(
+                    "release keys",
+                    Status::Pass,
+                    format!(
+                        "{signers} release signer(s) in {} (tools/verify-release.sh uses them)",
+                        path.display()
+                    ),
+                )
+            }
+        }
+        Err(_) => check(
+            "release keys",
+            Status::Warn,
+            format!(
+                "no release signing keys at {}: a downloaded release cannot be verified",
+                path.display()
+            ),
+        )
+        .fix(fix),
+    }
 }
 
 async fn frontier(c: &Config, online: bool) -> Vec<Check> {
