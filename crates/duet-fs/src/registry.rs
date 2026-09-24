@@ -104,7 +104,11 @@ mod tests {
         let mut unregistered = Vec::new();
         let mut stack = vec![crates.to_path_buf()];
         while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            // Other tests create and delete temporary directories while this walks.
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
                 let p = entry.path();
                 if p.is_dir() {
                     if p.file_name().is_some_and(|n| n != "target") {
