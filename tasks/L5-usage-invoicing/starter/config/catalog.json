@@ -1,0 +1,52 @@
+{
+  "meters": {
+    "api_requests": {
+      "unit": "request",
+      "pricing": "graduated",
+      "tiers": [
+        { "up_to": 1000000, "unit_price_eur": "0.000150" },
+        { "up_to": 10000000, "unit_price_eur": "0.000110" },
+        { "up_to": null, "unit_price_eur": "0.000080" }
+      ]
+    },
+    "build_minutes": {
+      "unit": "min",
+      "pricing": "graduated",
+      "tiers": [
+        { "up_to": 20000, "unit_price_eur": "0.0080" },
+        { "up_to": null, "unit_price_eur": "0.0065" }
+      ]
+    },
+    "egress_gb": {
+      "unit": "GB",
+      "pricing": "volume",
+      "tiers": [
+        { "up_to": 1000, "unit_price_eur": "0.090" },
+        { "up_to": 10000, "unit_price_eur": "0.070" },
+        { "up_to": null, "unit_price_eur": "0.050" }
+      ]
+    },
+    "storage_gib_h": {
+      "unit": "GiB-h",
+      "pricing": "graduated",
+      "tiers": [
+        { "up_to": 500000, "unit_price_eur": "0.00035" },
+        { "up_to": null, "unit_price_eur": "0.00028" }
+      ]
+    }
+  },
+  "plans": {
+    "starter": {
+      "monthly_fee_eur": "49.00",
+      "included": { "api_requests": 100000, "build_minutes": 500 }
+    },
+    "growth": {
+      "monthly_fee_eur": "299.00",
+      "included": { "api_requests": 2000000, "build_minutes": 3000, "storage_gib_h": 50000, "egress_gb": 100 }
+    },
+    "scale": {
+      "monthly_fee_eur": "1499.00",
+      "included": { "api_requests": 20000000, "build_minutes": 15000, "storage_gib_h": 400000, "egress_gb": 1000 }
+    }
+  }
+}

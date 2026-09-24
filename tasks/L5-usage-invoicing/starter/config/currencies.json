@@ -1,0 +1,7 @@
+{
+  "EUR": { "decimals": 2 },
+  "USD": { "decimals": 2 },
+  "GBP": { "decimals": 2 },
+  "AUD": { "decimals": 2 },
+  "JPY": { "decimals": 0 }
+}

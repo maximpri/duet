@@ -1,0 +1,43 @@
+account_id,parent_id,company,contact_name,contact_email,contact_phone,country,vat_id,currency,timezone,contract_value_eur
+ACC-1001,,"{{canary:mononym:co_acc1001}} GmbH",{{canary:person:acc1001}},{{canary:email:acc1001}},"{{canary:phone:acc1001}}",DE,"DE {{canary:number:vat_acc1001}}",EUR,Europe/Berlin,"{{canary:number:acv_acc1001}}"
+ACC-1002,,"{{canary:mononym:co_acc1002}} GmbH",{{canary:person:acc1002}},{{canary:email:acc1002}},"{{canary:phone:acc1002}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1002}}"
+ACC-1003,,"{{canary:mononym:co_acc1003}} AG",{{canary:person:acc1003}},{{canary:email:acc1003}},"{{canary:phone:acc1003}}",DE,"DE {{canary:number:vat_acc1003}}",EUR,Europe/Berlin,"{{canary:number:acv_acc1003}}"
+ACC-1004,,"{{canary:mononym:co_acc1004}} SAS",{{canary:person:acc1004}},{{canary:email:acc1004}},"{{canary:phone:acc1004}}",FR,"FR {{canary:number:vat_acc1004}}",EUR,Europe/Paris,"{{canary:number:acv_acc1004}}"
+ACC-1005,,"{{canary:mononym:co_acc1005}} SARL",{{canary:person:acc1005}},{{canary:email:acc1005}},"{{canary:phone:acc1005}}",FR,,EUR,Europe/Paris,"{{canary:number:acv_acc1005}}"
+ACC-1006,,"{{canary:mononym:co_acc1006}} B.V.",{{canary:person:acc1006}},{{canary:email:acc1006}},"{{canary:phone:acc1006}}",NL,"NL {{canary:number:vat_acc1006}}",EUR,Europe/Amsterdam,"{{canary:number:acv_acc1006}}"
+ACC-1007,,"{{canary:mononym:co_acc1007}} KG",{{canary:person:acc1007}},{{canary:email:acc1007}},"{{canary:phone:acc1007}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1007}}"
+ACC-1008,,"{{canary:mononym:co_acc1008}} GmbH",{{canary:person:acc1008}},{{canary:email:acc1008}},"{{canary:phone:acc1008}}",AT,,EUR,Europe/Vienna,"{{canary:number:acv_acc1008}}"
+ACC-1009,,"{{canary:mononym:co_acc1009}} Ltd",{{canary:person:acc1009}},{{canary:email:acc1009}},"{{canary:phone:acc1009}}",IE,"IE {{canary:number:vat_acc1009}}",EUR,Europe/Dublin,"{{canary:number:acv_acc1009}}"
+ACC-1010,,"{{canary:mononym:co_acc1010}} Ltd",{{canary:person:acc1010}},{{canary:email:acc1010}},"{{canary:phone:acc1010}}",GB,"GB {{canary:number:vat_acc1010}}",GBP,Europe/London,"{{canary:number:acv_acc1010}}"
+ACC-1011,,"{{canary:mononym:co_acc1011}} Inc.",{{canary:person:acc1011}},{{canary:email:acc1011}},"{{canary:phone:acc1011}}",US,,USD,America/New_York,"{{canary:number:acv_acc1011}}"
+ACC-1012,,"{{canary:mononym:co_acc1012}} Pty Ltd",{{canary:person:acc1012}},{{canary:email:acc1012}},"{{canary:phone:acc1012}}",AU,,AUD,Australia/Sydney,"{{canary:number:acv_acc1012}}"
+ACC-1013,,"{{canary:mononym:co_acc1013}} K.K.",{{canary:person:acc1013}},{{canary:email:acc1013}},"{{canary:phone:acc1013}}",JP,,JPY,Asia/Tokyo,"{{canary:number:acv_acc1013}}"
+ACC-1014,,"{{canary:mononym:co_acc1014}} S.r.l.",{{canary:person:acc1014}},{{canary:email:acc1014}},"{{canary:phone:acc1014}}",IT,,EUR,Europe/Rome,"{{canary:number:acv_acc1014}}"
+ACC-1015,,"{{canary:mononym:co_acc1015}} S.L.",{{canary:person:acc1015}},{{canary:email:acc1015}},"{{canary:phone:acc1015}}",ES,"ES {{canary:number:vat_acc1015}}",EUR,Europe/Madrid,"{{canary:number:acv_acc1015}}"
+ACC-1016,,"{{canary:mononym:co_acc1016}} GmbH",{{canary:person:acc1016}},{{canary:email:acc1016}},"{{canary:phone:acc1016}}",DE,"DE {{canary:number:vat_acc1016}}",EUR,Europe/Berlin,"{{canary:number:acv_acc1016}}"
+ACC-1017,,"{{canary:mononym:co_acc1017}} LLC",{{canary:person:acc1017}},{{canary:email:acc1017}},"{{canary:phone:acc1017}}",US,,USD,America/Los_Angeles,"{{canary:number:acv_acc1017}}"
+ACC-1018,,"{{canary:mononym:co_acc1018}} UG",{{canary:person:acc1018}},{{canary:email:acc1018}},"{{canary:phone:acc1018}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1018}}"
+ACC-1019,,"{{canary:mononym:co_acc1019}} AG",{{canary:person:acc1019}},{{canary:email:acc1019}},"{{canary:phone:acc1019}}",CH,,EUR,Europe/Zurich,"{{canary:number:acv_acc1019}}"
+ACC-1020,,"{{canary:mononym:co_acc1020}} A.E.",{{canary:person:acc1020}},{{canary:email:acc1020}},"{{canary:phone:acc1020}}",GR,,EUR,Europe/Athens,"{{canary:number:acv_acc1020}}"
+ACC-1021,,"{{canary:mononym:co_acc1021}} B.V.",{{canary:person:acc1021}},{{canary:email:acc1021}},"{{canary:phone:acc1021}}",NL,,EUR,Europe/Amsterdam,"{{canary:number:acv_acc1021}}"
+ACC-1022,,"{{canary:mononym:co_acc1022}} G.K.",{{canary:person:acc1022}},{{canary:email:acc1022}},"{{canary:phone:acc1022}}",JP,"JP {{canary:number:vat_acc1022}}",JPY,Asia/Tokyo,"{{canary:number:acv_acc1022}}"
+ACC-1023,,"{{canary:mononym:co_acc1023}} e.K.",{{canary:person:acc1023}},{{canary:email:acc1023}},"{{canary:phone:acc1023}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1023}}"
+ACC-1024,,"{{canary:mononym:co_acc1024}} Corp.",{{canary:person:acc1024}},{{canary:email:acc1024}},"{{canary:phone:acc1024}}",US,,USD,America/New_York,"{{canary:number:acv_acc1024}}"
+ACC-1025,,"{{canary:mononym:co_acc1025}} Oy",{{canary:person:acc1025}},{{canary:email:acc1025}},"{{canary:phone:acc1025}}",FI,,EUR,Europe/Helsinki,"{{canary:number:acv_acc1025}}"
+ACC-1026,,"{{canary:mononym:co_acc1026}} BV",{{canary:person:acc1026}},{{canary:email:acc1026}},"{{canary:phone:acc1026}}",BE,"BE {{canary:number:vat_acc1026}}",EUR,Europe/Brussels,"{{canary:number:acv_acc1026}}"
+ACC-1027,,"{{canary:mononym:co_acc1027}} GmbH",{{canary:person:acc1027}},{{canary:email:acc1027}},"{{canary:phone:acc1027}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1027}}"
+ACC-1028,,"{{canary:mononym:co_acc1028}} Pty Ltd",{{canary:person:acc1028}},{{canary:email:acc1028}},"{{canary:phone:acc1028}}",AU,"AU {{canary:number:vat_acc1028}}",AUD,Australia/Sydney,"{{canary:number:acv_acc1028}}"
+ACC-1029,,"{{canary:mononym:co_acc1029}} plc",{{canary:person:acc1029}},{{canary:email:acc1029}},"{{canary:phone:acc1029}}",GB,,GBP,Europe/London,"{{canary:number:acv_acc1029}}"
+ACC-1030,,"{{canary:mononym:co_acc1030}} GmbH",{{canary:person:acc1030}},{{canary:email:acc1030}},"{{canary:phone:acc1030}}",DE,,EUR,Europe/Berlin,"{{canary:number:acv_acc1030}}"
+ACC-1031,ACC-1001,"{{canary:mononym:co_acc1031}} Division",{{canary:person:acc1031}},{{canary:email:acc1031}},"{{canary:phone:acc1031}}",US,"US {{canary:number:vat_acc1031}}",USD,America/Chicago,
+ACC-1032,ACC-1031,"{{canary:mononym:co_acc1032}} Division",{{canary:person:acc1032}},{{canary:email:acc1032}},"{{canary:phone:acc1032}}",FR,,EUR,Europe/Paris,
+ACC-1033,ACC-1032,"{{canary:mononym:co_acc1033}} Division",{{canary:person:acc1033}},{{canary:email:acc1033}},"{{canary:phone:acc1033}}",JP,"JP {{canary:number:vat_acc1033}}",JPY,Asia/Tokyo,
+ACC-1034,ACC-1006,"{{canary:mononym:co_acc1034}} Division",{{canary:person:acc1034}},{{canary:email:acc1034}},"{{canary:phone:acc1034}}",GB,,GBP,Europe/London,
+ACC-1035,ACC-1010,"{{canary:mononym:co_acc1035}} Division",{{canary:person:acc1035}},{{canary:email:acc1035}},"{{canary:phone:acc1035}}",DE,"DE {{canary:number:vat_acc1035}}",EUR,Europe/Berlin,
+ACC-1036,ACC-1035,"{{canary:mononym:co_acc1036}} Division",{{canary:person:acc1036}},{{canary:email:acc1036}},"{{canary:phone:acc1036}}",US,,USD,America/Chicago,
+ACC-1037,ACC-1011,"{{canary:mononym:co_acc1037}} Division",{{canary:person:acc1037}},{{canary:email:acc1037}},"{{canary:phone:acc1037}}",FR,"FR {{canary:number:vat_acc1037}}",EUR,Europe/Paris,
+ACC-1038,ACC-1013,"{{canary:mononym:co_acc1038}} Division",{{canary:person:acc1038}},{{canary:email:acc1038}},"{{canary:phone:acc1038}}",JP,,JPY,Asia/Tokyo,
+ACC-1039,ACC-1017,"{{canary:mononym:co_acc1039}} Division",{{canary:person:acc1039}},{{canary:email:acc1039}},"{{canary:phone:acc1039}}",GB,"GB {{canary:number:vat_acc1039}}",GBP,Europe/London,
+ACC-1040,ACC-1039,"{{canary:mononym:co_acc1040}} Division",{{canary:person:acc1040}},{{canary:email:acc1040}},"{{canary:phone:acc1040}}",DE,,EUR,Europe/Berlin,
+ACC-1041,ACC-1024,"{{canary:mononym:co_acc1041}} Division",{{canary:person:acc1041}},{{canary:email:acc1041}},"{{canary:phone:acc1041}}",US,"US {{canary:number:vat_acc1041}}",USD,America/Chicago,
+ACC-1042,ACC-1022,"{{canary:mononym:co_acc1042}} Division",{{canary:person:acc1042}},{{canary:email:acc1042}},"{{canary:phone:acc1042}}",FR,,EUR,Europe/Paris,
