@@ -470,7 +470,13 @@ pub(crate) async fn sandboxed(
     };
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
-        scratch: ctx.workspace.join(".duet/tmp"),
+        // Outside the workspace: `.duet/` (run state) is unreadable and unwritable
+        // to commands, so their TMPDIR lives in a per-run system temp directory.
+        scratch: std::env::temp_dir().join("duet-scratch").join(
+            ctx.run_dir
+                .file_name()
+                .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned()),
+        ),
         network: ctx.network,
         timeout,
         output_cap: 256 * 1024,
@@ -706,6 +712,86 @@ mod sensitive_command_tests {
             Outcome::Result(s) | Outcome::Error(s) => s,
             other => format!("{other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn commands_cannot_read_git_history_or_run_state() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = ws.join(".duet/runs/r1");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::create_dir_all(ws.join(".duet/tmp")).unwrap();
+        std::fs::write(
+            ws.join("data/orders.csv"),
+            format!("id,total\n1,{BALANCE}\n"),
+        )
+        .unwrap();
+        std::fs::write(ws.join("README.md"), "public\n").unwrap();
+        // The data is committed, as the eval workspaces commit their starter.
+        let git_bin = Git::locate().unwrap();
+        for args in [
+            vec!["init", "-q"],
+            vec!["add", "-A"],
+            vec![
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t.test",
+                "commit",
+                "-qm",
+                "start",
+            ],
+        ] {
+            let ok = std::process::Command::new("/usr/bin/git")
+                .args(&args)
+                .current_dir(&ws)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?}");
+        }
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        // The vault holds the real value once the engine has seen the file.
+        engine.prime(&ws, &["data/orders.csv".to_string()], "");
+        assert!(
+            std::fs::read_to_string(run.join("vault.json"))
+                .unwrap()
+                .contains(BALANCE)
+        );
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: SandboxKind::Seatbelt,
+            git: &git_bin,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(30),
+            network: false,
+            checks: &[],
+            audit: None,
+        };
+        let out = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "git show HEAD:data/orders.csv | od -c; \
+                cat .git/objects/*/* | od -c | head; \
+                od -c .duet/runs/r1/vault.json; \
+                echo scratch-ok > \"$TMPDIR/t\" && cat \"$TMPDIR/t\"; cat README.md"}),
+        )
+        .await;
+        assert!(!out.contains("  8   9   7"), "{out}");
+        assert!(
+            out.contains("scratch-ok") && out.contains("public"),
+            "{out}"
+        );
     }
 
     #[tokio::test]

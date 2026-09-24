@@ -55,8 +55,9 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
    names the sensitive paths, and the local model's brief of them for the task (values withheld,
    cleaned like any local output) is appended to it (`sensitivity.local_brief`).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
-   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding (the working-tree
-   files; copies inside git history are not covered, see Known limits). A command that
+   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. Git history (`.git`, which holds committed
+   copies) and Duet's run state (`.duet/`: raw handles, the vault, transcripts) are unreadable to
+   commands too; commands get a scratch `TMPDIR` outside the workspace. A command that
    must read them is run with `sensitive_data`; its output is then held locally like a data file, and
    every file it creates or changes is treated as sensitive from then on.
    **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
@@ -156,11 +157,6 @@ the provider records every request. A release requires zero canaries in outbound
   that also appears in sensitive content stays replaced wherever it appears.
 - Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
   as derived data (they are build output); a program that stores derived data there escapes that rule.
-- Git history is not access-controlled: commands can read `.git`, so a committed copy of a
-  sensitive or protected file (current or earlier) can be printed with `git show` and is then
-  filtered only like other command output: known values, detectable shapes and ≥24-token copied
-  spans are replaced, but a re-encoded copy is not recognized. Keep sensitive files out of
-  version control.
 
 ## Prompt injection: residual risk
 
@@ -178,7 +174,7 @@ deploying what a run produced.**
 
 **Still prevented.**
 - Reading sensitive paths or protected source in the working tree through commands (OS sandbox),
-  in any encoding (git history: see Known limits).
+  in any encoding, including committed copies in `.git` and Duet's own run state in `.duet/`.
 - Network access from commands (sandbox; `sandbox.network` is off and a project cannot turn it on).
 - Writing `.git` or `.duet` (policy, audit log, vault, run state) from tools or commands.
 - Sending a known sensitive value, a detected secret or personal datum, or a copied span of
@@ -202,6 +198,7 @@ Duet's own canary measurements:
 | DUET-2026-003 | Value spellings | CWE-173 Improper Handling of Alternate Encoding | A vault value matched only as stored, so another spelling of the same number or surname passed | Spellings (plain, grouped, minor units, surnames) registered as aliases of the same token (`2db4cc7`) |
 | DUET-2026-004 | Derived data from commands | CWE-284 Improper Access Control (consequence CWE-201) | Programs run on sensitive files printed derived values no value filter recognizes | Sensitive paths unreadable to commands (OS sandbox); `sensitive_data` output held locally, files it writes become sensitive (`1d57c0e`) |
 | DUET-2026-005 | Copied-span filter panic | CWE-129 Improper Validation of Array Index | Overlapping copied runs made the filter slice out of range and the run abort (fail-closed: nothing was sent) | Overlapping runs merged (`79fedc3`) |
+| DUET-2026-006 | Git history and run state readable by commands | CWE-552 Files or Directories Accessible to External Parties (consequence CWE-201) | Commands could read `.git` (committed copies of sensitive files, printable re-encoded with `git show`) and `.duet/` (the vault maps every placeholder to its real value); their output was filtered only like ordinary command output. Found in review, not observed in a run | `.git` and `.duet/` at any depth are unreadable to ordinary commands and checks; the command `TMPDIR` moved outside the workspace |
 
 Related hardening, not an observed leak: values the frontier wrote itself (its own test data) are no longer rewritten in its history (`aeda66e`); the exemption never covers a value that is in the vault from sensitive content, and only reserved example domains are skipped by the email detector.
 

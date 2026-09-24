@@ -269,6 +269,15 @@ pub async fn run(
         .split_first()
         .ok_or_else(|| SandboxError::Spawn("empty command".into()))?;
     std::fs::create_dir_all(&spec.scratch).map_err(|e| SandboxError::Spawn(e.to_string()))?;
+    // Profiles match resolved paths (`/var` is `/private/var` on macOS).
+    let resolved = Spec {
+        scratch: spec
+            .scratch
+            .canonicalize()
+            .map_err(|e| SandboxError::Spawn(e.to_string()))?,
+        ..spec.clone()
+    };
+    let spec = &resolved;
     let mut cmd = match kind {
         SandboxKind::Seatbelt => {
             let mut c = tokio::process::Command::new(SANDBOX_EXEC);

@@ -879,6 +879,13 @@ impl Presenter for Engine {
                     continue;
                 }
                 match entry.file_type() {
+                    // Git history holds committed copies of sensitive files, in a
+                    // form a program can decode (`git show`, pack files).
+                    Ok(t) if t.is_dir() && name == ".git" => out.push(abs),
+                    // Duet's own run state holds raw handles, the vault (every
+                    // placeholder's real value) and transcripts. Commands get their
+                    // TMPDIR outside the workspace.
+                    Ok(t) if t.is_dir() && name == ".duet" => out.push(abs),
                     Ok(t) if t.is_dir() => {
                         if !COMMAND_SCAN_SKIP.contains(&name.to_string_lossy().as_ref()) {
                             stack.push(child);

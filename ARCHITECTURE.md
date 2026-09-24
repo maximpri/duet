@@ -251,7 +251,8 @@ git; reset behaviour defined per entry).
   `renameat`, `fsync`); writes are atomic with digest preconditions and rollback; `.git` and
   `.duet` are never writable by tools.
 - **Commands:** Seatbelt (macOS) or bwrap (Linux) with absolute binary paths; workspace-write with
-  `.git`/`.duet` denied; sensitive and protected paths unreadable (deny-read) except for
+  `.git`/`.duet` unwritable, and unreadable to ordinary commands and checks (committed copies, the
+  vault); command `TMPDIR` outside the workspace; sensitive and protected paths unreadable (deny-read) except for
   `sensitive_data` commands, and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
 - **Git:** one helper; environment cleared; fsmonitor, hooks, filters and user/system config

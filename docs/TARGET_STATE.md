@@ -231,8 +231,6 @@ value at runtime (for example from an environment variable).
 - Open source code is visible to the frontier; mark paths protected to withhold them.
 - The task description and skeletons reveal intent and architecture.
 - Misclassification of a novel secret format — measured by canaries, not assumed away.
-- Committed copies of sensitive files in git history are filtered like command output, not
-  access-controlled (`SECURITY.md`, Known limits).
 
 ## 7. Intellectual property levels
 
