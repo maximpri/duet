@@ -8,10 +8,12 @@
 //! tokens.
 
 use crate::detect::Kind;
+use aho_corasick::{AhoCorasick, MatchKind};
 use duet_fs::FsError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 pub const OPEN: char = '⟨';
 pub const CLOSE: char = '⟩';
@@ -34,7 +36,23 @@ pub struct Vault {
     counters: BTreeMap<String, u32>,
     #[serde(skip)]
     path: Option<PathBuf>,
+    /// Built on first use after a change; see [`Vault::tokenize`].
+    #[serde(skip)]
+    matcher: OnceLock<Matcher>,
 }
+
+/// One automaton over every value (4+ bytes) and every token. A token matches
+/// as itself, so text inside a token is never rewritten.
+#[derive(Debug)]
+struct Matcher {
+    automaton: Option<AhoCorasick>,
+    tokens: std::collections::HashSet<String>,
+    /// Per pattern: the replacement, or `None` for a token kept as is.
+    replacement: Vec<Option<String>>,
+}
+
+/// Values shorter than this are never replaced (too many false positives).
+pub const MIN_VALUE_BYTES: usize = 4;
 
 impl Vault {
     /// Opens the run's vault, creating it if absent.
@@ -97,6 +115,7 @@ impl Vault {
                 alias: false,
             },
         );
+        self.matcher = OnceLock::new();
         self.persist()?;
         Ok(token)
     }
@@ -116,6 +135,7 @@ impl Vault {
                 ..entry
             },
         );
+        self.matcher = OnceLock::new();
         self.persist()
     }
 
@@ -132,23 +152,58 @@ impl Vault {
         self.by_value.is_empty()
     }
 
-    /// Replaces every known value in `text` by its token (longest values first,
-    /// so a value containing another is replaced whole).
-    pub fn tokenize(&self, text: &str) -> (String, usize) {
-        let mut values: Vec<&String> = self.by_value.keys().collect();
-        values.sort_by_key(|v| std::cmp::Reverse(v.len()));
-        let mut out = text.to_owned();
-        let mut count = 0;
-        for v in values {
-            if v.len() < 4 {
-                continue;
+    fn matcher(&self) -> &Matcher {
+        self.matcher.get_or_init(|| {
+            let mut patterns: Vec<&str> = Vec::new();
+            let mut replacement = Vec::new();
+            let mut tokens: Vec<&str> = self.by_value.values().map(|e| e.token.as_str()).collect();
+            tokens.sort_unstable();
+            tokens.dedup();
+            for t in tokens {
+                patterns.push(t);
+                replacement.push(None);
             }
-            let hits = out.matches(v.as_str()).count();
-            if hits > 0 {
-                out = out.replace(v.as_str(), &self.by_value[v].token);
-                count += hits;
+            for (v, e) in &self.by_value {
+                if v.len() >= MIN_VALUE_BYTES {
+                    patterns.push(v);
+                    replacement.push(Some(e.token.clone()));
+                }
+            }
+            let automaton = AhoCorasick::builder()
+                .match_kind(MatchKind::LeftmostLongest)
+                .build(&patterns)
+                .ok();
+            Matcher {
+                automaton,
+                tokens: self.by_value.values().map(|e| e.token.clone()).collect(),
+                replacement,
+            }
+        })
+    }
+
+    /// Replaces every known value in `text` by its token, in one left-to-right
+    /// pass preferring the longest value at each position (so a value
+    /// containing another is replaced whole). Tokens already in the text,
+    /// including ones this pass inserts, are never rewritten, so a value that
+    /// also spells part of a token (`secret`, a key name) cannot corrupt it and
+    /// tokenizing twice changes nothing.
+    pub fn tokenize(&self, text: &str) -> (String, usize) {
+        let m = self.matcher();
+        let Some(ac) = &m.automaton else {
+            return (text.to_owned(), 0);
+        };
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        let mut count = 0;
+        for hit in ac.find_iter(text) {
+            if let Some(token) = &m.replacement[hit.pattern().as_usize()] {
+                out.push_str(&text[last..hit.start()]);
+                out.push_str(token);
+                last = hit.end();
+                count += 1;
             }
         }
+        out.push_str(&text[last..]);
         (out, count)
     }
 
@@ -160,33 +215,66 @@ impl Vault {
             .map(|(v, e)| (v.as_str(), e))
     }
 
-    /// Tokens present in `text`, in order of appearance.
-    pub fn tokens_in(text: &str) -> Vec<String> {
+    /// Byte ranges of the tokens in `text`, in order: an opening bracket up to
+    /// the next closing one, with no other opening bracket between (tokens
+    /// never contain one, so a stray `⟨` before a token does not swallow it).
+    fn token_spans(text: &str) -> Vec<(usize, usize)> {
         let mut out = Vec::new();
-        let mut rest = text;
-        while let Some(i) = rest.find(OPEN) {
-            let after = &rest[i..];
-            match after.find(CLOSE) {
-                Some(j) => {
-                    out.push(after[..j + CLOSE.len_utf8()].to_owned());
-                    rest = &after[j + CLOSE.len_utf8()..];
-                }
-                None => break,
+        let mut open = None;
+        for (i, c) in text.char_indices() {
+            if c == OPEN {
+                open = Some(i);
+            } else if c == CLOSE
+                && let Some(s) = open.take()
+            {
+                out.push((s, i + CLOSE.len_utf8()));
             }
         }
         out
     }
 
-    /// Replaces tokens with their values. Unknown tokens are left untouched and returned.
-    pub fn detokenize(&self, text: &str) -> (String, Vec<String>) {
-        let mut out = text.to_owned();
-        let mut unknown = Vec::new();
-        for token in Self::tokens_in(text) {
-            match self.value_of(&token) {
-                Some((value, _)) => out = out.replace(&token, value),
-                None => unknown.push(token),
+    /// `text` with every known token replaced by a space (unknown bracketed
+    /// text is kept: it may be anything, including a value).
+    pub fn strip_tokens(&self, text: &str) -> String {
+        let known = &self.matcher().tokens;
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for (s, e) in Self::token_spans(text) {
+            if known.contains(&text[s..e]) {
+                out.push_str(&text[last..s]);
+                out.push(' ');
+                last = e;
             }
         }
+        out.push_str(&text[last..]);
+        out
+    }
+
+    /// Tokens present in `text`, in order of appearance.
+    pub fn tokens_in(text: &str) -> Vec<String> {
+        Self::token_spans(text)
+            .into_iter()
+            .map(|(s, e)| text[s..e].to_owned())
+            .collect()
+    }
+
+    /// Replaces tokens with their values in one pass (a restored value is never
+    /// read again as a token). Unknown tokens are left untouched and returned.
+    pub fn detokenize(&self, text: &str) -> (String, Vec<String>) {
+        let mut out = String::with_capacity(text.len());
+        let mut unknown = Vec::new();
+        let mut last = 0;
+        for (s, e) in Self::token_spans(text) {
+            let token = &text[s..e];
+            if let Some((value, _)) = self.value_of(token) {
+                out.push_str(&text[last..s]);
+                out.push_str(value);
+                last = e;
+            } else {
+                unknown.push(token.to_owned());
+            }
+        }
+        out.push_str(&text[last..]);
         (out, unknown)
     }
 
@@ -240,6 +328,36 @@ mod tests {
         assert_eq!(t, "⟨secret:B#1⟩");
         let (_, unknown) = v.detokenize("use ⟨secret:NOPE#9⟩");
         assert_eq!(unknown, vec!["⟨secret:NOPE#9⟩"]);
+    }
+
+    #[test]
+    fn a_value_that_spells_part_of_a_token_leaves_tokens_intact() {
+        // Found by the vault properties: replacing values one after another
+        // rewrote text inside tokens inserted earlier (`secret` inside
+        // `⟨secret:API_KEY#1⟩`), so tokens were corrupted and did not round-trip.
+        let mut v = Vault::in_memory();
+        v.token_for(
+            "sk_live_abcdef123456",
+            Kind::Secret,
+            Some("API_KEY"),
+            ".env",
+        )
+        .unwrap();
+        v.token_for("secret", Kind::Secret, Some("MODE"), ".env")
+            .unwrap();
+        v.token_for("API_KEY", Kind::Secret, Some("NAME"), ".env")
+            .unwrap();
+        let text = "key sk_live_abcdef123456, mode secret, name API_KEY";
+        let (t, n) = v.tokenize(text);
+        assert_eq!(n, 3);
+        assert_eq!(
+            t,
+            "key ⟨secret:API_KEY#1⟩, mode ⟨secret:MODE#1⟩, name ⟨secret:NAME#1⟩"
+        );
+        assert_eq!(v.tokenize(&t), (t.clone(), 0), "idempotent");
+        assert_eq!(v.detokenize(&t).0, text);
+        assert_eq!(v.detokenize(&format!("⟨{t}")).0, format!("⟨{text}"));
+        assert_eq!(v.strip_tokens(&t), "key  , mode  , name  ");
     }
 
     #[test]

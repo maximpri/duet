@@ -210,8 +210,26 @@ fn reserved_example_domain(email: &str) -> bool {
             .any(|tld| d.ends_with(tld) || d == tld[1..])
 }
 
-/// All findings in `text`, sorted by start, with overlaps resolved in favour of the longer span.
+/// All findings in `text`, sorted by start, with overlapping findings merged
+/// into one span (the first finding's kind and label).
 pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
+    let mut merged: Vec<Finding> = Vec::new();
+    for f in scan_each(text, d) {
+        match merged.last_mut() {
+            Some(last) if f.start < last.end => {
+                if f.end > last.end {
+                    last.end = f.end;
+                }
+            }
+            _ => merged.push(f),
+        }
+    }
+    merged
+}
+
+/// Every finding in `text`, sorted by start (longer first), overlaps kept: a
+/// value inside a longer match is still a value on its own.
+pub fn scan_each(text: &str, d: Detectors) -> Vec<Finding> {
     let mut out = Vec::new();
     let mut push = |kind, m: regex::Match<'_>, label: Option<String>| {
         out.push(Finding {
@@ -287,18 +305,7 @@ pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
         }
     }
     out.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
-    let mut merged: Vec<Finding> = Vec::new();
-    for f in out {
-        match merged.last_mut() {
-            Some(last) if f.start < last.end => {
-                if f.end > last.end {
-                    last.end = f.end;
-                }
-            }
-            _ => merged.push(f),
-        }
-    }
-    merged
+    out
 }
 
 #[cfg(test)]
