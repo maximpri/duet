@@ -36,6 +36,7 @@ futures-util.workspace = true
 
 
 [dev-dependencies]
+duet-mcp = { workspace = true, features = ["test-support"] }
 duet-provider = { workspace = true, features = ["test-support"] }
 duet-fs = { workspace = true, features = ["fault-injection"] }
 tempfile = "3"

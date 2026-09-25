@@ -6,7 +6,8 @@
 //!
 //! Tools: `echo` (read-only; returns its `text`), `write` (not read-only),
 //! `fail` (answers `isError`), `boom` (a JSON-RPC error), `slow` (sleeps
-//! `seconds`), `crash` (the server goes away), `picture` (an image block).
+//! `seconds`), `crash` (the server goes away), `picture` (an image block),
+//! `canned` (returns [`Mock::canned`]).
 //! Listing is paginated two tools per page. Every call's arguments are
 //! recorded.
 
@@ -22,6 +23,8 @@ pub struct Mock {
     pub echo_description: String,
     /// Protocol revision answered to `initialize` (default: this client's).
     pub version: Option<String>,
+    /// What the `canned` tool returns.
+    pub canned: String,
     /// Arguments of every `tools/call`, in order.
     pub calls: Arc<Mutex<Vec<Value>>>,
     /// Methods received, in order (requests and notifications).
@@ -87,6 +90,7 @@ impl Mock {
                     tool("slow", "Sleeps.", true),
                     tool("crash", "Stops the server.", true),
                     tool("picture", "Returns an image.", true),
+                    tool("canned", "Returns a fixed text.", true),
                 ];
                 let start: usize = params
                     .get("cursor")
@@ -123,6 +127,7 @@ impl Mock {
                         ok(text("finally")),
                     ),
                     "crash" => Action::Crash,
+                    "canned" => Action::Reply(ok(text(&self.canned))),
                     "picture" => Action::Reply(ok(json!({"content": [
                         {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}]}))),
                     other => Action::Reply(json!({"jsonrpc": "2.0", "id": id,
@@ -376,11 +381,13 @@ async fn serve(
 }
 
 /// A stdio MCP server in POSIX shell, for tests that run a real process in
-/// the sandbox. Tools: `cat` (read-only; reads `path` relative to its working
-/// directory and says whether that was allowed) and `note` (not read-only;
-/// appends `text` to `received.txt` in its working directory and returns it).
-/// `$MOCK_DESCRIPTION`, if set, is the description of `note`. Values must
-/// not contain `"` or `\`.
+/// the sandbox (`/bin/sh -c SH_SERVER sh [description]`). Tools: `cat`
+/// (read-only; reads `path` relative to its working directory and says
+/// whether that was allowed), `note` (not read-only; appends `text` to
+/// `received.txt` in its working directory and returns it; its description is
+/// the first argument, if given), `env` (read-only; the values of
+/// `CARGO_PKG_NAME` and `CARGO_MANIFEST_DIR` it sees) and `quit` (exits).
+/// Values must not contain `"` or `\`.
 pub const SH_SERVER: &str = r#"
 while IFS= read -r line; do
   id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
@@ -388,7 +395,7 @@ while IFS= read -r line; do
     *'"method":"initialize"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"sh","version":"1"}}}\n' "$id" ;;
     *'"method":"tools/list"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"cat","description":"Reads a file.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},"annotations":{"readOnlyHint":true}},{"name":"note","description":"%s","inputSchema":{"type":"object","properties":{"text":{"type":"string"}}}}]}}\n' "$id" "${MOCK_DESCRIPTION:-Keeps a note.}" ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"cat","description":"Reads a file.","inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]},"annotations":{"readOnlyHint":true}},{"name":"note","description":"%s","inputSchema":{"type":"object","properties":{"text":{"type":"string"}}}},{"name":"env","description":"Shows two variables.","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},{"name":"quit","description":"Exits.","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}}\n' "$id" "${1:-Keeps a note.}" ;;
     *'"method":"tools/call"'*'"name":"cat"'*)
       path=$(printf '%s\n' "$line" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p')
       if out=$(cat "$path" 2>&1); then state=readable; else state=denied; fi
@@ -398,6 +405,10 @@ while IFS= read -r line; do
       text=$(printf '%s\n' "$line" | sed -n 's/.*"text":"\([^"]*\)".*/\1/p')
       printf '%s\n' "$text" >> received.txt
       printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"noted: %s"}]}}\n' "$id" "$text" ;;
+    *'"method":"tools/call"'*'"name":"env"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"pkg=%s dir=%s"}]}}\n' "$id" "${CARGO_PKG_NAME:-unset}" "${CARGO_MANIFEST_DIR:-unset}" ;;
+    *'"method":"tools/call"'*'"name":"quit"'*)
+      exit 3 ;;
     *'"method":"tools/call"'*)
       printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32602,"message":"unknown tool"}}\n' "$id" ;;
     *'"id":'*)

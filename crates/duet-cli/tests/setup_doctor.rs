@@ -576,3 +576,96 @@ fn doctor_shows_the_approval_mode_and_notes_release_keys_in_a_development_build(
             .starts_with("1 release signer")
     );
 }
+
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn doctor_starts_configured_mcp_servers_and_config_lists_them() {
+    let e = env();
+    let mut servers = toml::Table::new();
+    let mut add = |name: &str, fields: &[(&str, toml::Value)]| {
+        servers.insert(
+            name.into(),
+            toml::Value::Table(
+                fields
+                    .iter()
+                    .map(|(k, v)| ((*k).into(), v.clone()))
+                    .collect(),
+            ),
+        );
+    };
+    let s = |t: &str| toml::Value::String(t.into());
+    add(
+        "sh",
+        &[
+            ("command", s("/bin/sh")),
+            (
+                "args",
+                toml::Value::Array(vec![s("-c"), s(duet_mcp::mock::SH_SERVER)]),
+            ),
+        ],
+    );
+    add("broken", &[("command", s("/nonexistent/mcp-server"))]);
+    add("remote", &[("url", s("https://mcp.example.com/mcp"))]);
+    add(
+        "off",
+        &[
+            ("command", s("x")),
+            ("enabled", toml::Value::Boolean(false)),
+        ],
+    );
+    add("plain", &[("url", s("http://mcp.example.com/mcp"))]);
+    let mut mcp = toml::Table::new();
+    mcp.insert("servers".into(), toml::Value::Table(servers));
+    let mut root = toml::Table::new();
+    root.insert("mcp".into(), toml::Value::Table(mcp));
+    owner_config(&e, &toml::to_string(&root).unwrap());
+
+    let (code, report) = doctor(&e, &[], &[]);
+    let mcp: Vec<(String, String)> = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["name"] == "mcp")
+        .map(|c| {
+            (
+                c["status"].as_str().unwrap().to_owned(),
+                c["detail"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let find = |server: &str| {
+        mcp.iter()
+            .find(|(_, d)| d.contains(&format!("`{server}`")))
+            .unwrap_or_else(|| panic!("{server}: {mcp:?}"))
+            .clone()
+    };
+    assert_eq!(
+        find("sh"),
+        (
+            "pass".into(),
+            "server `sh` (stdio): started, 4 tool(s)".into()
+        )
+    );
+    assert_eq!(find("broken").0, "warn");
+    assert!(
+        find("remote").1.contains("not contacted offline"),
+        "{mcp:?}"
+    );
+    assert!(find("off").1.contains("disabled"), "{mcp:?}");
+    let plain = find("plain");
+    assert!(
+        plain.0 == "fail" && plain.1.contains("loopback"),
+        "{plain:?}"
+    );
+    assert_eq!(code, 2);
+
+    let list = text(&duet(&e, &["config", "list"]));
+    assert!(
+        list.contains("mcp.servers.sh.command = \"/bin/sh\"  (owner;"),
+        "{list}"
+    );
+    assert!(
+        list.contains("mcp.servers.sh.approve = \"writes\"  (default;"),
+        "{list}"
+    );
+}

@@ -29,10 +29,12 @@ async fn stdio_handshake_listing_and_calls() {
     assert_eq!(c.server_name, "mock");
     let tools = c.list_tools(T).await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
-    // Seven tools over four pages.
+    // Eight tools over four pages.
     assert_eq!(
         names,
-        ["echo", "write", "fail", "boom", "slow", "crash", "picture"]
+        [
+            "echo", "write", "fail", "boom", "slow", "crash", "picture", "canned"
+        ]
     );
     assert!(tools[0].read_only && !tools[1].read_only);
     assert_eq!(tools[0].input_schema["type"], "object");
@@ -133,7 +135,7 @@ async fn http_json_and_event_stream_answers_with_a_session() {
         )
         .unwrap();
         let mut c = Client::connect(t, T).await.unwrap();
-        assert_eq!(c.list_tools(T).await.unwrap().len(), 7);
+        assert_eq!(c.list_tools(T).await.unwrap().len(), 8);
         let r = c
             .call_tool("echo", &args(json!({"text": "over http"})), T)
             .await
