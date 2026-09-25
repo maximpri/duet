@@ -42,7 +42,11 @@ impl Engine {
     /// treated as a person (nothing tells what the model took from the
     /// content), then copied spans removed, strictly.
     pub(super) fn clean_unseen(&self, st: &mut State, text: &str, origin: &str) -> String {
-        let s = self.sanitize_read(st, text, origin, true, None);
+        // As for text output (`clean_local_counted`): copied runs first, on
+        // the text as written, then spelled-out and encoded values.
+        let s = st.overlap.redact_strict(text).0;
+        let s = Self::respell(st, &s);
+        let s = self.sanitize_read(st, &s, origin, true, None);
         let s = st.overlap.redact(&s).0;
         st.overlap.redact_strict(&s).0
     }

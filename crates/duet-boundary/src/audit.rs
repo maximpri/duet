@@ -193,6 +193,19 @@ pub enum AuditEvent {
         requests: u64,
         files_written: usize,
     },
+    /// An `ask_local` question asked for characters of a sensitive value by
+    /// position or piece (`rule` = `positional_question`: the local model
+    /// was asked for the value's format instead), or its answer would have
+    /// shown such characters (`characters_withheld`). `withheld` pieces were
+    /// replaced; `count` is how many probes the handle has had in the run, so
+    /// repeated probing shows as a rising count. Holds the handle id, never
+    /// the question, the answer or a value.
+    LocalProbe {
+        handle: String,
+        rule: String,
+        withheld: u32,
+        count: u32,
+    },
 }
 
 impl AuditEvent {
@@ -217,6 +230,7 @@ impl AuditEvent {
             AuditEvent::SubagentStart { .. } => "subagent_start",
             AuditEvent::SubagentEnd { .. } => "subagent_end",
             AuditEvent::Image { .. } => "image",
+            AuditEvent::LocalProbe { .. } => "local_probe",
         }
     }
 }

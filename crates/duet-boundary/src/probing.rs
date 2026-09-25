@@ -388,6 +388,22 @@ fn counts_or_points(text: &str, words: &[(usize, usize, String)], i: usize) -> b
     false
 }
 
+/// `text` with every short piece ([`pieces`], single letters included)
+/// withheld, and how many: for an answer about content whose values are not
+/// known here (an image) to a positional question.
+pub fn withhold_pieces(text: &str) -> (String, usize) {
+    let mut out = String::with_capacity(text.len());
+    let (mut last, mut n) = (0, 0);
+    for p in pieces(text, &[(0, text.len())]) {
+        out.push_str(&text[last..p.start]);
+        out.push_str(WITHHELD);
+        last = p.end;
+        n += 1;
+    }
+    out.push_str(&text[last..]);
+    (out, n)
+}
+
 /// What local output is limited as.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {

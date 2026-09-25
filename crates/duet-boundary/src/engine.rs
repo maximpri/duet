@@ -13,6 +13,7 @@
 //! - Writes: placeholders are resolved locally, and secrets may only land in
 //!   secret files.
 
+use crate::audit::AuditEvent;
 use crate::bulky::{self, Shape};
 use crate::detect::{CustomPatterns, Detectors, Kind, scan_each_in, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
@@ -22,6 +23,8 @@ use crate::local::LocalReader;
 use crate::model::{Image, Item, Request, ToolSpec, sniff};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
+use crate::probing::{self, Tally};
+use crate::reencoded::{self, ENCODED};
 use crate::vault::Vault;
 use crate::view::{Presenter, ServerTrust, Source, ViewClass};
 use duet_fs::FsError;
@@ -113,6 +116,38 @@ fn group(digits: &str) -> String {
 /// Directories never scanned for sensitive files (build output, dependencies, state).
 const COMMAND_SCAN_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
 
+/// Whether the walk skips the directory `rel` ([`COMMAND_SCAN_SKIP`]).
+fn scan_skipped(rel: &Path) -> bool {
+    rel.file_name()
+        .is_some_and(|n| COMMAND_SCAN_SKIP.contains(&n.to_string_lossy().as_ref()))
+}
+
+/// Walks `workspace` depth first: `visit(rel, is_dir)` is called for every
+/// directory and regular file under it (symbolic links are not followed),
+/// and for a directory returns whether to look inside.
+fn walk(workspace: &Path, mut visit: impl FnMut(&Path, bool) -> bool) {
+    let mut stack = vec![std::path::PathBuf::new()];
+    while let Some(rel) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let child = rel.join(entry.file_name());
+            match entry.file_type() {
+                Ok(t) if t.is_dir() => {
+                    if visit(&child, true) {
+                        stack.push(child);
+                    }
+                }
+                Ok(t) if t.is_file() => {
+                    visit(&child, false);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Values a name/address field holds when it holds no person.
 const PLACEHOLDER_VALUES: &[&str] = &[
     "value",
@@ -159,6 +194,63 @@ pub const FRAGMENT_DIGITS: usize = 4;
 /// A detected span: byte range, kind and label.
 type Span = (usize, usize, Kind, Option<String>);
 
+/// What an `ask_local` answer answers: the question as put to the local
+/// model, whether it was positional, and the lines the answer cites.
+#[derive(Clone, Copy)]
+struct Answered<'a> {
+    question: &'a str,
+    narrow: bool,
+    evidence: &'a [u64],
+}
+
+/// Lines a question names (`line 3`, `lines 4-6`, `row 2`).
+static NAMED_LINES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:lines?|rows?|records?)\s+(\d{1,7})(?:\s*(?:-|–|to|through)\s*(\d{1,7}))?")
+        .expect("static regex")
+});
+/// Most lines a named range contributes.
+const NAMED_RANGE_MAX: usize = 50;
+
+/// The 1-based lines of `read` an answer is about: those its question names
+/// (with their neighbours, as the frontier may count lines from another
+/// origin), those holding a value the question names, and those the answer
+/// cites as evidence.
+fn referenced_lines(
+    st: &State,
+    read: &str,
+    question: &str,
+    evidence: &[u64],
+) -> std::collections::BTreeSet<usize> {
+    let mut lines: std::collections::BTreeSet<usize> =
+        evidence.iter().map(|&n| n as usize).collect();
+    for c in NAMED_LINES.captures_iter(question) {
+        let Some(first) = c.get(1).and_then(|m| m.as_str().parse::<usize>().ok()) else {
+            continue;
+        };
+        let last = c
+            .get(2)
+            .and_then(|m| m.as_str().parse::<usize>().ok())
+            .unwrap_or(first)
+            .clamp(first, first + NAMED_RANGE_MAX);
+        lines.extend(first.saturating_sub(1)..=last + 1);
+    }
+    let named: Vec<&str> = st
+        .vault
+        .values_in(question)
+        .into_iter()
+        .map(|(v, _)| v)
+        .collect();
+    if !named.is_empty() {
+        for (i, l) in read.lines().enumerate() {
+            if named.iter().any(|v| l.contains(v)) {
+                lines.insert(i + 1);
+            }
+        }
+    }
+    lines.remove(&0);
+    lines
+}
+
 struct State {
     vault: Vault,
     handles: HandleStore,
@@ -183,6 +275,9 @@ struct State {
     /// Digests of the images routed to the frontier (persisted): the only
     /// images a request may carry.
     frontier_images: std::collections::BTreeSet<String>,
+    /// Characters of each value local output has shown, and probes of each
+    /// handle (persisted, so a resumed run keeps the budget spent).
+    probes: Tally,
 }
 
 /// Values the operator typed: each placeholder is also a handle for
@@ -210,8 +305,12 @@ pub struct Engine {
     operator_file: std::path::PathBuf,
     /// Where the digests of images routed to the frontier are persisted.
     images_file: std::path::PathBuf,
+    /// Where the disclosure tally is persisted.
+    probes_file: std::path::PathBuf,
     /// How the latest result was shown (for the cost ledger).
     last_class: Mutex<Option<ViewClass>>,
+    /// Security events decided here, for the run's audit log.
+    events: Mutex<Vec<AuditEvent>>,
 }
 
 pub const MAX_KEY_LINES: usize = 12;
@@ -237,6 +336,15 @@ pub const MAX_RAW_LINES: usize = 500;
 const LISTED_PATHS: usize = 20;
 /// Sensitive files larger than this are not pre-indexed.
 pub const PRIME_MAX_BYTES: usize = 2 * 1024 * 1024;
+/// Bytes of sensitive files git does not list (ignored `.env`, logs,
+/// databases) indexed at run start, in total.
+pub const PRIME_UNLISTED_BYTES: u64 = 64 * 1024 * 1024;
+/// Probes of one handle after which the frontier is told they are recorded.
+const PROBES_NOTED: u32 = 3;
+/// A 12-19 digit number (spaces or dashes between digits allowed) in text the
+/// operator typed: withheld whether or not a label says what it is.
+static OPERATOR_NUMBER: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b\d(?:[ -]?\d){11,18}\b").expect("static regex"));
 
 impl Engine {
     pub fn open(
@@ -272,7 +380,9 @@ impl Engine {
             derived_file: run_dir.join("derived.json"),
             operator_file: run_dir.join("operator.json"),
             images_file: run_dir.join("frontier-images.json"),
+            probes_file: run_dir.join("probes.json"),
             last_class: Mutex::new(None),
+            events: Mutex::new(Vec::new()),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
                 handles: HandleStore::open(&run_dir.join("handles"))?,
@@ -291,6 +401,10 @@ impl Engine {
                     .ok()
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
+                probes: std::fs::read(run_dir.join("probes.json"))
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default(),
             }),
         }))
     }
@@ -300,6 +414,13 @@ impl Engine {
     /// content (`cat`, test output, logs) are replaced wherever they appear.
     /// Public files and the task text are read first: their words decide which
     /// single words (a surname, a reformatted number) may count as identifying.
+    ///
+    /// `all_files` are the files git lists. Sensitive files it does not list
+    /// (a gitignored `.env`, logs, databases: the usual case) are found by the
+    /// same walk that builds the commands' deny list and indexed too, up to
+    /// [`PRIME_UNLISTED_BYTES`] in total: a value from them that no detector
+    /// recognizes is then replaced wherever it appears, including in what the
+    /// operator types.
     pub fn prime(&self, workspace: &Path, all_files: &[String], objective: &str) -> usize {
         let files = &self.ip_split(all_files);
         {
@@ -320,7 +441,13 @@ impl Engine {
         }
         let mut primed = 0;
         let mut briefable = Vec::new();
-        for f in files {
+        let unlisted = self.unlisted_sensitive(workspace, all_files);
+        let mut budget = PRIME_UNLISTED_BYTES;
+        for (f, listed) in files
+            .iter()
+            .map(|f| (f, true))
+            .chain(unlisted.iter().map(|f| (f, false)))
+        {
             let path = Path::new(f);
             if !self.is_sensitive(path) {
                 continue;
@@ -328,6 +455,12 @@ impl Engine {
             let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) else {
                 continue;
             };
+            if !listed {
+                if bytes.len() as u64 > budget {
+                    continue;
+                }
+                budget -= bytes.len() as u64;
+            }
             if sniff(&bytes).is_some() {
                 // An image has no text to index; it is named in the task
                 // note and never shown (see `engine/image.rs`).
@@ -337,11 +470,8 @@ impl Engine {
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let mut st = self.lock();
             st.sensitive_files.push(f.clone());
-            st.overlap.add_sensitive(&text);
-            if is_secret_bearing(path) {
-                let _ = self.tokenized_view(&mut st, f, &text);
-            } else {
-                let _ = self.sanitize(&mut st, &text, f, true);
+            self.index_sensitive(&mut st, path, &text);
+            if !is_secret_bearing(path) {
                 briefable.push((f.clone(), text));
             }
             primed += 1;
@@ -399,6 +529,43 @@ impl Engine {
             }
         }
         self.lock().brief = Some(notes.join("\n"));
+    }
+
+    /// Sensitive files under `workspace` that `listed` does not hold, sorted:
+    /// what git ignores (`.env`, logs, databases) and has not been added yet.
+    /// The walk skips `.git`, `.duet`, build output and dependencies, as the
+    /// commands' deny list does.
+    fn unlisted_sensitive(&self, workspace: &Path, listed: &[String]) -> Vec<String> {
+        let listed: std::collections::HashSet<&str> = listed.iter().map(String::as_str).collect();
+        let mut found = Vec::new();
+        walk(workspace, |rel, is_dir| {
+            if is_dir {
+                return !scan_skipped(rel);
+            }
+            if !duet_fs::is_reserved(rel)
+                && self.is_sensitive(rel)
+                && self.policy.ip_level(rel).is_none()
+                && let Some(f) = rel.to_str()
+                && !listed.contains(f)
+            {
+                found.push(f.to_owned());
+            }
+            false
+        });
+        found.sort();
+        found
+    }
+
+    /// Indexes sensitive text from `path`: its text for the copied-span
+    /// filter, its values into the vault (every value of a `KEY=value` file).
+    fn index_sensitive(&self, st: &mut State, path: &Path, text: &str) {
+        let label = path.display().to_string();
+        st.overlap.add_sensitive(text);
+        if is_secret_bearing(path) {
+            let _ = self.tokenized_view(st, &label, text);
+        } else {
+            let _ = self.sanitize(st, text, &label, true);
+        }
     }
 
     /// Sensitive by policy, or derived from sensitive data by a command.
@@ -511,6 +678,17 @@ impl Engine {
                     spans.push((m.start(), m.end(), Kind::Data, None));
                 }
             }
+        }
+        // A placeholder or marker already in the text is Duet's own: nothing
+        // found across or inside one is a value (`name:⟨name:name#1⟩` is not
+        // a person field holding `name#1⟩`).
+        let known: Vec<(usize, usize)> = PLACEHOLDER
+            .find_iter(text)
+            .filter(|m| st.vault.is_token(m.as_str()))
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        if !known.is_empty() {
+            spans.retain(|&(s, e, _, _)| !known.iter().any(|&(ks, ke)| s < ke && ks < e));
         }
         spans.sort_by_key(|s| (s.0, std::cmp::Reverse(s.1)));
         // Overlapping spans are replaced as one (their union, named by the
@@ -750,15 +928,156 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         st.overlap.redact(&s).0
     }
 
-    /// Local-model output about `read`: sanitized as sensitive text, then
-    /// copied spans removed.
+    /// A local summary, fact or brief about `read`, as it may be shown: see
+    /// [`Self::clean_local_counted`].
     fn clean_local(&self, st: &mut State, text: &str, origin: &str, read: &str) -> String {
-        let read: std::collections::HashSet<String> = words(read).collect();
-        let s = self.sanitize_read(st, text, origin, true, Some(&read));
+        self.clean_local_counted(st, text, origin, read, None).0
+    }
+
+    /// Local-model output about `read`: normalized, sanitized as sensitive
+    /// text, copied spans removed, and short pieces of values limited
+    /// ([`crate::probing`]). `answer` is set for an `ask_local` answer.
+    /// Returns the text and how many pieces were withheld.
+    fn clean_local_counted(
+        &self,
+        st: &mut State,
+        text: &str,
+        origin: &str,
+        read: &str,
+        answer: Option<Answered<'_>>,
+    ) -> (String, usize) {
+        // Copied runs first, on the text as written: once known values become
+        // placeholders, a copied line splits into runs shorter than the window
+        // and a field between two values (a date of birth) passes.
+        let s = st.overlap.redact_strict(text).0;
+        let s = Self::respell(st, &s);
+        let words: std::collections::HashSet<String> = words(read).collect();
+        let s = self.sanitize_read(st, &s, origin, true, Some(&words));
         let s = st.overlap.redact(&s).0;
         // The local model describes; it never quotes. A request to "quote lines
         // 12-29 exactly" once carried a short fragment of hostile data out.
-        st.overlap.redact_strict(&s).0
+        let s = st.overlap.redact_strict(&s).0;
+        self.limit_pieces(st, &s, read, answer)
+    }
+
+    /// `text` with values it spells out (characters separated: `V a k`) or
+    /// encodes (base64 or hex, at any alignment) replaced: a spelled-out value
+    /// by its token, an encoded run that decodes to a known value or to a run
+    /// copied from sensitive content by [`ENCODED`]. See [`crate::reencoded`].
+    fn respell(st: &State, text: &str) -> String {
+        let mut edits: Vec<(usize, usize, String)> = Vec::new();
+        for run in reencoded::spaced_runs(text) {
+            // The run's skeleton, and for each of its characters the character
+            // of the run it came from.
+            let mut skeleton = String::new();
+            let mut from: Vec<usize> = Vec::new();
+            for (k, &(s, e)) in run.chars.iter().enumerate() {
+                for c in text[s..e]
+                    .chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .flat_map(char::to_lowercase)
+                {
+                    skeleton.push(c);
+                    from.push(k);
+                }
+            }
+            for (cs, ce, token) in st.vault.find_spelled(&skeleton) {
+                let (first, last) = (from[cs], from[ce - 1]);
+                edits.push((run.chars[first].0, run.chars[last].1, token.to_owned()));
+            }
+        }
+        for run in reencoded::encoded_runs(text) {
+            let sensitive = run.decoded.iter().any(|d| {
+                st.vault.find_folded(d).is_some()
+                    || st.overlap.redact_strict(&String::from_utf8_lossy(d)).1 > 0
+            });
+            if sensitive {
+                edits.push((run.start, run.end, ENCODED.to_owned()));
+            }
+        }
+        if edits.is_empty() {
+            return text.to_owned();
+        }
+        // Never inside a placeholder or one of Duet's markers.
+        let bracketed: Vec<(usize, usize)> = PLACEHOLDER
+            .find_iter(text)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        edits.retain(|&(s, e, _)| !bracketed.iter().any(|&(bs, be)| s < be && bs < e));
+        edits.sort_by_key(|e| (e.0, std::cmp::Reverse(e.1)));
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for (s, e, with) in edits {
+            if s < last {
+                continue;
+            }
+            out.push_str(&text[last..s]);
+            out.push_str(&with);
+            last = e;
+        }
+        out.push_str(&text[last..]);
+        out
+    }
+
+    /// `text` with short pieces of identifying values in `read` withheld
+    /// ([`Tally::limit`]): pieces tied to positions, and in an answer those
+    /// past a value's budget. Identifying values the detectors find in `read`
+    /// are vaulted first, so each has a budget whether or not it was indexed.
+    fn limit_pieces(
+        &self,
+        st: &mut State,
+        text: &str,
+        read: &str,
+        answer: Option<Answered<'_>>,
+    ) -> (String, usize) {
+        for f in scan_each_in(read, self.detectors, None) {
+            if probing::budgeted(f.kind) {
+                Self::register(
+                    st,
+                    &read[f.start..f.end],
+                    f.kind,
+                    None,
+                    "local answer",
+                    true,
+                );
+            }
+        }
+        let identifying = |st: &State, text: &str| -> Vec<(String, String)> {
+            st.vault
+                .values_in(text)
+                .into_iter()
+                .filter(|(_, e)| probing::budgeted(e.kind))
+                .map(|(v, e)| (e.token.clone(), v.to_owned()))
+                .collect()
+        };
+        let all = identifying(st, read);
+        let (scope, referenced) = match answer {
+            None => (probing::Scope::Summary, Vec::new()),
+            Some(a) => {
+                let lines = referenced_lines(st, read, a.question, a.evidence);
+                let on_them: String = read
+                    .lines()
+                    .enumerate()
+                    .filter(|(i, _)| lines.contains(&(i + 1)))
+                    .map(|(_, l)| format!("{l}\n"))
+                    .collect();
+                let referenced = identifying(st, &on_them);
+                // An answer about no line in particular is about all of them.
+                let referenced = if referenced.is_empty() {
+                    all.clone()
+                } else {
+                    referenced
+                };
+                (probing::Scope::Answer { narrow: a.narrow }, referenced)
+            }
+        };
+        let before = serde_json::to_vec(&st.probes).unwrap_or_default();
+        let (out, n) = st.probes.limit(text, &all, &referenced, scope);
+        let after = serde_json::to_vec(&st.probes).unwrap_or_default();
+        if after != before {
+            let _ = duet_fs::private::write_private(&self.probes_file, &after);
+        }
+        (out, n)
     }
 
     /// Public text as it may be shown: detected values replaced, copied
@@ -877,11 +1196,14 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
         if questions.is_empty() {
             return Err("give `questions` (a list) or `question`".into());
         }
-        let (info, bytes) = {
+        let (info, bytes, handle) = {
             let st = self.lock();
-            let found = Self::operator_handle(&st, id)
-                .map_or_else(|| st.handles.get(id), |h| st.handles.get(h));
-            found.ok_or_else(|| Self::unknown_handle(&st, id))?
+            let handle = Self::operator_handle(&st, id).map_or(id, String::as_str);
+            let (info, bytes) = st
+                .handles
+                .get(handle)
+                .ok_or_else(|| Self::unknown_handle(&st, id))?;
+            (info, bytes, handle.to_owned())
         };
         let local = self.local.as_ref().ok_or("no local model is configured")?;
         // A handle may hold an image (see `image_view`): the local model
@@ -899,22 +1221,78 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
         let mut out = Vec::new();
         for (i, question) in questions.iter().take(MAX_QUESTIONS).enumerate() {
             let q = self.detokenize(question);
+            // A question for characters of a value by position is put as a
+            // question about the value's format: answers to such questions,
+            // one character each, would add up to the value.
+            let narrow = probing::positional_question(&q);
+            let asked = if narrow { probing::structural(&q) } else { q };
             let a = match &image {
-                Some(img) => Self::block_on(local.answer_image(&info.source, img, &q)),
-                None => Self::block_on(local.answer(&info.source, &text, &q)),
+                Some(img) => Self::block_on(local.answer_image(&info.source, img, &asked)),
+                None => Self::block_on(local.answer(&info.source, &text, &asked)),
             }
             .map_err(|e| format!("local model: {}", e.message))?;
             let mut st = self.lock();
-            let answer = if image.is_some() {
-                self.clean_unseen(&mut st, &a.answer, &info.source)
-            } else {
-                self.clean_local(&mut st, &a.answer, &info.source, &text)
+            let (answer, withheld) = match &image {
+                // What an image shows is unknown here: an answer to a
+                // positional question about it shows no short piece at all.
+                Some(_) => {
+                    let answer = self.clean_unseen(&mut st, &a.answer, &info.source);
+                    if narrow {
+                        probing::withhold_pieces(&answer)
+                    } else {
+                        (answer, 0)
+                    }
+                }
+                None => {
+                    let answered = Answered {
+                        question: &asked,
+                        narrow,
+                        evidence: &a.evidence_lines,
+                    };
+                    self.clean_local_counted(
+                        &mut st,
+                        &a.answer,
+                        &info.source,
+                        &text,
+                        Some(answered),
+                    )
+                }
             };
-            let body = if a.unanswerable {
+            let mut body = if a.unanswerable {
                 format!("The local model could not answer from {id}. {answer}")
             } else {
                 format!("{answer}\n(evidence lines: {:?})", a.evidence_lines)
             };
+            if narrow || withheld > 0 {
+                let count = st.probes.probe(&handle);
+                let _ = duet_fs::private::write_private(
+                    &self.probes_file,
+                    &serde_json::to_vec(&st.probes).unwrap_or_default(),
+                );
+                self.record(AuditEvent::LocalProbe {
+                    handle: handle.clone(),
+                    rule: if narrow {
+                        "positional_question"
+                    } else {
+                        "characters_withheld"
+                    }
+                    .into(),
+                    withheld: withheld as u32,
+                    count,
+                });
+                if narrow {
+                    body = format!(
+                        "[This question asks for characters of a sensitive value by position or piece; \
+those are withheld, so the local model was asked for the value's format instead.]\n{body}"
+                    );
+                }
+                if count >= PROBES_NOTED {
+                    body.push_str(
+                        "\n[Questions that take a sensitive value apart piece by piece are recorded in \
+the audit log.]",
+                    );
+                }
+            }
             out.push(if questions.len() > 1 {
                 format!("{}. {body}", i + 1)
             } else {
@@ -927,6 +1305,47 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
             ));
         }
         Ok(out.join("\n\n"))
+    }
+
+    fn record(&self, event: AuditEvent) {
+        self.events
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(event);
+    }
+
+    /// Sanitizes text the operator typed (a task, a session or steering
+    /// message): as any text, and every 12-19 digit number left becomes a
+    /// placeholder whether or not a label says what it is. A number that fails
+    /// every checksum and has no label within reach is still most likely a
+    /// card, account or ID the operator is asking about, and the placeholder
+    /// costs nothing: it is a handle for `ask_local`.
+    fn sanitize_operator(&self, st: &mut State, text: &str, origin: &str) -> String {
+        let out = self.sanitize(st, text, origin, false);
+        let bracketed: Vec<(usize, usize)> = PLACEHOLDER
+            .find_iter(&out)
+            .map(|m| (m.start(), m.end()))
+            .collect();
+        let mut result = String::with_capacity(out.len());
+        let mut last = 0;
+        for m in OPERATOR_NUMBER.find_iter(&out) {
+            if bracketed.iter().any(|&(s, e)| m.start() < e && s < m.end()) {
+                continue;
+            }
+            let token = Self::register(
+                st,
+                m.as_str(),
+                Kind::NationalId,
+                Some("number"),
+                origin,
+                false,
+            );
+            result.push_str(&out[last..m.start()]);
+            result.push_str(&token);
+            last = m.end();
+        }
+        result.push_str(&out[last..]);
+        result
     }
 
     /// The handle behind a placeholder the operator's message produced, given
@@ -1243,36 +1662,39 @@ impl Presenter for Engine {
             .map(|dir| workspace.join(dir))
             .filter(|p| p.is_dir())
             .collect();
-        let mut stack = vec![std::path::PathBuf::new()];
-        while let Some(rel) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let child = rel.join(&name);
-                let abs = workspace.join(&child);
-                if out.iter().any(|d| abs.starts_with(d)) {
-                    continue;
-                }
-                match entry.file_type() {
-                    // Git history holds committed copies of sensitive files, in a
-                    // form a program can decode (`git show`, pack files).
-                    Ok(t) if t.is_dir() && name == ".git" => out.push(abs),
-                    // Duet's own run state holds raw handles, the vault (every
-                    // placeholder's real value) and transcripts. Commands get their
-                    // TMPDIR outside the workspace.
-                    Ok(t) if t.is_dir() && name == ".duet" => out.push(abs),
-                    Ok(t) if t.is_dir() => {
-                        if !COMMAND_SCAN_SKIP.contains(&name.to_string_lossy().as_ref()) {
-                            stack.push(child);
-                        }
-                    }
-                    Ok(t) if t.is_file() && self.is_sensitive(&child) => out.push(abs),
-                    _ => {}
-                }
+        walk(workspace, |rel, is_dir| {
+            let abs = workspace.join(rel);
+            if out.iter().any(|d| abs.starts_with(d)) {
+                return false;
             }
-        }
+            let name = rel.file_name().unwrap_or_default();
+            if is_dir {
+                // Git history holds committed copies of sensitive files, in a
+                // form a program can decode (`git show`, pack files). Duet's
+                // own run state holds raw handles, the vault (every
+                // placeholder's real value) and transcripts. Commands get
+                // their TMPDIR outside the workspace.
+                if name == ".git" || name == ".duet" {
+                    out.push(abs);
+                    return false;
+                }
+                return !scan_skipped(rel);
+            }
+            if self.is_sensitive(rel) {
+                out.push(abs);
+            }
+            false
+        });
+        // Derived files the walk does not reach: written into build output or
+        // dependencies (`target/`, `node_modules/`) by a sensitive command.
+        out.extend(
+            self.derived
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .iter()
+                .map(|rel| workspace.join(rel))
+                .filter(|abs| abs.symlink_metadata().is_ok()),
+        );
         out.extend(self.ip_hidden(workspace));
         out.sort();
         out.dedup();
@@ -1293,26 +1715,33 @@ impl Presenter for Engine {
     }
 
     fn mark_sensitive(&self, workspace: &Path, paths: &[std::path::PathBuf]) {
-        for rel in paths {
-            if self.is_sensitive(rel) {
-                continue;
-            }
-            {
-                let mut derived = self
-                    .derived
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                derived.insert(rel.clone());
+        {
+            let mut derived = self
+                .derived
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let before = derived.len();
+            derived.extend(
+                paths
+                    .iter()
+                    .filter(|rel| !self.policy.is_sensitive_path(rel))
+                    .cloned(),
+            );
+            if derived.len() != before {
                 let _ = duet_fs::private::write_private(
                     &self.derived_file,
                     &serde_json::to_vec(&*derived).unwrap_or_default(),
                 );
             }
+        }
+        // Every file the command wrote is indexed now, whether it was
+        // sensitive before or not: a file indexed at run start (or by an
+        // earlier command) may hold new values.
+        for rel in paths {
             if let Ok(bytes) = duet_fs::read_file(workspace, rel, PRIME_MAX_BYTES as u64) {
                 let text = String::from_utf8_lossy(&bytes);
                 let mut st = self.lock();
-                st.overlap.add_sensitive(&text);
-                let _ = self.sanitize(&mut st, &text, &rel.display().to_string(), true);
+                self.index_sensitive(&mut st, rel, &text);
             }
         }
     }
@@ -1325,7 +1754,8 @@ impl Presenter for Engine {
 repository). Sensitive files (data, logs, secrets) are unreadable to commands. To run something that must read them \
 (e.g. the program on the real data), set sensitive_data: the output then stays on this machine and you get a summary \
 and a handle for ask_local, and files the command writes become sensitive too; placeholders (⟨…⟩) in such a command \
-are replaced by their values on this machine. Prefer synthetic fixtures for tests."
+are replaced by their values on this machine (cargo builds into a private $CARGO_TARGET_DIR there). Prefer synthetic \
+fixtures for tests."
                     .into(),
                 parameters: json!({"type": "object", "properties": {
                     "command": {"type": "string"},
@@ -1380,6 +1810,15 @@ at most {MAX_RAW_LINES} lines per call)."
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
+    }
+
+    fn take_events(&self) -> Vec<AuditEvent> {
+        std::mem::take(
+            &mut *self
+                .events
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
     }
 
     fn detokenize(&self, text: &str) -> String {
@@ -1470,7 +1909,7 @@ and are never resolved for {destination}",
     /// reaches for summaries and `sensitive_data` instead of hitting denials.
     fn sanitize_objective(&self, text: &str) -> String {
         let mut st = self.lock();
-        let mut out = self.sanitize(&mut st, text, "task", false);
+        let mut out = self.sanitize_operator(&mut st, text, "task");
         let note = self.operator_values(&mut st, text, &out);
         out.push_str(&note);
         out.push_str(&Self::task_notes_of(&st));
@@ -1486,7 +1925,7 @@ and are never resolved for {destination}",
     /// the public vocabulary (a name the operator types stays identifying).
     fn sanitize_message(&self, text: &str) -> String {
         let mut st = self.lock();
-        let mut out = self.sanitize(&mut st, text, "operator", false);
+        let mut out = self.sanitize_operator(&mut st, text, "operator");
         let note = self.operator_values(&mut st, text, &out);
         out.push_str(&note);
         out
@@ -2795,5 +3234,268 @@ mod prime_tests {
         let file_token = e.lock().vault.tokenize("4111 1111 1111 1111").0;
         let err = ask(&e, &file_token).unwrap_err();
         assert!(err.contains("data/a.csv") && !err.contains("4111"), "{err}");
+    }
+
+    fn workspace(files: &[(&str, &str)]) -> (tempfile::TempDir, std::path::PathBuf) {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        for (path, text) in files {
+            let p = ws.join(path);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, text).unwrap();
+        }
+        (d, ws)
+    }
+
+    #[test]
+    fn sensitive_files_git_does_not_list_are_primed_too() {
+        // Found by the privacy scenarios: priming read only the files git
+        // lists, so a gitignored `.env` (the usual case) was not in the vault
+        // and a password from it that the operator typed was sent as typed.
+        let (d, ws) = workspace(&[
+            (".env", "DB_PASSWORD=quartz-otter-5519\n"),
+            ("logs/app.log", "WARN dispute note from Priya Tolvenrin\n"),
+            ("src/lib.rs", "// code\n"),
+            // Dependencies and state are never walked.
+            ("node_modules/pkg/.env", "DB_PASSWORD=vendor-example-0001\n"),
+            (".duet/runs/r/.env", "DB_PASSWORD=run-state-value-0002\n"),
+        ]);
+        let e = Engine::open(&d.path().join("run"), super::tests::policy(), None).unwrap();
+        // git lists the source only (`.env` and logs are ignored).
+        assert_eq!(e.prime(&ws, &["src/lib.rs".to_string()], ""), 2);
+        let typed = e.sanitize_message("The database password is quartz-otter-5519, fix it.");
+        assert!(!typed.contains("quartz-otter-5519"), "{typed}");
+        let shown = e.present(
+            &Source::Command {
+                command: "cargo test".into(),
+                exit_code: Some(1),
+            },
+            b"refund owed to Tolvenrin\n",
+        );
+        assert!(!shown.contains("Tolvenrin"), "{shown}");
+        let st = e.lock();
+        assert!(!st.vault.contains("vendor-example-0001"));
+        assert!(!st.vault.contains("run-state-value-0002"));
+        assert_eq!(st.sensitive_files, vec![".env", "logs/app.log"]);
+    }
+
+    #[test]
+    fn files_a_sensitive_command_writes_are_indexed_even_when_already_sensitive() {
+        let (d, ws) = workspace(&[("data/a.csv", "id,email\n1,kim.berg@mailbox-2.net\n")]);
+        let e = Engine::open(&d.path().join("run"), super::tests::policy(), None).unwrap();
+        e.prime(&ws, &["data/a.csv".to_string()], "");
+        // A sensitive command rewrites the data file (already sensitive) and
+        // writes a copy into build output, which the walk skips.
+        std::fs::write(
+            ws.join("data/a.csv"),
+            "id,email\n2,olu.adeyemi@mailbox-5.net\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(ws.join("target")).unwrap();
+        std::fs::write(
+            ws.join("target/export.txt"),
+            "OLU ADEYEMI 4012 8888 8888 1881\n",
+        )
+        .unwrap();
+        e.mark_sensitive(&ws, &["data/a.csv".into(), "target/export.txt".into()]);
+        assert!(
+            e.lock().vault.contains("olu.adeyemi@mailbox-5.net"),
+            "rewritten file re-indexed"
+        );
+        assert!(e.path_sensitive(Path::new("target/export.txt")));
+        assert!(!e.path_sensitive(Path::new("target/other.txt")));
+        // Commands may not read it, though the walk never enters `target/`.
+        let hidden = e.hidden_from_commands(&ws);
+        assert!(hidden.contains(&ws.join("target/export.txt")), "{hidden:?}");
+        assert!(!hidden.iter().any(|p| p.ends_with("target")), "{hidden:?}");
+        // Only a file outside the policy is recorded as derived.
+        let derived: Vec<std::path::PathBuf> =
+            serde_json::from_slice(&std::fs::read(d.path().join("run/derived.json")).unwrap())
+                .unwrap();
+        assert_eq!(derived, vec![std::path::PathBuf::from("target/export.txt")]);
+    }
+
+    #[test]
+    fn long_numbers_the_operator_types_become_placeholders_without_a_label() {
+        let (_d, e) = primed_engine(&[("src/lib.rs", "// code\n")], "");
+        // Fails the Luhn check, and "Visa" is more than three words away.
+        const NUMBER: &str = "48613927054718395";
+        let task = e.sanitize_objective(&format!(
+            "The payment form rejects {NUMBER} although the customer says it is their Visa."
+        ));
+        assert!(!task.contains(NUMBER), "{task}");
+        assert!(
+            task.contains("⟨id:number#1⟩") && task.contains("ask_local(handle="),
+            "{task}"
+        );
+        for (typed, kept) in [
+            (
+                "Steer: also 4861-3927-0547-1839 and 4861 3927 054",
+                "4861 3927 054",
+            ),
+            ("Only 11 digits: 12345678901, run 42.", "12345678901"),
+        ] {
+            let shown = e.sanitize_message(typed);
+            assert!(shown.contains(kept), "{shown}");
+            assert!(!shown.contains("4861-3927-0547-1839"), "{shown}");
+        }
+        // Public content keeps an unlabelled number: only the operator's own
+        // text is read this way (a test fixture or an id stays readable).
+        let src = e.present(
+            &Source::File {
+                path: "src/ids.rs".into(),
+                ranged: false,
+            },
+            b"const ORDER: u64 = 486139270547183;\n",
+        );
+        assert!(src.contains("486139270547183"), "{src}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_output_is_matched_as_written_spelled_out_and_encoded() {
+        // Found by the privacy scenarios: a careless local answer repeating a
+        // whole line left a field no detector knows (a date of birth) between
+        // placeholders; a value spelled out or in base64 passed.
+        let data = "id,name,born,email,card\n\
+            1,Vakdril Thorsko,1987-03-14,vakdril.thorsko@kestrelpost-mail.net,4539148803436467\n";
+        let careless = "Line 2 reads: 1,Vakdril Thorsko,1987-03-14,vakdril.thorsko@kestrelpost-mail.net,4539148803436467. \
+            Spelled: T h o r s k o; v-a-k-d-r-i-l.t-h-o-r-s-k-o@k-e-s-t-r-e-l-p-o-s-t-m-a-i-l.n-e-t. \
+            Encoded: VGhvcnNrbw==, xVGhvcnNrbw, 0x54686f72736b6f. \
+            Values are withheld; a greeting aGkgdGhlcmU= and a b c d stay.";
+        let (local, _) = crate::testing::scripted_local(vec![
+            json!({"summary": careless, "facts": []}).to_string(),
+        ]);
+        let (d, ws) = workspace(&[("data/customers.csv", data), ("README.md", "# shop\n")]);
+        let e = Engine::open(&d.path().join("run"), super::tests::policy(), Some(local)).unwrap();
+        e.prime(
+            &ws,
+            &["data/customers.csv".to_string(), "README.md".to_string()],
+            "",
+        );
+        let shown = e.present(
+            &Source::File {
+                path: "data/customers.csv".into(),
+                ranged: false,
+            },
+            data.as_bytes(),
+        );
+        for leaked in [
+            "1987-03-14",
+            "Thorsko",
+            "T h o r s k o",
+            "t-h-o-r-s-k-o",
+            "k-e-s-t-r-e-l",
+            "VGhvcnNrbw",
+            "54686f72736b6f",
+        ] {
+            assert!(!shown.contains(leaked), "{leaked} crossed: {shown}");
+        }
+        for kept in [
+            "Values are withheld",
+            "aGkgdGhlcmU=",
+            "a b c d stay",
+            "Line 2 reads:",
+        ] {
+            assert!(shown.contains(kept), "{kept} lost: {shown}");
+        }
+        assert!(shown.contains(crate::reencoded::ENCODED), "{shown}");
+        // Tokens in the text are never read as values (`name:⟨…⟩` is not a
+        // person field holding the token's tail).
+        assert!(!shown.contains("⟨name:⟨"), "{shown}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn narrow_questions_are_put_as_format_questions_budgeted_and_audited() {
+        // Found by the privacy scenarios: ten narrow questions, each answer
+        // cleaned alone, gave the frontier 8 of a card's 16 digits.
+        let data = "id,holder,card\n1,Orla Brennvik,5293761582049377\n2,Ysolde Marrquin,3762948510736285\n";
+        let answer = |a: &str| {
+            json!({"answer": a, "evidence_lines": [2], "unanswerable": false}).to_string()
+        };
+        let (local, received) = crate::testing::scripted_local(vec![
+            json!({"summary": "Two card records.", "facts": []}).to_string(),
+            answer("The first digit is 5."),
+            answer("It is 9."),
+            answer("Then 3."),
+            answer("Then 7."),
+            answer("It has 16 digits; the number on line 2 passes the Luhn check."),
+        ]);
+        let (d, ws) = workspace(&[("data/cards.csv", data)]);
+        let run = d.path().join("run");
+        let e = Engine::open(&run, super::tests::policy(), Some(local)).unwrap();
+        e.prime(&ws, &["data/cards.csv".to_string()], "");
+        let shown = e.present(
+            &Source::File {
+                path: "data/cards.csv".into(),
+                ranged: false,
+            },
+            data.as_bytes(),
+        );
+        let handle = shown.split_whitespace().next().unwrap().to_owned();
+        let ask = |e: &Engine, q: &str| {
+            let mut args = Map::new();
+            args.insert("handle".into(), json!(handle));
+            args.insert("question".into(), json!(q));
+            e.call_tool("ask_local", &args).unwrap().unwrap()
+        };
+        // A positional question is put as a question about format, and its
+        // answer shows no piece of the value.
+        let first = ask(&e, "What is the first digit of the card on line 2?");
+        assert!(first.contains("asked for the value's format"), "{first}");
+        assert!(
+            !first.contains(" 5.") && first.contains(probing::WITHHELD),
+            "{first}"
+        );
+        let prompt = received.prompt(1);
+        assert!(
+            prompt.contains("Describe the value's format instead"),
+            "{prompt}"
+        );
+        // Questions the rules do not recognize: short pieces of the card on
+        // the line asked about add up to the budget, then are withheld.
+        assert!(ask(&e, "Which figure follows 29 in the card on line 2?").contains("It is 9."));
+        assert!(ask(&e, "And after that, for line 2?").contains("Then 3."));
+        let over = ask(&e, "And then, for line 2?");
+        assert!(
+            over.contains(&format!("Then {}.", probing::WITHHELD)),
+            "{over}"
+        );
+        // Counts and places cost nothing.
+        let count = ask(&e, "How many digits has the card on line 2?");
+        assert!(
+            count.contains("It has 16 digits; the number on line 2 passes"),
+            "{count}"
+        );
+        // Each probe is a security event for the audit log; nothing more.
+        let events = e.take_events();
+        let rules: Vec<(String, u32, u32)> = events
+            .iter()
+            .map(|ev| match ev {
+                AuditEvent::LocalProbe {
+                    handle: h,
+                    rule,
+                    withheld,
+                    count,
+                } => {
+                    assert_eq!(h, &handle);
+                    (rule.clone(), *withheld, *count)
+                }
+                other => panic!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            rules,
+            vec![
+                ("positional_question".to_string(), 1, 1),
+                ("characters_withheld".to_string(), 1, 2)
+            ]
+        );
+        assert!(e.take_events().is_empty());
+        // The budget spent survives a resumed run.
+        drop(e);
+        let (local, _) = crate::testing::scripted_local(vec![answer("Then 1.")]);
+        let e = Engine::open(&run, super::tests::policy(), Some(local)).unwrap();
+        let again = ask(&e, "And the next one on line 2?");
+        assert!(again.contains(probing::WITHHELD), "{again}");
     }
 }

@@ -19,7 +19,8 @@
 //!   notices, or as a bulky preview.
 //! - Events (from the audit log): blocked sends by check, sandbox denials,
 //!   `sensitive_data` commands and the files they marked, protected edits,
-//!   approval decisions.
+//!   approval decisions, `ask_local` questions that probed a value piece by
+//!   piece and the pieces withheld from their answers.
 
 use crate::ledger::Ledger;
 use duet_boundary::audit::{AuditEvent, Line};
@@ -108,6 +109,13 @@ pub struct Disclosure {
     /// Images, by where they went (from the audit log's image events).
     #[serde(default, skip_serializing_if = "ImageCounts::is_empty")]
     pub images: ImageCounts,
+    /// `ask_local` questions that asked for characters of a value by position
+    /// or piece, or whose answers would have shown some.
+    #[serde(default)]
+    pub local_probes: u64,
+    /// Pieces of values withheld from those answers.
+    #[serde(default)]
+    pub local_pieces_withheld: u64,
     /// How tool results were shown; `None` when the run's ledger is unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub views: Option<Views>,
@@ -193,6 +201,10 @@ impl Disclosure {
                         "local" => d.images.described += 1,
                         _ => d.images.refused += 1,
                     },
+                    AuditEvent::LocalProbe { withheld, .. } => {
+                        d.local_probes += 1;
+                        d.local_pieces_withheld += u64::from(*withheld);
+                    }
                     AuditEvent::RunEnd { .. }
                     | AuditEvent::EndpointTrust { .. }
                     | AuditEvent::ConfigChange { .. }
@@ -328,6 +340,16 @@ everything the model read was sent to the frontier unfiltered. Nothing below was
             self.protected_edits,
         );
         row(&mut out, "ask_local calls", self.ask_local_calls);
+        row(
+            &mut out,
+            "ask_local questions probing a value",
+            self.local_probes,
+        );
+        row(
+            &mut out,
+            "pieces of values withheld from answers",
+            self.local_pieces_withheld,
+        );
         if self.approvals.asked > 0 {
             out.push_str(&format!(
                 "  {:<44} {} ({} approved, {} denied)\n",
@@ -404,6 +426,12 @@ mod tests {
             AuditEvent::BlockedSend {
                 check: "no_known_values".into(),
             },
+            AuditEvent::LocalProbe {
+                handle: "h3".into(),
+                rule: "positional_question".into(),
+                withheld: 2,
+                count: 1,
+            },
             AuditEvent::Approval {
                 tool: "write_file".into(),
                 risk: "write_outside_sources".into(),
@@ -442,6 +470,7 @@ mod tests {
             (r.sandbox_denials, r.sensitive_data_runs, r.derived_files),
             (1, 1, 2)
         );
+        assert_eq!((r.local_probes, r.local_pieces_withheld), (1, 2));
         assert_eq!(
             r.approvals,
             Approvals {

@@ -502,6 +502,15 @@ fn feeds_from(
                     "#{} protected edit {path} (attempt {attempt})",
                     e.seq
                 )),
+                AuditEvent::LocalProbe {
+                    handle,
+                    withheld: pieces,
+                    count,
+                    ..
+                } => withheld.push(format!(
+                    "#{} ask_local probed a value in {handle} (probe {count}; {pieces} piece(s) withheld)",
+                    e.seq
+                )),
                 _ => {}
             },
             _ => {}

@@ -143,6 +143,11 @@ pub trait Presenter: Send + Sync {
     fn take_view_class(&self) -> Option<ViewClass> {
         None
     }
+    /// Security events decided since the last call, for the run's audit log
+    /// (a local-model question that probed a value piece by piece).
+    fn take_events(&self) -> Vec<crate::audit::AuditEvent> {
+        Vec::new()
+    }
     /// Whether the frontier may see this path's name and content at all
     /// (used to hide protected paths from listings and searches).
     fn path_visible(&self, _path: &std::path::Path) -> bool {
