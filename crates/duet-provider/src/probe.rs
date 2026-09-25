@@ -156,15 +156,41 @@ pub fn cache_probe_request() -> Request {
     }
 }
 
+/// The probe's fixed prompt for a frontier: a stable prefix of about 5,000
+/// tokens, above every hosted provider's minimum cacheable prefix, and no
+/// sampling settings (current reasoning models refuse `temperature`). Nothing
+/// from any workspace is in it.
+pub fn frontier_cache_probe_request() -> Request {
+    let reference: String = (1..=400)
+        .map(|i| format!("Reference line {i:03}: the quick brown fox jumps over the lazy dog.\n"))
+        .collect();
+    Request {
+        system: format!("You answer with one word.\n{reference}"),
+        items: vec![Item::User {
+            text: "Reply with the single word: ok".into(),
+        }],
+        // Room for a reasoning model to think before its word.
+        max_output_tokens: Some(256),
+        ..Request::default()
+    }
+}
+
 /// Sends the same short request twice and reports the cached prompt tokens
 /// of each. Two model calls: run it only when the operator asks.
 pub async fn cache_reuse(provider: &ChatProvider) -> Result<CacheReuse, ProviderError> {
-    let request = cache_probe_request();
+    cache_reuse_with(provider, &cache_probe_request()).await
+}
+
+/// [`cache_reuse`] with a given probe request.
+pub async fn cache_reuse_with(
+    provider: &ChatProvider,
+    request: &Request,
+) -> Result<CacheReuse, ProviderError> {
     let started = std::time::Instant::now();
-    let first = provider.create(&request).await?;
+    let first = provider.create(request).await?;
     let first_seconds = started.elapsed().as_secs_f64();
     let started = std::time::Instant::now();
-    let second = provider.create(&request).await?;
+    let second = provider.create(request).await?;
     let second_seconds = started.elapsed().as_secs_f64();
     Ok(CacheReuse {
         prompt_tokens: second.usage.input + second.usage.cache_read + second.usage.cache_write,
@@ -180,6 +206,15 @@ pub async fn cache_reuse(provider: &ChatProvider) -> Result<CacheReuse, Provider
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_frontier_probe_is_cacheable_everywhere_and_sets_no_sampling() {
+        let r = frontier_cache_probe_request();
+        // Above the largest documented minimum cacheable prefix (4,096 tokens).
+        assert!(crate::types::estimate_tokens(r.system.len()) > 4_096);
+        assert!(r.temperature.is_none() && r.extra.is_empty());
+        assert!(r.max_output_tokens.unwrap() >= 16);
+    }
 
     #[test]
     fn reads_models_listing() {

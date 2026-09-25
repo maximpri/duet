@@ -11,7 +11,7 @@ use duet_boundary::audit::{AnchorCheck, Verification, check_anchor, verify};
 use duet_config::{Config, Origin, REGISTRY};
 use duet_provider::backends;
 use duet_provider::endpoint::{Trust, check_local_endpoint, host_port, is_loopback_host};
-use duet_provider::{ChatProvider, Dialect, Item, ProviderConfig, Request, Role};
+use duet_provider::{ChatProvider, Dialect, ProviderConfig, Request, Role};
 use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
@@ -25,12 +25,6 @@ const DISK_FAIL: u64 = 1 << 30;
 /// How many of the most recent run audit logs are verified.
 const RECENT_RUNS: usize = 5;
 const ONLINE_TIMEOUT: Duration = Duration::from_secs(5);
-/// Size of the cache-check prompt's stable prefix. Providers cache only
-/// prefixes above a minimum (up to about 4K tokens), so the frontier's is
-/// larger; a local server caches any prefix, and a smaller one keeps its
-/// prefill short.
-const FRONTIER_CACHE_PREFIX_TOKENS: usize = 5_000;
-const LOCAL_CACHE_PREFIX_TOKENS: usize = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -500,7 +494,10 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
         pc.dialect = dialect;
         pc.api_key_env = (!key_env.is_empty()).then_some(key_env.clone());
         match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(120))) {
-            Ok(p) => cache_check("frontier cache", &p, FRONTIER_CACHE_PREFIX_TOKENS, &model).await,
+            Ok(p) => {
+                let probe = duet_provider::probe::frontier_cache_probe_request();
+                cache_check("frontier cache", &p, &probe, &model).await
+            }
             Err(e) => check("frontier cache", Status::Warn, e.message),
         }
     });
@@ -515,42 +512,15 @@ fn online_limits(mut pc: ProviderConfig, first_byte: Duration) -> ProviderConfig
     pc
 }
 
-/// The cache-check prompt: a fixed, built-in stable prefix of about
-/// `prefix_tokens` tokens and a one-word question. Nothing from the workspace.
-pub fn cache_probe(prefix_tokens: usize) -> Request {
-    const LINE: &str = "Reference entry: a ledger records each transfer once, with its date, amount and both accounts.\n";
-    let lines = (prefix_tokens * 7 / 2).div_ceil(LINE.len());
-    Request {
-        system: format!(
-            "You are answering a connectivity check. Reply with the single word ok.\n{}",
-            LINE.repeat(lines)
-        ),
-        items: vec![Item::User {
-            text: "Reply with the single word ok.".into(),
-        }],
-        max_output_tokens: Some(256),
-        ..Request::default()
-    }
-}
-
-/// Sends the same prompt twice and reports what the second read from the cache.
+/// Sends the same built-in prompt twice (`probe`; nothing from the workspace)
+/// and reports what the repeat read from the cache.
 async fn cache_check(
     name: &'static str,
     provider: &ChatProvider,
-    prefix_tokens: usize,
+    probe: &Request,
     model: &str,
 ) -> Check {
-    let probe = cache_probe(prefix_tokens);
-    let started = std::time::Instant::now();
-    let first = provider.create(&probe).await;
-    let cold = started.elapsed();
-    let started = std::time::Instant::now();
-    let second = match first {
-        Ok(_) => provider.create(&probe).await,
-        Err(e) => Err(e),
-    };
-    let warm = started.elapsed();
-    let second = match second {
+    let r = match duet_provider::probe::cache_reuse_with(provider, probe).await {
         Ok(r) => r,
         Err(e) => {
             return check(
@@ -561,37 +531,48 @@ async fn cache_check(
             .fix("check the model id and the key; `duet doctor --online` lists the models");
         }
     };
-    let u = second.usage;
     let cost = duet_provider::price::builtin(model)
         .map(|p| {
+            let second = duet_provider::Usage {
+                input: r.prompt_tokens - r.second_cached.min(r.prompt_tokens),
+                cache_read: r.second_cached,
+                ..Default::default()
+            };
+            let first = duet_provider::Usage {
+                input: r.prompt_tokens,
+                ..Default::default()
+            };
             format!(
-                "; the check cost about ${:.4} at list price",
-                2.0 * p.cost(&u)
+                "; about ${:.4} at list price",
+                p.cost(&first) + p.cost(&second)
             )
         })
         .unwrap_or_default();
     let timing = format!(
         "cold {:.1} s, warm {:.1} s",
-        cold.as_secs_f64(),
-        warm.as_secs_f64()
+        r.first_seconds, r.second_seconds
     );
-    if u.cache_read > 0 {
+    if r.second_cached > 0 {
         check(
             name,
             Status::Pass,
             format!(
                 "the repeated request read {} of {} input tokens from the cache ({timing}{cost})",
-                u.cache_read,
-                u.total_input()
+                r.second_cached, r.prompt_tokens
             ),
         )
     } else {
+        let why = if r.unreported {
+            "the server reported no usage"
+        } else {
+            "the repeated request reported no cached input tokens"
+        };
         check(
             name,
             Status::Warn,
             format!(
-                "the repeated request reported no cached input tokens ({} input; {timing}{cost}): every turn may pay for the whole conversation again",
-                u.total_input()
+                "{why} ({} input; {timing}{cost}): every turn may pay for the whole conversation again",
+                r.prompt_tokens
             ),
         )
         .fix("use an endpoint and model with prompt caching (a local server may reuse the prefix without reporting it: compare the timings)")
@@ -801,7 +782,10 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
     pc.api_key_env = (!key_env.is_empty()).then_some(key_env);
     out.push(
         match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(300))) {
-            Ok(p) => cache_check("local cache", &p, LOCAL_CACHE_PREFIX_TOKENS, "").await,
+            Ok(p) => {
+                let probe = duet_provider::probe::cache_probe_request();
+                cache_check("local cache", &p, &probe, "").await
+            }
             Err(e) => check("local cache", Status::Skip, e.message),
         },
     );
