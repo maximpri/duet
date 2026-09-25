@@ -206,6 +206,25 @@ other than an ordinary source or test file; with `all`, before every command and
 is returned to the model as a tool error, and every decision is in the run's audit log. A run with
 approval on and no terminal refuses to start. Details: [SECURITY.md](SECURITY.md) (Oversight).
 
+**Web tools** (`web.*` settings; on by default): the frontier gets `web_fetch` (a public page
+as text; HTML is converted with links kept; `start_line`/`end_line` read part of a long page) and,
+when a search backend is configured, `web_search` (title, URL and snippet per result). Requests are
+made by the host, never by commands (commands still have no network): `GET` only, `http`/`https`,
+public addresses only (checked after DNS and on every redirect), at most `web.max_bytes` per
+response and `web.timeout_secs` per request. Search backends:
+
+```sh
+duet config set web.search.backend '"searxng"' --confirm                 # your own SearXNG instance
+duet config set web.search.searxng_url '"http://127.0.0.1:8888"' --confirm  # JSON format enabled
+duet config set web.search.backend '"brave"' --confirm                   # Brave Search API; key in $BRAVE_API_KEY
+duet config set web.allowlist_private '["wiki.corp", "10.20.0.0/16"]' --confirm   # intranet hosts for web_fetch
+duet config set --project web.enabled false                              # no web tools in this repository
+```
+
+In hybrid mode a URL or query holding a placeholder or a known sensitive value is refused before
+anything is sent, and fetched content is scanned like public content and shown as untrusted data.
+Every call is an audit event (host, bytes, outcome). Details: [SECURITY.md](SECURITY.md) (Web tools).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on

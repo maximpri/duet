@@ -42,7 +42,8 @@ gate**.
 duet-provider    duet-fs    duet-sandbox                  (leaf crates)
 duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
-duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git   (not duet-provider)
+duet-web                     (leaf: host-side HTTP for the web tools; reqwest, url, ipnet)
+duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
@@ -57,6 +58,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-git` | Private checkpoint store; the only function that spawns `git` | Inherit the user's git config, hooks or fsmonitor |
+| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo) | Construct a frontier provider (it receives `GatedFrontier`) |
@@ -74,11 +76,12 @@ enum UsageStatus { Reported, Estimated, Unknown }
 
 // duet-boundary
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
-              SensitiveCommand { command, exit_code }, Diff, Checks, Other { label } }
+              SensitiveCommand { command, exit_code }, Diff, Checks, Web { url }, Other { label } }
 enum ViewClass { Raw, Tokenized, HandleSummary, LocalAnswer, BulkyHandle, Protected }
 trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the frontier gets
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
-                  fn hidden_from_commands(..) -> Vec<PathBuf>; fn mark_sensitive(..); .. }
+                  fn hidden_from_commands(..) -> Vec<PathBuf>; fn mark_sensitive(..);
+                  fn check_outbound(&self, destination, text) -> Result<String, String>; .. }
 struct Engine;         // the hybrid Presenter; PassThrough is the no-op one
 // handles render as "h12"; placeholders as "⟨secret:DB_URL#1⟩", "⟨email:email#4⟩", "⟨body:h7⟩"
 struct OutboundGate;   fn wrap(self, p: ChatProvider) -> GatedFrontier
@@ -263,6 +266,23 @@ a secret sink (`sensitivity.secret_sinks`) or a sensitive file. Anywhere else, a
 placeholder, the write is refused with an error telling the frontier to read the value at runtime
 (for example from an environment variable of that name). `edit_file` anchors may contain
 placeholders; they are matched against the real text.
+
+### 5.6 Third-party channels (web)
+
+Text the frontier sends to anyone other than the frontier provider goes through
+`Presenter::check_outbound(destination, text)` before any request: the engine refuses a
+placeholder (never resolved for a non-local destination), a vault value (as written,
+URL-encoded or in another letter case) or a copied span of sensitive content; pass-through allows
+everything. A refusal is a tool error and an `outbound_refused` audit event (channel, destination,
+reason; never the text). The method is generic so other third-party channels (MCP) use it too.
+
+The web tools (`crates/duet-agent/src/web.rs` over `duet-web`): `web_fetch {url, start_line?,
+end_line?}` always, `web_search {query, count?}` only with a usable backend, both fixed at run start
+(`RunConfig.web`; `None` when `web.enabled` is off). Flow: check the URL or query → `duet-web`
+fetches (resolve, check every address, pin, follow at most 5 checked redirects, cap, convert) →
+`Presenter::present(Source::Web { url }, text)` (public-untrusted: scanned and tokenized like public
+content, offloaded to a handle when bulky) → framed between markers with a per-call random tag
+saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
 
 ## 6. Context management
 

@@ -250,7 +250,7 @@ value, a placeholder's name, a command or a path:
 | Protected bodies and constants | distinct `⟨body:…⟩` / `⟨value:…⟩` handles sent |
 | Protected code lines withheld | line markers in the distinct messages sent |
 | Sensitive results held locally, tokenized files, protected views, bulky previews, local answers | tool results by how they were shown (cost ledger) |
-| Requests changed by the outbound filter; requests blocked, by check | audit records and `blocked_send` events |
+| Requests changed by the outbound filter; requests blocked, by check | audit records, `blocked_send` events and `outbound_refused` events (as `outbound:<tool>`) |
 | Sandbox denials, `sensitive_data` commands and files they marked, protected edits, approvals | audit events |
 
 A passthrough run is reported as having the boundary off, with nothing withheld. A run without a
@@ -334,6 +334,34 @@ Linux differences and limits:
   AppArmor user-namespace restrictions (such as Ubuntu 24.04); there Duet either works or refuses
   to run commands.
 
+## Web tools
+
+`web_fetch` and `web_search` (`web.enabled`, on by default; a project may turn them off) make
+host-side HTTP requests for the frontier. They are a channel out (URL, query) and a channel in
+(pages, results).
+
+| Threat | What stops it |
+|---|---|
+| A URL or query carries a sensitive value to a third party | `check_outbound` before any request: placeholders are never resolved for a non-local destination and refuse the call; vault values (plain, URL-encoded, any letter case) and copied spans of sensitive content refuse it (fail closed, `outbound_refused` audit event) |
+| Server-side request forgery: the host reaching loopback services, the LAN, cloud metadata | `http`/`https` only, no credentials in URLs, `GET` only; every resolved address is checked (loopback, private, link-local, CGNAT, unique-local, multicast, reserved, IPv4 embedded in IPv6) and the connection is pinned to the checked address, so DNS rebinding cannot swap it; every redirect is checked the same way (at most 5); no proxy from the environment. `web.allowlist_private` (owner only, confirmed) opens named intranet hosts or networks; metadata addresses (169.254.169.254, fd00:ec2::254, 100.100.100.200, ...) stay refused |
+| A page carries instructions (prompt injection) or sensitive-looking data | Content is presented as `Source::Web`: scanned and tokenized like public content (values already in the vault are replaced too), offloaded when bulky, and framed as untrusted data between markers the page cannot forge (random tag per call) |
+| Huge or binary responses | Body cut at `web.max_bytes` (not downloaded further, marked truncated); binary types refused; `web.timeout_secs` per request including redirects |
+| The search key leaking | Read from the environment variable named by `web.search.brave_key_env`; never written to config, logs or the audit log |
+
+Audit: each call is a `web_request` event with the tool, host, bytes and outcome; never the URL's
+path or the query (the request record of the turn that asked for it holds the tool call, as for
+every tool).
+
+**Known limits.** The web widens who can receive what the frontier knows: from the frontier
+provider to any public host. A steered frontier (prompt injection in a page or in the repository)
+can put public source code, the task text or its paraphrase of a local answer into a URL or query;
+only values Duet knows (the vault, copied spans) are stopped. Turn the web off
+(`web.enabled = false`) for repositories where that matters; `oversight.approve` does not ask about
+web requests. HTML conversion is a small in-crate scanner: unusual markup may lose structure (never
+safety). Only UTF-8 and Latin-1 bodies are decoded; others are shown lossily. A ranged `web_fetch`
+fetches the page again. The SearXNG instance is the owner's endpoint and is not subject to the
+address check.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to
@@ -359,7 +387,8 @@ such instructions; the frontier may follow them. What that can and cannot achiev
 **Still possible.** A steered frontier can change any Open source file (including inserting
 malicious code the owner later runs outside the sandbox), run arbitrary commands inside the sandbox,
 ask the local model questions about sensitive content with `ask_local`, and run `sensitive_data`
-commands. With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
+commands, and send what it knows (never a known sensitive value) to public hosts in `web_fetch` URLs
+and `web_search` queries (see Web tools). With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
 protected edits and writes outside ordinary source and test files. Local answers are derived from sensitive content by design and can convey meaning in
 paraphrase; the protected-source limits above apply. **Review the diff before running, committing or
 deploying what a run produced.**
