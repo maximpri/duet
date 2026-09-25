@@ -311,8 +311,25 @@ made) is not recorded; the turn is re-decided on resume.
 - Writes record `pending` before and `applied` after; `duet resume <run>` reconciles pending writes,
   drops a partly answered turn and continues the transcript and the same audit chain. It refuses a
   completed run and a malformed run id.
-- Ctrl-C stops a frontier wait or a retry at once, lets an in-flight tool finish (its result is not
-  recorded) and ends in resumable `Failed{interrupted}`.
+- Ctrl-C stops a frontier wait or a retry at once, kills a running command's whole process tree
+  (checks included), records the interrupted call in the transcript (its result is not recorded)
+  and ends in resumable `Failed{interrupted}`.
+
+A full disk is an infrastructure failure too (`duet_agent::host`). A write of run state that fails
+for lack of a host resource (disk space, quota, file handles; `FsError::is_host_resource`) pauses
+the run: one notice on stderr (`disk full: waiting for space`), then the write is retried in place
+with backoff (0.25 s doubling, capped at 30 s) until it succeeds, the run is interrupted, or the wall
+clock ends it as `BudgetStopped{wall_clock}`. This covers the transcript, the write journal (each
+step on its own), workspace writes and the audit log (the line, then its anchor); the records
+that end a run (the transcript's end entry, `summary.json`, the audit
+`run_end`) keep waiting for up to 30 s past the deadline. Every such write is all or nothing: a
+failed append is cut back to its previous length and a failed whole-file write removes its
+temporary file, so a retry never duplicates or tears a record.
+
+The estimated usage of frontier attempts that failed after output started is charged like billed
+usage, kept apart from it: to the dollar budget and `cost_usd`, to the ledger
+(`failed_attempts_usd`, included in `input_usd`/`output_usd`) and to the transcript
+(`failed_attempts` entries, replayed on resume); `stats.failed_attempt_usage` holds the tokens.
 
 ## 11. Evaluation architecture
 
