@@ -362,6 +362,37 @@ safety). Only UTF-8 and Latin-1 bodies are decoded; others are shown lossily. A 
 fetches the page again. The SearXNG instance is the owner's endpoint and is not subject to the
 address check.
 
+## Git tools
+
+`git_status`, `git_log`, `git_show` and `git_blame` (offered when the workspace is a git
+repository) read history for the frontier; `git_commit` (per `git.commit`) writes it. History is a
+channel in; a commit is a side effect that outlives the run.
+
+| Threat | What stops it |
+|---|---|
+| Old revisions of a sensitive file reach the frontier | History is classified by the path as it is now: a sensitive path (policy globs or derived) is sensitive in every revision; its content and diffs are held locally (handle and summary, secret files tokenized) and its old values enter the vault, so later echoes are replaced and the outbound check blocks them |
+| A key committed long ago and removed since (history often holds such keys) | Each file's diff is presented on its own and scanned like public content; detected secrets become placeholders |
+| Author emails and names; secrets in commit messages | Log lines, commit messages and blame are scanned; an email is PII and becomes a placeholder (names in public text are shown, as elsewhere) |
+| Protected source leaks through its history | Sealed paths never appear (dropped from file lists, diffs, log by path, blame, show by path); interface-only paths' diffs and old content are withheld with a note |
+| A hostile repository runs code through git | The `duet-git` runner only: absolute git binary, cleared environment, no global or system config, hooks off (`core.hooksPath=/dev/null`), no fsmonitor, no external diff, textconv or filter programs, no signing; revisions starting with `-` are refused and passed after `--end-of-options` |
+| A commit publishes sensitive data | Only files the run or session wrote (write journal); never sensitive, derived, hidden or protected paths, ignored files or paths with a `filter` attribute (LFS); the message is refused with a placeholder or anything the boundary would replace (a vault value, a detected secret or PII, copied sensitive text) |
+| A commit rewrites or publishes history | Plumbing only: no push, no reset, no checkout or branch switch, no amend; HEAD moves by compare-and-swap (a HEAD that moved meanwhile is left alone); other staged work is left as it is |
+| Commits without the operator knowing | `git.commit = "ask"` (default): each commit waits for approval showing the message and paths, and git_commit is not offered when nobody can be asked (`oversight.approve = "off"`); `allow` needs a confirmed owner change or an owner default; a project can only tighten (`allow` → `ask` → `off`). Every commit is a `git_commit` audit event (hash, paths; never the message) |
+| Commits under a made-up identity | Author and committer are the operator: `git.author` (owner only), else `user.name`/`user.email` from the repository config, else the owner's git config files (read with `--file`, those two keys only); none → refused |
+
+Why there is no `git.run_hooks`: a hook is code chosen by the repository (or by whoever last wrote
+`.git/hooks`), and it would run outside the sandbox with the operator's rights and network. Duet
+never runs it; run your hooks yourself (`pre-commit run --files ...`) or make them checks
+(`checks.commands`), which run sandboxed.
+
+**Known limits.** In pass-through mode history is shown as it is (as every other result). Content
+is committed byte for byte as it is on disk (`--no-filters`: no end-of-line conversion). Author
+names in history are not treated as personal data in public text. The owner's git identity is not
+found when it lives in an included config file (set `git.author`). `/undo` in a session reverts the
+files, never a commit: a reverted file that was committed shows as changed. Commands still cannot
+read `.git`, so tools run by commands that need history (for example version stamping in a build)
+fail in hybrid mode as before.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to

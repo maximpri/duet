@@ -225,6 +225,32 @@ In hybrid mode a URL or query holding a placeholder or a known sensitive value i
 anything is sent, and fetched content is scanned like public content and shown as untrusted data.
 Every call is an audit event (host, bytes, outcome). Details: [SECURITY.md](SECURITY.md) (Web tools).
 
+**Git tools** (when the workspace is a git repository): `git_status`, `git_log {path?, rev?,
+max_count?}` (hash, date, author, subject; at most 100), `git_show {rev, path?}` (a commit's
+message, files and per-file diffs, or a file as it was at `rev`) and `git_blame {path, start_line?,
+end_line?}` (at most 400 lines per call). Commands still cannot read `.git`; a `git ...` command
+gets a hint to use these tools. In hybrid mode history is shown by path, like `read_file`: a path
+that is sensitive now is sensitive in every revision (held locally, a secret file with its values
+replaced), protected source's history is withheld (sealed paths never appear), and old diffs and
+commit messages are scanned, so a key removed long ago or an author's email becomes a placeholder.
+
+`git_commit {message, paths?}` commits files the run (or session) wrote itself, or a subset of
+them, to the current branch as the operator. It never commits sensitive, derived or protected
+files, ignored files or files with a git filter (LFS), refuses a message holding a placeholder or a
+sensitive value, runs no hook and never pushes, resets, checks out or switches branches. Each
+commit is an audit event (hash, paths). `/undo` in a session reverts files, never commits.
+
+```sh
+duet config set git.author '"Ada Lovelace <ada@example.com>"'   # else user.name/user.email from git config
+duet config set oversight.approve '"risky"'                     # git.commit = "ask" (default): offered, each commit asks
+duet config set git.commit '"allow"' --confirm                  # commit without asking (e.g. with approval off)
+duet config set --project git.commit '"off"'                    # no git_commit in this repository
+```
+
+With the default `git.commit = "ask"` and approval off (`oversight.approve = "off"`), nobody can be
+asked, so `git_commit` is not offered; the read-only git tools always are. Details:
+[SECURITY.md](SECURITY.md) (Git tools).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on

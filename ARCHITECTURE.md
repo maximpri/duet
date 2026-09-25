@@ -57,7 +57,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly, retry, credentials, local-endpoint trust, context probes, `Usage`, `Price` | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
-| `duet-git` | Private checkpoint store; the only function that spawns `git` | Inherit the user's git config, hooks or fsmonitor |
+| `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers | Inherit the user's git config, hooks or fsmonitor |
 | `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
@@ -76,7 +76,8 @@ enum UsageStatus { Reported, Estimated, Unknown }
 
 // duet-boundary
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
-              SensitiveCommand { command, exit_code }, Diff, Checks, Web { url }, Other { label } }
+              SensitiveCommand { command, exit_code }, Diff, Checks, Web { url },
+              GitHistory { rev, path: Option<PathBuf> }, Other { label } }
 enum ViewClass { Raw, Tokenized, HandleSummary, LocalAnswer, BulkyHandle, Protected }
 trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the frontier gets
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
@@ -284,6 +285,33 @@ fetches (resolve, check every address, pin, follow at most 5 checked redirects, 
 content, offloaded to a handle when bulky) → framed between markers with a per-call random tag
 saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
 
+### 5.7 Git history and commits
+
+The git tools (`crates/duet-agent/src/git_tools.rs`; `GitTools`, decided once per run or session in
+`run::tool_specs`, `None` outside a git repository) call git only through the `duet-git` runner.
+History is presented per path: `git_show` lists a commit's files (`--no-renames`, first parent for
+merges), drops hidden and sealed paths (`Presenter::path_visible`, `Presenter::protection`), and
+presents each file's diff on its own as `Source::GitHistory { rev, path: Some(p) }`; `git_show
+{path}` and `git_blame` present one path the same way; log lines, commit messages and status are
+`GitHistory { path: None }`. The engine (`engine/history.rs`) classifies by the path now: sealed →
+a notice; interface-only → withheld notice; sensitive → handle and summary (secret-bearing:
+tokenized), with the old values registered in the vault from the file's own lines only (git's
+headers, hunk ranges and blame's commit lines are split off, so hashes and modes never become
+placeholders); public → scanned (`clean_public`), bulky → handle. Pass-through shows it as it is.
+
+`git_commit` flow: message checks (no `⟨…⟩`; `present(GitHistory)` must return it unchanged, so
+no vault value, detected secret or PII, or copied sensitive span) → candidate paths from the write
+journal (`journal::written(run_dir)`, so across resumes and session turns) → refusals (hidden,
+protected, sensitive or derived; `Git::commit_blockers`: ignored, `filter` attribute, not a regular
+file) → identity (`git.author`, else repository `user.name`/`user.email`, else the owner's
+`~/.gitconfig` / XDG git config read with `--file` for those two keys) → the run's base commit is
+recorded in `runs/<id>/git-base` before its first commit → `Git::commit_paths`: `hash-object -w
+--no-filters` per path into a private index read from HEAD, `write-tree`, `commit-tree` (author =
+committer = operator, message on stdin), `update-ref HEAD <new> <old>` (compare-and-swap), then the
+real index entries of those paths only → `git_commit` audit event. Approval is in
+`oversight::review` (`Risk::GitCommit`: `git.commit = "ask"`, or `oversight.approve = "all"`).
+`diff` compares with `git-base` when present, so a run's own commits never hide its changes.
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -318,6 +346,7 @@ git; reset behaviour defined per entry).
     derived.json              files made sensitive by `sensitive_data` commands
     spill-<uuid>.txt          long command outputs
     writes.jsonl              pending/applied records for crash recovery
+    git-base                  HEAD before the run's first git_commit (what `diff` compares with)
     summary.json              terminal state, usage, cost ledger
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
   lock, tmp/                  workspace lock; sandbox scratch space
