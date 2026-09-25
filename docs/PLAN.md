@@ -1,6 +1,7 @@
 # Duet v2 — Implementation Plan
 
-Status: approved 2026-09-23; in progress (Gate 3 of M4; SbD-2 next). Progress: §10. Target state: [TARGET_STATE.md](TARGET_STATE.md).
+Status: approved 2026-09-23; in progress (M0–M4.5 and SbD-1 done; M5 and M6 under way; acceptance
+audit in [ACCEPTANCE.md](ACCEPTANCE.md)). Progress: §10. Target state: [TARGET_STATE.md](TARGET_STATE.md).
 
 ## 1. Why v2
 
@@ -263,8 +264,8 @@ read, e.g. 66 vs 45 requests on L3 in attempt B, ~1.4× the cost), and offload w
 outweigh them. Attempt C (local task brief) raised cost further (L3 $0.25 vs $0.18 per run; more
 `ask_local` calls, not fewer) and is off by default. **Outcome (operator decision): Gate 3 is a
 measured privacy premium** — the paired cost ratio vs the orchestrator alone is reported with its
-interval (~1.4× on the measured tasks) instead of a pass/fail gate; quality non-inferiority and zero
-leaks remain required.
+interval instead of a pass/fail gate (the batches so far measured about 1.5–2.4×, depending on the
+tasks); quality non-inferiority and zero leaks remain required.
 
 ### M4.5 — IP levels (days 27–31)
 

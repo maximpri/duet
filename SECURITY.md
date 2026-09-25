@@ -55,7 +55,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
    names the sensitive paths, and optionally (`sensitivity.local_brief`, off by default) the local
    model's brief of them for the task (values withheld, cleaned like any local output).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
-   sandbox (Seatbelt / bubblewrap), so no program can print them in any encoding. Git history (`.git`, which holds committed
+   sandbox (Seatbelt on macOS, bubblewrap on Linux; the Linux sandbox has not yet been exercised by
+   a test), so no program can print them in any encoding. Git history (`.git`, which holds committed
    copies) and Duet's run state (`.duet/`: raw handles, the vault, transcripts) are unreadable to
    commands too; commands get a scratch `TMPDIR` outside the workspace. A command that
    must read them is run with `sensitive_data`; its output is then held locally like a data file, and

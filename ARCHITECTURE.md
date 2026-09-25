@@ -1,7 +1,8 @@
 # Duet v2 Architecture
 
-Status: implemented through milestone M4.5 and SbD-1 ([docs/PLAN.md](docs/PLAN.md) §10), except
-where marked *planned*. `duet-tui` (M6) is built. Goals and success criteria:
+Status: implemented through milestone M4.5, SbD-1 and the SbD-2 tests, plus M5 preparation and
+parts of M6 ([docs/PLAN.md](docs/PLAN.md) §10), except where marked *planned*. `duet-tui` (M6) is
+built. Goals and success criteria:
 [docs/TARGET_STATE.md](docs/TARGET_STATE.md).
 
 ## 1. Shape of the system
@@ -311,7 +312,9 @@ and the candidate is not behind on hidden-test pass rate on a majority of tasks;
 upper bound of the paired difference < 0; privacy needs zero leaks. Duet runs write their cost
 ledger to `summary.json`, which `duet-eval report` reads per lane.
 
-## 12. Invariants (each backed by a test)
+## 12. Invariants
+
+Each is backed by a test, except where noted.
 
 1. No code path reaches the network with a frontier request except through `OutboundGate`.
 2. No vault value, canary or ≥24-token span of a sensitive handle appears in any audit record.
@@ -321,6 +324,8 @@ ledger to `summary.json`, which `duet-eval report` reads per lane.
 5. The system prompt and tool list are byte-identical for every turn of a run.
 6. A tool call is never persisted or sent without its result.
 7. Every run ends in a `Terminal` state; no run exits with pending writes unrecorded.
+   *Not yet test-backed:* nothing turns a panic into `Failed`, and live runs have panicked before
+   reaching a terminal state (ACCEPTANCE.md T1).
 8. `.git` and `.duet` are not writable by tools or sandboxed commands.
 9. No file under `crates/` contains another coding agent's code, format or name (outside eval lane
    adapters).

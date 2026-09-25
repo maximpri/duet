@@ -3,8 +3,11 @@
 **Frontier-level coding results, with sensitive information processed only by a local model.**
 
 > Status: **in development, not released.** The `duet` CLI, the security engine, IP levels and the
-> evaluation harness work; the privacy and quality gates have passed; cost is reported as a measured privacy premium. Local
-> backend presets, a no-config bootstrap, `duet doctor` and the `duet tui` terminal UI exist. Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10.
+> evaluation harness work. The privacy gate and the quality gate (Gate 2) passed on earlier builds;
+> quality has not been re-measured on the current build. Duet costs more than the frontier alone
+> (a measured privacy premium, below). Local backend presets, a no-config bootstrap, `duet doctor`
+> and the `duet tui` terminal UI exist. Progress and measurements: [docs/PLAN.md](docs/PLAN.md) §10;
+> what is verified and what is not: [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
 ## What it is
 
@@ -40,8 +43,9 @@ your repository ──► security engine ──────┘
   secret belongs.
 - **Logs and data files** appear as a handle with error lines and values replaced, their repeated
   line shapes and a local summary. The frontier asks the local model questions about them
-  (`ask_local`), but never sees the raw content. At the start of a run the local model also briefs
-  the frontier on what the sensitive files show for the task, with values withheld.
+  (`ask_local`), but never sees the raw content. Optionally (`sensitivity.local_brief`, off by
+  default) the local model also briefs the frontier at the start of a run on what the sensitive
+  files show for the task, with values withheld.
 - **Commands cannot read sensitive files** (OS sandbox). A command that must, such as the program
   run on the real data, is marked `sensitive_data`: its output stays local behind a handle and the
   files it writes become sensitive.
@@ -65,15 +69,18 @@ that a file exists, its shape, the intent of your task — is documented in `SEC
 |---|---|
 | Frontier-level results | On a suite of tasks from 15-minute fixes to multi-hour changes, code quality (blind judge) within 2/30 of the same frontier model alone, and hidden-test pass rate not behind it on most tasks |
 | Sensitive data stays local | Zero planted canaries in outbound traffic, measured by an independent logging proxy; every request is also in Duet's audit log |
-| Cheaper | Lower total cost than the same frontier model alone (API list prices incl. caching, plus local electricity) |
+| Known cost | The extra cost of privacy is measured and reported: the cost ratio against the same frontier model alone (API list prices incl. caching, plus local electricity). Duet is not expected to be cheaper |
 | Reliable | Every run ends as completed, failed with a reason, or budget-stopped; interrupted runs resume |
 
-So far (frontier `glm-5.3-flash`): quality matched the frontier alone, and no planted canary left
-in 18 of 18 hybrid runs, while the frontier alone sent canaries in all 18. Duet is not cheaper than the frontier alone: privacy costs
-extra frontier turns, because the frontier must ask about data it cannot read, and offloading
-bulky content to the local model saves less than those turns cost. Duet therefore states a measured
-privacy premium (about 1.4× the frontier alone on the measured tasks) rather than claiming savings. Full results will be published in `docs/BENCHMARK.md` (milestone M5),
-with raw data and the method needed to reproduce them.
+So far (frontier `glm-5.3-flash`): quality matched the frontier alone in Gate 2 (18 paired runs,
+one judge, build `a5346f4`); later builds have not been judged. No planted canary left in any of
+74 valid hybrid runs across seven batches, while the frontier alone sent canaries in every run on
+the same tasks. Duet is not cheaper than the frontier alone: privacy costs extra frontier turns,
+because the frontier must ask about data it cannot read, and offloading bulky content to the local
+model saves less than those turns cost. In the measured batches Duet cost about 1.5× to 2.4× as
+much as the frontier alone, depending on the tasks (ratio of mean cost per run; no interval has
+been published yet). Full results will be published in `docs/BENCHMARK.md` (milestone M5), with raw
+data and the method needed to reproduce them.
 
 ## Usage
 
@@ -143,7 +150,9 @@ Live smoke tests, one per local backend, run with
 - **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
   Ollama) on loopback, or on a host the owner allowlists; plain HTTP to a non-loopback host needs
   `local.allow_plaintext`. The default, `omlx-coding` (Qwen 3.8 27B on oMLX), was chosen with
-  `duet local-eval`.
+  `duet local-eval`. Only oMLX has served live runs so far; the other servers are supported through
+  presets and discovery tested against mocked replies, and their live smoke tests have not been run
+  yet.
 
 ### Configuration
 
@@ -185,18 +194,25 @@ To verify a release, put the published signer line in `~/.config/duet/allowed_si
 
 ## Development
 
-There is no hosted CI: `tools/gate.sh` is the gate, and every commit must pass it.
+There is no hosted CI: `tools/gate.sh` is the gate, and every commit must pass it. Nothing else
+enforces that, so the first step after cloning is to install the hooks that run it:
 
 ```sh
 tools/install-hooks.sh --pre-commit   # pre-push: full gate; pre-commit: tools/gate.sh --fast
+```
+
+Then, day to day:
+
+```sh
 tools/gate.sh --fast                  # format, license, privacy and provenance checks (seconds)
 PROPTEST_CASES=5000 cargo test -p duet-boundary --test no_canary   # a deeper property run
 tools/fuzz.sh 60                      # each fuzz target for 60 s (see tools/fuzz.sh --help)
 ```
 
-The hooks are not installed automatically; `tools/install-hooks.sh --uninstall` removes them and
-`--no-verify` skips them once. Property tests run in the gate with small case counts;
-`PROPTEST_CASES` raises them. Fuzzing is not part of the gate (it needs time, and cargo-fuzz needs a
+The hooks are not installed automatically (a clone never runs code on its own). They live in the
+repository's hooks directory, so every worktree of a clone shares them;
+`tools/install-hooks.sh --uninstall` removes them and `--no-verify` skips them once. Property tests
+run in the gate with small case counts; `PROPTEST_CASES` raises them. Fuzzing is not part of the gate (it needs time, and cargo-fuzz needs a
 nightly toolchain; without one `tools/fuzz.sh` builds the targets on stable).
 
 ## License

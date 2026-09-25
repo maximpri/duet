@@ -1,7 +1,8 @@
 # Duet v2 — Target State
 
-Status: approved 2026-09-23. Describes the finished product; implemented through M4.5 and SbD-1
-(progress: [PLAN.md](PLAN.md) §10). Parts not built yet are marked *(M5)* / *(M6)*.
+Status: approved 2026-09-23. Describes the finished product. Built so far: M0–M4.5, SbD-1 and the
+SbD-2 tests, M5 preparation and parts of M6 (progress: [PLAN.md](PLAN.md) §10; what is verified:
+[ACCEPTANCE.md](ACCEPTANCE.md)). Parts not built yet are marked *(M5)* / *(M6)*.
 
 ## 1. North star
 
@@ -18,7 +19,7 @@ logged, and independently verifiable.
 |---|---|
 | **Quality** | Non-inferior to the same frontier model running alone on the dogfood suite ([DOGFOOD_SUITE.md](DOGFOOD_SUITE.md)), decided by the judge: one-sided 95% lower bound of the paired code-quality difference > −2 on a 30-point rubric, and not behind on hidden-test pass rate on a majority of tasks (pass rate is reported with its interval; all-or-nothing tasks make a −5 pp margin need hundreds of pairs) |
 | **Sensitivity** | Zero planted canaries from sensitive sources in outbound traffic, verified independently by a logging proxy; 100% of outbound bytes in a hash-chained audit log |
-| **Cost** | Reported, not gated: the paired cost ratio vs frontier-only (Duet passthrough on the same model) with its 95% interval, where cost = frontier API list price including cache reads/writes + measured local electricity. The original "strictly cheaper" gate was not met after three attempts (Gate 3, PLAN §5 M4): privacy costs extra frontier turns that offload does not outweigh; operator decision: state a measured privacy premium (~1.4×) |
+| **Cost** | Reported, not gated: the paired cost ratio vs frontier-only (Duet passthrough on the same model) with its 95% interval, where cost = frontier API list price including cache reads/writes + measured local electricity. The original "strictly cheaper" gate was not met after three attempts (Gate 3, PLAN §5 M4): privacy costs extra frontier turns that offload does not outweigh; operator decision: state a measured privacy premium. Measured so far: about 1.5–2.4× depending on the tasks (ratio of mean cost per run per batch; no interval published yet) |
 | **Termination** | Every run ends as `Completed`, `Failed{reason}` or `BudgetStopped`; infrastructure failures retry in place; interrupted runs are resumable |
 | **IP** | Zero IP canaries (protected function bodies) in outbound traffic; the quality cost of protected-code edits is measured and published |
 
@@ -246,7 +247,8 @@ reported separately. IP canaries (unique function bodies) must never cross.
 
 - **Registry.** Every setting is declared once in `duet-config`: key, type, default, range, scope
   (owner-only or project), direction rule (projects may only tighten privacy), help text,
-  confirm-on-change flag. A test fails on any setting read outside the registry.
+  confirm-on-change flag. Reading a key that is not in the registry is a runtime error; a test that
+  scans the sources for settings read outside the registry is planned, not written yet.
 - **Files.** Owner: `~/.config/duet/config.toml`. Project: `.duet/config.toml`.
 - **CLI.** `duet config get|set|list|preset`, usable without the TUI. A loosening `set` or `preset`
   needs `--confirm` and is recorded in the owner's hash-chained config audit log. Presets cover
