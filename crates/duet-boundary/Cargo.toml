@@ -37,6 +37,8 @@ test-support = ["dep:bytes", "dep:futures-util"]
 
 [dev-dependencies]
 tempfile = "3"
+# The integration tests use `testing::canary`.
+duet-boundary = { path = ".", features = ["test-support"] }
 proptest.workspace = true
 bytes = "1"
 futures-util.workspace = true

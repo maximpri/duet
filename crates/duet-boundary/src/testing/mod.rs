@@ -2,6 +2,11 @@
 //! Test support: a local model that replies from a script, so the engine and
 //! the agent can be tested without a model server. Built only for tests and
 //! with the `test-support` feature.
+//!
+//! [`canary`] finds planted marker values in outbound bytes, also in
+//! transformed spellings.
+
+pub mod canary;
 
 use crate::local::LocalReader;
 use duet_provider::client::{HttpReply, Transport};

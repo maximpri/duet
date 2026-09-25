@@ -23,6 +23,13 @@
 //! - long numbers (6+ digits, plain or comma-grouped): as written, plain
 //!   digits, comma-grouped, and read as minor units (`51861.26`, `51,861.26`).
 //!
+//! Also asserted: no transformed spelling of a canary value is left in the
+//! filtered body (`testing::canary`: case, escaping, base64/hex of 8+ bytes,
+//! reversed, separator-split, 4+ digit runs of mostly-digit values, spelled
+//! digits). Only covered spellings are placed, so a finding here means the
+//! filter left part of a value behind (a digit run, say), not that a
+//! re-encoding got through.
+//!
 //! Not covered by value filters, by design: values under 4 bytes (replaced
 //! only where a detector sees them; the final check needs 6+), a first name
 //! alone, other letter cases, other number formats, and any re-encoding
@@ -33,6 +40,7 @@
 use duet_boundary::engine::Engine;
 use duet_boundary::model::{Item, Request, ToolCall};
 use duet_boundary::policy::Policy;
+use duet_boundary::testing::canary::{Canaries as Matcher, Options};
 use duet_provider::Dialect;
 
 const DIALECTS: [Dialect; 3] = [Dialect::Chat, Dialect::Anthropic, Dialect::Responses];
@@ -322,6 +330,47 @@ fn covered_spellings(c: &Canaries) -> Vec<String> {
     out
 }
 
+/// The canary values themselves (the covered ones: a first name alone and a
+/// public or short surname are not replaced by design), for the transformed
+/// spelling check. Digit runs the dialects put in every body (`max_tokens`)
+/// are ignored.
+fn transformed_matcher(c: &Canaries, filter: &dyn duet_boundary::OutboundFilter) -> Matcher {
+    let mut values: Vec<String> = Vec::new();
+    values.extend(c.env_secrets.iter().cloned());
+    values.extend(c.tokens.iter().cloned());
+    values.extend(c.emails.iter().cloned());
+    values.extend(c.phones.iter().cloned());
+    values.extend(c.ips.iter().cloned());
+    values.extend(c.cards.iter().cloned());
+    values.extend(c.ibans.iter().cloned());
+    for (first, last) in &c.names {
+        values.push(format!("{first} {last}"));
+        if last.chars().count() >= 4 && !is_public_word(last) {
+            values.push(last.clone());
+        }
+    }
+    values.extend(c.single_names.iter().cloned());
+    values.extend(c.numbers.iter().chain(&c.grouped).map(u64::to_string));
+    let mut empty = request(&[]);
+    filter.apply(&mut empty);
+    let mut ignore_fragments = Vec::new();
+    for dialect in DIALECTS {
+        let body = dialect.build_body("m", &empty, true).to_string();
+        ignore_fragments.extend(
+            body.split(|ch: char| !ch.is_ascii_digit())
+                .filter(|d| d.len() >= 4)
+                .map(str::to_owned),
+        );
+    }
+    Matcher::with_options(
+        values,
+        Options {
+            ignore_fragments,
+            ..Options::default()
+        },
+    )
+}
+
 fn prime(c: &Canaries, seps: &[&str]) -> (tempfile::TempDir, Arc<Engine>) {
     let d = tempfile::tempdir().unwrap();
     let ws = d.path().canonicalize().unwrap().join("ws");
@@ -464,6 +513,7 @@ proptest! {
         let (_d, engine) = prime(&c, &seps);
         let (filter, check) = engine.outbound();
         let spellings = covered_spellings(&c);
+        let matcher = transformed_matcher(&c, filter.as_ref());
         // Every spelling at least once, in a channel chosen by the placement.
         let placed: Vec<(Channel, String)> = spellings
             .iter()
@@ -474,12 +524,30 @@ proptest! {
             })
             .collect();
         let mut req = request(&placed);
+        // The matcher sees the canaries before the filter runs.
+        let unfiltered = Dialect::Chat.build_body("m", &req, true).to_string();
+        prop_assert!(!matcher.find(&unfiltered).is_empty());
         filter.apply(&mut req);
         for dialect in DIALECTS {
             let body = dialect.build_body("m", &req, true);
             prop_assert!(check.check(&body).is_ok(), "{:?}: filtered request blocked: {:?}", dialect, check.check(&body));
             for s in &spellings {
                 prop_assert!(!contains_anywhere(&body, s), "{:?}: {:?} survived the filter: {}", dialect, s, body);
+            }
+            let mut texts = vec![body.to_string()];
+            decoded_strings(&body, &mut texts);
+            for t in &texts {
+                let found = matcher.find(t);
+                prop_assert!(
+                    found.is_empty(),
+                    "{:?}: transformed canary survived the filter: {:?} in {:?}",
+                    dialect,
+                    found
+                        .iter()
+                        .map(|f| (f.form, &matcher.values()[f.canary_index], &t[f.offset..f.offset + f.len]))
+                        .collect::<Vec<_>>(),
+                    t
+                );
             }
         }
         // The check alone refuses a body that still holds a spelling, raw or as
