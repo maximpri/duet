@@ -115,7 +115,8 @@ enum Cmd {
     },
     /// Terminal UI: settings screens generated from the registry (edits use the
     /// same checks, confirmation and audit as `duet config set`), IP levels,
-    /// the audit viewer and a read-only run view.
+    /// the audit viewer, and a run view with changed files and diffs that can
+    /// also start runs.
     Tui,
 }
 

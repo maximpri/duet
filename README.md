@@ -95,7 +95,7 @@ duet config set --project ip.interface_only '["src/pricing/**"]'
 duet config preset              # local backends: default ports, where they report models and context
 duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
 duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
-duet tui                        # settings, IP levels, audit viewer and run view in the terminal
+duet tui                        # settings, IP levels, audit viewer, run view; start runs
 duet local-eval                 # measure the configured local model in its reading roles
 duet purge                      # delete raw run data older than the retention period
 ```
@@ -104,18 +104,37 @@ duet purge                      # delete raw run data older than the retention p
 evaluation baseline).
 
 **`duet tui`** has seven screens: Models (frontier and local settings, with `duet doctor`
-offline; `o` adds the `--online` checks), Sensitivity (globs, detectors, raw-output commands,
-secret sinks, bulky thresholds, and a tester that shows whether a path is sensitive and which
-pattern matched), IP levels (the workspace tree as git sees it, so `.gitignore` applies; `i` / `s`
-mark a file or directory interface-only / sealed, with a preview of the skeleton the frontier would
-see), Limits, Data, Audit (each run's records and outbound request summaries as stored, and `v` to
-verify the hash chain and its anchor) and Run (follows a run's turns, tool calls and withheld
-content as they are written; read-only). The settings screens are generated from the registry and
+offline; `o` adds the online checks of connection and context window; `l` looks for local
+servers on loopback (the preset ports, as bootstrap does) and `[` `]` `u` point the local role
+at one; `c` runs the cache-reuse probe, two identical short requests to the local model, only
+when pressed), Sensitivity (globs, detectors, custom detector patterns, raw-output commands,
+secret sinks, bulky thresholds; `t` tests a path — sensitive or not and which pattern matched —
+and `s` tests sample text, showing what the detectors and your patterns would replace), IP
+levels (the workspace tree as git sees it, so `.gitignore` applies; `i` / `s` mark a file or
+directory interface-only / sealed, with a preview of the skeleton the frontier would see),
+Limits, Data (retention; `x` purges the raw data of runs older than `data.retention_days`, `X`
+of every run, after listing them and asking; audit logs are kept), Audit (each run's records and
+outbound request summaries as stored, and `v` to verify the hash chain and its anchor) and Run.
+The Run screen has two panels: the run as it is written (turns, tool calls, results, and a feed
+of withheld content) and the files it changed with added/removed line counts above the selected
+file's diff, with line numbers, following the file the run wrote last. Files that are sensitive,
+or were produced by a command that read sensitive data, are listed as held locally and their
+content is not shown. `←` `→` switch panels, arrows pick a file, `PgUp` `PgDn` (or `J` `K`)
+scroll the diff; a finished run reads the same way. `n` starts a run: type the objective, pick
+the mode (hybrid by default; passthrough asks you to acknowledge that the privacy boundary is
+off), and Duet launches `duet run` in the background (output in `.duet/tmp`) and opens it here;
+it keeps running if you quit. With `oversight.approve` on, start runs with `duet run`, which has
+the terminal for approvals. The settings screens are generated from the registry and
 show where each value comes from (default, owner or project). Edits take the same path as
 `duet config set`: a change that loosens privacy shows its diff and needs `y`, `p` switches edits
 to the project file (which only tightens and never takes owner-only keys), and every applied change
 is recorded in the owner's config audit log. It needs an interactive terminal of at least 80x24;
 without one it says so and exits with status 1.
+
+**Custom detector patterns.** `sensitivity.custom_patterns` takes regular expressions for values
+only you know are sensitive (customer ids, internal host names): every match becomes a `data`
+placeholder, in sensitive and public text alike. A project may add patterns; removing one loosens
+privacy and needs confirmation.
 
 **Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Duet
 asks y/N on the terminal before a `sensitive_data` command, a protected edit, or a write to anything

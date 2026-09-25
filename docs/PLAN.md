@@ -388,8 +388,17 @@ OpenAI judge).
   Run (follows transcript and audit; read-only). Edits share `Config::propose` / `apply` with `duet config
   set`: loosening shows the diff and needs `y`, the project file refuses owner-only keys and loosening,
   every applied change is appended to the config audit log; each value shows its origin. `TestBackend`
-  tests per screen and per edit flow. *Open:* local backend auto-detection and connection/cache/prefill
-  tests on Models, custom detector patterns, purge from Data, starting runs from the TUI, and a dual-panel Run view (live run beside a changed-files list with per-file diffs; decision 2026-09-24).
+  tests per screen and per edit flow.
+  *Built (branch `tui2`):* the Open items. Models: loopback auto-detection (the bootstrap discovery)
+  with an audited pick of server and model, online checks (connection, context window) and a
+  cache-reuse probe (two identical short requests, only on request). Sensitivity: custom detector
+  patterns (`sensitivity.custom_patterns`, project add-only; matches become `data` placeholders in
+  sensitive and public text) and a sample-text tester. Data: purge after a listed confirmation, under
+  the workspace lock, with `duet purge`'s selection. Run: starting runs (`duet run` as a child;
+  passthrough needs the no-privacy acknowledgement) and the dual-panel view (decision 2026-09-24): the
+  live run beside the files it changed (write journal, +/- counts) and a per-file diff with line
+  numbers that follows the run; sensitive and derived files are held locally. *Open:* a prefill-speed
+  test on Models.
 - Setup and presets for Ollama, LM Studio, llama.cpp, vLLM, oMLX, z.ai, Anthropic, OpenAI; no-config
   bootstrap detecting local servers on default ports; `duet doctor` with cache-reuse check.
   *Built (branch `m6doctor`):* local presets (`duet config preset`: Ollama, LM Studio, llama.cpp,

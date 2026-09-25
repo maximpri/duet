@@ -268,13 +268,13 @@ reported separately. IP canaries (unique function bodies) must never cross.
 
 | Screen | Contents |
 |---|---|
-| Models | Frontier and local settings; `duet doctor` (offline, `--online` on request). Local backend auto-detection in the TUI and connection, cache and prefill-speed tests *(M6)* |
-| Sensitivity | Globs, per-detector toggles, raw-output commands, secret-sink allowlist, local brief, bulky thresholds; a live tester for a path (sensitive, secret sink, IP level, matching patterns). Custom detector patterns *(M6)* |
+| Models | Frontier and local settings; `duet doctor` (offline, online checks of connection and context window on request); local backend auto-detection on loopback with an audited pick; a cache-reuse probe (two identical short requests, on request). A prefill-speed test *(M6)* |
+| Sensitivity | Globs, per-detector toggles, custom detector patterns (`sensitivity.custom_patterns`), raw-output commands, secret-sink allowlist, local brief, bulky thresholds; a live tester for a path (sensitive, secret sink, IP level, matching patterns) and one for sample text (what would be replaced, by which detector or pattern) |
 | IP levels | File tree marking Open / Interface-only / Sealed; skeleton preview |
 | Limits | Frontier budget, wall clock, local wattage, bulky threshold, masking point |
-| Data | Retention (purge from the TUI *(M6)*; `duet purge` today) |
+| Data | Retention; purge from the TUI (the runs are listed and confirmed; same as `duet purge`) |
 | Audit | Per-run outbound view, block events, hash-chain verification |
-| Run | Live turns and tool calls; feed of withheld content and reasons |
+| Run | Two panels: live turns, tool calls and results with the feed of withheld content and reasons; the files the run changed (+/- counts) and a per-file diff with line numbers that follows the run (sensitive and derived files held locally). Starts runs (`duet run` as a child; passthrough needs the no-privacy acknowledgement) |
 
 - **Safety.** Any loosening requires confirmation, shows a policy diff and is audited. The TUI shows
   each value's origin (default, owner, project). Writes are atomic.

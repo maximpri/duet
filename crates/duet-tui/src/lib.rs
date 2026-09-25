@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! `duet tui`: configuration screens generated from the settings registry,
-//! an audit viewer and a read-only run view.
+//! an audit viewer, and a two-panel run view (the live run beside the files
+//! it changed and their diffs) from which runs can be started.
 //!
 //! The TUI holds no policy logic. Every edit is checked and applied by
 //! `duet_config::Config::propose` / `apply` (the path `duet config set` uses):
