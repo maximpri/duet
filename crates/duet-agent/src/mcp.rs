@@ -276,6 +276,7 @@ async fn connect(
                     setup.workspace,
                     setup.run_dir,
                 ),
+                read_only: false,
             };
             let argv: Vec<String> = std::iter::once(command.clone())
                 .chain(args.iter().cloned())

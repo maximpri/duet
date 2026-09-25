@@ -153,6 +153,9 @@ pub struct Spec {
     /// Absolute paths the command may not read (directories: everything under them).
     /// Used to keep sensitive files out of commands whose output the frontier sees.
     pub deny_read: Vec<PathBuf>,
+    /// The workspace is read-only as well: the command may write only its
+    /// scratch directory (the commands of read-only sub-agents).
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -238,12 +241,16 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         "(allow ipc-posix-shm-read-data)".to_owned(),
         "(allow ipc-posix-shm-read-metadata)".to_owned(),
         "(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\") (literal \"/dev/dtracehelper\"))".to_owned(),
-        format!("(allow file-write* (subpath {ws}))"),
+    ];
+    if !spec.read_only {
+        rules.push(format!("(allow file-write* (subpath {ws}))"));
+    }
+    rules.extend([
         format!("(allow file-write* (subpath {scratch}))"),
         format!("(deny file-write* (regex #\"{reserved}\"))"),
         // Apple's toolchain helper caches here regardless of TMPDIR; allow only its cache files.
         "(allow file-write* (regex #\"^/private/var/folders/[^/]+/[^/]+/T/xcrun_db\"))".to_owned(),
-    ];
+    ]);
     // Later rules win: these override the blanket read allowance above.
     rules.push(format!("(deny file-read* (regex #\"{run_state}\"))"));
     for p in &spec.deny_read {
@@ -416,7 +423,12 @@ pub fn bwrap_args(spec: &Spec, reserved: &[Reserved], stubs: &DenyStubs) -> Vec<
             Path::new("/run/systemd/resolve"),
         );
     }
-    push_bind(&mut a, "--bind", &spec.workspace, &spec.workspace);
+    let workspace_bind = if spec.read_only {
+        "--ro-bind"
+    } else {
+        "--bind"
+    };
+    push_bind(&mut a, workspace_bind, &spec.workspace, &spec.workspace);
     for r in reserved {
         if let Ok(target) = r.path.canonicalize() {
             // Run state is unreadable, not only read-only.
@@ -1079,6 +1091,7 @@ mod tests {
             spill_file: Some(ws.parent().unwrap().join("spill.txt")),
             extra_env: vec![],
             deny_read: Vec::new(),
+            read_only: false,
         }
     }
 
@@ -1117,6 +1130,32 @@ mod tests {
     #[test]
     fn sandbox_is_detected() {
         assert_eq!(detect().unwrap(), KIND);
+    }
+
+    #[tokio::test]
+    async fn a_read_only_command_reads_the_workspace_and_writes_only_its_scratch() {
+        let (_d, ws) = setup();
+        std::fs::write(ws.join("a.txt"), "original\n").unwrap();
+        let s = Spec {
+            read_only: true,
+            ..spec(&ws)
+        };
+        let o = sh_with(
+            &s,
+            "cat a.txt; echo changed > a.txt; echo new > b.txt; mkdir d; rm a.txt; \
+             echo tmp > \"$TMPDIR/t\" && cat \"$TMPDIR/t\"",
+        )
+        .await;
+        let out = text(&o);
+        assert!(out.contains("original") && out.contains("tmp"), "{out}");
+        assert_eq!(
+            std::fs::read_to_string(ws.join("a.txt")).unwrap(),
+            "original\n"
+        );
+        assert!(!ws.join("b.txt").exists() && !ws.join("d").exists());
+        // The same command without the flag writes the workspace.
+        sh(&ws, "echo new > b.txt").await;
+        assert!(ws.join("b.txt").exists());
     }
 
     #[tokio::test]
@@ -1553,6 +1592,7 @@ mod fail_closed_tests {
             spill_file: None,
             extra_env: vec![],
             deny_read: Vec::new(),
+            read_only: false,
         }
     }
 
@@ -1645,6 +1685,7 @@ mod bwrap_args_tests {
             spill_file: None,
             extra_env: vec![],
             deny_read: Vec::new(),
+            read_only: false,
         };
         for dir in ["ws/.git", "ws/vendor/dep/.git", "ws/.duet", "ws/data"] {
             std::fs::create_dir_all(root.join(dir)).unwrap();
@@ -1677,6 +1718,19 @@ mod bwrap_args_tests {
         assert!(joined.contains(&format!("--ro-bind {} {ws}/.env", stubs.file.display())));
         assert!(!joined.contains("absent"));
         assert!(!joined.contains("--share-net"));
+        assert!(joined.contains(&format!("--bind {ws} {ws}")));
+
+        // Read-only: the workspace is mounted read-only; scratch stays writable.
+        s.read_only = true;
+        let joined = bwrap_args(&s, &reserved, &stubs)
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(joined.contains(&format!("--ro-bind {ws} {ws}")), "{joined}");
+        assert!(!joined.contains(&format!("--bind {ws} {ws}")), "{joined}");
+        let scratch = s.scratch.display();
+        assert!(joined.contains(&format!("--bind {scratch} {scratch}")));
     }
 }
 
@@ -1698,6 +1752,7 @@ mod toolchain_tests {
             spill_file: None,
             extra_env: vec![],
             deny_read: Vec::new(),
+            read_only: false,
         }
     }
 
@@ -1780,6 +1835,7 @@ mod linker_tests {
             spill_file: None,
             extra_env: vec![],
             deny_read: Vec::new(),
+            read_only: false,
         };
         let o = run(
             SandboxKind::Seatbelt,
