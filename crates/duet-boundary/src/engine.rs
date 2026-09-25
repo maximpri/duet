@@ -29,6 +29,7 @@ use serde_json::{Map, Value, json};
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
+mod history;
 mod protected;
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
@@ -901,6 +902,7 @@ impl Presenter for Engine {
                     self.handle_view(&label, &text)
                 }
             }
+            Source::GitHistory { rev, path } => self.history_view(rev, path.as_deref(), &text),
             Source::File { path, ranged } => {
                 let label = path.display().to_string();
                 self.lock().overlap.add_public(&text);
@@ -978,6 +980,10 @@ impl Presenter for Engine {
 
     fn path_sensitive(&self, path: &Path) -> bool {
         self.is_sensitive(path)
+    }
+
+    fn protection(&self, path: &Path) -> Option<crate::policy::IpLevel> {
+        self.policy.ip_level(path)
     }
 
     fn hidden_from_commands(&self, workspace: &Path) -> Vec<std::path::PathBuf> {

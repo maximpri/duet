@@ -38,6 +38,13 @@ pub enum Source {
     Web {
         url: String,
     },
+    /// Git history: one path's content or diff at a revision (classified by
+    /// the path as it is now, like a file), or commit metadata (messages,
+    /// authors, status) when `path` is `None`.
+    GitHistory {
+        rev: String,
+        path: Option<PathBuf>,
+    },
     Other {
         label: String,
     },
@@ -103,6 +110,10 @@ pub trait Presenter: Send + Sync {
     /// (used to hide protected paths from listings and searches).
     fn path_visible(&self, _path: &std::path::Path) -> bool {
         true
+    }
+    /// The path's protected-source level (IP levels), if it has one.
+    fn protection(&self, _path: &std::path::Path) -> Option<crate::policy::IpLevel> {
+        None
     }
     /// Whether the content of this path is sensitive (policy globs, or derived
     /// from sensitive data during the run).

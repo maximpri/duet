@@ -104,6 +104,9 @@ pub enum AuditEvent {
         destination: String,
         reason: String,
     },
+    /// `git_commit` recorded a commit in the user's repository: its hash and
+    /// the paths it holds, never the message or content.
+    GitCommit { hash: String, paths: Vec<String> },
     /// An owner or project setting changed (`duet config set`).
     ConfigChange {
         key: String,
@@ -131,6 +134,7 @@ impl AuditEvent {
             AuditEvent::OperatorMessage { .. } => "operator_message",
             AuditEvent::WebRequest { .. } => "web_request",
             AuditEvent::OutboundRefused { .. } => "outbound_refused",
+            AuditEvent::GitCommit { .. } => "git_commit",
         }
     }
 }
