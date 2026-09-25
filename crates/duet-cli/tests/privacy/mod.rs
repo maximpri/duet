@@ -385,6 +385,7 @@ impl Fixture {
             mcp: None,
             lsp: None,
             subagents: None,
+            images: Default::default(),
         };
         Self {
             _dir: dir,

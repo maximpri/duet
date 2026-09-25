@@ -132,6 +132,7 @@ fn config(ws: &Path, run_dir: &Path, lsp: Arc<Lsp>) -> RunConfig {
         mcp: None,
         lsp: Some(lsp),
         subagents: None,
+        images: Default::default(),
     }
 }
 

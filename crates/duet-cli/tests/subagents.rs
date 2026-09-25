@@ -360,6 +360,7 @@ impl Fixture {
             mcp: None,
             lsp: None,
             subagents: sub,
+            images: Default::default(),
         }
     }
 

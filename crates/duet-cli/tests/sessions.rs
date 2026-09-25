@@ -234,6 +234,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         mcp: None,
         lsp: None,
         subagents: None,
+        images: Default::default(),
     };
     Fixture {
         _dir: dir,

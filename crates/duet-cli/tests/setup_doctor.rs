@@ -166,6 +166,11 @@ fn online_doctor_lists_models_context_and_cache_reuse() {
         ("local server", "pass"),
         ("local context", "pass"),
         ("local cache", "pass"),
+        // The mock answers "ok" to the test images: it does not read them,
+        // and local.vision is false, as it should be. The frontier is not
+        // shown images while frontier.vision is false.
+        ("local vision", "pass"),
+        ("frontier vision", "skip"),
     ] {
         assert_eq!(status(&report, name), want, "{name}: {report}");
     }
@@ -173,12 +178,17 @@ fn online_doctor_lists_models_context_and_cache_reuse() {
         detail(&report, "frontier cache").contains("read 4800 of 5200 input tokens"),
         "{report}"
     );
+    assert!(
+        detail(&report, "local vision").contains("does not read images"),
+        "{report}"
+    );
     // Loopback plain HTTP to the frontier is allowed; nothing else warns.
     assert!(code <= 1, "{report}");
     let seen = server.seen();
-    // Model calls: two identical prompts each to the frontier and the local model.
+    // Model calls: two identical prompts each to the frontier and the local
+    // model, and two generated images to the local model.
     let posts: Vec<_> = seen.iter().filter(|r| r.method == "POST").collect();
-    assert_eq!(posts.len(), 4, "{seen:?}");
+    assert_eq!(posts.len(), 6, "{seen:?}");
     assert!(posts.iter().all(|r| r.path == "/v1/chat/completions"));
     assert!(seen.iter().any(|r| r.path == "/v1/models" && r.bearer));
 
@@ -308,6 +318,31 @@ fn online_doctor_speaks_the_frontier_dialect() {
     );
     // Anthropic takes the key in x-api-key, never as a bearer token.
     assert!(seen.iter().all(|r| !r.bearer), "{seen:?}");
+
+    // frontier.vision on, and a model that does not read the test images
+    // (it answers "ok"): the setting fails with the fix.
+    owner_config(
+        &e,
+        &format!(
+            "[frontier]\nbase_url = \"{}\"\nmodel = \"claude-opus-5-5\"\ndialect = \"anthropic\"\nvision = true\n",
+            server.base_url()
+        ),
+    );
+    let (code, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert_eq!(status(&report, "frontier vision"), "fail", "{report}");
+    assert!(
+        detail(&report, "frontier vision").contains("did not read the test images"),
+        "{report}"
+    );
+    assert_eq!(code, 2);
+    assert_eq!(
+        server
+            .seen()
+            .iter()
+            .filter(|r| r.path == "/v1/messages")
+            .count(),
+        6
+    );
 }
 
 #[test]
@@ -349,6 +384,7 @@ fn frontier_presets_set_endpoint_model_key_and_dialect_through_the_audited_path(
         ("frontier.model", "\"claude-opus-5-5\""),
         ("frontier.api_key_env", "\"ANTHROPIC_API_KEY\""),
         ("frontier.dialect", "\"anthropic\""),
+        ("frontier.vision", "true"),
     ] {
         assert_eq!(
             text(&duet(&e, &["config", "get", key])).trim(),
@@ -357,7 +393,7 @@ fn frontier_presets_set_endpoint_model_key_and_dialect_through_the_audited_path(
         );
     }
     let log = e.home.join("state/config-audit.jsonl");
-    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 4 });
+    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 5 });
 
     // --model replaces the preset's model.
     let openai = duet(

@@ -26,6 +26,7 @@ use std::time::Duration;
 mod approve;
 mod chat;
 mod doctor;
+mod images;
 mod lsp;
 mod mcp;
 mod setup;
@@ -78,6 +79,16 @@ enum Cmd {
         /// (required for that mode).
         #[arg(long)]
         no_privacy: bool,
+        /// Attach an image (PNG, JPEG, GIF, WebP) to the task; repeatable. In
+        /// hybrid mode the local model describes it and the frontier gets the
+        /// description (needs local.vision).
+        #[arg(long = "image", value_name = "PATH")]
+        image: Vec<PathBuf>,
+        /// Attach an image the frontier may see itself (it is not scanned:
+        /// only for images holding nothing sensitive; never from a sensitive
+        /// path; needs frontier.vision); recorded as your decision. Repeatable.
+        #[arg(long = "image-public", value_name = "PATH")]
+        image_public: Vec<PathBuf>,
     },
     /// Continue an interrupted run.
     Resume { run_id: String },
@@ -222,6 +233,9 @@ struct RunManifest {
     /// A session (`duet chat`) rather than a one-shot run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     session: bool,
+    /// Images attached to the task (`--image`, `--image-public`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    images: Vec<images::AttachedImage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -411,6 +425,11 @@ fn policy(cfg: &Config) -> Result<Policy> {
         local_pii_pass: cfg.bool("sensitivity.local_pii_pass")?,
         interface_only: cfg.list("ip.interface_only")?,
         sealed: cfg.list("ip.sealed")?,
+        local_vision: cfg.bool("local.vision")?,
+        images_to_frontier: duet_boundary::images::ToFrontier::parse(
+            &cfg.str("images.to_frontier")?,
+        )
+        .unwrap_or_default(),
     })
 }
 
@@ -642,6 +661,7 @@ async fn prepare(
         .await?,
         lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
         subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits)?,
+        images: images::config(cfg, manifest.mode, &manifest.images)?,
     };
     Ok(Prepared {
         git,
@@ -763,6 +783,8 @@ async fn main() -> Result<()> {
             frontier_url,
             frontier_model,
             no_privacy,
+            image,
+            image_public,
         } => {
             match (mode, no_privacy) {
                 (Mode::Passthrough, false) => bail!(
@@ -784,6 +806,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
             let cfg = load_config(&ws)?;
             // Refused before bootstrap probes anything.
             approve::require_terminal(&cfg)?;
+            let attached = images::from_args(&image, &image_public)?;
+            images::precheck(&ws, &cfg, mode, &attached)?;
             let local = match mode {
                 Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
                     Ok(found) => found.map(|b| LocalOverride {
@@ -803,6 +827,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
                 local,
                 session: false,
+                images: attached,
             };
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
             std::process::exit(execute(ws, manifest, false).await?);

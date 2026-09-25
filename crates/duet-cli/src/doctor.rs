@@ -4,7 +4,9 @@
 //! environment and local files only. `--online` also asks the configured
 //! servers for their model listings and context windows, and checks prompt-cache
 //! reuse by sending each model the same short built-in prompt twice (nothing from
-//! the workspace); it never prints a credential.
+//! the workspace), and whether a model reads images by showing it two generated
+//! one-colour images (the frontier only when frontier.vision is on); it never
+//! prints a credential.
 
 use crate::{config_audit_path, run_anchor};
 use duet_boundary::audit::{AnchorCheck, Verification, check_anchor, verify};
@@ -82,7 +84,7 @@ pub fn render_text(checks: &[Check], online: bool) -> String {
     let mut out = format!(
         "duet doctor ({})\n\n",
         if online {
-            "online: contacted the configured servers (listings, and two identical built-in prompts per model for the cache check)"
+            "online: contacted the configured servers (listings, two identical built-in prompts per model for the cache check, two generated images for the vision check)"
         } else {
             "offline: no network; --online also checks the servers"
         }
@@ -570,6 +572,7 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
             Status::Skip,
             "not checked offline (use --online)",
         ));
+        out.push(vision_offline("frontier vision", c, "frontier.vision"));
         return out;
     }
     let listed =
@@ -643,7 +646,110 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
             Err(e) => check("frontier cache", Status::Warn, e.message),
         }
     });
+    let claimed = c.bool("frontier.vision").unwrap_or(false);
+    out.push(if !claimed {
+        check(
+            "frontier vision",
+            Status::Skip,
+            "frontier.vision is false, so no image is sent to the frontier; not tested (a test \
+costs two small requests: set it true to test it)",
+        )
+    } else if (key.is_none() && !key_env.is_empty()) || !reachable {
+        check(
+            "frontier vision",
+            Status::Skip,
+            "not tested: the frontier cannot be reached (see above)",
+        )
+    } else {
+        let mut pc = ProviderConfig::new(&url, &model, Role::Frontier);
+        pc.dialect = dialect;
+        pc.api_key_env = (!key_env.is_empty()).then_some(key_env.clone());
+        match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(120))) {
+            Ok(p) => {
+                vision_check(
+                    "frontier vision",
+                    "frontier.vision",
+                    true,
+                    &p,
+                    &Default::default(),
+                )
+                .await
+            }
+            Err(e) => check("frontier vision", Status::Warn, e.message),
+        }
+    });
     out
+}
+
+/// Offline: what the vision setting says (the model is tested with --online).
+fn vision_offline(name: &'static str, c: &Config, key: &str) -> Check {
+    let on = c.bool(key).unwrap_or(false);
+    check(
+        name,
+        Status::Skip,
+        format!(
+            "{key} is {on}; not tested offline (--online shows the model two generated images)"
+        ),
+    )
+}
+
+/// Shows the model two generated one-colour images (nothing from the
+/// workspace) and compares what it reads with the setting `key`.
+async fn vision_check(
+    name: &'static str,
+    key: &str,
+    claimed: bool,
+    provider: &ChatProvider,
+    extra: &serde_json::Map<String, serde_json::Value>,
+) -> Check {
+    let probe = match duet_provider::probe::vision_probe(provider, extra).await {
+        Ok(p) => p,
+        Err(e) => {
+            return check(
+                name,
+                Status::Warn,
+                format!("the image test request failed: {e}"),
+            )
+            .fix(format!(
+                "a server that does not take image parts refuses the request: keep {key} false"
+            ));
+        }
+    };
+    let answers = probe
+        .answers
+        .iter()
+        .map(|(want, got)| format!("{want} image: \"{got}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let detail = format!(
+        "{answers}; {} input tokens for the first",
+        probe.prompt_tokens
+    );
+    match (probe.reads_images, claimed) {
+        (true, true) => check(name, Status::Pass, format!("reads images ({detail})")),
+        (true, false) => check(
+            name,
+            Status::Warn,
+            format!("the model reads images, but {key} is false ({detail})"),
+        )
+        .fix(format!("duet config set {key} true --confirm")),
+        (false, true) => check(
+            name,
+            Status::Fail,
+            format!(
+                "{key} is true, but the model did not read the test images ({detail}): it would \
+answer about images it never saw"
+            ),
+        )
+        .fix(format!(
+            "duet config set {key} false, or serve a vision-language model"
+        )),
+        (false, false) => check(
+            name,
+            Status::Pass,
+            format!("does not read images, and {key} is false ({detail})"),
+        ),
+    }
 }
 
 /// Bounded retries for the doctor's two requests.
@@ -810,6 +916,7 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
             Status::Skip,
             "not checked offline (use --online)",
         ));
+        out.push(vision_offline("local vision", c, "local.vision"));
         return out;
     }
     if unconfigured {
@@ -922,15 +1029,21 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
         },
     );
     pc.api_key_env = (!key_env.is_empty()).then_some(key_env);
-    out.push(
-        match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(300))) {
-            Ok(p) => {
-                let probe = duet_provider::probe::cache_probe_request();
-                cache_check("local cache", &p, &probe, "").await
-            }
-            Err(e) => check("local cache", Status::Skip, e.message),
-        },
-    );
+    match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(300))) {
+        Ok(p) => {
+            let probe = duet_provider::probe::cache_probe_request();
+            out.push(cache_check("local cache", &p, &probe, "").await);
+            // As the local roles call it: no visible thinking.
+            let mut extra = serde_json::Map::new();
+            extra.insert(
+                "chat_template_kwargs".into(),
+                serde_json::json!({"enable_thinking": false}),
+            );
+            let claimed = c.bool("local.vision").unwrap_or(false);
+            out.push(vision_check("local vision", "local.vision", claimed, &p, &extra).await);
+        }
+        Err(e) => out.push(check("local cache", Status::Skip, e.message)),
+    }
     out
 }
 

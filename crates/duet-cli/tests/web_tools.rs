@@ -171,6 +171,7 @@ fn config(ws: &Path, run_dir: &Path, web: Option<Arc<Web>>) -> RunConfig {
         mcp: None,
         lsp: None,
         subagents: None,
+        images: Default::default(),
     }
 }
 

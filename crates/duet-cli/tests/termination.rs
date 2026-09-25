@@ -261,6 +261,7 @@ async fn session(s: Session<'_>) -> Ended {
         mcp: None,
         lsp: None,
         subagents: None,
+        images: Default::default(),
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) =

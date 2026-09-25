@@ -233,6 +233,11 @@ pub(crate) enum Command {
     Quit,
     /// End the session for good.
     Close,
+    /// Attach an image to the next message (`/image [--public] <path>`).
+    Image {
+        path: String,
+        public: bool,
+    },
     Unknown(String),
     Empty,
 }
@@ -248,6 +253,19 @@ pub(crate) fn parse(line: &str) -> Command {
     let Some(word) = trimmed.strip_prefix('/') else {
         return Command::Message(line.trim_end().to_owned());
     };
+    if let Some(rest) = word.strip_prefix("image")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        let rest = rest.trim();
+        let (public, path) = match rest.strip_prefix("--public") {
+            Some(p) if p.is_empty() || p.starts_with(char::is_whitespace) => (true, p.trim()),
+            _ => (false, rest),
+        };
+        return Command::Image {
+            path: path.to_owned(),
+            public,
+        };
+    }
     match word {
         "status" => Command::Status,
         "diff" => Command::Diff,
@@ -268,6 +286,10 @@ Commands (never sent to the model):
   /status  turns, tokens, cost and time against the budgets
   /diff    what changed in the workspace (sensitive files are only named)
   /undo    revert the file writes of the last turn (repeat for earlier turns)
+  /image <path>           attach an image to your next message; in hybrid mode the
+                          local model describes it (needs local.vision)
+  /image --public <path>  attach an image the frontier may see itself (not scanned;
+                          never from a sensitive path; needs frontier.vision)
   /quit    leave; the session stays open for `duet chat --resume`
   /close   end the session for good
   //text   send a message that starts with /
@@ -328,13 +350,22 @@ fn resumed(ws: &Path, id: Option<String>) -> Result<RunManifest> {
     Ok(manifest)
 }
 
-/// Waits for the first message of a new session; `None` when the operator
-/// leaves first.
-async fn first_message(inbox: &Inbox, leave: &AtomicBool, tty: bool) -> Option<String> {
+/// Waits for the first message of a new session, and the images attached to
+/// it (`/image`, checked against the rules as they are attached); `None`
+/// when the operator leaves first.
+async fn first_message(
+    inbox: &Inbox,
+    leave: &AtomicBool,
+    tty: bool,
+    ws: &Path,
+    cfg: &duet_config::Config,
+    mode: Mode,
+) -> Option<(String, Vec<crate::images::AttachedImage>)> {
     if tty {
         println!("duet chat: a new session starts with your first message. /help lists commands.");
     }
     prompt(tty);
+    let mut images = Vec::new();
     loop {
         if leave.load(Ordering::SeqCst) {
             return None;
@@ -347,14 +378,36 @@ async fn first_message(inbox: &Inbox, leave: &AtomicBool, tty: bool) -> Option<S
             continue;
         };
         match parse(&line) {
-            Command::Message(m) => return Some(m),
+            Command::Message(m) => return Some((m, images)),
             Command::Quit | Command::Close => return None,
             Command::Help => println!("{HELP}"),
             Command::Empty => {}
+            Command::Image { path, public } => {
+                let a = crate::images::AttachedImage {
+                    path: image_path(ws, &path),
+                    public,
+                };
+                match crate::images::precheck(ws, cfg, mode, std::slice::from_ref(&a)) {
+                    Ok(()) => {
+                        println!("image {path} will be attached to your first message");
+                        images.push(a);
+                    }
+                    Err(e) => println!("{e:#}"),
+                }
+            }
             _ => println!("nothing to show yet: the session starts with your first message"),
         }
         prompt(tty);
     }
+}
+
+/// The file `/image` names: as given, else relative to the workspace.
+fn image_path(ws: &Path, raw: &str) -> PathBuf {
+    let raw = raw.trim().trim_matches(['"', '\'']);
+    let given = std::env::current_dir()
+        .map(|d| d.join(raw))
+        .unwrap_or_else(|_| PathBuf::from(raw));
+    if given.exists() { given } else { ws.join(raw) }
 }
 
 /// `duet chat`. Returns the exit code: 0 when the session was left open or
@@ -396,9 +449,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
             (resumed(&ws, id)?, true)
         }
         None => {
-            let first = match args.message {
-                Some(m) => m,
-                None => match first_message(&inbox, &leave, tty).await {
+            let (first, first_images) = match args.message {
+                Some(m) => (m, Vec::new()),
+                None => match first_message(&inbox, &leave, tty, &ws, &cfg, args.mode).await {
                     Some(m) => m,
                     None => return Ok(0),
                 },
@@ -426,6 +479,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
                 local,
                 session: true,
+                images: first_images,
             };
             (manifest, false)
         }
@@ -654,6 +708,19 @@ async fn converse(
             },
             Command::Stop => println!("duet is not working; nothing to stop"),
             Command::Unknown(c) => println!("unknown command /{c}; /help lists the commands"),
+            Command::Image { path, .. } if path.is_empty() => println!(
+                "usage: /image [--public] <path>{}",
+                match session.attached().len() {
+                    0 => String::new(),
+                    n => format!(" ({n} image(s) wait for your next message)"),
+                }
+            ),
+            Command::Image { path, public } => {
+                match session.attach(image_path(ws, &path), public) {
+                    Ok(said) => println!("attached {said}"),
+                    Err(e) => println!("{e}"),
+                }
+            }
             Command::Message(m) => {
                 if !io.tty {
                     // Piped input is not on screen: the output keeps the conversation.
@@ -743,7 +810,11 @@ async fn take_turn(
                             Command::Unknown(c) => {
                                 println!("unknown command /{c}; /help lists the commands")
                             }
-                            Command::Quit | Command::Close | Command::Undo | Command::Status => {
+                            Command::Quit
+                            | Command::Close
+                            | Command::Undo
+                            | Command::Status
+                            | Command::Image { .. } => {
                                 println!("  (after this turn: {})", line.trim());
                                 held.push(line);
                             }
@@ -1075,6 +1146,14 @@ mod tests {
             Command::Message("/etc is a dir".into())
         );
         assert_eq!(parse("fix it  "), Command::Message("fix it".into()));
+        let image = |path: &str, public| Command::Image {
+            path: path.into(),
+            public,
+        };
+        assert_eq!(parse("/image shots/a b.png"), image("shots/a b.png", false));
+        assert_eq!(parse("/image --public ui.png "), image("ui.png", true));
+        assert_eq!(parse("/image"), image("", false));
+        assert_eq!(parse("/images"), Command::Unknown("images".into()));
     }
 
     #[test]

@@ -44,8 +44,9 @@ pub fn apply_owner(cfg: &mut Config, changes: &[(&str, Value)], confirm: bool) -
 /// `duet config preset`: without a name, the preset tables; with a local
 /// backend's name, the owner's `local.base_url` (and `local.model` when given);
 /// with a frontier's name, the owner's `frontier.base_url`, `frontier.model`
-/// (the preset's unless `--model` is given), `frontier.api_key_env` and
-/// `frontier.dialect`. Every change goes through the audited owner-config path.
+/// (the preset's unless `--model` is given), `frontier.api_key_env`,
+/// `frontier.dialect` and `frontier.vision` (whether the preset's model takes
+/// images). Every change goes through the audited owner-config path.
 pub fn preset(
     cfg: &mut Config,
     name: Option<&str>,
@@ -101,6 +102,7 @@ pub fn preset(
                 Value::String(f.api_key_env.to_owned()),
             ),
             ("frontier.dialect", Value::String(f.dialect.to_owned())),
+            ("frontier.vision", Value::Boolean(f.vision)),
         ];
         let code = apply_owner(cfg, &changes, confirm)?;
         if code == 0 {
