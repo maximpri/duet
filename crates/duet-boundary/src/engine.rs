@@ -17,8 +17,9 @@ use crate::bulky::{self, Shape};
 use crate::detect::{CustomPatterns, Detectors, Kind, scan_each_in, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
+use crate::images::{ImageRequest, Route};
 use crate::local::LocalReader;
-use crate::model::{Item, Request, ToolSpec};
+use crate::model::{Image, Item, Request, ToolSpec, sniff};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
 use crate::vault::Vault;
@@ -31,6 +32,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 mod code_nav;
 mod history;
+mod image;
 mod pii_pass;
 mod protected;
 
@@ -178,6 +180,9 @@ struct State {
     operator: OperatorValues,
     /// Digests of the public prose the local personal-data pass has read.
     pii_passed: std::collections::HashSet<String>,
+    /// Digests of the images routed to the frontier (persisted): the only
+    /// images a request may carry.
+    frontier_images: std::collections::BTreeSet<String>,
 }
 
 /// Values the operator typed: each placeholder is also a handle for
@@ -203,6 +208,8 @@ pub struct Engine {
     derived_file: std::path::PathBuf,
     /// Where the operator's placeholders are persisted.
     operator_file: std::path::PathBuf,
+    /// Where the digests of images routed to the frontier are persisted.
+    images_file: std::path::PathBuf,
     /// How the latest result was shown (for the cost ledger).
     last_class: Mutex<Option<ViewClass>>,
 }
@@ -264,6 +271,7 @@ impl Engine {
             ),
             derived_file: run_dir.join("derived.json"),
             operator_file: run_dir.join("operator.json"),
+            images_file: run_dir.join("frontier-images.json"),
             last_class: Mutex::new(None),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
@@ -279,6 +287,10 @@ impl Engine {
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
                 pii_passed: Default::default(),
+                frontier_images: std::fs::read(run_dir.join("frontier-images.json"))
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default(),
             }),
         }))
     }
@@ -864,14 +876,32 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
             found.ok_or_else(|| Self::unknown_handle(&st, id))?
         };
         let local = self.local.as_ref().ok_or("no local model is configured")?;
+        // A handle may hold an image (see `image_view`): the local model
+        // looks at it again for each question.
+        let image = match sniff(&bytes) {
+            Some(_) if !self.policy.local_vision => {
+                return Err(format!(
+                    "{id} holds an image and the local model does not read images (local.vision is false)"
+                ));
+            }
+            Some(_) => Some(Image::from_encoded(bytes.clone()).map_err(|e| format!("{id}: {e}"))?),
+            None => None,
+        };
         let text = String::from_utf8_lossy(&bytes);
         let mut out = Vec::new();
         for (i, question) in questions.iter().take(MAX_QUESTIONS).enumerate() {
             let q = self.detokenize(question);
-            let a = Self::block_on(local.answer(&info.source, &text, &q))
-                .map_err(|e| format!("local model: {}", e.message))?;
+            let a = match &image {
+                Some(img) => Self::block_on(local.answer_image(&info.source, img, &q)),
+                None => Self::block_on(local.answer(&info.source, &text, &q)),
+            }
+            .map_err(|e| format!("local model: {}", e.message))?;
             let mut st = self.lock();
-            let answer = self.clean_local(&mut st, &a.answer, &info.source, &text);
+            let answer = if image.is_some() {
+                self.clean_unseen(&mut st, &a.answer, &info.source)
+            } else {
+                self.clean_local(&mut st, &a.answer, &info.source, &text)
+            };
             let body = if a.unanswerable {
                 format!("The local model could not answer from {id}. {answer}")
             } else {
@@ -1166,6 +1196,7 @@ impl Presenter for Engine {
                 let mut st = self.lock();
                 self.clean_public(&mut st, &text, &format!("report of sub-agent {child}"))
             }
+            Source::Image { origin } => self.image_view(origin, bytes),
             // Matches in sensitive files are masked first; only that view is kept.
             Source::Search { pattern } => {
                 let view = self.search_view(&text);
@@ -1452,6 +1483,11 @@ and are never resolved for {destination}",
         out.push_str(&note);
         out
     }
+
+    /// The hybrid rule (see [`crate::images`] and `engine/image.rs`).
+    fn route_image(&self, image: &ImageRequest<'_>) -> Route {
+        self.image_route(image)
+    }
 }
 
 /// Outbound filter: sanitizes every item again (idempotent). The model's own
@@ -1472,6 +1508,20 @@ impl OutboundFilter for Sanitize {
             let text = match item {
                 Item::User { text } => text,
                 Item::ToolResult { content, .. } => content,
+                // An image is routed before it joins the conversation; one
+                // that was not routed to the frontier is dropped here (and
+                // the check below refuses any that remains).
+                Item::Images { images, .. } => {
+                    let before = images.len();
+                    images.retain(|img| st.frontier_images.contains(&img.sha256));
+                    if images.len() < before {
+                        notes.push(format!(
+                            "withheld {} image(s) not approved for the frontier",
+                            before - images.len()
+                        ));
+                    }
+                    continue;
+                }
                 Item::Assistant {
                     text,
                     reasoning,
@@ -1596,6 +1646,18 @@ impl OutboundCheck for NoKnownValues {
         let texts: Vec<String> = texts.iter().map(|t| st.vault.strip_tokens(t)).collect();
         match known_value_in(&st, &texts, false) {
             Some(what) => Err(format!("{what} would have been sent")),
+            None => Ok(()),
+        }
+    }
+
+    /// Only images routed to the frontier may be sent.
+    fn check_images(&self, digests: &[String]) -> Result<(), String> {
+        let st = self.0.lock();
+        match digests.iter().find(|d| !st.frontier_images.contains(*d)) {
+            Some(d) => Err(format!(
+                "an image not approved for the frontier (sha256 {}) would have been sent",
+                &d[..d.len().min(12)]
+            )),
             None => Ok(()),
         }
     }

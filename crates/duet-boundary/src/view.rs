@@ -57,6 +57,12 @@ pub enum Source {
     Other {
         label: String,
     },
+    /// An image's bytes (PNG or JPEG, prepared), which cannot be shown as
+    /// text: the local model describes it and the frontier gets the cleaned
+    /// description. `origin` is its path or file name.
+    Image {
+        origin: String,
+    },
     /// A tool result (or error text) from an MCP server; `trust` is the
     /// server's configured class.
     Mcp {
@@ -223,6 +229,22 @@ pub trait Presenter: Send + Sync {
     fn check_outbound(&self, _destination: &str, text: &str) -> Result<String, String> {
         Ok(text.to_owned())
     }
+    /// Where an image goes (see [`crate::images`]). Without the boundary: to
+    /// the frontier when it accepts images. The engine records an image it
+    /// lets through by digest, and its outbound check refuses any other.
+    fn route_image(&self, image: &crate::images::ImageRequest<'_>) -> crate::images::Route {
+        crate::images::route(&crate::images::Facts {
+            boundary: false,
+            frontier_vision: image.frontier_vision,
+            local_vision: false,
+            to_frontier: crate::images::ToFrontier::Never,
+            attached: image.attached,
+            operator_public: image.operator_public,
+            in_workspace: matches!(image.origin, crate::images::Origin::Workspace(_)),
+            sensitive: false,
+            protected: false,
+        })
+    }
 }
 
 /// How a language-server answer from a file the frontier may not see the
@@ -235,7 +257,12 @@ pub struct PassThrough {
 }
 
 impl Presenter for PassThrough {
-    fn present(&self, _source: &Source, bytes: &[u8]) -> String {
+    fn present(&self, source: &Source, bytes: &[u8]) -> String {
+        if let Source::Image { origin } = source {
+            // Pass-through sends images themselves (or refuses them); their
+            // bytes are never shown as text.
+            return format!("[image {origin}: not shown as text]");
+        }
         let text = String::from_utf8_lossy(bytes);
         if text.len() <= self.max_bytes {
             return text.into_owned();

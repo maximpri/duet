@@ -67,6 +67,11 @@ pub struct Policy {
     pub interface_only: Vec<String>,
     /// Source whose content the frontier never sees (`ip.sealed`).
     pub sealed: Vec<String>,
+    /// The local model reads images (`local.vision`): images the frontier may
+    /// not see are described by it instead of refused.
+    pub local_vision: bool,
+    /// `images.to_frontier`: which images the frontier may receive itself.
+    pub images_to_frontier: crate::images::ToFrontier,
 }
 
 /// How much of a protected source file the frontier may see.

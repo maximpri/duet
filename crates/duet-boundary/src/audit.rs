@@ -32,7 +32,8 @@ pub struct AuditRecord {
     pub model: String,
     /// SHA-256 of `request`.
     pub request_sha256: String,
-    /// The exact JSON body sent (after substitutions).
+    /// The exact JSON body sent (after substitutions), with each image's
+    /// data replaced by its digest (`[image sha256:..., N bytes]`).
     pub request: serde_json::Value,
     /// What the gate replaced or blocked before sending.
     pub interventions: Vec<String>,
@@ -137,6 +138,22 @@ pub enum AuditEvent {
         /// Placeholders in the arguments were resolved (sensitive stdio servers only).
         resolved_placeholders: bool,
     },
+    /// An image entered the run (`read_file` on an image, an operator
+    /// attachment): where it came from, its size, where it went and the rule
+    /// that decided. `destination` is `frontier` (the image itself), `local`
+    /// (described by the local model; the frontier got the description) or
+    /// `none` (refused). `operator_public` marks the operator's decision to
+    /// send it. Never the image or its description.
+    Image {
+        origin: String,
+        bytes: u64,
+        /// Digest of the prepared image (as in the request records).
+        sha256: String,
+        destination: String,
+        decision: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        operator_public: bool,
+    },
     /// A language-server tool call (`op` = `code_nav:<operation>` or
     /// `rename`), or a server's lifecycle (`op` = `server`, `outcome` =
     /// `started`, `restarted`, `crashed`, `refreshed` or `unavailable`).
@@ -199,6 +216,7 @@ impl AuditEvent {
             AuditEvent::LanguageServer { .. } => "language_server",
             AuditEvent::SubagentStart { .. } => "subagent_start",
             AuditEvent::SubagentEnd { .. } => "subagent_end",
+            AuditEvent::Image { .. } => "image",
         }
     }
 }
