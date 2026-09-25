@@ -122,9 +122,8 @@ pub fn load_records(batch_dir: &Path) -> Result<Vec<RunRecord>> {
         if superseded(&dir) {
             continue;
         }
-        let path = dir.join("run.json");
-        if path.is_file() {
-            out.push(serde_json::from_str(&fs::read_to_string(path)?)?);
+        if dir.join("run.json").is_file() {
+            out.push(crate::lanes::load_record(&dir)?);
         }
     }
     out.sort_by(|a: &RunRecord, b| (&a.task, &a.lane, a.seed).cmp(&(&b.task, &b.lane, b.seed)));
@@ -132,7 +131,7 @@ pub fn load_records(batch_dir: &Path) -> Result<Vec<RunRecord>> {
 }
 
 fn pass_rate(r: &RunRecord) -> f64 {
-    r.grade.as_ref().map_or(0.0, |g| g.hidden_pass_rate)
+    r.counted_pass_rate()
 }
 
 pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
@@ -149,11 +148,7 @@ pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
                 lane: lane.to_owned(),
                 runs: rs.len(),
                 mean_hidden_pass_rate: rs.iter().map(|r| pass_rate(r)).sum::<f64>() / n,
-                success_rate: rs
-                    .iter()
-                    .filter(|r| r.grade.as_ref().is_some_and(|g| g.success))
-                    .count() as f64
-                    / n,
+                success_rate: rs.iter().filter(|r| r.counted_success()).count() as f64 / n,
                 kind: rs[0].lane_kind,
                 leaks: rs.iter().map(|r| r.leaks.len()).sum(),
                 leaks_by_kind: rs.iter().flat_map(|r| r.leaks.iter()).fold(
@@ -298,6 +293,12 @@ pub fn judging(
     let mut incomplete = Vec::new();
     let mut unjudged = 0;
     for r in &valid {
+        // The lane failed the run without a result: it scores the minimum,
+        // whatever a judge said about the workspace.
+        if r.product_failure.is_some() {
+            scores.insert(r.run_id.clone(), 0.0);
+            continue;
+        }
         let js = of(r);
         if js.is_empty() {
             unjudged += 1;
@@ -608,9 +609,26 @@ pub fn render_markdown(
     summaries: &[LaneSummary],
     verdicts: &[GateVerdict],
     invalid: &[&RunRecord],
+    failed: &[&RunRecord],
     judging: &Judging,
 ) -> String {
     let mut s = String::from("# Evaluation report\n\n## Lanes\n\n");
+    if !failed.is_empty() {
+        let _ = writeln!(
+            s,
+            "{} run(s) failed by the lane itself, counted as failures (pass rate 0, judge 0):\n",
+            failed.len()
+        );
+        for r in failed {
+            let _ = writeln!(
+                s,
+                "- {}: {}",
+                r.run_id,
+                r.product_failure.as_deref().unwrap_or_default()
+            );
+        }
+        s.push('\n');
+    }
     if !invalid.is_empty() {
         let _ = writeln!(
             s,
@@ -794,6 +812,8 @@ mod tests {
             error: None,
             invalid: None,
             rate_limited: false,
+            terminal: None,
+            product_failure: None,
             duet_ledger: None,
             provenance: None,
         }
@@ -836,7 +856,13 @@ mod tests {
                 .ledger
                 .is_none()
         );
-        let md = render_markdown(&summaries, &[], &[], &judging(&rs, &BTreeMap::new(), None));
+        let md = render_markdown(
+            &summaries,
+            &[],
+            &[],
+            &[],
+            &judging(&rs, &BTreeMap::new(), None),
+        );
         assert!(md.contains("## Duet cost ledger"), "{md}");
         assert!(
             md.contains("| hybrid | 2 | 10.0 | 50.0K | 20.0K | 0.0K | 0.0K | 0.0K | 5.0K | 2.0 (3.0) | 0.0 | 1.0 | 30s | $0.0100 / $0.0000 |"),
@@ -860,9 +886,229 @@ mod tests {
             &summarize(&rs),
             &[v],
             &[],
+            &[],
             &judging(&rs, &BTreeMap::new(), None),
         );
         assert!(md.contains("hybrid vs pass") && md.contains("PASS"));
+    }
+
+    /// A run directory as the harness leaves it: `run.json`, and a workspace
+    /// where Duet wrote `summary` (none: Duet wrote no summary).
+    fn run_dir(
+        batch: &Path,
+        r: &RunRecord,
+        summary: Option<serde_json::Value>,
+    ) -> std::path::PathBuf {
+        let dir = batch.join(&r.run_id);
+        let duet_run = dir.join("workspace/.duet/runs/20260923-120000-abcdef");
+        fs::create_dir_all(&duet_run).unwrap();
+        fs::write(dir.join("run.json"), serde_json::to_string(r).unwrap()).unwrap();
+        if let Some(s) = summary {
+            fs::write(duet_run.join("summary.json"), s.to_string()).unwrap();
+        }
+        dir
+    }
+
+    fn failed(reason: &str) -> Option<serde_json::Value> {
+        Some(serde_json::json!({"run_id": "x", "terminal": {"state": "failed", "reason": reason}}))
+    }
+
+    #[test]
+    fn a_duet_run_without_a_terminal_state_is_a_failure_of_the_lane() {
+        let d = tempfile::tempdir().unwrap();
+        // Crashed (exit 101), graded 100% on what it left, proxy saw nothing wrong.
+        let mut crashed = rec("hybrid", 1, 1.0, 0.1, 0);
+        crashed.exit_code = Some(101);
+        // Crashed before its first request: the proxy verdict said "invalid".
+        let mut early = rec("hybrid", 2, 0.0, 0.0, 0);
+        early.exit_code = Some(101);
+        early.invalid = Some("the agent made no frontier request".into());
+        // Killed at the harness time limit.
+        let mut killed = rec("hybrid", 3, 0.5, 0.1, 0);
+        killed.exit_code = None;
+        killed.timed_out = true;
+        for r in [&crashed, &early, &killed] {
+            run_dir(d.path(), r, None);
+        }
+        let loaded = load_records(d.path()).unwrap();
+        assert_eq!(loaded.len(), 3);
+        for r in &loaded {
+            assert_eq!(r.invalid, None, "{}", r.run_id);
+            assert_eq!(r.terminal, None);
+            let why = r.product_failure.as_deref().unwrap();
+            assert!(why.starts_with("no terminal state"), "{why}");
+            assert_eq!(r.counted_pass_rate(), 0.0);
+            assert!(!r.counted_success());
+        }
+        assert!(
+            loaded[0]
+                .product_failure
+                .as_deref()
+                .unwrap()
+                .contains("exit 101")
+        );
+        assert!(
+            loaded[2]
+                .product_failure
+                .as_deref()
+                .unwrap()
+                .contains("time limit")
+        );
+        // The grade stays for inspection; statistics count the run as failed.
+        assert_eq!(loaded[0].grade.as_ref().unwrap().hidden_pass_rate, 1.0);
+        let lane = &summarize(&loaded)[0];
+        assert_eq!(
+            (lane.runs, lane.mean_hidden_pass_rate, lane.success_rate),
+            (3, 0.0, 0.0)
+        );
+        // A judge's score of what it left does not count either.
+        let mut judged = Judgements::new();
+        judged.insert(
+            loaded[0].run_id.clone(),
+            [("claude".to_owned(), judgement(&ANTHROPIC_JUDGE, 27.0))].into(),
+        );
+        let j = judging(&loaded, &judged, None);
+        assert_eq!(j.scores[&loaded[0].run_id], 0.0);
+        let failed: Vec<&RunRecord> = loaded.iter().collect();
+        let md = render_markdown(&summarize(&loaded), &[], &[], &failed, &j);
+        assert!(md.contains("3 run(s) failed by the lane itself"), "{md}");
+    }
+
+    #[test]
+    fn a_run_stopped_by_duets_own_gate_is_a_product_failure_not_infrastructure() {
+        let d = tempfile::tempdir().unwrap();
+        let mut r = rec("hybrid", 1, 0.0, 0.0, 0);
+        r.exit_code = Some(1);
+        r.invalid = Some("the agent made no frontier request".into());
+        run_dir(
+            d.path(),
+            &r,
+            failed(
+                "frontier: request blocked by known-values: a name value from local brief would have been sent",
+            ),
+        );
+        let loaded = &load_records(d.path()).unwrap()[0];
+        assert_eq!(loaded.invalid, None);
+        assert!(
+            loaded
+                .product_failure
+                .as_deref()
+                .unwrap()
+                .starts_with("stopped by Duet's outbound gate"),
+            "{loaded:?}"
+        );
+        assert_eq!(loaded.terminal.as_ref().unwrap().state, "failed");
+        assert_eq!(summarize(std::slice::from_ref(loaded))[0].runs, 1);
+    }
+
+    #[test]
+    fn genuine_infrastructure_stays_invalid() {
+        let d = tempfile::tempdir().unwrap();
+        // Duet reported the full disk as its failure.
+        let mut disk = rec("hybrid", 1, 0.0, 0.0, 0);
+        disk.exit_code = Some(1);
+        run_dir(
+            d.path(),
+            &disk,
+            failed("frontier: audit log: writing: No space left on device (os error 28)"),
+        );
+        // The provider refused every request for quota before any decision.
+        let mut quota = rec("hybrid", 2, 0.0, 0.0, 0);
+        quota.exit_code = Some(1);
+        quota.invalid = Some("no frontier request succeeded (statuses [429, 429])".into());
+        run_dir(
+            d.path(),
+            &quota,
+            failed("frontier: Status(429): quota exceeded"),
+        );
+        let mut outage = rec("hybrid", 3, 0.0, 0.0, 0);
+        outage.exit_code = Some(3);
+        outage.invalid = Some("no frontier request succeeded (statuses [503])".into());
+        run_dir(
+            d.path(),
+            &outage,
+            Some(
+                serde_json::json!({"terminal": {"state": "budget_stopped", "which": "wall_clock"}}),
+            ),
+        );
+        // The host failed the grading and Duet crashed with it.
+        let mut host = rec("hybrid", 4, 0.0, 0.0, 0);
+        host.exit_code = Some(101);
+        host.invalid = Some("host failure: grading failed: No space left on device".into());
+        run_dir(d.path(), &host, None);
+        // The harness could not launch Duet at all.
+        let mut launch = rec("hybrid", 5, 0.0, 0.0, 0);
+        launch.exit_code = None;
+        launch.error = Some("spawning duet: No such file or directory".into());
+        launch.invalid = Some("the agent made no frontier request".into());
+        run_dir(d.path(), &launch, None);
+        let loaded = load_records(d.path()).unwrap();
+        assert!(
+            loaded[0]
+                .invalid
+                .as_deref()
+                .unwrap()
+                .starts_with("host failure")
+        );
+        assert_eq!(loaded[1].invalid, quota.invalid);
+        assert_eq!(loaded[2].invalid, outage.invalid);
+        assert_eq!(loaded[3].invalid, host.invalid);
+        assert_eq!(loaded[4].invalid, launch.invalid);
+        assert!(loaded.iter().all(|r| r.product_failure.is_none()));
+        assert!(summarize(&loaded).is_empty(), "no run is valid");
+    }
+
+    #[test]
+    fn completed_and_external_runs_are_unchanged_and_the_rules_are_idempotent() {
+        let d = tempfile::tempdir().unwrap();
+        let done = rec("hybrid", 1, 0.8, 0.1, 0);
+        run_dir(
+            d.path(),
+            &done,
+            Some(serde_json::json!({"terminal": {"state": "completed", "summary": "ok"}})),
+        );
+        // External lanes have no terminal state to read.
+        let mut external = rec("pi", 1, 0.6, 0.1, 0);
+        external.lane_kind = crate::lanes::LaneKind::External;
+        external.exit_code = Some(1);
+        run_dir(d.path(), &external, None);
+        // A run whose workspace was deleted keeps its stored classification.
+        let mut gone = rec("hybrid", 2, 1.0, 0.1, 0);
+        gone.exit_code = Some(101);
+        let dir = run_dir(d.path(), &gone, None);
+        fs::remove_dir_all(dir.join("workspace")).unwrap();
+        let loaded = load_records(d.path()).unwrap();
+        let by_id = |id: &str| loaded.iter().find(|r| r.run_id == id).unwrap();
+        let done = by_id("S1-hybrid-s1");
+        assert_eq!(done.terminal.as_ref().unwrap().state, "completed");
+        assert_eq!(
+            (done.invalid.is_none(), done.product_failure.is_none()),
+            (true, true)
+        );
+        assert_eq!(done.counted_pass_rate(), 0.8);
+        let ext = by_id("S1-pi-s1");
+        assert_eq!(
+            (ext.terminal.is_none(), ext.product_failure.is_none()),
+            (true, true)
+        );
+        assert_eq!(ext.counted_pass_rate(), 0.6);
+        let g = by_id("S1-hybrid-s2");
+        assert_eq!(
+            (g.product_failure.is_none(), g.counted_pass_rate()),
+            (true, 1.0)
+        );
+        // Stored and re-applied: nothing changes.
+        for r in &loaded {
+            let mut again = r.clone();
+            crate::lanes::apply_terminal_rules(
+                &mut again,
+                &d.path().join(&r.run_id).join("workspace"),
+            );
+            assert_eq!(
+                serde_json::to_value(&again).unwrap(),
+                serde_json::to_value(r).unwrap()
+            );
+        }
     }
 
     #[test]

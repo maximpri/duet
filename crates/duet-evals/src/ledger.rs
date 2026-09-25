@@ -44,9 +44,8 @@ pub struct DuetLedger {
     pub output_usd: f64,
 }
 
-/// The ledger of the Duet run in `workspace`, if it wrote one (the most
-/// recent summary when there are several).
-pub fn read(workspace: &Path) -> Option<DuetLedger> {
+/// The newest run summary Duet wrote in `workspace`, if any.
+fn newest_summary(workspace: &Path) -> Option<Value> {
     let runs = workspace.join(".duet/runs");
     let newest = fs::read_dir(runs)
         .ok()?
@@ -55,7 +54,40 @@ pub fn read(workspace: &Path) -> Option<DuetLedger> {
         .filter_map(|p| Some((fs::metadata(&p).ok()?.modified().ok()?, p)))
         .max()?
         .1;
-    parse(&serde_json::from_slice(&fs::read(newest).ok()?).ok()?)
+    serde_json::from_slice(&fs::read(newest).ok()?).ok()
+}
+
+/// The ledger of the Duet run in `workspace`, if it wrote one (the most
+/// recent summary when there are several).
+pub fn read(workspace: &Path) -> Option<DuetLedger> {
+    parse(&newest_summary(workspace)?)
+}
+
+/// How a Duet run ended, as its summary records it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DuetTerminal {
+    /// `completed`, `failed` or `budget_stopped`.
+    pub state: String,
+    /// The failure reason, the budget that stopped the run, or the completion summary.
+    #[serde(default)]
+    pub detail: String,
+}
+
+/// The terminal state of the Duet run in `workspace` (the most recent
+/// summary); `None` when Duet wrote no summary with a terminal state.
+pub fn read_terminal(workspace: &Path) -> Option<DuetTerminal> {
+    terminal_of(&newest_summary(workspace)?)
+}
+
+pub fn terminal_of(summary: &Value) -> Option<DuetTerminal> {
+    let t = summary.get("terminal")?;
+    let state = t.get("state")?.as_str()?.to_owned();
+    let detail = ["reason", "which", "summary"]
+        .iter()
+        .find_map(|k| t.get(*k).and_then(Value::as_str))
+        .unwrap_or_default()
+        .to_owned();
+    Some(DuetTerminal { state, detail })
 }
 
 pub fn parse(summary: &Value) -> Option<DuetLedger> {
@@ -122,6 +154,20 @@ mod tests {
         assert!((l.local_busy_seconds - 42.5).abs() < 1e-9);
         // Older summaries without a ledger give none.
         assert!(parse(&json!({"stats": {"turns": 3}})).is_none());
+    }
+
+    #[test]
+    fn reads_the_terminal_state() {
+        let t = terminal_of(&summary()).unwrap();
+        assert_eq!((t.state.as_str(), t.detail.as_str()), ("completed", "ok"));
+        let failed = json!({"terminal": {"state": "failed", "reason": "frontier: Auth: bad key"}});
+        assert_eq!(
+            terminal_of(&failed).unwrap().detail,
+            "frontier: Auth: bad key"
+        );
+        let stopped = json!({"terminal": {"state": "budget_stopped", "which": "wall_clock"}});
+        assert_eq!(terminal_of(&stopped).unwrap().detail, "wall_clock");
+        assert!(terminal_of(&json!({"stats": {}})).is_none());
     }
 
     #[test]

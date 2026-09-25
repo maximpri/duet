@@ -247,8 +247,8 @@ async fn main() -> Result<()> {
                     for name in &lane_names {
                         let lane = lanes::find_lane(&all_lanes, name)?;
                         let run_dir = out.join(format!("{}-{}-s{seed}", t.spec.id, lane.name));
-                        if let Ok(text) = fs::read_to_string(run_dir.join("run.json")) {
-                            let prev: lanes::RunRecord = serde_json::from_str(&text)?;
+                        if run_dir.join("run.json").is_file() {
+                            let prev = lanes::load_record(&run_dir)?;
                             if prev.invalid.is_none() {
                                 println!("{:<28} done earlier; skipped", prev.run_id);
                                 continue;
@@ -293,7 +293,7 @@ async fn main() -> Result<()> {
                         println!(
                             "{:<28} pass {:>5.1}%  leaks {}  cost {}  {:.0}s{}",
                             rec.run_id,
-                            100.0 * rec.grade.as_ref().map_or(0.0, |g| g.hidden_pass_rate),
+                            100.0 * rec.counted_pass_rate(),
                             rec.leaks.len(),
                             rec.total_cost_usd
                                 .map_or("unknown".into(), |c| format!("${c:.4}")),
@@ -403,7 +403,11 @@ fn batch_report(batch: &Path, gate: &[(String, String)]) -> Result<()> {
         }
     }
     let invalid: Vec<&lanes::RunRecord> = records.iter().filter(|r| r.invalid.is_some()).collect();
-    let md = report::render_markdown(&summaries, &verdicts, &invalid, &judging);
+    let failed: Vec<&lanes::RunRecord> = records
+        .iter()
+        .filter(|r| r.invalid.is_none() && r.product_failure.is_some())
+        .collect();
+    let md = report::render_markdown(&summaries, &verdicts, &invalid, &failed, &judging);
     fs::write(batch.join("report.md"), &md)?;
     fs::write(
         batch.join("verdicts.json"),

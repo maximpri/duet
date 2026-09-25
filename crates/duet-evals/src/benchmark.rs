@@ -96,8 +96,9 @@ pub fn load(batches: &[PathBuf]) -> Result<(Vec<LoadedRun>, Vec<BatchCounts>)> {
 
 fn load_run(dir: &Path) -> Result<LoadedRun> {
     let raw = fs::read(dir.join("run.json")).with_context(|| format!("{}", dir.display()))?;
-    let record: RunRecord = serde_json::from_slice(&raw)
+    let mut record: RunRecord = serde_json::from_slice(&raw)
         .with_context(|| format!("parsing {}/run.json", dir.display()))?;
+    crate::lanes::apply_terminal_rules(&mut record, &dir.join("workspace"));
     let mut hasher = Sha256::new();
     hasher.update(&raw);
     let judges = crate::judge::load_run(dir)?;
@@ -247,6 +248,9 @@ pub struct RunRow {
     pub path: String,
     pub sha256: String,
     pub excluded: Option<String>,
+    /// Why the lane failed the run by itself (counted as a failure).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -266,7 +270,7 @@ pub struct FinalReport {
 }
 
 fn pass_rate(r: &RunRecord) -> f64 {
-    r.grade.as_ref().map_or(0.0, |g| g.hidden_pass_rate)
+    r.counted_pass_rate()
 }
 
 /// Metrics over `runs` (valid runs of one lane, optionally one task).
@@ -278,10 +282,7 @@ fn metrics(
     let n = runs.len();
     let boot = |xs: &[f64], seed| stats::bootstrap_mean(xs, BOOTSTRAP_ITERS, ALPHA, seed);
     let rates: Vec<f64> = runs.iter().map(|r| pass_rate(&r.record)).collect();
-    let successes = runs
-        .iter()
-        .filter(|r| r.record.grade.as_ref().is_some_and(|g| g.success))
-        .count();
+    let successes = runs.iter().filter(|r| r.record.counted_success()).count();
     let judged: Vec<f64> = runs
         .iter()
         .filter_map(|r| judge_scores.get(&r.record.run_id).copied())
@@ -616,6 +617,7 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
                 path: relative_link(out_dir, &r.dir),
                 sha256: r.digest.clone(),
                 excluded: r.record.invalid.clone(),
+                failed: r.record.product_failure.clone(),
             })
             .collect(),
     }
@@ -1040,6 +1042,8 @@ mod tests {
             error: None,
             invalid: None,
             rate_limited: false,
+            terminal: None,
+            product_failure: None,
             duet_ledger: None,
             provenance: Some(crate::lanes::Provenance {
                 git_commit: Some("abc123".into()),

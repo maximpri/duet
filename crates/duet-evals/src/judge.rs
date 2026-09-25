@@ -496,7 +496,8 @@ pub async fn judge_runs(
     ensure!(names.len() == before, "each judge may be given only once");
     let mut written = 0;
     for rec in crate::report::load_records(batch)? {
-        if rec.invalid.is_some() {
+        // Invalid runs are excluded; product failures score 0 unjudged.
+        if rec.invalid.is_some() || rec.product_failure.is_some() {
             continue;
         }
         let run_dir = batch.join(&rec.run_id);

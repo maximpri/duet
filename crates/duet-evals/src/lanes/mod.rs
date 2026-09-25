@@ -228,12 +228,37 @@ pub struct RunRecord {
     /// Whether the provider rate-limited or quota-limited the run.
     #[serde(default)]
     pub rate_limited: bool,
+    /// Duet lanes: the terminal state Duet recorded in its run summary
+    /// (`None` when it recorded none; see [`apply_terminal_rules`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<crate::ledger::DuetTerminal>,
+    /// Set when the lane itself failed the run without a result to grade: Duet
+    /// ended without a terminal state (a crash, or killed at the time limit),
+    /// or its own outbound gate stopped it. Such a run is valid and counts
+    /// against the lane: pass rate 0, no success, judge score 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product_failure: Option<String>,
     /// Duet's own cost ledger (Duet lanes that wrote a run summary).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duet_ledger: Option<DuetLedger>,
     /// What produced the run: harness build, lane model, agent version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+}
+
+impl RunRecord {
+    /// The hidden-test pass rate statistics use: 0 for a product failure.
+    pub fn counted_pass_rate(&self) -> f64 {
+        match (&self.product_failure, &self.grade) {
+            (None, Some(g)) => g.hidden_pass_rate,
+            _ => 0.0,
+        }
+    }
+
+    /// Whether the run counts as a success: never for a product failure.
+    pub fn counted_success(&self) -> bool {
+        self.product_failure.is_none() && self.grade.as_ref().is_some_and(|g| g.success)
+    }
 }
 
 /// Versions behind one run, for the benchmark's reproducibility section.
@@ -340,6 +365,80 @@ pub fn lane_program(lane: &Lane) -> Result<String> {
 /// from the agent under test.
 pub fn host_failure(error: &str) -> bool {
     error.contains("No space left on device") || error.contains("os error 28")
+}
+
+/// A Duet failure reason that says its own outbound gate refused a request.
+pub fn gate_blocked(reason: &str) -> bool {
+    reason.contains("request blocked by")
+}
+
+/// Classifies a Duet run by the terminal state Duet recorded (read from
+/// `workspace` unless the record already holds it), on top of the
+/// infrastructure verdict. The rules, in order:
+/// - A host failure (a full disk) stays invalid, also when Duet reported it
+///   as its failure reason.
+/// - Duet stopped by its own outbound gate is a product failure, whatever the
+///   proxy saw (it usually saw no request).
+/// - Duet ran but recorded no terminal state (it crashed, or the harness
+///   killed it at its time limit) is a product failure: the workspace is not
+///   graded as if the run had completed.
+/// - Otherwise the infrastructure verdict stands (e.g. every request refused
+///   for quota before the agent could decide anything).
+///
+/// Records of other lanes, and old records whose workspace is gone, are left
+/// as they are. Applying the rules twice changes nothing.
+pub fn apply_terminal_rules(record: &mut RunRecord, workspace: &Path) {
+    if record.lane_kind != LaneKind::Duet {
+        return;
+    }
+    let terminal = match &record.terminal {
+        Some(t) => Some(t.clone()),
+        None if workspace.is_dir() => crate::ledger::read_terminal(workspace),
+        None => return,
+    };
+    record.terminal = terminal.clone();
+    if record
+        .invalid
+        .as_deref()
+        .is_some_and(|i| i.starts_with("host failure"))
+    {
+        return;
+    }
+    match terminal {
+        Some(t) if t.state == "failed" && host_failure(&t.detail) => {
+            record.invalid = Some(format!("host failure: {}", t.detail));
+            record.product_failure = None;
+        }
+        Some(t) if t.state == "failed" && gate_blocked(&t.detail) => {
+            record.invalid = None;
+            record.product_failure =
+                Some(format!("stopped by Duet's outbound gate ({})", t.detail));
+        }
+        Some(_) => {}
+        // Duet never started (the harness could not launch it).
+        None if record.exit_code.is_none() && !record.timed_out => {}
+        None => {
+            record.invalid = None;
+            record.product_failure = Some(if record.timed_out {
+                "no terminal state: killed at the harness time limit".to_owned()
+            } else {
+                format!(
+                    "no terminal state (exit {})",
+                    record.exit_code.map_or("unknown".into(), |c| c.to_string())
+                )
+            });
+        }
+    }
+}
+
+/// Reads a run's `run.json` and applies the current terminal rules.
+pub fn load_record(run_dir: &Path) -> Result<RunRecord> {
+    let text = fs::read_to_string(run_dir.join("run.json"))
+        .with_context(|| format!("{}", run_dir.display()))?;
+    let mut record: RunRecord = serde_json::from_str(&text)
+        .with_context(|| format!("parsing {}/run.json", run_dir.display()))?;
+    apply_terminal_rules(&mut record, &run_dir.join("workspace"));
+    Ok(record)
 }
 
 pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
@@ -465,6 +564,8 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         error: None,
         invalid: None,
         rate_limited: false,
+        terminal: None,
+        product_failure: None,
         duet_ledger: match cfg.lane.kind {
             LaneKind::Duet => crate::ledger::read(&ws),
             LaneKind::External => None,
@@ -523,6 +624,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
     {
         record.invalid = Some(format!("host failure: {e}"));
     }
+    apply_terminal_rules(&mut record, &ws);
     fs::write(
         run_dir.join("run.json"),
         serde_json::to_string_pretty(&record)?,
