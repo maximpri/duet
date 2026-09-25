@@ -4,8 +4,10 @@
 
 use duet_boundary::model::{Item, Usage};
 use duet_fs::FsError;
+use duet_fs::host::HostWait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -24,6 +26,19 @@ pub enum Entry {
         cost_usd: f64,
         interventions: Vec<String>,
     },
+    /// Estimated usage of attempts of the request for `turn` that failed
+    /// after output started; charged like billed usage.
+    FailedAttempts {
+        turn: u64,
+        usage: Usage,
+        cost_usd: f64,
+    },
+    /// The run was interrupted while this tool call ran; its command was
+    /// stopped and its result is not recorded.
+    Interrupted {
+        call_id: String,
+        tool: String,
+    },
     Masked {
         items: usize,
         tokens_before: u64,
@@ -41,21 +56,32 @@ pub enum Entry {
 
 pub struct Transcript {
     path: PathBuf,
+    wait: Option<Arc<dyn HostWait>>,
 }
 
 impl Transcript {
     pub fn open(run_dir: &Path) -> Result<Self, FsError> {
-        duet_fs::private::ensure_private_dir(run_dir)?;
+        Self::open_waiting(run_dir, None)
+    }
+
+    /// Opens the transcript; its writes are retried in place while the disk
+    /// is full and `wait` agrees (see `crate::host`).
+    pub fn open_waiting(run_dir: &Path, wait: Option<Arc<dyn HostWait>>) -> Result<Self, FsError> {
+        duet_fs::host::persist(wait.as_deref(), || {
+            duet_fs::private::ensure_private_dir(run_dir)
+        })?;
         Ok(Self {
             path: run_dir.join("transcript.jsonl"),
+            wait,
         })
     }
 
+    /// Appends one entry, whole or not at all.
     pub fn append(&self, entry: &Entry) -> Result<(), FsError> {
-        duet_fs::private::append_line(
-            &self.path,
-            &serde_json::to_string(entry).unwrap_or_default(),
-        )
+        let line = serde_json::to_string(entry).unwrap_or_default();
+        duet_fs::host::persist(self.wait.as_deref(), || {
+            duet_fs::private::append_line(&self.path, &line)
+        })
     }
 
     pub fn read(run_dir: &Path) -> Result<Vec<Entry>, FsError> {

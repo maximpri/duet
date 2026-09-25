@@ -4,9 +4,11 @@
 //! (no model server): a panic in the presenter or the gate ends the run as
 //! `Failed` with its summary and audit end event; the dollar and wall-clock
 //! budgets stop it; frontier and local-model outages are retried in place until
-//! the wall clock stops the run; errors a retry cannot fix fail it; and an
+//! the wall clock stops the run; errors a retry cannot fix fail it; an
 //! interrupted run resumes to `Completed` with one intact audit chain across
-//! both sessions. Each session is composed the way `duet run` composes it: an
+//! both sessions; an interrupt kills a running command's process tree; a full
+//! disk pauses the run instead of failing it; and the estimated usage of
+//! attempts that failed mid-stream is charged to the dollar budget. Each session is composed the way `duet run` composes it: an
 //! anchored audit log, `duet_agent::run`, then `duet_agent::conclude`.
 
 use bytes::Bytes;
@@ -42,6 +44,9 @@ enum Step {
     DownWith(u16),
     /// Set the interrupt flag, then never answer.
     InterruptAndHang,
+    /// Start answering, then drop the connection (an attempt that failed
+    /// after output started).
+    CutAfterOutput,
 }
 
 #[derive(Clone)]
@@ -122,6 +127,19 @@ impl Transport for Frontier {
                 self.flag.store(true, Ordering::SeqCst);
                 Box::pin(futures_util::future::pending())
             }
+            Step::CutAfterOutput => Box::pin(async move {
+                let chunks: [Result<Bytes, String>; 2] = [
+                    Ok(Bytes::from_static(
+                        b"data: {\"choices\":[{\"delta\":{\"content\":\"Let me look at the file first\"}}]}\n\n",
+                    )),
+                    Err("connection reset".into()),
+                ];
+                Ok(HttpReply {
+                    status: 200,
+                    headers: vec![],
+                    body: futures_util::stream::iter(chunks).boxed(),
+                })
+            }),
         }
     }
 }
@@ -209,6 +227,13 @@ async fn session(s: Session<'_>) -> Ended {
         gate = gate.with_filter(f);
     }
     let gated = gate.wrap(provider);
+    // As `duet run` does: the audit log waits out a full disk from the start.
+    gated
+        .audit()
+        .set_wait(Some(Arc::new(duet_agent::host::HostPolicy::until(
+            (tokio::time::Instant::now() + s.wall_clock).into_std(),
+            Some(s.flag.clone()),
+        ))));
     gated.audit().record(AuditEvent::RunStart {
         mode: "test".into(),
         boundary: false,
@@ -606,4 +631,297 @@ async fn an_interrupted_run_resumes_to_completion_with_one_intact_audit_chain() 
         duet_agent::resumable(&run_dir(&root)),
         Err("the run already completed".into())
     );
+}
+
+/// A command that sleeps, with a detached descendant that would write
+/// `marker` after 3 s if it survived.
+fn sleeper(marker: &Path) -> String {
+    format!(
+        "/usr/bin/nohup /bin/sh -c 'sleep 3; echo alive > {}' >/dev/null 2>&1 & sleep 60",
+        marker.display()
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_interrupt_kills_a_running_command_and_ends_the_run_resumably() {
+    let (_d, root) = workspace();
+    let marker = root.join("ws/survivor");
+    let flag = Arc::new(AtomicBool::new(false));
+    let frontier = Frontier::new(
+        vec![Step::Call(
+            "run_command",
+            json!({"command": sleeper(&marker)}),
+        )],
+        &flag,
+    );
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let mut s = Session::new(&root, frontier.clone(), &passthrough);
+    s.flag = flag.clone();
+    let raiser = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        flag.store(true, Ordering::SeqCst);
+    });
+    let started = std::time::Instant::now();
+    let ended = session(s).await;
+    raiser.await.unwrap();
+    // Stopped promptly, not after the command's 60 s.
+    assert!(
+        started.elapsed() < Duration::from_secs(12),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(
+        ended.terminal,
+        Terminal::Failed {
+            reason: duet_agent::run::INTERRUPTED.into()
+        }
+    );
+    assert_eq!(stored_summary(&root)["terminal"]["state"], "failed");
+    assert_eq!(run_ends(&root), ["failed"]);
+    chain_is_intact(&root);
+    // The interruption is recorded against the call; its result is not.
+    let entries = duet_agent::transcript::Transcript::read(&run_dir(&root)).unwrap();
+    assert!(entries.iter().any(|e| matches!(e,
+        duet_agent::transcript::Entry::Interrupted { tool, .. } if tool == "run_command")));
+    assert!(!entries.iter().any(|e| matches!(
+        e,
+        duet_agent::transcript::Entry::Item {
+            item: duet_boundary::model::Item::ToolResult { .. }
+        }
+    )));
+    assert!(duet_agent::resumable(&run_dir(&root)).is_ok());
+    // The whole process tree is gone: the detached descendant never wrote.
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert!(!marker.exists(), "a descendant of the command survived");
+}
+
+/// Makes the disk "full" for the listed writes: each `(op, file name, times)`
+/// fails that many times, after writing a few bytes, as a disk filling up
+/// mid-write does.
+fn fill_disk(
+    root: &Path,
+    budget: Vec<(&'static str, &'static str, u32)>,
+) -> (duet_fs::fault::Injected, Arc<Mutex<u32>>) {
+    let failures = Arc::new(Mutex::new(0));
+    let seen = failures.clone();
+    let budget = Mutex::new(budget);
+    let guard = duet_fs::fault::inject(root, move |op, path| {
+        let name = path.file_name()?.to_string_lossy().into_owned();
+        let mut budget = budget.lock().unwrap();
+        let slot = budget
+            .iter_mut()
+            .find(|(o, n, left)| *o == op && name.ends_with(n) && *left > 0)?;
+        slot.2 -= 1;
+        *seen.lock().unwrap() += 1;
+        Some(duet_fs::fault::Fault {
+            after_bytes: 7,
+            errno: rustix_nospc(),
+        })
+    });
+    (guard, failures)
+}
+
+fn rustix_nospc() -> duet_fs::fault::Errno {
+    duet_fs::fault::Errno::NOSPC
+}
+
+#[test]
+fn the_audit_log_of_the_test_run_is_the_one_filled() {
+    assert!(audit_path(Path::new("/r")).ends_with(format!("{RUN_ID}.jsonl")));
+    assert!(RUN_ID.ends_with("abcdef"));
+}
+
+/// Every line of a JSON-lines file parses: nothing torn, nothing half-written.
+fn whole_lines(path: &Path) -> Vec<Value> {
+    let text = std::fs::read_to_string(path).unwrap();
+    assert!(text.ends_with('\n'), "{}: torn tail", path.display());
+    text.lines()
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|e| panic!("{}: {e}: {l}", path.display())))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_full_disk_pauses_the_run_and_it_completes_once_space_returns() {
+    let (_d, root) = workspace();
+    let flag = Arc::new(AtomicBool::new(false));
+    let frontier = Frontier::new(
+        vec![
+            Step::Call(
+                "write_file",
+                json!({"path": "src/new.rs", "content": "pub fn b() {}\n"}),
+            ),
+            Step::Call("read_file", json!({"path": "src/new.rs"})),
+            Step::Call("finish", json!({"summary": "done"})),
+        ],
+        &flag,
+    );
+    let (_guard, failures) = fill_disk(
+        &root,
+        vec![
+            // The workspace write, the transcript, the write journal, the
+            // audit log (a request) and the summary each hit a full disk.
+            ("atomic write", "new.rs", 2),
+            ("append", "transcript.jsonl", 2),
+            ("append", "writes.jsonl", 1),
+            ("append", "abcdef.jsonl", 2),
+            ("write", "summary.json", 1),
+        ],
+    );
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let mut s = Session::new(&root, frontier.clone(), &passthrough);
+    s.flag = flag;
+    let ended = session(s).await;
+    assert_eq!(
+        ended.terminal,
+        Terminal::Completed {
+            summary: "done".into()
+        }
+    );
+    assert_eq!(
+        *failures.lock().unwrap(),
+        8,
+        "every injected failure was hit"
+    );
+    // Nothing was lost, repeated or half-written.
+    assert_eq!(
+        std::fs::read_to_string(root.join("ws/src/new.rs")).unwrap(),
+        "pub fn b() {}\n"
+    );
+    assert_eq!(frontier.requests(), 3);
+    let transcript = whole_lines(&run_dir(&root).join("transcript.jsonl"));
+    let results = transcript
+        .iter()
+        .filter(|e| e["kind"] == "item" && e["item"]["type"] == "tool_result")
+        .count();
+    assert_eq!(results, 3);
+    let journal = whole_lines(&run_dir(&root).join("writes.jsonl"));
+    assert_eq!(journal.len(), 2, "{journal:?}");
+    assert_eq!(journal[0]["state"], "pending");
+    assert_eq!(journal[1]["state"], "applied");
+    whole_lines(&audit_path(&root));
+    let summary = stored_summary(&root);
+    assert_eq!(summary["terminal"]["state"], "completed");
+    assert_eq!(summary["stats"]["turns"], 3);
+    assert_eq!(run_ends(&root), ["completed"]);
+    chain_is_intact(&root);
+    // No temporary file was left next to the written file.
+    let names: Vec<_> = std::fs::read_dir(root.join("ws/src"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_disk_that_stays_full_ends_the_run_at_the_wall_clock() {
+    let (_d, root) = workspace();
+    let flag = Arc::new(AtomicBool::new(false));
+    let frontier = read_then_finish(&flag);
+    // Full for every transcript write during the run's 1 s wall clock; space
+    // returns shortly after, while the run's end is being recorded.
+    let full_until = std::time::Instant::now() + Duration::from_millis(1500);
+    let _guard = duet_fs::fault::inject(&root, move |op, path| {
+        (op == "append"
+            && path.ends_with("transcript.jsonl")
+            && std::time::Instant::now() < full_until)
+            .then_some(duet_fs::fault::Fault {
+                after_bytes: 7,
+                errno: rustix_nospc(),
+            })
+    });
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let mut s = Session::new(&root, frontier.clone(), &passthrough);
+    s.wall_clock = Duration::from_secs(1);
+    let ended = session(s).await;
+    assert_eq!(
+        ended.terminal,
+        Terminal::BudgetStopped {
+            which: "wall_clock".into()
+        }
+    );
+    assert_eq!(
+        frontier.requests(),
+        0,
+        "the run went on without its transcript"
+    );
+    assert_eq!(stored_summary(&root)["terminal"]["which"], "wall_clock");
+    assert_eq!(run_ends(&root), ["budget_stopped"]);
+    chain_is_intact(&root);
+    // Only the end entry made it, whole.
+    let transcript = whole_lines(&run_dir(&root).join("transcript.jsonl"));
+    assert_eq!(transcript.len(), 1, "{transcript:?}");
+    assert_eq!(transcript[0]["kind"], "end");
+}
+
+/// The test price: $1 per million input tokens, $4 per million output tokens.
+fn test_price(u: &Value) -> f64 {
+    let n = |k: &str| u[k].as_f64().unwrap_or(0.0);
+    (n("input") + 4.0 * n("output")) / 1e6
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn attempts_that_failed_mid_stream_are_charged_once() {
+    let (_d, root) = workspace();
+    let flag = Arc::new(AtomicBool::new(false));
+    let frontier = Frontier::new(
+        vec![
+            Step::CutAfterOutput,
+            Step::Call("read_file", json!({"path": "src/lib.rs"})),
+            Step::CutAfterOutput,
+            Step::Call("finish", json!({"summary": "done"})),
+        ],
+        &flag,
+    );
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let s = Session::new(&root, frontier.clone(), &passthrough);
+    let ended = session(s).await;
+    assert!(matches!(ended.terminal, Terminal::Completed { .. }));
+    assert_eq!(frontier.requests(), 4);
+    let stats = &stored_summary(&root)["stats"];
+    let billed = test_price(&stats["usage"]);
+    let failed = test_price(&stats["failed_attempt_usage"]);
+    assert!(failed > 0.0, "{stats}");
+    // Billed usage is only the two answered requests.
+    assert_eq!(stats["usage"]["input"], 2000);
+    assert_eq!(stats["usage"]["output"], 40);
+    // The run's cost and its ledger count both, each once.
+    let cost = stats["cost_usd"].as_f64().unwrap();
+    assert!((cost - (billed + failed)).abs() < 1e-9, "{stats}");
+    let ledger = &stats["ledger"];
+    let ledger_total =
+        ledger["input_usd"].as_f64().unwrap() + ledger["output_usd"].as_f64().unwrap();
+    assert!((ledger_total - cost).abs() < 1e-9, "{ledger}");
+    assert!((ledger["failed_attempts_usd"].as_f64().unwrap() - failed).abs() < 1e-9);
+    let transcript = whole_lines(&run_dir(&root).join("transcript.jsonl"));
+    let charged: f64 = transcript
+        .iter()
+        .filter(|e| e["kind"] == "failed_attempts")
+        .map(|e| e["cost_usd"].as_f64().unwrap())
+        .sum();
+    assert!((charged - failed).abs() < 1e-9);
+
+    // Charged to the dollar budget: a budget the answered request alone
+    // would not reach stops the run once the failed attempt is counted.
+    let (_d, root) = workspace();
+    let flag = Arc::new(AtomicBool::new(false));
+    let frontier = Frontier::new(
+        vec![
+            Step::CutAfterOutput,
+            Step::Call("read_file", json!({"path": "src/lib.rs"})),
+            Step::Call("finish", json!({"summary": "done"})),
+        ],
+        &flag,
+    );
+    let mut s = Session::new(&root, frontier.clone(), &passthrough);
+    let answered = (1000.0 + 4.0 * 20.0) / 1e6;
+    s.frontier_usd = answered + failed / 4.0;
+    let ended = session(s).await;
+    assert_eq!(
+        ended.terminal,
+        Terminal::BudgetStopped {
+            which: "frontier_usd".into()
+        }
+    );
+    assert_eq!(frontier.requests(), 2);
 }

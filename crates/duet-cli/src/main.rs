@@ -390,7 +390,7 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     let flag = limits.interrupted.clone();
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
-            eprintln!("\ninterrupt received; finishing the current step");
+            eprintln!("\ninterrupt received; stopping the current step");
             flag.store(true, Ordering::SeqCst);
         }
     });
@@ -492,6 +492,13 @@ async fn start(
         eprintln!("security engine: indexed {primed} sensitive file(s)");
     }
     let frontier = gated(ws, &manifest.run_id, driver, engine.as_ref())?;
+    // A full disk is waited out from the first event (see `duet_agent::host`).
+    frontier
+        .audit()
+        .set_wait(Some(Arc::new(duet_agent::host::HostPolicy::until(
+            limits.deadline.into_std(),
+            Some(limits.interrupted.clone()),
+        ))));
     *audit = Some(frontier.audit().clone());
     frontier.audit().record(AuditEvent::RunStart {
         mode: format!("{:?}", manifest.mode).to_lowercase(),

@@ -171,7 +171,7 @@ async fn a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld(
         engine.as_ref(),
         &git,
         false,
-        &AtomicBool::new(false),
+        &std::sync::Arc::new(AtomicBool::new(false)),
     )
     .await;
     assert!(

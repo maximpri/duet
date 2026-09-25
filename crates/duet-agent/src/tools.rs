@@ -12,6 +12,7 @@ use duet_sandbox::{SandboxKind, Spec};
 use regex::Regex;
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 pub(crate) const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
@@ -31,6 +32,9 @@ pub struct Ctx<'a> {
     pub checks: &'a [String],
     /// The run's audit log, for security events (sandbox denials, sensitive commands).
     pub audit: Option<&'a AuditHandle>,
+    /// The run's interrupt flag: when it is raised, a running command's
+    /// process tree is killed at once.
+    pub interrupted: Option<&'a AtomicBool>,
 }
 
 impl Ctx<'_> {
@@ -495,14 +499,24 @@ pub(crate) async fn sandboxed(
         },
     };
     let restricted = !spec.deny_read.is_empty();
-    let o = duet_sandbox::run(
+    let stop = async {
+        match ctx.interrupted {
+            Some(flag) => crate::run::raised(flag).await,
+            None => std::future::pending().await,
+        }
+    };
+    let o = duet_sandbox::run_until(
         ctx.sandbox,
         &spec,
         &["/bin/sh".into(), "-c".into(), command.into()],
         ctx.workspace,
+        stop,
     )
     .await
     .map_err(|e| e.to_string())?;
+    if o.interrupted {
+        return Err("interrupted: the command was stopped".into());
+    }
     if restricted && o.shows_denial() {
         ctx.record(AuditEvent::SandboxDenial {
             command: command.to_owned(),
@@ -777,6 +791,7 @@ mod sensitive_command_tests {
             network: false,
             checks: &[],
             audit: None,
+            interrupted: None,
         };
         let out = call(
             &mut ctx,
@@ -830,6 +845,7 @@ mod sensitive_command_tests {
             network: false,
             checks: &[],
             audit: Some(&audit),
+            interrupted: None,
         };
 
         // Any encoding of the data is out of reach of an ordinary command.

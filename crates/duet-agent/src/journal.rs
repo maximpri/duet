@@ -4,9 +4,11 @@
 //! writes without an applied record are rolled back, so an interrupted run
 //! never leaves a half-applied change.
 
+use duet_fs::host::{HostWait, persist};
 use duet_fs::{FsError, Precondition, WriteReceipt};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -25,18 +27,30 @@ pub struct WriteJournal {
     dir: PathBuf,
     next: u64,
     paths: Vec<PathBuf>,
+    wait: Option<Arc<dyn HostWait>>,
 }
 
 impl WriteJournal {
     pub fn open(run_dir: &Path) -> Result<Self, FsError> {
+        Self::open_waiting(run_dir, None)
+    }
+
+    /// Opens the journal; each step of a write is retried in place while the
+    /// disk is full and `wait` agrees (see `crate::host`).
+    pub fn open_waiting(run_dir: &Path, wait: Option<Arc<dyn HostWait>>) -> Result<Self, FsError> {
         let dir = run_dir.join("writes");
-        duet_fs::private::ensure_private_dir(&dir)?;
-        let lines = duet_fs::private::read_lines_repairing(&run_dir.join("writes.jsonl"))?;
+        persist(wait.as_deref(), || {
+            duet_fs::private::ensure_private_dir(&dir)
+        })?;
+        let lines = persist(wait.as_deref(), || {
+            duet_fs::private::read_lines_repairing(&run_dir.join("writes.jsonl"))
+        })?;
         let next = lines.len() as u64 + 1;
         Ok(Self {
             dir,
             next,
             paths: Vec::new(),
+            wait,
         })
     }
 
@@ -45,6 +59,10 @@ impl WriteJournal {
     }
 
     /// Writes `bytes` to `rel` under `workspace` with journal protection.
+    ///
+    /// Each step (saving the previous content, the pending record, the write,
+    /// the applied record) is retried on its own while the disk is full, so a
+    /// retry never leaves a second pending record for the same write.
     pub fn write(
         &mut self,
         workspace: &Path,
@@ -52,26 +70,43 @@ impl WriteJournal {
         bytes: &[u8],
         pre: &Precondition,
     ) -> Result<WriteReceipt, FsError> {
+        let wait = self.wait.clone();
+        let wait = wait.as_deref();
         let n = self.next;
         self.next += 1;
-        let before = duet_fs::read_optional(workspace, rel, 64 * 1024 * 1024)?;
+        let before = persist(wait, || {
+            duet_fs::read_optional(workspace, rel, 64 * 1024 * 1024)
+        })?;
         if let Some(b) = &before {
-            duet_fs::private::write_private(&self.dir.join(format!("{n}.before")), b)?;
+            let saved = self.dir.join(format!("{n}.before"));
+            persist(wait, || duet_fs::private::write_private(&saved, b))?;
         }
-        let pending = Record::Pending {
+        let pending = serde_json::to_string(&Record::Pending {
             n,
             path: rel.to_path_buf(),
             existed: before.is_some(),
-        };
-        duet_fs::private::append_line(
-            &self.log(),
-            &serde_json::to_string(&pending).unwrap_or_default(),
-        )?;
-        let receipt = duet_fs::atomic_write(workspace, rel, bytes, pre, 0o644)?;
-        duet_fs::private::append_line(
-            &self.log(),
-            &serde_json::to_string(&Record::Applied { n }).unwrap_or_default(),
-        )?;
+        })
+        .unwrap_or_default();
+        let log = self.log();
+        persist(wait, || duet_fs::private::append_line(&log, &pending))?;
+        let mut retry = false;
+        let receipt = persist(wait, || {
+            // An attempt that failed only after replacing the file (syncing
+            // its directory) must not be repeated against the new content.
+            if std::mem::replace(&mut retry, true)
+                && duet_fs::read_optional(workspace, rel, 64 * 1024 * 1024)?.as_deref()
+                    == Some(bytes)
+            {
+                return Ok(WriteReceipt {
+                    before: before.as_deref().map(duet_fs::sha256_hex),
+                    after: duet_fs::sha256_hex(bytes),
+                    before_bytes: before.clone(),
+                });
+            }
+            duet_fs::atomic_write(workspace, rel, bytes, pre, 0o644)
+        })?;
+        let applied = serde_json::to_string(&Record::Applied { n }).unwrap_or_default();
+        persist(wait, || duet_fs::private::append_line(&log, &applied))?;
         if !self.paths.contains(&rel.to_path_buf()) {
             self.paths.push(rel.to_path_buf());
         }

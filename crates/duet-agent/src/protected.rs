@@ -192,6 +192,7 @@ mod tests {
             network: false,
             checks: &[],
             audit: None,
+            interrupted: None,
         };
 
         // Ordinary commands cannot read protected source; edits must go through edit_protected.

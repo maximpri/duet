@@ -2,6 +2,7 @@
 //! The frontier loop: one continuous conversation until a terminal state.
 
 use crate::context::{estimate, mask_if_needed};
+use crate::host::HostPolicy;
 use crate::journal::WriteJournal;
 use crate::ledger::Ledger;
 use crate::prompt::system_prompt;
@@ -11,6 +12,7 @@ use duet_boundary::audit::{AuditEvent, AuditHandle};
 use duet_boundary::model::{ErrorKind, Item, Request, StopReason, ToolCall, ToolSpec, Usage};
 use duet_boundary::view::{Presenter, ViewClass};
 use duet_boundary::{GateError, GatedFrontier};
+use duet_fs::FsError;
 use duet_git::Git;
 use duet_sandbox::SandboxKind;
 use futures_util::FutureExt;
@@ -18,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::Instant;
@@ -97,7 +100,12 @@ pub struct RunConfig {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RunStats {
     pub turns: u64,
+    /// Billed usage of the frontier responses.
     pub usage: Usage,
+    /// Estimated usage of frontier attempts that failed after output started
+    /// and were retried; not part of `usage`, but charged in `cost_usd`.
+    #[serde(default, skip_serializing_if = "is_unused")]
+    pub failed_attempt_usage: Usage,
     pub cost_usd: f64,
     pub tool_calls: u64,
     pub masked_results: u64,
@@ -119,6 +127,10 @@ fn reasoning_extra(effort: Option<&str>) -> serde_json::Map<String, serde_json::
     extra
 }
 
+fn is_unused(u: &Usage) -> bool {
+    u.input + u.cache_read + u.cache_write + u.output == 0
+}
+
 fn add(a: &mut Usage, b: &Usage) {
     a.input += b.input;
     a.cache_read += b.cache_read;
@@ -133,17 +145,26 @@ fn add(a: &mut Usage, b: &Usage) {
 /// provider's own deadline. A panic anywhere in the run (engine, tools, gate)
 /// is caught here and ends it as `Failed` with an internal-error reason; the
 /// transcript's end entry is written either way.
+///
+/// A full disk pauses the run: its state writes (transcript, write journal,
+/// audit log, workspace writes) are retried in place until they succeed, the
+/// run is interrupted or the deadline ends it (see `crate::host`).
 pub async fn run(
     cfg: &RunConfig,
     frontier: &GatedFrontier,
     presenter: &dyn Presenter,
     git: &Git,
     resume: bool,
-    interrupted: &AtomicBool,
+    interrupted: &Arc<AtomicBool>,
 ) -> (Terminal, RunStats) {
     let started = Instant::now();
     let own = started + cfg.wall_clock;
     let deadline = frontier.deadline().map_or(own, |d| d.min(own));
+    let host = Arc::new(HostPolicy::until(
+        deadline.into_std(),
+        Some(interrupted.clone()),
+    ));
+    frontier.audit().set_wait(Some(host.clone()));
     let mut stats = RunStats::default();
     let driven = AssertUnwindSafe(drive(
         cfg,
@@ -154,6 +175,7 @@ pub async fn run(
         interrupted,
         &mut stats,
         deadline,
+        &host,
     ))
     .catch_unwind()
     .await;
@@ -164,7 +186,10 @@ pub async fn run(
     };
     stats.wall_seconds = started.elapsed().as_secs_f64();
     stats.ledger.finish();
-    if let Ok(t) = Transcript::open(&cfg.run_dir) {
+    frontier
+        .audit()
+        .set_wait(Some(Arc::new(HostPolicy::finishing())));
+    if let Ok(t) = Transcript::open_waiting(&cfg.run_dir, Some(Arc::new(HostPolicy::finishing()))) {
         let _ = t.append(&Entry::End {
             terminal: terminal.clone(),
         });
@@ -191,6 +216,7 @@ pub fn resumable(run_dir: &Path) -> Result<(), String> {
 /// Ends a run's records: the audit log's end event (which anchors its final
 /// head), then `summary.json` in the run directory, written privately. Returns
 /// the summary. `audit_log` is the log's path, read for the disclosure report.
+/// Both writes wait out a full disk for up to [`crate::host::FINAL_GRACE`].
 pub fn conclude(
     run_dir: &Path,
     run_id: &str,
@@ -199,7 +225,9 @@ pub fn conclude(
     terminal: &Terminal,
     stats: &RunStats,
 ) -> Result<serde_json::Value, duet_fs::FsError> {
+    let wait = Arc::new(HostPolicy::finishing());
     if let Some(a) = audit {
+        a.set_wait(Some(wait.clone()));
         a.record(AuditEvent::RunEnd {
             terminal: terminal.state().into(),
         });
@@ -219,29 +247,91 @@ pub fn conclude(
         "stats": stats,
         "disclosure": disclosure,
     });
-    duet_fs::private::write_private(
-        &run_dir.join("summary.json"),
-        &serde_json::to_vec_pretty(&summary).unwrap_or_default(),
-    )?;
+    let bytes = serde_json::to_vec_pretty(&summary).unwrap_or_default();
+    duet_fs::host::persist(Some(wait.as_ref()), || {
+        duet_fs::private::write_private(&run_dir.join("summary.json"), &bytes)
+    })?;
     Ok(summary)
 }
 
 /// How a failed frontier request ends the run: an outage that outlasted the
-/// wall clock is a budget stop, an interrupt during retries is resumable, and
-/// anything else (credentials, an invalid request, a blocked send) fails it.
-fn stop_for(e: GateError) -> Result<Terminal, String> {
-    match &e {
+/// wall clock is a budget stop, an interrupt during retries is resumable, a
+/// full disk while auditing the request is waited out like any state write,
+/// and anything else (credentials, an invalid request, a blocked send) fails it.
+fn stop_for(e: GateError, host: &HostPolicy) -> Result<Terminal, String> {
+    match e {
         GateError::Provider(p) if p.kind == ErrorKind::Deadline => Ok(Terminal::out_of_time()),
         GateError::Provider(p) if p.kind == ErrorKind::Cancelled => Ok(Terminal::interrupted()),
-        _ => Err(format!("frontier: {e}")),
+        GateError::Audit(e) if e.is_host_resource() => write_failed(e, host),
+        e => Err(format!("frontier: {e}")),
     }
 }
 
+/// How a state write that failed ends the run: a full disk is waited out
+/// until the run was interrupted or its wall clock ended, so it ends as that;
+/// any other failure fails the run.
+fn write_failed(e: FsError, host: &HostPolicy) -> Result<Terminal, String> {
+    if !e.is_host_resource() {
+        return Err(e.to_string());
+    }
+    Ok(if host.gave_up_on_interrupt() {
+        Terminal::interrupted()
+    } else {
+        Terminal::out_of_time()
+    })
+}
+
+/// Charges the estimated usage of attempts that failed after output started:
+/// to the dollar budget, the cost ledger and the transcript. Billed usage is
+/// charged separately, so nothing is counted twice.
+fn charge_failed_attempts(
+    cfg: &RunConfig,
+    stats: &mut RunStats,
+    transcript: &Transcript,
+    turn: u64,
+    usage: &Usage,
+) -> Result<(), FsError> {
+    if is_unused(usage) {
+        return Ok(());
+    }
+    let cost = (cfg.price)(usage);
+    stats.cost_usd += cost;
+    add(&mut stats.failed_attempt_usage, usage);
+    stats.ledger.on_failed_usage(usage, &*cfg.price);
+    transcript.append(&Entry::FailedAttempts {
+        turn,
+        usage: *usage,
+        cost_usd: cost,
+    })
+}
+
 /// Resolves once `flag` is set.
-async fn raised(flag: &AtomicBool) {
+pub(crate) async fn raised(flag: &AtomicBool) {
     while !flag.load(Ordering::SeqCst) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// Unwraps a state write, or ends the run as [`write_failed`] says.
+macro_rules! stored {
+    ($host:expr, $write:expr) => {
+        match $write {
+            Ok(v) => v,
+            Err(e) => return write_failed(e, $host),
+        }
+    };
+}
+
+/// A state write whose other failures are tolerated: only a full disk that
+/// was not waited out ends the run.
+macro_rules! noted {
+    ($host:expr, $write:expr) => {
+        if let Err(e) = $write
+            && e.is_host_resource()
+        {
+            return write_failed(e, $host);
+        }
+    };
 }
 
 /// Drops a trailing assistant turn whose tool calls did not all get results
@@ -282,8 +372,13 @@ async fn drive(
     interrupted: &AtomicBool,
     stats: &mut RunStats,
     deadline: Instant,
+    host: &Arc<HostPolicy>,
 ) -> Result<Terminal, String> {
-    let transcript = Transcript::open(&cfg.run_dir).map_err(|e| e.to_string())?;
+    let wait: Arc<dyn duet_fs::host::HostWait> = host.clone();
+    let transcript = stored!(
+        host,
+        Transcript::open_waiting(&cfg.run_dir, Some(wait.clone()))
+    );
     let name = cfg
         .workspace
         .file_name()
@@ -293,8 +388,12 @@ async fn drive(
     // How each tool result was shown, by call id (for the ledger).
     let mut classes: HashMap<String, ViewClass> = HashMap::new();
     if resume {
-        let restored =
-            WriteJournal::recover(&cfg.run_dir, &cfg.workspace).map_err(|e| e.to_string())?;
+        let restored = stored!(
+            host,
+            duet_fs::host::persist(Some(wait.as_ref()), || {
+                WriteJournal::recover(&cfg.run_dir, &cfg.workspace)
+            })
+        );
         if !restored.is_empty() {
             eprintln!("rolled back {} interrupted write(s)", restored.len());
         }
@@ -337,6 +436,13 @@ async fn drive(
                     stats.cost_usd += cost_usd;
                     stats.turns += 1;
                 }
+                Entry::FailedAttempts {
+                    usage, cost_usd, ..
+                } => {
+                    stats.ledger.on_failed_usage(&usage, &*cfg.price);
+                    add(&mut stats.failed_attempt_usage, &usage);
+                    stats.cost_usd += cost_usd;
+                }
                 _ => {}
             }
         }
@@ -347,26 +453,38 @@ async fn drive(
             return Err("nothing to resume: the transcript is empty".into());
         }
     } else {
-        transcript
-            .append(&Entry::Start {
+        stored!(
+            host,
+            transcript.append(&Entry::Start {
                 objective: cfg.objective.clone(),
                 mode: cfg.mode.clone(),
                 frontier_model: frontier.model().to_owned(),
             })
-            .map_err(|e| e.to_string())?;
+        );
         let first = Item::User {
             text: presenter.sanitize_objective(&cfg.objective),
         };
-        transcript
-            .append(&Entry::Item {
+        stored!(
+            host,
+            transcript.append(&Entry::Item {
                 item: first.clone(),
             })
-            .map_err(|e| e.to_string())?;
+        );
         items.push(first);
     }
 
     let specs: Vec<ToolSpec> = tools::specs_with(presenter.extra_tools());
-    let mut journal = WriteJournal::open(&cfg.run_dir).map_err(|e| e.to_string())?;
+    let mut journal = stored!(
+        host,
+        WriteJournal::open_waiting(&cfg.run_dir, Some(wait.clone()))
+    );
+    // When the provider enforces the deadline itself, it is given a moment to
+    // report a request cut off at it (with the usage of its failed attempts).
+    let cutoff = if frontier.deadline().is_some() {
+        deadline + Duration::from_secs(2)
+    } else {
+        deadline
+    };
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
 
     loop {
@@ -385,11 +503,14 @@ async fn drive(
         let masked = mask_if_needed(&mut items, &system, cfg.context_window, cfg.mask_at);
         if masked > 0 {
             stats.masked_results += masked as u64;
-            let _ = transcript.append(&Entry::Masked {
-                items: masked,
-                tokens_before: before,
-                tokens_after: estimate(&items, &system),
-            });
+            noted!(
+                host,
+                transcript.append(&Entry::Masked {
+                    items: masked,
+                    tokens_before: before,
+                    tokens_after: estimate(&items, &system),
+                })
+            );
         }
         let request = Request {
             system: system.clone(),
@@ -402,12 +523,21 @@ async fn drive(
         // Infrastructure failures are retried inside `create` until the
         // deadline; an interrupt stops the wait at once.
         let sent = tokio::select! {
-            r = tokio::time::timeout_at(deadline, frontier.create(&request)) => r,
+            r = tokio::time::timeout_at(cutoff, frontier.create(&request)) => r,
             () = raised(interrupted) => return Ok(Terminal::interrupted()),
         };
         let (response, interventions) = match sent {
             Err(_) => return Ok(Terminal::out_of_time()),
-            Ok(Err(e)) => return stop_for(e),
+            Ok(Err(e)) => {
+                if let GateError::Provider(p) = &e {
+                    let turn = stats.turns + 1;
+                    noted!(
+                        host,
+                        charge_failed_attempts(cfg, stats, &transcript, turn, &p.failed_usage)
+                    );
+                }
+                return stop_for(e, host);
+            }
             Ok(Ok(r)) => r,
         };
         let cost = (cfg.price)(&response.usage);
@@ -416,19 +546,34 @@ async fn drive(
         add(&mut stats.usage, &response.usage);
         stats.ledger.on_request(&request.items, &system, &classes);
         stats.ledger.on_usage(&response.usage, &*cfg.price);
-        let _ = transcript.append(&Entry::Usage {
-            turn: stats.turns,
-            usage: response.usage,
-            cost_usd: cost,
-            interventions,
-        });
+        let turn = stats.turns;
+        noted!(
+            host,
+            transcript.append(&Entry::Usage {
+                turn,
+                usage: response.usage,
+                cost_usd: cost,
+                interventions,
+            })
+        );
+        noted!(
+            host,
+            charge_failed_attempts(
+                cfg,
+                stats,
+                &transcript,
+                turn,
+                &response.attempts.estimated_failed
+            )
+        );
 
         let assistant = response.to_item();
-        transcript
-            .append(&Entry::Item {
+        stored!(
+            host,
+            transcript.append(&Entry::Item {
                 item: assistant.clone(),
             })
-            .map_err(|e| e.to_string())?;
+        );
         items.push(assistant);
 
         match response.stop {
@@ -441,11 +586,12 @@ async fn drive(
                 }
                 // Tool calls in a truncated response are never executed.
                 let nudge = Item::User { text: "Your last response was cut off at the output limit, so none of its tool calls ran. Continue with smaller steps.".into() };
-                transcript
-                    .append(&Entry::Item {
+                stored!(
+                    host,
+                    transcript.append(&Entry::Item {
                         item: nudge.clone(),
                     })
-                    .map_err(|e| e.to_string())?;
+                );
                 items.push(nudge);
                 continue;
             }
@@ -468,11 +614,12 @@ async fn drive(
                 text: "Continue working with the tools. When the task is complete, call `finish`."
                     .into(),
             };
-            transcript
-                .append(&Entry::Item {
+            stored!(
+                host,
+                transcript.append(&Entry::Item {
                     item: nudge.clone(),
                 })
-                .map_err(|e| e.to_string())?;
+            );
             items.push(nudge);
             continue;
         }
@@ -492,6 +639,7 @@ async fn drive(
                 network: cfg.network,
                 checks: &cfg.checks,
                 audit: Some(frontier.audit()),
+                interrupted: Some(interrupted),
             };
             // Only what this call shows counts for it.
             let _ = presenter.take_view_class();
@@ -511,7 +659,22 @@ async fn drive(
             ) {
                 format!("error: {e}")
             } else {
-                match tools::dispatch(&mut ctx, &call.name, &call.arguments).await {
+                let outcome = tools::dispatch(&mut ctx, &call.name, &call.arguments).await;
+                // An interrupt stops a running command at once (its process
+                // tree is killed); the call is recorded, its result is not.
+                if interrupted.load(Ordering::SeqCst)
+                    && !matches!(outcome, Outcome::Finished { .. })
+                {
+                    noted!(
+                        host,
+                        transcript.append(&Entry::Interrupted {
+                            call_id: call.id.clone(),
+                            tool: call.name.clone(),
+                        })
+                    );
+                    return Ok(Terminal::interrupted());
+                }
+                match outcome {
                     Outcome::Result(text) => text,
                     Outcome::Error(e) => format!("error: {e}"),
                     Outcome::Finished { summary } => {
@@ -550,15 +713,19 @@ async fn drive(
                 call_id: call.id.clone(),
                 content,
             };
-            transcript
-                .append(&Entry::Item {
+            stored!(
+                host,
+                transcript.append(&Entry::Item {
                     item: result.clone(),
                 })
-                .map_err(|e| e.to_string())?;
-            let _ = transcript.append(&Entry::Shown {
-                call_id: call.id.clone(),
-                class,
-            });
+            );
+            noted!(
+                host,
+                transcript.append(&Entry::Shown {
+                    call_id: call.id.clone(),
+                    class,
+                })
+            );
             items.push(result);
         }
         if let Some(summary) = finished {

@@ -115,7 +115,7 @@ async fn run(dir: &Path, presenter: &dyn Presenter, script: Vec<(&str, Value)>) 
         presenter,
         &git,
         false,
-        &AtomicBool::new(false),
+        &std::sync::Arc::new(AtomicBool::new(false)),
     )
     .await;
     let bodies = frontier.bodies.lock().unwrap().clone();

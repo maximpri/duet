@@ -151,6 +151,14 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
                 feed.push(format!("  turn {t} cost ${cost_usd:.4}"));
                 withheld.extend(interventions.iter().map(|i| format!("turn {t}: {i}")));
             }
+            Entry::FailedAttempts {
+                turn: t, cost_usd, ..
+            } => feed.push(format!(
+                "  turn {t} failed attempts (estimated) ${cost_usd:.4}"
+            )),
+            Entry::Interrupted { call_id, tool } => {
+                feed.push(format!("  interrupted {tool} ({call_id})"))
+            }
             Entry::Masked {
                 items,
                 tokens_before,

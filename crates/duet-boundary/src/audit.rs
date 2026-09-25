@@ -14,6 +14,7 @@
 //! every append; [`check_anchor`] detects a log rewritten or truncated since.
 
 use duet_fs::FsError;
+use duet_fs::host::HostWait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -383,6 +384,8 @@ pub struct AuditLog {
     first: Option<String>,
     /// The run's anchors, when the head is anchored.
     anchor: Option<RunAnchors>,
+    /// Waits out a full disk so a write is retried in place (see `duet_fs::host`).
+    wait: Option<Arc<dyn HostWait>>,
 }
 
 impl AuditLog {
@@ -406,6 +409,7 @@ impl AuditLog {
             prev,
             first,
             anchor: None,
+            wait: None,
         })
     }
 
@@ -439,6 +443,12 @@ impl AuditLog {
         Ok(log)
     }
 
+    /// Retries writes that fail for lack of a host resource while `wait`
+    /// agrees; `None` fails them at once.
+    pub fn set_wait(&mut self, wait: Option<Arc<dyn HostWait>>) {
+        self.wait = wait;
+    }
+
     /// Records written so far and the hash of the last one.
     pub fn head(&self) -> (u64, &str) {
         (self.seq, &self.prev)
@@ -467,12 +477,18 @@ impl AuditLog {
         )
     }
 
+    /// Appends a line, then anchors the new head. Each step is retried in
+    /// place while the disk is full (when a wait is set); the append is all
+    /// or nothing, so a retried line is never written twice.
     fn write_line(&mut self, seq: u64, line: String) -> Result<(), FsError> {
-        duet_fs::private::append_line(&self.path, &line)?;
+        let wait = self.wait.clone();
+        duet_fs::host::persist(wait.as_deref(), || {
+            duet_fs::private::append_line(&self.path, &line)
+        })?;
         self.seq = seq;
         self.prev = digest(&line);
         self.first.get_or_insert_with(|| self.prev.clone());
-        self.write_anchor()
+        duet_fs::host::persist(wait.as_deref(), || self.write_anchor())
     }
 
     pub fn append(
@@ -561,6 +577,11 @@ impl AuditHandle {
         interventions: Vec<String>,
     ) -> Result<AuditRecord, FsError> {
         self.log().append(endpoint, model, request, interventions)
+    }
+
+    /// See [`AuditLog::set_wait`].
+    pub fn set_wait(&self, wait: Option<Arc<dyn HostWait>>) {
+        self.log().set_wait(wait);
     }
 
     /// Appends an event. A failure is reported on stderr and does not stop the

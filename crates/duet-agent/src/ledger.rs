@@ -50,9 +50,17 @@ pub struct Ledger {
     /// Frontier dollars at list price, split into input (including cache) and output.
     pub input_usd: f64,
     pub output_usd: f64,
+    /// Of `input_usd` and `output_usd`: the estimated cost of attempts that
+    /// failed after output started (retried infrastructure failures).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub failed_attempts_usd: f64,
     /// What the local model did (hybrid runs), including its busy seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<CallStats>,
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 fn tokens_of(text: &str) -> u64 {
@@ -87,6 +95,14 @@ impl Ledger {
         });
         self.input_usd += input;
         self.output_usd += (total - input).max(0.0);
+    }
+
+    /// Estimated usage of attempts that failed mid-stream, priced by `price`.
+    /// Disjoint from the billed usage given to [`Ledger::on_usage`].
+    pub fn on_failed_usage(&mut self, usage: &Usage, price: &dyn Fn(&Usage) -> f64) {
+        let before = self.input_usd + self.output_usd;
+        self.on_usage(usage, price);
+        self.failed_attempts_usd += self.input_usd + self.output_usd - before;
     }
 
     /// A tool result added to the conversation.
