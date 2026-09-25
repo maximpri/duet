@@ -28,6 +28,9 @@ tree-sitter-rust.workspace = true
 tree-sitter-typescript.workspace = true
 tree-sitter-python.workspace = true
 aho-corasick.workspace = true
+toml.workspace = true
+# Reads the structure of imported rules' expressions (which groups hold the secret).
+regex-syntax = "0.8"
 bytes = { version = "1", optional = true }
 futures-util = { workspace = true, optional = true }
 

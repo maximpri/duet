@@ -15,7 +15,9 @@ pub mod ip;
 pub mod local;
 pub mod local_eval;
 pub mod overlap;
+pub mod pii;
 pub mod policy;
+pub mod rules;
 pub mod skeleton;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;

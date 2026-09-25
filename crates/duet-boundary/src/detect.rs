@@ -3,8 +3,13 @@
 //!
 //! Each detector reports byte spans with a kind. Detection is deliberately
 //! broad: a false positive costs a placeholder, a false negative costs a leak.
+//!
+//! Duet's own detectors are here; international personal-data formats are in
+//! [`crate::pii`], and the imported secret rules (the gitleaks rule set, used
+//! as data) in [`crate::rules`]. Duet's own findings take precedence: an
+//! imported match inside one of them is dropped.
 
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use std::sync::LazyLock;
 
 #[derive(
@@ -25,10 +30,12 @@ pub enum Kind {
     Code,
     /// A bank account or routing number (recognized by its label).
     Account,
+    /// A postal address.
+    Address,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 11] = [
+    pub const ALL: [Kind; 12] = [
         Kind::Secret,
         Kind::Email,
         Kind::Phone,
@@ -40,6 +47,7 @@ impl Kind {
         Kind::Data,
         Kind::Code,
         Kind::Account,
+        Kind::Address,
     ];
 
     /// Kinds whose values are identifying numbers: a run of their digits is
@@ -64,6 +72,7 @@ impl Kind {
             Kind::Data => "data",
             Kind::Code => "code",
             Kind::Account => "account",
+            Kind::Address => "address",
         }
     }
 }
@@ -135,13 +144,48 @@ re!(
 );
 re!(WORD_RUN, r"\w+");
 re!(SSN, r"\b\d{3}-\d{2}-\d{4}\b");
-re!(IBAN, r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b");
 re!(
     IPV4,
     r"\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b"
 );
 // Long random-looking tokens (entropy check applied afterwards).
 re!(HIGH_ENTROPY, r"[A-Za-z0-9+/_-]{24,}={0,2}");
+
+/// Duet's own expressions, in [`Own`] order. One pass of a set over all of
+/// them finds which can match at all; only those run on their own.
+static OWN: LazyLock<RegexSet> = LazyLock::new(|| {
+    RegexSet::new([
+        TOKENS.as_str(),
+        PRIVATE_KEY.as_str(),
+        URL_CREDENTIALS.as_str(),
+        ASSIGNMENT.as_str(),
+        QUOTED_ASSIGNMENT.as_str(),
+        HIGH_ENTROPY.as_str(),
+        EMAIL.as_str(),
+        PHONE.as_str(),
+        CARD.as_str(),
+        LABELLED_NUMBER.as_str(),
+        SSN.as_str(),
+        IPV4.as_str(),
+    ])
+    .expect("static regex set")
+});
+
+#[derive(Clone, Copy)]
+enum Own {
+    Tokens,
+    PrivateKey,
+    UrlCredentials,
+    Assignment,
+    QuotedAssignment,
+    HighEntropy,
+    Email,
+    Phone,
+    Card,
+    LabelledNumber,
+    Ssn,
+    Ipv4,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Detectors {
@@ -228,26 +272,6 @@ fn labelled_kind(text: &str, start: usize, end: usize) -> Option<Kind> {
         .and_then(|c| kind_of(&c))
 }
 
-fn iban_valid(s: &str) -> bool {
-    let rearranged: String = s[4..].chars().chain(s[..4].chars()).collect();
-    let mut rem: u64 = 0;
-    for c in rearranged.chars() {
-        let v = if c.is_ascii_digit() {
-            c as u64 - '0' as u64
-        } else if c.is_ascii_uppercase() {
-            c as u64 - 'A' as u64 + 10
-        } else {
-            return false;
-        };
-        rem = if v >= 10 {
-            (rem * 100 + v) % 97
-        } else {
-            (rem * 10 + v) % 97
-        };
-    }
-    rem == 1
-}
-
 /// Shannon entropy in bits per character.
 pub fn entropy(s: &str) -> f64 {
     let mut counts = [0u32; 256];
@@ -277,6 +301,36 @@ fn looks_random(s: &str) -> bool {
         && !s
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase() && s.len() == 40)
+        && !is_integrity_digest(s)
+        && !is_camel_case_words(s)
+}
+
+/// A subresource-integrity value (`sha512-<base64>`, as in lockfiles and
+/// `<script integrity=…>`): the digest of public content.
+fn is_integrity_digest(s: &str) -> bool {
+    ["sha256-", "sha384-", "sha512-"]
+        .iter()
+        .any(|p| s.starts_with(p))
+}
+
+/// An identifier made of words (`HttpRequestRetryPolicy`): letters only,
+/// each capital starting a word, words of three letters on average. Random
+/// letters change case every other character or so.
+fn is_camel_case_words(s: &str) -> bool {
+    if !s.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    let words = s
+        .bytes()
+        .enumerate()
+        .filter(|(i, b)| *i == 0 || b.is_ascii_uppercase())
+        .count();
+    let single = s
+        .as_bytes()
+        .windows(2)
+        .filter(|w| w[0].is_ascii_uppercase() && w[1].is_ascii_uppercase())
+        .count();
+    words >= 3 && single <= 2 && s.len() >= 3 * words
 }
 
 /// Addresses at domains reserved for documentation and testing (RFC 2606 /
@@ -372,7 +426,16 @@ pub fn scan(text: &str, d: Detectors) -> Vec<Finding> {
 /// Every finding in `text`, sorted by start (longer first), overlaps kept: a
 /// value inside a longer match is still a value on its own.
 pub fn scan_each(text: &str, d: Detectors) -> Vec<Finding> {
+    scan_each_in(text, d, None)
+}
+
+/// [`scan_each`] for text that came from the workspace file `path`: imported
+/// rules with a path condition (`*.tf`, `*.ya?ml`) run on it, and their path
+/// allowlists (lockfiles, vendored dependencies) apply.
+pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding> {
     let mut out = Vec::new();
+    let hits = OWN.matches(text);
+    let on = |o: Own| hits.matched(o as usize);
     let mut push = |kind, m: regex::Match<'_>, label: Option<String>| {
         out.push(Finding {
             kind,
@@ -382,35 +445,44 @@ pub fn scan_each(text: &str, d: Detectors) -> Vec<Finding> {
         })
     };
     if d.secrets {
-        for m in TOKENS.find_iter(text) {
-            push(Kind::Secret, m, None);
-        }
-        for m in PRIVATE_KEY.find_iter(text) {
-            push(Kind::Secret, m, Some("PRIVATE_KEY".into()));
-        }
-        for c in URL_CREDENTIALS.captures_iter(text) {
-            if let Some(m) = c.get(1) {
-                push(Kind::Secret, m, Some("URL_PASSWORD".into()));
+        if on(Own::Tokens) {
+            for m in TOKENS.find_iter(text) {
+                push(Kind::Secret, m, None);
             }
         }
-        for c in ASSIGNMENT
-            .captures_iter(text)
-            .chain(QUOTED_ASSIGNMENT.captures_iter(text))
-        {
-            if let (Some(k), Some(v)) = (c.get(1), c.get(2)) {
-                let value = v.as_str();
-                let placeholder_like = value.starts_with('$')
-                    || value.starts_with('<')
-                    || value.starts_with('⟨')
-                    || value.eq_ignore_ascii_case("changeme")
-                    || value.eq_ignore_ascii_case("change_me");
-                if !placeholder_like {
-                    push(Kind::Secret, v, Some(k.as_str().to_owned()));
+        if on(Own::PrivateKey) {
+            for m in PRIVATE_KEY.find_iter(text) {
+                push(Kind::Secret, m, Some("PRIVATE_KEY".into()));
+            }
+        }
+        if on(Own::UrlCredentials) {
+            for c in URL_CREDENTIALS.captures_iter(text) {
+                if let Some(m) = c.get(1) {
+                    push(Kind::Secret, m, Some("URL_PASSWORD".into()));
+                }
+            }
+        }
+        let assignments = [
+            (Own::Assignment, &*ASSIGNMENT),
+            (Own::QuotedAssignment, &*QUOTED_ASSIGNMENT),
+        ];
+        for (_, re) in assignments.into_iter().filter(|(o, _)| on(*o)) {
+            for c in re.captures_iter(text) {
+                if let (Some(k), Some(v)) = (c.get(1), c.get(2)) {
+                    let value = v.as_str();
+                    let placeholder_like = value.starts_with('$')
+                        || value.starts_with('<')
+                        || value.starts_with('⟨')
+                        || value.eq_ignore_ascii_case("changeme")
+                        || value.eq_ignore_ascii_case("change_me");
+                    if !placeholder_like {
+                        push(Kind::Secret, v, Some(k.as_str().to_owned()));
+                    }
                 }
             }
         }
     }
-    if d.entropy {
+    if d.entropy && on(Own::HighEntropy) {
         for m in HIGH_ENTROPY.find_iter(text) {
             if looks_random(m.as_str()) {
                 push(Kind::Secret, m, None);
@@ -418,41 +490,84 @@ pub fn scan_each(text: &str, d: Detectors) -> Vec<Finding> {
         }
     }
     if d.pii {
-        for m in EMAIL.find_iter(text) {
-            if !reserved_example_domain(m.as_str()) {
-                push(Kind::Email, m, None);
+        if on(Own::Email) {
+            for m in EMAIL.find_iter(text) {
+                if !reserved_example_domain(m.as_str()) {
+                    push(Kind::Email, m, None);
+                }
             }
         }
-        for m in PHONE.find_iter(text) {
-            push(Kind::Phone, m, None);
-        }
-        for m in CARD.find_iter(text) {
-            if luhn(m.as_str()) {
-                push(Kind::Card, m, None);
+        if on(Own::Phone) {
+            for m in PHONE.find_iter(text) {
+                push(Kind::Phone, m, None);
             }
         }
-        for m in LABELLED_NUMBER.find_iter(text) {
-            if let Some(kind) = labelled_kind(text, m.start(), m.end()) {
-                push(kind, m, None);
+        if on(Own::Card) {
+            for m in CARD.find_iter(text) {
+                if luhn(m.as_str()) {
+                    push(Kind::Card, m, None);
+                }
             }
         }
-        for m in SSN.find_iter(text) {
-            push(Kind::NationalId, m, None);
-        }
-        for m in IBAN.find_iter(text) {
-            if iban_valid(m.as_str()) {
-                push(Kind::Iban, m, None);
+        if on(Own::LabelledNumber) {
+            for m in LABELLED_NUMBER.find_iter(text) {
+                if let Some(kind) = labelled_kind(text, m.start(), m.end()) {
+                    push(kind, m, None);
+                }
             }
         }
-        for m in IPV4.find_iter(text) {
-            let s = m.as_str();
-            if !(s.starts_with("127.") || s == "0.0.0.0" || s.starts_with("255.")) {
-                push(Kind::Ip, m, None);
+        if on(Own::Ssn) {
+            for m in SSN.find_iter(text) {
+                push(Kind::NationalId, m, None);
             }
         }
+        if on(Own::Ipv4) {
+            for m in IPV4.find_iter(text) {
+                let s = m.as_str();
+                if !(s.starts_with("127.") || s == "0.0.0.0" || s.starts_with("255.")) {
+                    push(Kind::Ip, m, None);
+                }
+            }
+        }
+        crate::pii::scan(text, &mut out);
+    }
+    if d.secrets {
+        add_imported(text, path, &mut out);
     }
     out.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
     out
+}
+
+/// Secrets the imported rules find, each labelled with its rule id (for the
+/// placeholder and the disclosure report). One inside a span duet's own
+/// detectors found is left to them.
+fn add_imported(text: &str, path: Option<&str>, out: &mut Vec<Finding>) {
+    let found = crate::rules::imported().find(text, path);
+    if found.is_empty() {
+        return;
+    }
+    out.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
+    // The furthest end among own findings starting at or before each one.
+    let reach: Vec<usize> = out
+        .iter()
+        .scan(0, |max, f| {
+            *max = f.end.max(*max);
+            Some(*max)
+        })
+        .collect();
+    let own = out.len();
+    for m in found {
+        let i = out[..own].partition_point(|f| f.start <= m.start);
+        if i > 0 && reach[i - 1] >= m.end {
+            continue;
+        }
+        out.push(Finding {
+            kind: Kind::Secret,
+            start: m.start,
+            end: m.end,
+            label: Some(m.rule.label().to_owned()),
+        });
+    }
 }
 
 #[cfg(test)]
@@ -606,6 +721,28 @@ mod tests {
         let merged = scan_with("mail kim@corp.net about CUST-004211", d, &c);
         let kinds: Vec<Kind> = merged.iter().map(|f| f.kind).collect();
         assert_eq!(kinds, vec![Kind::Email, Kind::Data]);
+    }
+
+    #[test]
+    fn identifiers_and_integrity_digests_are_not_random() {
+        for text in [
+            "AbstractSingletonProxyFactoryBean",
+            "ThisIsAVeryLongTypeNameUsedInTests",
+            "ReadOnlyAccessPolicyAttachmentForAuditRole",
+            "\"integrity\": \"sha512-y4jvZt97iR2PkwcRTtsYIBlBnD8RXl4pfUxIhtF+ub9xV+1Ew3ku03BdBZz1I3CmAXRS0C/1UtRz62gykIaJ2g==\"",
+        ] {
+            assert!(kinds(text).is_empty(), "{text}: {:?}", kinds(text));
+        }
+        // Random letters and mixed tokens stay secrets.
+        for text in [
+            "QmXvTzLpRwNsKdHjFgBcYtEa",
+            "Q8f2LmZ0x9R4tWvB7nC1pK6sD3hJ5gYa",
+        ] {
+            assert!(
+                kinds(text).iter().any(|(k, _)| *k == Kind::Secret),
+                "{text}"
+            );
+        }
     }
 
     #[test]
