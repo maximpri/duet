@@ -2,6 +2,8 @@
 //! Handle-relative workspace I/O, atomic durable writes, locks and the .duet path registry.
 
 pub mod error;
+pub mod fault;
+pub mod host;
 pub mod lock;
 pub mod ops;
 pub mod path;

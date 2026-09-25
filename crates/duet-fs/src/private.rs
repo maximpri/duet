@@ -3,7 +3,6 @@
 
 use crate::error::FsError;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
@@ -27,7 +26,9 @@ pub fn ensure_private_dir(dir: &Path) -> Result<(), FsError> {
         .map_err(|e| FsError::io("create directory", dir, e))
 }
 
-/// Appends one line (a trailing newline is added) and syncs the data.
+/// Appends one line (a trailing newline is added) and syncs the data. All or
+/// nothing: when the write or the sync fails (a full disk), the file is cut
+/// back to its previous length, so a retry never follows a torn line.
 pub fn append_line(path: &Path, line: &str) -> Result<(), FsError> {
     let mut f = OpenOptions::new()
         .create(true)
@@ -36,17 +37,27 @@ pub fn append_line(path: &Path, line: &str) -> Result<(), FsError> {
         .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
         .open(path)
         .map_err(|e| FsError::io("open for append", path, e))?;
+    let start = f
+        .metadata()
+        .map_err(|e| FsError::io("inspect", path, e))?
+        .len();
     let mut buf = line.as_bytes().to_vec();
     buf.push(b'\n');
-    f.write_all(&buf)
-        .map_err(|e| FsError::io("append", path, e))?;
-    f.sync_data().map_err(|e| FsError::io("sync", path, e))
+    let written = crate::fault::write_all(&mut f, "append", path, &buf)
+        .map_err(|e| FsError::io("append", path, e))
+        .and_then(|()| f.sync_data().map_err(|e| FsError::io("sync", path, e)));
+    if written.is_err() {
+        // Shrinking frees space, so this works on a full disk.
+        let _ = f.set_len(start).and_then(|()| f.sync_data());
+    }
+    written
 }
 
-/// Writes a whole private file atomically (temp + rename).
+/// Writes a whole private file atomically (temp + rename). A failed attempt
+/// leaves the target as it was and removes its temporary file.
 pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
     let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
-    {
+    let written = (|| {
         let mut f = OpenOptions::new()
             .create_new(true)
             .write(true)
@@ -54,11 +65,16 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
             .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
             .open(&tmp)
             .map_err(|e| FsError::io("create", &tmp, e))?;
-        f.write_all(bytes)
+        crate::fault::write_all(&mut f, "write", path, bytes)
             .map_err(|e| FsError::io("write", &tmp, e))?;
         f.sync_all().map_err(|e| FsError::io("sync", &tmp, e))?;
+        drop(f);
+        fs::rename(&tmp, path).map_err(|e| FsError::io("rename", path, e))
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
-    fs::rename(&tmp, path).map_err(|e| FsError::io("rename", path, e))
+    written
 }
 
 /// Reads a JSON-lines file, dropping a torn final line left by a crash.
@@ -88,6 +104,7 @@ pub fn read_lines_repairing(path: &Path) -> Result<Vec<String>, FsError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn private_modes_and_torn_tail_repair() {
@@ -118,5 +135,54 @@ mod tests {
                 & 0o777,
             0o600
         );
+    }
+
+    /// A writer that fills the disk half way through a line.
+    fn full_after(bytes: usize) -> crate::fault::Fault {
+        crate::fault::Fault {
+            after_bytes: bytes,
+            errno: rustix::io::Errno::NOSPC,
+        }
+    }
+
+    #[test]
+    fn a_failed_append_or_write_leaves_nothing_behind() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().canonicalize().unwrap();
+        let log = dir.join("t.jsonl");
+        append_line(&log, "{\"a\":1}").unwrap();
+        let before = fs::read(&log).unwrap();
+        let fails = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(2));
+        let left = fails.clone();
+        let _guard = crate::fault::inject(&dir, move |_, _| {
+            (left
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |n| n.checked_sub(1),
+                )
+                .is_ok())
+            .then(|| full_after(3))
+        });
+        let e = append_line(&log, "{\"a\":2}").unwrap_err();
+        assert!(e.is_host_resource(), "{e}");
+        assert_eq!(fs::read(&log).unwrap(), before, "a torn line was left");
+        let e = write_private(&dir.join("v.json"), b"{\"b\":1}").unwrap_err();
+        assert!(e.is_host_resource(), "{e}");
+        assert!(!dir.join("v.json").exists());
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "a temporary file was left: {names:?}");
+        // The same calls succeed once space is back, exactly once each.
+        append_line(&log, "{\"a\":2}").unwrap();
+        write_private(&dir.join("v.json"), b"{\"b\":1}").unwrap();
+        assert_eq!(
+            read_lines_repairing(&log).unwrap(),
+            ["{\"a\":1}", "{\"a\":2}"]
+        );
+        assert_eq!(fs::read(dir.join("v.json")).unwrap(), b"{\"b\":1}");
     }
 }

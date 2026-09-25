@@ -5,7 +5,7 @@ use crate::error::FsError;
 use crate::pinned::PinnedParent;
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::Path;
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -110,7 +110,7 @@ pub fn atomic_write(
     let temp = OsString::from(format!(".duet-tmp-{}-{n}", std::process::id()));
     let result = (|| {
         let mut f = pinned.create_temp(&temp, mode)?;
-        f.write_all(bytes)
+        crate::fault::write_all(&mut f, "atomic write", pinned.path(), bytes)
             .map_err(|e| FsError::io("write", pinned.path(), e))?;
         f.sync_all()
             .map_err(|e| FsError::io("sync", pinned.path(), e))?;
