@@ -31,13 +31,30 @@ impl Received {
             .clone()
     }
 
-    /// The user prompt of request `i`.
+    /// The user prompt of request `i` (the text parts of a prompt with an image).
     pub fn prompt(&self, i: usize) -> String {
-        self.bodies()
-            .get(i)
-            .and_then(|b| b["messages"].as_array()?.last()?["content"].as_str())
-            .unwrap_or_default()
-            .to_owned()
+        self.bodies().get(i).map(last_text).unwrap_or_default()
+    }
+}
+
+/// The text of the last message of a Chat Completions body: its content, or
+/// the text parts of a content array (a prompt with an image).
+fn last_text(body: &Value) -> String {
+    let Some(content) = body["messages"]
+        .as_array()
+        .and_then(|m| m.last())
+        .map(|m| &m["content"])
+    else {
+        return String::new();
+    };
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(parts) => parts
+            .iter()
+            .filter_map(|p| p["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
     }
 }
 
@@ -62,11 +79,7 @@ impl Transport for Script {
         body: Vec<u8>,
     ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
         let parsed: Option<Value> = serde_json::from_slice(&body).ok();
-        let prompt = parsed
-            .as_ref()
-            .and_then(|b| b["messages"].as_array()?.last()?["content"].as_str())
-            .unwrap_or_default()
-            .to_owned();
+        let prompt = parsed.as_ref().map(last_text).unwrap_or_default();
         if let Some(v) = parsed {
             self.received
                 .0

@@ -443,7 +443,14 @@ async fn password_in_a_message(name: &str, options: Options) -> Fixture {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced() {
-    let f = password_in_a_message("password-tracked", Options { env_ignored: false }).await;
+    let f = password_in_a_message(
+        "password-tracked",
+        Options {
+            env_ignored: false,
+            ..Options::default()
+        },
+    )
+    .await;
     f.assert_no_leak(&f.canaries([]));
 }
 
@@ -452,5 +459,122 @@ async fn a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced() {
             case) is not in the vault and a value from it that no detector recognizes passes"]
 async fn a_value_from_an_ignored_env_file_typed_by_the_operator_is_replaced() {
     let f = password_in_a_message("password-ignored", Options::default()).await;
+    f.assert_no_leak(&f.canaries([]));
+}
+
+// --- Images -----------------------------------------------------------------
+// Detectors cannot read an image. The workspace holds screenshots of the
+// customer table (on a public path and on a sensitive one) and the local
+// model reads images; every other image setting is shipped
+// (`images.to_frontier = "never"`, `frontier.vision` off).
+
+fn images() -> Options {
+    Options {
+        images: true,
+        ..Options::default()
+    }
+}
+
+/// No image data in any request.
+fn no_image_sent(f: &Fixture) {
+    for body in f.bodies() {
+        let text = String::from_utf8_lossy(&body);
+        assert!(
+            !text.contains("data:image/"),
+            "an image reached the frontier"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn image_a_screenshot_of_customer_data_reaches_the_frontier_only_as_a_cleaned_description() {
+    for (i, local) in LOCALS.into_iter().enumerate() {
+        let f = Fixture::with(
+            &format!("image-{i}"),
+            "The export screen looks wrong; compare it with the scanned form.",
+            local,
+            images(),
+        );
+        f.script(vec![
+            Step::Call("read_file", json!({"path": "docs/export-screen.png"})),
+            Step::ask_latest("Which name, email and card number does the first row show?"),
+            Step::Call("read_file", json!({"path": "data/scan.png"})),
+            Step::ask_latest("Transcribe the scan exactly."),
+            Step::Call(
+                "finish",
+                json!({"summary": "Compared the screen with the scan."}),
+            ),
+        ]);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        f.assert_no_leak(&f.canaries([]));
+        no_image_sent(&f);
+        // The local model saw each image for its description and the question.
+        let shown = f
+            .local
+            .bodies()
+            .iter()
+            .filter(|b| b.to_string().contains("data:image/png;base64,"))
+            .count();
+        assert_eq!(shown, 4, "{local:?}");
+        let results = f.results_of("read_file");
+        assert!(
+            results.iter().all(|r| r.contains("ask_local(handle=")),
+            "{results:?}"
+        );
+        // The careless stand-in transcribed the rows; what arrived are placeholders.
+        if matches!(local, Local::Careless(_)) {
+            assert!(results.iter().all(|r| r.contains('⟨')), "{results:?}");
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn image_the_operator_attaches_from_a_sensitive_path_is_described_never_sent() {
+    let f = Fixture::with(
+        "image-attached",
+        "What does this scan show? Make the import accept it.",
+        Local::Careless(Echo::HANDLED),
+        images(),
+    );
+    f.script(vec![Step::Call(
+        "finish",
+        json!({"summary": "The import now accepts the scanned layout."}),
+    )]);
+    let mut s = f.session();
+    // Marked public, a sensitive-path image is still refused.
+    let refused = s.attach(f.ws.join("data/scan.png"), true).unwrap_err();
+    assert!(refused.contains("sensitive path"), "{refused}");
+    s.attach(f.ws.join("data/scan.png"), false).unwrap();
+    assert_eq!(s.turn(&f.cfg.objective).await.state(), "completed");
+    let _ = s.end(true);
+    f.assert_no_leak(&f.canaries([]));
+    no_image_sent(&f);
+    let first = f.bodies()[0].clone();
+    assert!(
+        String::from_utf8_lossy(&first).contains("[image attached by the operator]"),
+        "the description is in the message"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: text in an image that is in no indexed file and that no detector recognizes (a \
+            password from a gitignored .env in a screenshot of a terminal) passes when the local \
+            model copies it into its description"]
+async fn image_a_screenshot_of_an_unindexed_password_is_described_without_it() {
+    let f = Fixture::with(
+        "image-password",
+        "The deploy script prints something odd; see the screenshot.",
+        Local::Careless(Echo::HANDLED),
+        images(),
+    );
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "docs/terminal.png"})),
+        Step::Call("finish", json!({"summary": "done"})),
+    ]);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    no_image_sent(&f);
     f.assert_no_leak(&f.canaries([]));
 }

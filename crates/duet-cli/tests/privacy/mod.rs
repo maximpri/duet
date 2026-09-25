@@ -219,12 +219,37 @@ impl Transport for Frontier {
 pub struct Options {
     /// `.env` is listed in `.gitignore`, as in most repositories.
     pub env_ignored: bool,
+    /// The workspace holds screenshots ([`SCREENSHOTS`]) and the local model
+    /// reads images (`local.vision`); every other image setting is shipped.
+    pub images: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Self { env_ignored: true }
+        Self {
+            env_ignored: true,
+            images: false,
+        }
     }
+}
+
+/// Screenshots in an [`Options::images`] workspace: what each shows, which
+/// the stand-ins "read" (they cannot see pixels). A screenshot of the customer
+/// table on a public path and on a sensitive one, and a terminal showing the
+/// database password from the gitignored `.env`.
+pub const SCREENSHOTS: [(&str, Shows); 3] = [
+    ("docs/export-screen.png", Shows::Customers),
+    ("data/scan.png", Shows::Customers),
+    ("docs/terminal.png", Shows::Password),
+];
+
+/// What a screenshot shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shows {
+    /// The rows of `data/customers.csv`.
+    Customers,
+    /// A terminal line with the database password.
+    Password,
 }
 
 /// A hybrid run (or session) in a fresh workspace.
@@ -328,6 +353,16 @@ impl Fixture {
         if options.env_ignored {
             std::fs::write(ws.join(".gitignore"), ".env\n").unwrap();
         }
+        if options.images {
+            std::fs::create_dir_all(ws.join("docs")).unwrap();
+            for (i, (path, _)) in SCREENSHOTS.iter().enumerate() {
+                std::fs::write(
+                    ws.join(path),
+                    duet_provider::image::pattern_png(120, 80, i as u32 + 7),
+                )
+                .unwrap();
+            }
+        }
         git(&ws, &["init", "-q"]);
         git(&ws, &["add", "-A"]);
         git(&ws, &["commit", "-qm", "start"]);
@@ -341,12 +376,9 @@ impl Fixture {
         duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp")).unwrap();
         let (reader, received) =
             duet_boundary::testing::responsive_local(move |prompt| respond(local, prompt));
-        let engine = Engine::open(
-            &run_dir,
-            shipped_policy(&root.join("owner/config.toml")),
-            Some(reader),
-        )
-        .unwrap();
+        let mut policy = shipped_policy(&root.join("owner/config.toml"));
+        policy.local_vision = options.images;
+        let engine = Engine::open(&run_dir, policy, Some(reader)).unwrap();
         engine.prime(&ws, &git.list_files(&ws).unwrap(), objective);
 
         let frontier = Frontier::default();
@@ -745,8 +777,56 @@ fn base64(bytes: &[u8]) -> String {
     s
 }
 
+/// What a stand-in answers about a screenshot (see [`SCREENSHOTS`]): the
+/// cooperative one describes its layout; a careless one transcribes the text
+/// it shows, as a vision model reading a screenshot would.
+fn respond_image(local: Local, prompt: &str) -> String {
+    let question = between(prompt, "<question>", "</question>");
+    let shows = SCREENSHOTS
+        .iter()
+        .find(|(path, _)| prompt.contains(&format!("image {path}`")))
+        .map_or(Shows::Customers, |(_, s)| *s);
+    let text = match (local, shows) {
+        (Local::Cooperative, Shows::Customers) => {
+            "A screenshot of a table with a header row and three rows of five columns (id, name, \
+date of birth, email, card number); the values are withheld."
+                .to_owned()
+        }
+        (Local::Cooperative, Shows::Password) => {
+            "A terminal window with one environment variable being printed; its value is withheld."
+                .to_owned()
+        }
+        (Local::Careless(_), Shows::Customers) => {
+            let rows: Vec<String> = CUSTOMERS
+                .iter()
+                .map(|c| {
+                    format!(
+                        "{} ({}, born {}) pays with {}",
+                        c.name, c.email, c.born, c.card
+                    )
+                })
+                .collect();
+            format!(
+                "The screenshot shows the customer table: {}.",
+                rows.join("; ")
+            )
+        }
+        (Local::Careless(_), Shows::Password) => {
+            format!("A terminal: the database password printed there is {DB_PASSWORD}.")
+        }
+    };
+    match question {
+        None => json!({"summary": text, "facts": []}),
+        Some(_) => json!({"answer": text, "evidence_lines": [], "unanswerable": false}),
+    }
+    .to_string()
+}
+
 /// What a stand-in answers to one local prompt (JSON in the shared schema).
 fn respond(local: Local, prompt: &str) -> String {
+    if prompt.contains("The image above is `") {
+        return respond_image(local, prompt);
+    }
     let lines = content_lines(prompt);
     let question = between(prompt, "<question>", "</question>");
     // The line a question names, else the one with the most digits.
