@@ -37,6 +37,8 @@ pub struct Ctx<'a> {
     pub interrupted: Option<&'a AtomicBool>,
     /// Host-side web access (`web_fetch`, `web_search`); `None` when off.
     pub web: Option<&'a duet_web::Web>,
+    /// The run's git tools (`None`: not a git repository, none offered).
+    pub git_tools: Option<&'a crate::git_tools::GitTools>,
 }
 
 impl Ctx<'_> {
@@ -174,6 +176,7 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
                 None => Err(format!("unknown tool `{name}`")),
             }
         }
+        git if crate::git_tools::NAMES.contains(&git) => crate::git_tools::dispatch(ctx, git, args),
         other => match ctx.presenter.call_tool(other, args) {
             Some(r) => r,
             None => Err(format!("unknown tool `{other}`")),
@@ -313,9 +316,11 @@ fn diff(ctx: &Ctx<'_>) -> Result<String, String> {
         .into_iter()
         .filter(|f| ctx.presenter.path_visible(Path::new(f)))
         .collect();
+    // Against the run's base: its own commits (git_commit) stay in the diff.
+    let base = crate::git_tools::diff_base(ctx);
     let mut text = ctx
         .git
-        .diff_paths(ctx.workspace, &files)
+        .diff_paths_from(ctx.workspace, &base, &files)
         .map_err(|e| e.to_string())?;
     let untracked = ctx
         .git
@@ -602,8 +607,20 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
             exit_code: o.exit_code,
         }
     };
-    Ok(ctx.presenter.present(&source, &render_output(&o)))
+    let mut shown = ctx.presenter.present(&source, &render_output(&o));
+    // A command that tried to use `.git` is pointed at the git tools.
+    if ctx.git_tools.is_some()
+        && GIT_WORD.is_match(command)
+        && (o.shows_denial() || String::from_utf8_lossy(&o.stderr).contains("not a git repository"))
+    {
+        shown.push('\n');
+        shown.push_str(crate::git_tools::COMMAND_HINT);
+    }
+    Ok(shown)
 }
+
+static GIT_WORD: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"(^|[\s;&|(`])git(\s|$)").expect("static regex"));
 
 /// Directories whose files are build output or dependencies, not data.
 const SNAPSHOT_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
@@ -801,6 +818,7 @@ mod sensitive_command_tests {
             audit: None,
             interrupted: None,
             web: None,
+            git_tools: None,
         };
         let out = call(
             &mut ctx,
@@ -856,6 +874,7 @@ mod sensitive_command_tests {
             audit: Some(&audit),
             interrupted: None,
             web: None,
+            git_tools: None,
         };
 
         // Any encoding of the data is out of reach of an ordinary command.

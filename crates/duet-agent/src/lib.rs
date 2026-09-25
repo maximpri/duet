@@ -3,6 +3,7 @@
 
 pub mod context;
 pub mod disclosure;
+pub mod git_tools;
 pub mod host;
 pub mod journal;
 pub mod ledger;

@@ -162,8 +162,10 @@ async fn a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld(
         oversight: Oversight {
             mode: ApproveMode::Risky,
             approver: Some(deny.clone()),
+            ..Oversight::default()
         },
         web: None,
+        git_author: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

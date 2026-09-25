@@ -623,6 +623,7 @@ fn prepare(
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
         web: web::access(cfg)?,
+        git_author: approve::git_author(cfg)?,
     };
     Ok(Prepared {
         git,

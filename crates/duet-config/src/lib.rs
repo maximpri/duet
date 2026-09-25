@@ -523,6 +523,24 @@ pub const REGISTRY: &[Setting] = &[
         true,
         "Ask the operator at the terminal before an action: `risky` (sensitive_data commands, edit_protected, writes outside source/test files) or `all` (every command and write). Runs without a terminal then refuse to start."
     ),
+    s!(
+        "git.commit",
+        Choice(&["allow", "ask", "off"]),
+        r#""ask""#,
+        Project,
+        OnlyLaterChoice,
+        true,
+        "Whether the frontier may commit files it wrote in the run (git_commit; never sensitive or protected files, never a push). `ask`: each commit waits for the operator's approval, so git_commit is offered only when oversight.approve is risky or all. `allow`: commits without asking (audited). `off`: never offered."
+    ),
+    s!(
+        "git.author",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        false,
+        "Author and committer of git_commit commits, as `Name <email>`. Empty: user.name and user.email from the repository's git config, else from ~/.gitconfig or ~/.config/git/config (only those two keys are read); without either, git_commit refuses."
+    ),
 ];
 
 pub fn setting(key: &str) -> Option<&'static Setting> {

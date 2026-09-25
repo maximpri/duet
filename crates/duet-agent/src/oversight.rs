@@ -67,6 +67,8 @@ pub enum Risk {
     Command,
     /// Any other write (`all` only).
     Write,
+    /// A commit to the repository's history (`git.commit = "ask"`, or `all`).
+    GitCommit,
 }
 
 impl Risk {
@@ -77,6 +79,7 @@ impl Risk {
             Risk::WriteOutsideSources => "write_outside_sources",
             Risk::Command => "command",
             Risk::Write => "write",
+            Risk::GitCommit => "git_commit",
         }
     }
 
@@ -91,6 +94,7 @@ impl Risk {
             }
             Risk::Command => "runs a command",
             Risk::Write => "writes a file",
+            Risk::GitCommit => "records a commit in the repository's history",
         }
     }
 }
@@ -118,6 +122,9 @@ pub struct Oversight {
     pub mode: ApproveMode,
     /// `None` with a mode other than `off` denies every action that needs approval.
     pub approver: Option<Arc<dyn Approver>>,
+    /// `git.commit`: whether each `git_commit` needs approval (`ask`; `all`
+    /// asks for every commit whatever this says).
+    pub git_commit: crate::git_tools::CommitPolicy,
 }
 
 /// Extensions of files that are ordinary program source or tests.
@@ -251,6 +258,34 @@ pub fn classify(
     }
 }
 
+/// A `git_commit` that needs approval: always under `all`, and under any
+/// mode when `git.commit = "ask"` (without an approver it is then denied; the
+/// tool is not offered in that case). The operator sees the message and paths.
+fn commit_action(oversight: &Oversight, tool: &str, args: &Map<String, Value>) -> Option<Action> {
+    use crate::git_tools::CommitPolicy;
+    if tool != "git_commit"
+        || (oversight.mode != ApproveMode::All && oversight.git_commit != CommitPolicy::Ask)
+    {
+        return None;
+    }
+    let paths: Vec<&str> = args
+        .get("paths")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    Some(Action {
+        tool: tool.to_owned(),
+        risk: Risk::GitCommit,
+        path: Some(if paths.is_empty() {
+            "(every file this run wrote that may be committed)".to_owned()
+        } else {
+            paths.join(", ")
+        }),
+        command: args.get("message").and_then(Value::as_str).map(Into::into),
+        bytes: None,
+    })
+}
+
 /// Asks for approval when `tool` needs it. `Err` holds the tool error for a
 /// denied action; every decision is recorded in `audit`.
 pub fn review(
@@ -260,7 +295,9 @@ pub fn review(
     presenter: &dyn Presenter,
     audit: Option<&AuditHandle>,
 ) -> Result<(), String> {
-    let Some(action) = classify(oversight.mode, tool, args, presenter) else {
+    let Some(action) = classify(oversight.mode, tool, args, presenter)
+        .or_else(|| commit_action(oversight, tool, args))
+    else {
         return Ok(());
     };
     let (approved, decided_by) = match &oversight.approver {
@@ -391,6 +428,82 @@ mod tests {
         assert_eq!((a.path.as_deref(), a.bytes), (Some("Cargo.toml"), Some(3)));
     }
 
+    #[test]
+    fn commits_ask_by_git_commit_and_under_all() {
+        use crate::git_tools::{CommitPolicy, GitTools};
+        let p = PassThrough { max_bytes: 100 };
+        let commit = args(json!({"message": "Fix totals", "paths": ["src/a.rs", "src/b.rs"]}));
+        let yes: Arc<dyn Approver> = Arc::new(Scripted {
+            answers: Mutex::new(vec![true; 8]),
+            seen: Mutex::default(),
+        });
+        let with = |mode, git_commit, approver: Option<Arc<dyn Approver>>| Oversight {
+            mode,
+            approver,
+            git_commit,
+        };
+        let asks = |o: &Oversight| commit_action(o, "git_commit", &commit).map(|a| a.risk);
+        use ApproveMode::*;
+        use CommitPolicy::{Allow, Ask};
+        assert_eq!(asks(&with(Risky, Ask, None)), Some(Risk::GitCommit));
+        assert_eq!(asks(&with(Off, Ask, None)), Some(Risk::GitCommit));
+        assert_eq!(asks(&with(Risky, Allow, None)), None);
+        assert_eq!(asks(&with(All, Allow, None)), Some(Risk::GitCommit));
+        assert_eq!(
+            commit_action(&with(All, Ask, None), "run_command", &commit),
+            None
+        );
+        let a = commit_action(&with(Risky, Ask, None), "git_commit", &commit).unwrap();
+        assert_eq!(
+            (a.path.as_deref(), a.command.as_deref()),
+            (Some("src/a.rs, src/b.rs"), Some("Fix totals"))
+        );
+        // Without an approver an `ask` commit is denied (and not offered).
+        assert!(review(&with(Off, Ask, None), "git_commit", &commit, &p, None).is_err());
+        assert!(
+            review(
+                &with(Risky, Ask, Some(yes.clone())),
+                "git_commit",
+                &commit,
+                &p,
+                None
+            )
+            .is_ok()
+        );
+        assert!(review(&with(Off, Allow, None), "git_commit", &commit, &p, None).is_ok());
+
+        // Whether git_commit is offered at all.
+        let d = tempfile::tempdir().unwrap();
+        let git = duet_git::Git::locate().unwrap();
+        let offered = |o: &Oversight| GitTools::decide(&git, d.path(), o, None).map(|g| g.commit);
+        assert_eq!(
+            offered(&with(Risky, Allow, Some(yes.clone()))),
+            None,
+            "not a repository"
+        );
+        git.run(d.path(), &["init", "-q"], &[], None).unwrap();
+        assert_eq!(offered(&with(Off, Ask, None)), Some(false));
+        assert_eq!(offered(&with(Risky, Ask, Some(yes.clone()))), Some(true));
+        assert_eq!(offered(&with(Off, Allow, None)), Some(true));
+        assert_eq!(
+            offered(&with(All, CommitPolicy::Off, Some(yes))),
+            Some(false)
+        );
+        let specs = GitTools::decide(&git, d.path(), &with(Off, Allow, None), None)
+            .unwrap()
+            .specs();
+        let names: Vec<String> = crate::tools::specs_with(specs)
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        let mut sorted = names.clone();
+        sorted.sort();
+        assert_eq!(names, sorted);
+        for n in crate::git_tools::NAMES {
+            assert!(names.iter().any(|x| x == n), "{n}");
+        }
+    }
+
     /// Answers from a script and remembers what it was shown.
     struct Scripted {
         answers: Mutex<Vec<bool>>,
@@ -417,6 +530,7 @@ mod tests {
         let o = Oversight {
             mode: ApproveMode::Risky,
             approver: Some(approver.clone()),
+            ..Oversight::default()
         };
         let secret_cmd = "python3 report.py --token s3cr3t-value";
         let a = args(json!({"command": secret_cmd, "sensitive_data": true}));
@@ -435,6 +549,7 @@ mod tests {
         let closed = Oversight {
             mode: ApproveMode::All,
             approver: None,
+            ..Oversight::default()
         };
         assert!(review(&closed, "write_file", &src, &p, Some(&audit)).is_err());
 

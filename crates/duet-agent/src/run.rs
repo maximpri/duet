@@ -93,10 +93,13 @@ pub struct RunConfig {
     pub reasoning_effort: Option<String>,
     /// Prices a response's usage in dollars.
     pub price: Box<dyn Fn(&Usage) -> f64 + Send + Sync>,
-    /// Operator approval of risky actions (`oversight.approve`).
+    /// Operator approval of risky actions (`oversight.approve`, `git.commit`).
     pub oversight: crate::oversight::Oversight,
     /// Host-side web access for the web tools; `None` when `web.enabled` is off.
     pub web: Option<Arc<duet_web::Web>>,
+    /// The operator's identity for `git_commit` (`git.author`); `None` reads
+    /// it from git configuration when a commit is made.
+    pub git_author: Option<duet_git::Identity>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -368,6 +371,8 @@ pub(crate) fn drop_unfinished_turn(items: &mut Vec<Item>) {
 pub(crate) struct Conversation {
     pub(crate) system: String,
     pub(crate) specs: Vec<ToolSpec>,
+    /// The git tools (`None`: the workspace is not a git repository).
+    pub(crate) git_tools: Option<crate::git_tools::GitTools>,
     pub(crate) items: Vec<Item>,
     /// How each tool result was shown, by call id (for the ledger).
     pub(crate) classes: HashMap<String, ViewClass>,
@@ -482,9 +487,11 @@ async fn drive(
         .workspace
         .file_name()
         .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
+    let git_tools = crate::git_tools::GitTools::for_run(git, cfg);
     let mut conv = Conversation {
         system: system_prompt(&name, &cfg.checks),
-        specs: tool_specs(cfg, presenter),
+        specs: tool_specs(cfg, presenter, git_tools.as_ref()),
+        git_tools,
         items: Vec::new(),
         classes: HashMap::new(),
         interactive: false,
@@ -550,9 +557,14 @@ async fn drive(
     }
 }
 
-/// The run's tools: built-in, the presenter's and the configured web tools.
-/// Fixed for the run (or session) and sorted, so the request prefix never changes.
-pub(crate) fn tool_specs(cfg: &RunConfig, presenter: &dyn Presenter) -> Vec<ToolSpec> {
+/// The run's tools: built-in, the presenter's, the configured web tools and
+/// the git tools. Fixed for the run (or session) and sorted, so the request
+/// prefix never changes.
+pub(crate) fn tool_specs(
+    cfg: &RunConfig,
+    presenter: &dyn Presenter,
+    git_tools: Option<&crate::git_tools::GitTools>,
+) -> Vec<ToolSpec> {
     let mut extra = presenter.extra_tools();
     extra.extend(
         cfg.web
@@ -560,6 +572,7 @@ pub(crate) fn tool_specs(cfg: &RunConfig, presenter: &dyn Presenter) -> Vec<Tool
             .map(crate::web::specs)
             .unwrap_or_default(),
     );
+    extra.extend(git_tools.map(|g| g.specs()).unwrap_or_default());
     tools::specs_with(extra)
 }
 
@@ -802,6 +815,7 @@ pub(crate) async fn work(
                 audit: Some(frontier.audit()),
                 interrupted: Some(interrupted),
                 web: cfg.web.as_deref(),
+                git_tools: conv.git_tools.as_ref(),
             };
             // Only what this call shows counts for it.
             let _ = presenter.take_view_class();

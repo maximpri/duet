@@ -230,6 +230,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: Default::default(),
         web: None,
+        git_author: None,
     };
     Fixture {
         _dir: dir,

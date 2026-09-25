@@ -108,6 +108,7 @@ async fn run(dir: &Path, presenter: &dyn Presenter, script: Vec<(&str, Value)>) 
         price: Box::new(|u| (u.input as f64 + 4.0 * u.output as f64) / 1e6),
         oversight: duet_agent::Oversight::default(),
         web: None,
+        git_author: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

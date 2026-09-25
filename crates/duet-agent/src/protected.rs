@@ -193,6 +193,7 @@ mod tests {
             audit: None,
             interrupted: None,
             web: None,
+            git_tools: None,
         };
 
         // Ordinary commands cannot read protected source; edits must go through edit_protected.

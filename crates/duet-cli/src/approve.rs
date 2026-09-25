@@ -78,6 +78,22 @@ impl Approver for Terminal {
     }
 }
 
+/// `git.commit`: whether `git_commit` is offered and asks the operator.
+fn git_commit(cfg: &Config) -> Result<duet_agent::git_tools::CommitPolicy> {
+    cfg.str("git.commit")?.parse().map_err(anyhow::Error::msg)
+}
+
+/// `git.author` (`Name <email>`), when set.
+pub fn git_author(cfg: &Config) -> Result<Option<duet_git::Identity>> {
+    let text = cfg.str("git.author")?;
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    duet_git::Identity::parse(&text)
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("git.author must look like `Name <email>`, not {text:?}"))
+}
+
 fn mode(cfg: &Config) -> Result<ApproveMode> {
     cfg.str("oversight.approve")?
         .parse()
@@ -118,8 +134,12 @@ pub fn session_oversight(
     ask: impl FnOnce(ApproveMode) -> Arc<dyn Approver>,
 ) -> Result<Oversight> {
     let mode = mode(cfg)?;
+    let git_commit = git_commit(cfg)?;
     if mode == ApproveMode::Off {
-        return Ok(Oversight::default());
+        return Ok(Oversight {
+            git_commit,
+            ..Oversight::default()
+        });
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
@@ -136,6 +156,7 @@ terminal, or turn approval off in the owner config: duet config set oversight.ap
     Ok(Oversight {
         mode,
         approver: Some(ask(mode)),
+        git_commit,
     })
 }
 
@@ -148,8 +169,12 @@ pub fn require_terminal(cfg: &Config) -> Result<()> {
 /// approval is on and nobody can be asked.
 pub fn oversight(cfg: &Config) -> Result<Oversight> {
     let mode = mode(cfg)?;
+    let git_commit = git_commit(cfg)?;
     let Some(tty) = open_terminal(mode)? else {
-        return Ok(Oversight::default());
+        return Ok(Oversight {
+            git_commit,
+            ..Oversight::default()
+        });
     };
     eprintln!(
         "operator approval on ({}): risky actions wait for y/N on this terminal",
@@ -161,6 +186,7 @@ pub fn oversight(cfg: &Config) -> Result<Oversight> {
             mode,
             tty: Mutex::new(tty),
         })),
+        git_commit,
     })
 }
 

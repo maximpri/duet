@@ -159,7 +159,8 @@ impl Disclosure {
                     | AuditEvent::EndpointTrust { .. }
                     | AuditEvent::ConfigChange { .. }
                     | AuditEvent::WebRequest { .. }
-                    | AuditEvent::OperatorMessage { .. } => {}
+                    | AuditEvent::OperatorMessage { .. }
+                    | AuditEvent::GitCommit { .. } => {}
                 },
             }
         }

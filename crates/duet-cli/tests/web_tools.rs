@@ -167,6 +167,7 @@ fn config(ws: &Path, run_dir: &Path, web: Option<Arc<Web>>) -> RunConfig {
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: duet_agent::Oversight::default(),
         web,
+        git_author: None,
     }
 }
 

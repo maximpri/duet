@@ -302,16 +302,23 @@ on earlier results."
         .into()
 }
 
-fn undone_note(from: u64, paths: &[PathBuf]) -> String {
+fn undone_note(from: u64, paths: &[PathBuf], run_dir: &Path) -> String {
     let list = paths
         .iter()
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    format!(
+    let mut note = format!(
         "[duet] The operator reverted the file changes you made since turn {from}: {list} are back \
 to their earlier content (created files were removed). Re-read files before editing them."
-    )
+    );
+    if crate::git_tools::has_committed(run_dir) {
+        note.push_str(
+            " Commits are never undone: a reverted file you committed now differs from the commit \
+(git_status shows it).",
+        );
+    }
+    note
 }
 
 /// A live session. The run-level settings in `cfg` apply to every turn.
@@ -353,7 +360,8 @@ impl<'a> Session<'a> {
             .workspace
             .file_name()
             .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
-        let mut specs = crate::run::tool_specs(cfg, presenter);
+        let git_tools = crate::git_tools::GitTools::for_run(git, cfg);
+        let mut specs = crate::run::tool_specs(cfg, presenter, git_tools.as_ref());
         specs.extend(missing_from(&specs));
         specs.sort_by(|a, b| a.name.cmp(&b.name));
         let steering = Arc::new(Steering::default());
@@ -367,6 +375,7 @@ impl<'a> Session<'a> {
             conv: Conversation {
                 system: session_prompt(&name, &cfg.checks),
                 specs,
+                git_tools,
                 items: Vec::new(),
                 classes: HashMap::new(),
                 interactive: true,
@@ -427,7 +436,9 @@ impl<'a> Session<'a> {
                 Entry::Undone { exchange, paths } => {
                     session.marks.retain(|(x, _)| x < exchange);
                     if !paths.is_empty() {
-                        session.notes.push(undone_note(*exchange, paths));
+                        session
+                            .notes
+                            .push(undone_note(*exchange, paths, &cfg.run_dir));
                     }
                 }
                 _ => {}
@@ -694,7 +705,7 @@ impl<'a> Session<'a> {
             .map_err(|e| e.to_string())?;
         self.marks.pop();
         if !paths.is_empty() {
-            self.notes.push(undone_note(exchange, &paths));
+            self.notes.push(undone_note(exchange, &paths, run_dir));
         }
         Ok((exchange, paths))
     }
