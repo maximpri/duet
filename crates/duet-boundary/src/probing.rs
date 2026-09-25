@@ -640,6 +640,16 @@ mod tests {
     }
 
     #[test]
+    fn answers_about_unknown_content_withhold_every_piece() {
+        let (out, n) = withhold_pieces("The first digit is 5, then 'x', of 16 digits on line 3.");
+        assert_eq!(n, 2);
+        assert_eq!(
+            out,
+            format!("The first digit is {W}, then '{W}', of 16 digits on line 3.")
+        );
+    }
+
+    #[test]
     fn pieces_of_one_value_add_up_to_a_budget_across_answers() {
         let mut t = Tally::default();
         let answer = Scope::Answer { narrow: false };
