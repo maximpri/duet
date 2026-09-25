@@ -1374,6 +1374,23 @@ fn n_starts_a_session_and_its_input_box_sends_steers_and_stops() {
     typed(&mut app, "/status");
     key(&mut app, KeyCode::Enter);
     assert!(app.status().contains("1 turn(s)"), "{}", app.status());
+    // An image the rules refuse (no vision model configured) is refused
+    // here, with the reason, and never sent to the session.
+    std::fs::write(
+        app.paths.workspace.join("shot.png"),
+        duet_boundary::model::solid_png(8, 8, [1, 2, 3]),
+    )
+    .unwrap();
+    typed(&mut app, "/image shot.png");
+    key(&mut app, KeyCode::Enter);
+    assert!(
+        app.status().contains("local.vision is false"),
+        "{}",
+        app.status()
+    );
+    typed(&mut app, "/image --public missing.png");
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status().contains("cannot read"), "{}", app.status());
     // Ctrl-C while typing stops the turn now (SIGINT), not the TUI.
     app.key(KeyCode::Char('c'), KeyModifiers::CONTROL);
     assert!(!app.quit);
@@ -1385,6 +1402,7 @@ fn n_starts_a_session_and_its_input_box_sends_steers_and_stops() {
     wait_until("the stop", || received(d.path()).contains("/stop"));
     wait_until("the interrupt", || received(d.path()).contains("SIGINT"));
     assert!(!received(d.path()).contains("/status"));
+    assert!(!received(d.path()).contains("/image"));
     // Closing the input ends the stand-in, as quitting the TUI would.
     app.launched.as_mut().unwrap().close_input();
     wait_until("the session to end", || {

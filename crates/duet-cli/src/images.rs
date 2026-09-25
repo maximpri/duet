@@ -6,8 +6,6 @@
 use crate::{Mode, policy};
 use anyhow::{Result, bail};
 use duet_agent::images::{Attachment, ImageConfig};
-use duet_boundary::images::{Facts, Route, route};
-use duet_boundary::model::{MAX_INPUT_BYTES, prepare_image};
 use duet_config::Config;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -63,8 +61,7 @@ pub(crate) fn config(cfg: &Config, mode: Mode, attached: &[AttachedImage]) -> Re
 }
 
 /// Refuses, before anything starts, an attachment that is not a usable image
-/// or that the rules would refuse (the same rule the run applies; files a
-/// run marks sensitive later are checked again when it attaches them).
+/// or that the rules would refuse (see [`duet_agent::images::precheck`]).
 pub(crate) fn precheck(
     ws: &Path,
     cfg: &Config,
@@ -75,34 +72,15 @@ pub(crate) fn precheck(
     let frontier_vision = driver_vision(cfg, mode)?;
     let max_side = cfg.int("images.max_side")? as u32;
     for a in attached {
-        let shown = a.path.display();
-        let Ok(path) = a.path.canonicalize() else {
-            bail!("--image {shown}: no such file");
-        };
-        let size = std::fs::metadata(&path)?.len();
-        if size > MAX_INPUT_BYTES {
-            bail!(
-                "--image {shown}: larger than {} MB",
-                MAX_INPUT_BYTES / (1024 * 1024)
-            );
-        }
-        if let Err(e) = prepare_image(&std::fs::read(&path)?, max_side) {
-            bail!("--image {shown} cannot be read as an image: {e}");
-        }
-        let rel = path.strip_prefix(ws).ok();
-        let decided = route(&Facts {
-            boundary: mode == Mode::Hybrid,
+        if let Err(e) = duet_agent::images::precheck(
+            ws,
+            &policy,
+            mode == Mode::Hybrid,
             frontier_vision,
-            local_vision: policy.local_vision,
-            to_frontier: policy.images_to_frontier,
-            attached: true,
-            operator_public: a.public,
-            in_workspace: rel.is_some(),
-            sensitive: rel.is_some_and(|r| policy.is_sensitive_path(r)),
-            protected: rel.is_some_and(|r| policy.ip_level(r).is_some()),
-        });
-        if let Route::Refuse { message, .. } = decided {
-            bail!("--image {shown} cannot be attached: {message}");
+            max_side,
+            &a.attachment(),
+        ) {
+            bail!("{e}");
         }
     }
     Ok(())

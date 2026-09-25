@@ -17,10 +17,11 @@
 
 use crate::run::RunConfig;
 use duet_boundary::audit::{AuditEvent, AuditHandle};
-use duet_boundary::images::{ImageRequest, Origin, Route};
+use duet_boundary::images::{Facts, ImageRequest, Origin, Route};
 use duet_boundary::model::{
     DEFAULT_MAX_SIDE, Image, Item, MAX_INPUT_BYTES, has_image_extension, prepare_image,
 };
+use duet_boundary::policy::Policy;
 use duet_boundary::view::{Presenter, Source};
 use duet_fs::FsError;
 use serde_json::{Map, Value};
@@ -231,8 +232,59 @@ pub fn check_attachment(
     let (origin, bytes) = load_attachment(cfg, presenter, attachment)?;
     let image = prepare_image(&bytes, cfg.images.max_side)
         .map_err(|e| format!("{} cannot be read as an image: {e}", origin.shown()))?;
-    let shown = origin.shown();
-    match presenter.route_image(&request(cfg, &origin, &image, true, attachment.public)) {
+    let route = presenter.route_image(&request(cfg, &origin, &image, true, attachment.public));
+    said(&origin.shown(), &image, route)
+}
+
+/// Checks an attachment before a run or session exists (`duet run
+/// --image`, `/image` before the first message, the TUI): a usable image,
+/// and where the rules would send it, from the policy alone. The engine
+/// applies the same rule again when the image is attached (then a file a
+/// `sensitive_data` command wrote counts as sensitive too).
+pub fn precheck(
+    workspace: &Path,
+    policy: &Policy,
+    boundary: bool,
+    frontier_vision: bool,
+    max_side: u32,
+    attachment: &Attachment,
+) -> Result<String, String> {
+    let shown = attachment.path.display();
+    let path = attachment
+        .path
+        .canonicalize()
+        .map_err(|e| format!("cannot read {shown}: {e}"))?;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
+    if !meta.is_file() || meta.len() > MAX_INPUT_BYTES {
+        return Err(format!(
+            "{shown} is not a file of at most {} MB",
+            MAX_INPUT_BYTES / (1024 * 1024)
+        ));
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
+    let image = prepare_image(&bytes, max_side)
+        .map_err(|e| format!("{shown} cannot be read as an image: {e}"))?;
+    let workspace = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let rel = path.strip_prefix(&workspace).ok();
+    let decided = duet_boundary::images::route(&Facts {
+        boundary,
+        frontier_vision,
+        local_vision: policy.local_vision,
+        to_frontier: policy.images_to_frontier,
+        attached: true,
+        operator_public: attachment.public,
+        in_workspace: rel.is_some(),
+        sensitive: rel.is_some_and(|r| policy.is_sensitive_path(r)),
+        protected: rel.is_some_and(|r| policy.ip_level(r).is_some()),
+    });
+    said(&shown.to_string(), &image, decided)
+}
+
+/// What the operator is told about an attachment's route.
+fn said(shown: &str, image: &Image, route: Route) -> Result<String, String> {
+    match route {
         Route::Frontier { .. } => Ok(format!(
             "{shown} ({}): the frontier will see the image with your next message",
             image.describe()

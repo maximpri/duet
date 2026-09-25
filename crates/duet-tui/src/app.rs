@@ -436,6 +436,10 @@ impl App {
             _ => {}
         }
         let live = self.launched_session;
+        if live && let Some(refused) = self.image_refusal(text) {
+            self.status = refused;
+            return;
+        }
         let Some(l) = self.launched.as_mut().filter(|_| live) else {
             self.status = "the session is not running here; r resumes it".into();
             return;
@@ -481,8 +485,61 @@ impl App {
             custom_patterns: list("sensitivity.custom_patterns"),
             interface_only: list("ip.interface_only"),
             sealed: list("ip.sealed"),
+            local_vision: self.cfg.bool("local.vision").unwrap_or(false),
+            images_to_frontier: self
+                .cfg
+                .str("images.to_frontier")
+                .ok()
+                .and_then(|v| duet_boundary::images::ToFrontier::parse(&v))
+                .unwrap_or_default(),
             ..Policy::default()
         }
+    }
+
+    /// `/image [--public] <path>` for the live session: checked here against
+    /// the rules (the session checks it again), so a refusal shows at once;
+    /// `None` when it may be sent.
+    fn image_refusal(&self, text: &str) -> Option<String> {
+        let rest = text.strip_prefix("/image")?;
+        if !(rest.is_empty() || rest.starts_with(char::is_whitespace)) {
+            return None;
+        }
+        let rest = rest.trim();
+        let (public, path) = match rest.strip_prefix("--public") {
+            Some(p) if p.is_empty() || p.starts_with(char::is_whitespace) => (true, p.trim()),
+            _ => (false, rest),
+        };
+        if path.is_empty() {
+            return Some("usage: /image [--public] <path>".into());
+        }
+        let ws = &self.paths.workspace;
+        // The session's mode, from its run.json (hybrid until it is known).
+        let mode = self
+            .launched
+            .as_ref()
+            .and_then(|l| l.run_id.clone())
+            .and_then(|id| std::fs::read(ws.join(".duet/runs").join(id).join("run.json")).ok())
+            .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+            .and_then(|v| v["mode"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| "hybrid".into());
+        let vision_key = if mode == "local-only" {
+            "local.vision"
+        } else {
+            "frontier.vision"
+        };
+        let attachment = duet_agent::images::Attachment {
+            path: ws.join(path),
+            public,
+        };
+        duet_agent::images::precheck(
+            ws,
+            &self.policy(),
+            mode == "hybrid",
+            self.cfg.bool(vision_key).unwrap_or(false),
+            self.cfg.int("images.max_side").unwrap_or(1568) as u32,
+            &attachment,
+        )
+        .err()
     }
 
     pub(crate) fn selected_setting(&self) -> Option<&'static Setting> {
