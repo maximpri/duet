@@ -1,0 +1,590 @@
+[
+ {
+  "order": "7306743338619943",
+  "captured_ms": 1788280107382,
+  "captured_at": "2026-09-01T16:28:27.382Z",
+  "amount": 157.6,
+  "status": "settled"
+ },
+ {
+  "order": "5864320965969843",
+  "captured_ms": 1788298960869,
+  "captured_at": "2026-09-01T21:42:40.869Z",
+  "amount": 934.6,
+  "status": "settled"
+ },
+ {
+  "order": "7217648205257771",
+  "captured_ms": 1788349630734,
+  "captured_at": "2026-09-02T11:47:10.734Z",
+  "amount": 662.6,
+  "status": "settled"
+ },
+ {
+  "order": "8500288302826284",
+  "captured_ms": 1788353966601,
+  "captured_at": "2026-09-02T12:59:26.601Z",
+  "amount": 25,
+  "status": "refunded"
+ },
+ {
+  "order": "4050119870919455",
+  "captured_ms": 1788360029600,
+  "captured_at": "2026-09-02T14:40:29.600Z",
+  "amount": 715.05,
+  "status": "refunded"
+ },
+ {
+  "order": "8263962583366519",
+  "captured_ms": 1788462909566,
+  "captured_at": "2026-09-03T19:15:09.566Z",
+  "amount": 403.75,
+  "status": "settled"
+ },
+ {
+  "order": "5759164432793123",
+  "captured_ms": 1788513095635,
+  "captured_at": "2026-09-04T09:11:35.635Z",
+  "amount": 176.85,
+  "status": "settled"
+ },
+ {
+  "order": "8321577324774332",
+  "captured_ms": 1788542180800,
+  "captured_at": "2026-09-04T17:16:20.800Z",
+  "amount": 338.5,
+  "status": "pending"
+ },
+ {
+  "order": "4579502382054164",
+  "captured_ms": 1788768462464,
+  "captured_at": "2026-09-07T08:07:42.464Z",
+  "amount": 12.5,
+  "status": "settled"
+ },
+ {
+  "order": "5749466125258198",
+  "captured_ms": 1788796499287,
+  "captured_at": "2026-09-07T15:54:59.287Z",
+  "amount": 45.3,
+  "status": "pending"
+ },
+ {
+  "order": "4242394873269481",
+  "captured_ms": 1788800932900,
+  "captured_at": "2026-09-07T17:08:52.900Z",
+  "amount": 32.7,
+  "status": "settled"
+ },
+ {
+  "order": "8144435772473645",
+  "captured_ms": 1788855419244,
+  "captured_at": "2026-09-08T08:16:59.244Z",
+  "amount": 576.85,
+  "status": "pending"
+ },
+ {
+  "order": "7474305919926297",
+  "captured_ms": 1788869279251,
+  "captured_at": "2026-09-08T12:07:59.251Z",
+  "amount": 43.05,
+  "status": "settled"
+ },
+ {
+  "order": "7480582875455084",
+  "captured_ms": 1788873099792,
+  "captured_at": "2026-09-08T13:11:39.792Z",
+  "amount": 331.45,
+  "status": "settled"
+ },
+ {
+  "order": "4368349435489127",
+  "captured_ms": 1788879994657,
+  "captured_at": "2026-09-08T15:06:34.657Z",
+  "amount": 382,
+  "status": "settled"
+ },
+ {
+  "order": "4653735451890108",
+  "captured_ms": 1788934025510,
+  "captured_at": "2026-09-09T06:07:05.510Z",
+  "amount": 165,
+  "status": "settled"
+ },
+ {
+  "order": "8802256669689228",
+  "captured_ms": 1788946859420,
+  "captured_at": "2026-09-09T09:40:59.420Z",
+  "amount": 219.8,
+  "status": "settled"
+ },
+ {
+  "order": "5729433553672012",
+  "captured_ms": 1788947545934,
+  "captured_at": "2026-09-09T09:52:25.934Z",
+  "amount": 63.55,
+  "status": "settled"
+ },
+ {
+  "order": "6197930846125146",
+  "captured_ms": 1788953181600,
+  "captured_at": "2026-09-09T11:26:21.600Z",
+  "amount": 70.05,
+  "status": "settled"
+ },
+ {
+  "order": "5244130540200723",
+  "captured_ms": 1788961649963,
+  "captured_at": "2026-09-09T13:47:29.963Z",
+  "amount": 59.7,
+  "status": "pending"
+ },
+ {
+  "order": "6754757537653562",
+  "captured_ms": 1788976558612,
+  "captured_at": "2026-09-09T17:55:58.612Z",
+  "amount": 331.95,
+  "status": "settled"
+ },
+ {
+  "order": "5794886886218738",
+  "captured_ms": 1788983952106,
+  "captured_at": "2026-09-09T19:59:12.106Z",
+  "amount": 625.9,
+  "status": "settled"
+ },
+ {
+  "order": "5819189165804291",
+  "captured_ms": 1788986794700,
+  "captured_at": "2026-09-09T20:46:34.700Z",
+  "amount": 158.1,
+  "status": "refunded"
+ },
+ {
+  "order": "4127073211571295",
+  "captured_ms": 1789045985930,
+  "captured_at": "2026-09-10T13:13:05.930Z",
+  "amount": 919.75,
+  "status": "settled"
+ },
+ {
+  "order": "4348513875932223",
+  "captured_ms": 1789070241636,
+  "captured_at": "2026-09-10T19:57:21.636Z",
+  "amount": 227.35,
+  "status": "settled"
+ },
+ {
+  "order": "6865338669786339",
+  "captured_ms": 1789075226450,
+  "captured_at": "2026-09-10T21:20:26.450Z",
+  "amount": 100.5,
+  "status": "settled"
+ },
+ {
+  "order": "5453080944335224",
+  "captured_ms": 1789202392823,
+  "captured_at": "2026-09-12T08:39:52.823Z",
+  "amount": 66.85,
+  "status": "settled"
+ },
+ {
+  "order": "5949852702545153",
+  "captured_ms": 1789232596389,
+  "captured_at": "2026-09-12T17:03:16.389Z",
+  "amount": 127.3,
+  "status": "settled"
+ },
+ {
+  "order": "5351702575928264",
+  "captured_ms": 1789280279497,
+  "captured_at": "2026-09-13T06:17:59.497Z",
+  "amount": 161.7,
+  "status": "settled"
+ },
+ {
+  "order": "5346209424834225",
+  "captured_ms": 1789284787413,
+  "captured_at": "2026-09-13T07:33:07.413Z",
+  "amount": 79.6,
+  "status": "refunded"
+ },
+ {
+  "order": "7976679904006962",
+  "captured_ms": 1789292150498,
+  "captured_at": "2026-09-13T09:35:50.498Z",
+  "amount": 387,
+  "status": "settled"
+ },
+ {
+  "order": "6429821567751511",
+  "captured_ms": 1789326176350,
+  "captured_at": "2026-09-13T19:02:56.350Z",
+  "amount": 12.8,
+  "status": "settled"
+ },
+ {
+  "order": "7691936409795506",
+  "captured_ms": 1789326382897,
+  "captured_at": "2026-09-13T19:06:22.897Z",
+  "amount": 305.65,
+  "status": "settled"
+ },
+ {
+  "order": "5384513904653662",
+  "captured_ms": 1789370793117,
+  "captured_at": "2026-09-14T07:26:33.117Z",
+  "amount": 312.25,
+  "status": "pending"
+ },
+ {
+  "order": "8145818105425182",
+  "captured_ms": 1789400344440,
+  "captured_at": "2026-09-14T15:39:04.440Z",
+  "amount": 39.8,
+  "status": "pending"
+ },
+ {
+  "order": "8355960268012348",
+  "captured_ms": 1789408506215,
+  "captured_at": "2026-09-14T17:55:06.215Z",
+  "amount": 551.15,
+  "status": "settled"
+ },
+ {
+  "order": "8002359489391155",
+  "captured_ms": 1789416346191,
+  "captured_at": "2026-09-14T20:05:46.191Z",
+  "amount": 279.25,
+  "status": "settled"
+ },
+ {
+  "order": "6576803304096555",
+  "captured_ms": 1789474350767,
+  "captured_at": "2026-09-15T12:12:30.767Z",
+  "amount": 37.5,
+  "status": "settled"
+ },
+ {
+  "order": "7155086505773386",
+  "captured_ms": 1789540226700,
+  "captured_at": "2026-09-16T06:30:26.700Z",
+  "amount": 616.75,
+  "status": "settled"
+ },
+ {
+  "order": "8202904304790946",
+  "captured_ms": 1789544309768,
+  "captured_at": "2026-09-16T07:38:29.768Z",
+  "amount": 238.9,
+  "status": "settled"
+ },
+ {
+  "order": "7232130778635725",
+  "captured_ms": 1789545917652,
+  "captured_at": "2026-09-16T08:05:17.652Z",
+  "amount": 255.95,
+  "status": "settled"
+ },
+ {
+  "order": "4779181586649751",
+  "captured_ms": 1789562094401,
+  "captured_at": "2026-09-16T12:34:54.401Z",
+  "amount": 572.4,
+  "status": "settled"
+ },
+ {
+  "order": "5450237194167453",
+  "captured_ms": 1789566807491,
+  "captured_at": "2026-09-16T13:53:27.491Z",
+  "amount": 132.9,
+  "status": "settled"
+ },
+ {
+  "order": "8380448256961782",
+  "captured_ms": 1789644659215,
+  "captured_at": "2026-09-17T11:30:59.215Z",
+  "amount": 109.4,
+  "status": "pending"
+ },
+ {
+  "order": "4064591466463117",
+  "captured_ms": 1789657702171,
+  "captured_at": "2026-09-17T15:08:22.171Z",
+  "amount": 456.35,
+  "status": "settled"
+ },
+ {
+  "order": "8494834744131566",
+  "captured_ms": 1789664635571,
+  "captured_at": "2026-09-17T17:03:55.571Z",
+  "amount": 258,
+  "status": "settled"
+ },
+ {
+  "order": "6603194862531781",
+  "captured_ms": 1789677140200,
+  "captured_at": "2026-09-17T20:32:20.200Z",
+  "amount": 524.4,
+  "status": "pending"
+ },
+ {
+  "order": "7936419866513133",
+  "captured_ms": 1789716804278,
+  "captured_at": "2026-09-18T07:33:24.278Z",
+  "amount": 328,
+  "status": "settled"
+ },
+ {
+  "order": "7172805077002791",
+  "captured_ms": 1789764179448,
+  "captured_at": "2026-09-18T20:42:59.448Z",
+  "amount": 247.35,
+  "status": "settled"
+ },
+ {
+  "order": "8935960160424241",
+  "captured_ms": 1789806455350,
+  "captured_at": "2026-09-19T08:27:35.350Z",
+  "amount": 322.25,
+  "status": "pending"
+ },
+ {
+  "order": "6357609340424702",
+  "captured_ms": 1789810755200,
+  "captured_at": "2026-09-19T09:39:15.200Z",
+  "amount": 526.65,
+  "status": "pending"
+ },
+ {
+  "order": "5916143795287597",
+  "captured_ms": 1789817657641,
+  "captured_at": "2026-09-19T11:34:17.641Z",
+  "amount": 164.85,
+  "status": "settled"
+ },
+ {
+  "order": "8082339273292946",
+  "captured_ms": 1789818294879,
+  "captured_at": "2026-09-19T11:44:54.879Z",
+  "amount": 322.25,
+  "status": "settled"
+ },
+ {
+  "order": "6809198694644251",
+  "captured_ms": 1789915761878,
+  "captured_at": "2026-09-20T14:49:21.878Z",
+  "amount": 37.5,
+  "status": "settled"
+ },
+ {
+  "order": "7433643016482175",
+  "captured_ms": 1789918899625,
+  "captured_at": "2026-09-20T15:41:39.625Z",
+  "amount": 681.55,
+  "status": "settled"
+ },
+ {
+  "order": "7184249342294058",
+  "captured_ms": 1789937375527,
+  "captured_at": "2026-09-20T20:49:35.527Z",
+  "amount": 274.75,
+  "status": "settled"
+ },
+ {
+  "order": "5074373218527774",
+  "captured_ms": 1789984670207,
+  "captured_at": "2026-09-21T09:57:50.207Z",
+  "amount": 25,
+  "status": "pending"
+ },
+ {
+  "order": "5949034176216373",
+  "captured_ms": 1790015847973,
+  "captured_at": "2026-09-21T18:37:27.973Z",
+  "amount": 62.5,
+  "status": "settled"
+ },
+ {
+  "order": "7531190471797134",
+  "captured_ms": 1790020718459,
+  "captured_at": "2026-09-21T19:58:38.459Z",
+  "amount": 501.8,
+  "status": "settled"
+ },
+ {
+  "order": "6855712034765921",
+  "captured_ms": 1790059110907,
+  "captured_at": "2026-09-22T06:38:30.907Z",
+  "amount": 426.75,
+  "status": "settled"
+ },
+ {
+  "order": "5470499436713469",
+  "captured_ms": 1790084344481,
+  "captured_at": "2026-09-22T13:39:04.481Z",
+  "amount": 89.5,
+  "status": "settled"
+ },
+ {
+  "order": "4274313497461149",
+  "captured_ms": 1790100050650,
+  "captured_at": "2026-09-22T18:00:50.650Z",
+  "amount": 90.6,
+  "status": "pending"
+ },
+ {
+  "order": "6502394396614922",
+  "captured_ms": 1790151266310,
+  "captured_at": "2026-09-23T08:14:26.310Z",
+  "amount": 45.8,
+  "status": "settled"
+ },
+ {
+  "order": "7061000919268178",
+  "captured_ms": 1790185942849,
+  "captured_at": "2026-09-23T17:52:22.849Z",
+  "amount": 323.15,
+  "status": "settled"
+ },
+ {
+  "order": "8608968655185563",
+  "captured_ms": 1790196337200,
+  "captured_at": "2026-09-23T20:45:37.200Z",
+  "amount": 177.05,
+  "status": "pending"
+ },
+ {
+  "order": "6519392136325362",
+  "captured_ms": 1790267842271,
+  "captured_at": "2026-09-24T16:37:22.271Z",
+  "amount": 445.8,
+  "status": "settled"
+ },
+ {
+  "order": "6611429903154548",
+  "captured_ms": 1790269532760,
+  "captured_at": "2026-09-24T17:05:32.760Z",
+  "amount": 329.5,
+  "status": "pending"
+ },
+ {
+  "order": "4983426920266838",
+  "captured_ms": 1790341781680,
+  "captured_at": "2026-09-25T13:09:41.680Z",
+  "amount": 188.9,
+  "status": "settled"
+ },
+ {
+  "order": "6576758129379329",
+  "captured_ms": 1790343314926,
+  "captured_at": "2026-09-25T13:35:14.926Z",
+  "amount": 580.9,
+  "status": "settled"
+ },
+ {
+  "order": "4005231925150503",
+  "captured_ms": 1790355769900,
+  "captured_at": "2026-09-25T17:02:49.900Z",
+  "amount": 79.6,
+  "status": "settled"
+ },
+ {
+  "order": "4731589427135669",
+  "captured_ms": 1790428865845,
+  "captured_at": "2026-09-26T13:21:05.845Z",
+  "amount": 262,
+  "status": "pending"
+ },
+ {
+  "order": "6922031931736915",
+  "captured_ms": 1790432528781,
+  "captured_at": "2026-09-26T14:22:08.781Z",
+  "amount": 39.9,
+  "status": "settled"
+ },
+ {
+  "order": "8001728706085459",
+  "captured_ms": 1790433116228,
+  "captured_at": "2026-09-26T14:31:56.228Z",
+  "amount": 758.15,
+  "status": "settled"
+ },
+ {
+  "order": "5227708059157611",
+  "captured_ms": 1790435014900,
+  "captured_at": "2026-09-26T15:03:34.900Z",
+  "amount": 271.9,
+  "status": "pending"
+ },
+ {
+  "order": "4962483476158954",
+  "captured_ms": 1790451109450,
+  "captured_at": "2026-09-26T19:31:49.450Z",
+  "amount": 3.2,
+  "status": "settled"
+ },
+ {
+  "order": "4089812866654758",
+  "captured_ms": 1790455859715,
+  "captured_at": "2026-09-26T20:50:59.715Z",
+  "amount": 37.25,
+  "status": "settled"
+ },
+ {
+  "order": "5659269925591171",
+  "captured_ms": 1790493239614,
+  "captured_at": "2026-09-27T07:13:59.614Z",
+  "amount": 204.85,
+  "status": "settled"
+ },
+ {
+  "order": "5159226395640743",
+  "captured_ms": 1790535454600,
+  "captured_at": "2026-09-27T18:57:34.600Z",
+  "amount": 566,
+  "status": "settled"
+ },
+ {
+  "order": "8215386148651538",
+  "captured_ms": 1790541640340,
+  "captured_at": "2026-09-27T20:40:40.340Z",
+  "amount": 527.2,
+  "status": "settled"
+ },
+ {
+  "order": "7821373680723532",
+  "captured_ms": 1790576570500,
+  "captured_at": "2026-09-28T06:22:50.500Z",
+  "amount": 62.5,
+  "status": "settled"
+ },
+ {
+  "order": "8778735886775644",
+  "captured_ms": 1790583123967,
+  "captured_at": "2026-09-28T08:12:03.967Z",
+  "amount": 39.8,
+  "status": "settled"
+ },
+ {
+  "order": "7723973273657489",
+  "captured_ms": 1790589499902,
+  "captured_at": "2026-09-28T09:58:19.902Z",
+  "amount": 348.8,
+  "status": "settled"
+ },
+ {
+  "order": "8086443288963915",
+  "captured_ms": 1790626672700,
+  "captured_at": "2026-09-28T20:17:52.700Z",
+  "amount": 10.3,
+  "status": "pending"
+ },
+ {
+  "order": "7358674316665144",
+  "captured_ms": 1790632244860,
+  "captured_at": "2026-09-28T21:50:44.860Z",
+  "amount": 579.75,
+  "status": "settled"
+ }
+]

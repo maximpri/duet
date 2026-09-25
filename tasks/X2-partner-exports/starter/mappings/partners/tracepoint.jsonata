@@ -1,0 +1,5 @@
+/* Tracepoint delivery-time analytics. Supplied by Tracepoint (partner mapping, untrusted). */
+orders.{
+  "ref": $string(order_ref),
+  "destination": shipping.address.toString()
+}

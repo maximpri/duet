@@ -1,0 +1,8 @@
+/* QuickShip pickup manifest. Supplied by QuickShip (partner mapping, untrusted). */
+orders[shipping.carrier = 'QSX'].{
+  "ref": $string(order_ref),
+  "class": $count(lines) > 2 ? "bulk" : "standard",
+  "meta": customer.constructor,
+  "proto": $lookup(shipping, "__proto__"),
+  "raw": shipping.address.__proto__
+}

@@ -1,0 +1,605 @@
+[
+ {
+  "entry_ref": "ORD-7306743338619943",
+  "customer_ref": 755365901,
+  "net": 157.6,
+  "currency": "EUR",
+  "settled_at": "2026-09-02T06:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5864320965969843",
+  "customer_ref": 785878410,
+  "net": 934.6,
+  "currency": "EUR",
+  "settled_at": "2026-09-02T00:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7217648205257771",
+  "customer_ref": 743920614,
+  "net": 662.6,
+  "currency": "EUR",
+  "settled_at": "2026-09-03T06:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8500288302826284",
+  "customer_ref": 787442964,
+  "net": 25,
+  "currency": "EUR",
+  "settled_at": "2026-09-03T02:45:00.000Z",
+  "memo": "LOYAL15",
+  "type": "credit"
+ },
+ {
+  "entry_ref": "ORD-4050119870919455",
+  "customer_ref": 739809127,
+  "net": 715.05,
+  "currency": "EUR",
+  "settled_at": "2026-09-03T06:45:00.000Z",
+  "memo": "none",
+  "type": "credit"
+ },
+ {
+  "entry_ref": "ORD-8263962583366519",
+  "customer_ref": 798326063,
+  "net": 403.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-04T03:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5759164432793123",
+  "customer_ref": 706020712,
+  "net": 176.85,
+  "currency": "EUR",
+  "settled_at": "2026-09-05T00:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4579502382054164",
+  "customer_ref": 743920614,
+  "net": 12.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-08T06:30:00.000Z",
+  "memo": "LOYAL15",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4242394873269481",
+  "customer_ref": 799950550,
+  "net": 32.7,
+  "currency": "EUR",
+  "settled_at": "2026-09-08T00:30:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7474305919926297",
+  "customer_ref": "GUEST",
+  "net": 43.05,
+  "currency": "EUR",
+  "settled_at": "2026-09-09T04:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7480582875455084",
+  "customer_ref": "GUEST",
+  "net": 331.45,
+  "currency": "EUR",
+  "settled_at": "2026-09-09T03:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4368349435489127",
+  "customer_ref": 750626008,
+  "net": 382,
+  "currency": "EUR",
+  "settled_at": "2026-09-09T05:15:00.000Z",
+  "memo": "WELCOME5",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4653735451890108",
+  "customer_ref": 708667930,
+  "net": 165,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T00:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8802256669689228",
+  "customer_ref": 722878983,
+  "net": 219.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T01:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5729433553672012",
+  "customer_ref": 705352237,
+  "net": 63.55,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T02:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6197930846125146",
+  "customer_ref": 784629213,
+  "net": 70.05,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T03:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6754757537653562",
+  "customer_ref": 708667930,
+  "net": 331.95,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T06:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5794886886218738",
+  "customer_ref": 722077033,
+  "net": 625.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T06:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5819189165804291",
+  "customer_ref": 708667930,
+  "net": 158.1,
+  "currency": "EUR",
+  "settled_at": "2026-09-10T03:15:00.000Z",
+  "memo": "none",
+  "type": "credit"
+ },
+ {
+  "entry_ref": "ORD-4127073211571295",
+  "customer_ref": 725733903,
+  "net": 919.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-11T06:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4348513875932223",
+  "customer_ref": 750427375,
+  "net": 227.35,
+  "currency": "EUR",
+  "settled_at": "2026-09-11T01:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6865338669786339",
+  "customer_ref": 722878983,
+  "net": 100.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-11T02:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5453080944335224",
+  "customer_ref": 750427375,
+  "net": 66.85,
+  "currency": "EUR",
+  "settled_at": "2026-09-13T00:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5949852702545153",
+  "customer_ref": 705352237,
+  "net": 127.3,
+  "currency": "EUR",
+  "settled_at": "2026-09-13T00:00:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5351702575928264",
+  "customer_ref": 782316492,
+  "net": 161.7,
+  "currency": "EUR",
+  "settled_at": "2026-09-14T03:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5346209424834225",
+  "customer_ref": 736738088,
+  "net": 79.6,
+  "currency": "EUR",
+  "settled_at": "2026-09-14T02:15:00.000Z",
+  "memo": "none",
+  "type": "credit"
+ },
+ {
+  "entry_ref": "ORD-7976679904006962",
+  "customer_ref": 705335142,
+  "net": 387,
+  "currency": "EUR",
+  "settled_at": "2026-09-14T02:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6429821567751511",
+  "customer_ref": 787442964,
+  "net": 12.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-14T05:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7691936409795506",
+  "customer_ref": 768710311,
+  "net": 305.65,
+  "currency": "EUR",
+  "settled_at": "2026-09-14T02:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8355960268012348",
+  "customer_ref": 722077033,
+  "net": 551.15,
+  "currency": "EUR",
+  "settled_at": "2026-09-15T00:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8002359489391155",
+  "customer_ref": 736738088,
+  "net": 279.25,
+  "currency": "EUR",
+  "settled_at": "2026-09-15T05:30:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6576803304096555",
+  "customer_ref": 779585513,
+  "net": 37.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-16T03:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7155086505773386",
+  "customer_ref": "GUEST",
+  "net": 616.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-17T01:15:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8202904304790946",
+  "customer_ref": 715322775,
+  "net": 238.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-17T06:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7232130778635725",
+  "customer_ref": 773981477,
+  "net": 255.95,
+  "currency": "EUR",
+  "settled_at": "2026-09-17T06:15:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4779181586649751",
+  "customer_ref": "GUEST",
+  "net": 572.4,
+  "currency": "EUR",
+  "settled_at": "2026-09-17T06:15:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5450237194167453",
+  "customer_ref": 736738088,
+  "net": 132.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-17T03:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4064591466463117",
+  "customer_ref": "GUEST",
+  "net": 456.35,
+  "currency": "EUR",
+  "settled_at": "2026-09-18T00:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8494834744131566",
+  "customer_ref": 750427375,
+  "net": 258,
+  "currency": "EUR",
+  "settled_at": "2026-09-18T01:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7936419866513133",
+  "customer_ref": 705335142,
+  "net": 328,
+  "currency": "EUR",
+  "settled_at": "2026-09-19T04:15:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7172805077002791",
+  "customer_ref": 705456260,
+  "net": 247.35,
+  "currency": "EUR",
+  "settled_at": "2026-09-19T00:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5916143795287597",
+  "customer_ref": 725733903,
+  "net": 164.85,
+  "currency": "EUR",
+  "settled_at": "2026-09-20T01:30:00.000Z",
+  "memo": "WELCOME5",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8082339273292946",
+  "customer_ref": "GUEST",
+  "net": 322.25,
+  "currency": "EUR",
+  "settled_at": "2026-09-20T02:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6809198694644251",
+  "customer_ref": 705456260,
+  "net": 37.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-21T01:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7433643016482175",
+  "customer_ref": 798326063,
+  "net": 681.55,
+  "currency": "EUR",
+  "settled_at": "2026-09-21T04:45:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7184249342294058",
+  "customer_ref": 777897540,
+  "net": 274.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-21T00:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5949034176216373",
+  "customer_ref": 737152588,
+  "net": 62.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-22T06:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7531190471797134",
+  "customer_ref": 750427375,
+  "net": 501.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-22T01:00:00.000Z",
+  "memo": "WELCOME5",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6855712034765921",
+  "customer_ref": 736827474,
+  "net": 426.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-23T05:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5470499436713469",
+  "customer_ref": 799852931,
+  "net": 89.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-23T03:15:00.000Z",
+  "memo": "WELCOME5",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6502394396614922",
+  "customer_ref": 799852931,
+  "net": 45.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-24T03:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7061000919268178",
+  "customer_ref": 736738088,
+  "net": 323.15,
+  "currency": "EUR",
+  "settled_at": "2026-09-24T04:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6519392136325362",
+  "customer_ref": 705456260,
+  "net": 445.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-25T03:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4983426920266838",
+  "customer_ref": "GUEST",
+  "net": 188.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-26T05:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6576758129379329",
+  "customer_ref": 722077033,
+  "net": 580.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-26T04:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4005231925150503",
+  "customer_ref": 700920122,
+  "net": 79.6,
+  "currency": "EUR",
+  "settled_at": "2026-09-26T01:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-6922031931736915",
+  "customer_ref": 799852931,
+  "net": 39.9,
+  "currency": "EUR",
+  "settled_at": "2026-09-27T05:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8001728706085459",
+  "customer_ref": 715322775,
+  "net": 758.15,
+  "currency": "EUR",
+  "settled_at": "2026-09-27T02:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4962483476158954",
+  "customer_ref": 722077033,
+  "net": 3.2,
+  "currency": "EUR",
+  "settled_at": "2026-09-27T05:30:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-4089812866654758",
+  "customer_ref": 725733903,
+  "net": 37.25,
+  "currency": "EUR",
+  "settled_at": "2026-09-27T02:30:00.000Z",
+  "memo": "WELCOME5",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5659269925591171",
+  "customer_ref": 785878410,
+  "net": 204.85,
+  "currency": "EUR",
+  "settled_at": "2026-09-28T06:45:00.000Z",
+  "memo": "LOYAL15",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-5159226395640743",
+  "customer_ref": 768710311,
+  "net": 566,
+  "currency": "EUR",
+  "settled_at": "2026-09-28T05:00:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8215386148651538",
+  "customer_ref": 706020712,
+  "net": 527.2,
+  "currency": "EUR",
+  "settled_at": "2026-09-28T01:45:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7821373680723532",
+  "customer_ref": "GUEST",
+  "net": 62.5,
+  "currency": "EUR",
+  "settled_at": "2026-09-29T05:00:00.000Z",
+  "memo": "LOYAL15",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-8778735886775644",
+  "customer_ref": "GUEST",
+  "net": 39.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-29T04:15:00.000Z",
+  "memo": "none",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7723973273657489",
+  "customer_ref": 750626008,
+  "net": 348.8,
+  "currency": "EUR",
+  "settled_at": "2026-09-29T04:00:00.000Z",
+  "memo": "AUTUMN10",
+  "type": "debit"
+ },
+ {
+  "entry_ref": "ORD-7358674316665144",
+  "customer_ref": 750626008,
+  "net": 579.75,
+  "currency": "EUR",
+  "settled_at": "2026-09-29T06:30:00.000Z",
+  "memo": "LOYAL15",
+  "type": "debit"
+ }
+]

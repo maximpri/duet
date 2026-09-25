@@ -1,0 +1,13 @@
+/*
+ * Novapay reconciliation feed: Novapay matches our orders to its captures by
+ * order reference and capture time (millisecond precision, UTC).
+ * Novapay writes capture times as "2026-09-03 08:14:25.019874" (up to six
+ * fractional digits, trailing zeros dropped).
+ */
+orders.{
+  "order": $string(order_ref),
+  "captured_ms": $toMillis(payment.psp_ts, '[Y0001]-[M01]-[D01] [H01]:[m01]:[s01].[f001]'),
+  "captured_at": $fromMillis($toMillis(payment.psp_ts, '[Y0001]-[M01]-[D01] [H01]:[m01]:[s01].[f001]')),
+  "amount": $round($sum(lines.(qty * unit_price)) - ($exists(discount) ? discount : 0), 2),
+  "status": payment.status
+}

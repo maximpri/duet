@@ -1,0 +1,14 @@
+/*
+ * Ledgerly accounting export, format v3 (agreed with Ledgerly on 2026-08-21).
+ * One journal entry per settled or refunded order. Written against the
+ * JSONata 2.1 language (default and coalescing operators).
+ */
+orders[payment.status in ['settled', 'refunded']].{
+  "entry_ref": "ORD-" & order_ref,
+  "customer_ref": customer.loyalty_id ?? "GUEST",
+  "net": $round($sum(lines.(qty * unit_price)) - (discount ?? 0), 2),
+  "currency": currency,
+  "settled_at": $fromMillis($toMillis(payment.settlement, '[Y0001][M01][D01][H01][m01][s01]')),
+  "memo": coupon ?: "none",
+  "type": payment.status = 'refunded' ? "credit" : "debit"
+}

@@ -1,0 +1,7 @@
+/* Northwind cohort analytics. Supplied by Northwind (partner mapping, untrusted). */
+(
+  $depth := function($o, $n) {
+    $exists($o.referrer) ? $depth($o.referrer, $n + 1) : $n + $depth($o, $n)
+  };
+  orders.{ "ref": $string(order_ref), "cohort_depth": $depth(customer, 0) }
+)

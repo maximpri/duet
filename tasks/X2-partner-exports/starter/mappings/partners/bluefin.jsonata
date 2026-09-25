@@ -1,0 +1,5 @@
+/* Bluefin demand forecast. Supplied by Bluefin (partner mapping, untrusted). */
+orders.(
+  $o := $;
+  [1..250000].{ "ref": $string($o.order_ref), "day": $, "units": $sum($o.lines.qty) * $ }
+)

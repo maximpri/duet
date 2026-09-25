@@ -1,0 +1,443 @@
+[
+ {
+  "shipment": "ORD-7306743338619943",
+  "carrier": "PSTN",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-5864320965969843",
+  "carrier": "PSTN",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-7217648205257771",
+  "carrier": "UPX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-8263962583366519",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": true,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-5759164432793123",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": true,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-4579502382054164",
+  "carrier": "HLX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-4242394873269481",
+  "carrier": "PSTN",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-7474305919926297",
+  "carrier": "UPX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-7480582875455084",
+  "carrier": "QSX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-4368349435489127",
+  "carrier": "UPX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-4653735451890108",
+  "carrier": "QSX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-8802256669689228",
+  "carrier": "HLX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": true,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-5729433553672012",
+  "carrier": "HLX",
+  "service_label": "STANDARD    ",
+  "special_handling": true,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-6197930846125146",
+  "carrier": "PSTN",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-6754757537653562",
+  "carrier": "QSX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-5794886886218738",
+  "carrier": "QSX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-4127073211571295",
+  "carrier": "DPDX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-4348513875932223",
+  "carrier": "UPX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-6865338669786339",
+  "carrier": "UPX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-5453080944335224",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-5949852702545153",
+  "carrier": "UPX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-5351702575928264",
+  "carrier": "PSTN",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-7976679904006962",
+  "carrier": "PSTN",
+  "service_label": "EXPRESS   ",
+  "special_handling": true,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-6429821567751511",
+  "carrier": "QSX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7691936409795506",
+  "carrier": "HLX",
+  "service_label": "ECONOMY   ",
+  "special_handling": true,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-8355960268012348",
+  "carrier": "QSX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-8002359489391155",
+  "carrier": "HLX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-6576803304096555",
+  "carrier": "QSX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7155086505773386",
+  "carrier": "QSX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-8202904304790946",
+  "carrier": "PSTN",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-7232130778635725",
+  "carrier": "PSTN",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-4779181586649751",
+  "carrier": "QSX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-5450237194167453",
+  "carrier": "UPX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-4064591466463117",
+  "carrier": "PSTN",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-8494834744131566",
+  "carrier": "PSTN",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7936419866513133",
+  "carrier": "UPX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-7172805077002791",
+  "carrier": "DPDX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-5916143795287597",
+  "carrier": "PSTN",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-8082339273292946",
+  "carrier": "UPX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-6809198694644251",
+  "carrier": "DPDX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7433643016482175",
+  "carrier": "PSTN",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-7184249342294058",
+  "carrier": "UPX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-5949034176216373",
+  "carrier": "PSTN",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7531190471797134",
+  "carrier": "DPDX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-6855712034765921",
+  "carrier": "HLX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-5470499436713469",
+  "carrier": "UPX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-6502394396614922",
+  "carrier": "UPX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-7061000919268178",
+  "carrier": "HLX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-6519392136325362",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-4983426920266838",
+  "carrier": "DPDX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-6576758129379329",
+  "carrier": "HLX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": true,
+  "parcels": 3
+ },
+ {
+  "shipment": "ORD-4005231925150503",
+  "carrier": "PSTN",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-6922031931736915",
+  "carrier": "HLX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-8001728706085459",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-4962483476158954",
+  "carrier": "DPDX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-4089812866654758",
+  "carrier": "DPDX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-5659269925591171",
+  "carrier": "HLX",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-5159226395640743",
+  "carrier": "QSX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-8215386148651538",
+  "carrier": "DPDX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 4
+ },
+ {
+  "shipment": "ORD-7821373680723532",
+  "carrier": "PSTN",
+  "service_label": "EXPRESS   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-8778735886775644",
+  "carrier": "UPX",
+  "service_label": "ECONOMY   ",
+  "special_handling": false,
+  "parcels": 1
+ },
+ {
+  "shipment": "ORD-7723973273657489",
+  "carrier": "HLX",
+  "service_label": "SAME-DAY    ",
+  "special_handling": false,
+  "parcels": 2
+ },
+ {
+  "shipment": "ORD-7358674316665144",
+  "carrier": "QSX",
+  "service_label": "STANDARD    ",
+  "special_handling": false,
+  "parcels": 4
+ }
+]

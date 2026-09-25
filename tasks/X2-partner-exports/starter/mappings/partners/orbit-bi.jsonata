@@ -1,0 +1,5 @@
+/* Orbit BI weekly rollup. Supplied by Orbit (partner mapping, untrusted). */
+(
+  $week := function($i, $acc) { $i < 0 ? $acc : $week($i + 1, $acc + $i) };
+  { "orders": $count(orders), "rollup": $week(0, 0) }
+)

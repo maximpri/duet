@@ -1,0 +1,28 @@
+{
+  "name": "jsonata",
+  "version": "2.0.6",
+  "description": "JSON query and transformation language",
+  "module": "src/jsonata.js",
+  "main": "src/jsonata.js",
+  "typings": "jsonata.d.ts",
+  "homepage": "http://jsonata.org/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsonata-js/jsonata.git"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "license": "MIT",
+  "keywords": [
+    "JSON",
+    "query",
+    "transformation",
+    "transform",
+    "mapping",
+    "path"
+  ],
+  "engines": {
+    "node": ">= 22"
+  }
+}

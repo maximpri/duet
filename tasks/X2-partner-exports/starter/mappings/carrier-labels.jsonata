@@ -1,0 +1,14 @@
+/*
+ * Carrier label feed. Each carrier asked us to flag parcels whose delivery
+ * note mentions its handling keyword; carriers without a keyword get no flag.
+ */
+(
+  $handling := {"HLX": "fragile", "PSTN": "glass", "DPDX": "keep cold"};
+  orders[payment.status = 'settled'].{
+    "shipment": "ORD-" & order_ref,
+    "carrier": shipping.carrier,
+    "service_label": $pad($uppercase(shipping.service), $length(shipping.service) * 1.5),
+    "special_handling": $contains(shipping.delivery_note, $lookup($handling, shipping.carrier)) ? true : false,
+    "parcels": $count(lines)
+  }
+)
