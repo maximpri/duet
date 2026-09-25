@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Test support: a local model that replies from a script, so the engine and
-//! the agent can be tested without a model server. Built only for tests and
-//! with the `test-support` feature.
+//! Test support: a local model that replies from a script, or computes each
+//! reply from the prompt it received, so the engine and the agent can be
+//! tested without a model server. Built only for tests and with the
+//! `test-support` feature.
 //!
 //! [`canary`] finds planted marker values in outbound bytes, also in
 //! transformed spellings.
@@ -40,8 +41,16 @@ impl Received {
     }
 }
 
+/// Where a scripted model's replies come from.
+enum Replies {
+    /// In order; a fixed "unanswerable" reply once they run out.
+    Queue(Mutex<VecDeque<String>>),
+    /// Computed from the user prompt of each request.
+    Computed(Box<dyn Fn(&str) -> String + Send + Sync>),
+}
+
 struct Script {
-    replies: Arc<Mutex<VecDeque<String>>>,
+    replies: Arc<Replies>,
     received: Received,
 }
 
@@ -52,21 +61,29 @@ impl Transport for Script {
         _headers: Vec<(String, String)>,
         body: Vec<u8>,
     ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
-        if let Ok(v) = serde_json::from_slice(&body) {
+        let parsed: Option<Value> = serde_json::from_slice(&body).ok();
+        let prompt = parsed
+            .as_ref()
+            .and_then(|b| b["messages"].as_array()?.last()?["content"].as_str())
+            .unwrap_or_default()
+            .to_owned();
+        if let Some(v) = parsed {
             self.received
                 .0
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(v);
         }
-        let reply = self
-            .replies
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .pop_front()
-            .unwrap_or_else(|| {
-                "{\"answer\": \"no scripted reply\", \"unanswerable\": true}".into()
-            });
+        let reply = match &*self.replies {
+            Replies::Queue(q) => q
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .pop_front()
+                .unwrap_or_else(|| {
+                    "{\"answer\": \"no scripted reply\", \"unanswerable\": true}".into()
+                }),
+            Replies::Computed(f) => f(&prompt),
+        };
         let chunks = vec![
             json!({"choices": [{"delta": {"content": reply}}]}),
             json!({"choices": [{"delta": {}, "finish_reason": "stop"}]}),
@@ -90,9 +107,22 @@ impl Transport for Script {
 /// A local reader whose model answers with `replies` in order (each the model's
 /// text, normally a JSON object).
 pub fn scripted_local(replies: Vec<String>) -> (LocalReader, Received) {
+    local_with(Replies::Queue(Mutex::new(replies.into())))
+}
+
+/// A local reader whose model computes each reply (the model's text, normally
+/// a JSON object) from the user prompt it received: a stand-in that behaves
+/// according to the content and question it is given.
+pub fn responsive_local(
+    respond: impl Fn(&str) -> String + Send + Sync + 'static,
+) -> (LocalReader, Received) {
+    local_with(Replies::Computed(Box::new(respond)))
+}
+
+fn local_with(replies: Replies) -> (LocalReader, Received) {
     let received = Received::default();
     let script = Script {
-        replies: Arc::new(Mutex::new(replies.into())),
+        replies: Arc::new(replies),
         received: received.clone(),
     };
     let mut cfg = ProviderConfig::new(
