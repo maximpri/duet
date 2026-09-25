@@ -154,6 +154,28 @@ pub enum AuditEvent {
         #[serde(default)]
         withheld: u32,
     },
+    /// A sub-agent started (`delegate`): its id in the run, mode (`read` or
+    /// `write`), the SHA-256 of its task (never the text), the path globs a
+    /// writing one may write and the model that drives it.
+    SubagentStart {
+        child: String,
+        mode: String,
+        task_sha256: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        paths: Vec<String>,
+        model: String,
+    },
+    /// A sub-agent ended: its terminal state (`completed`, `failed`,
+    /// `budget_stopped`), what it cost, its frontier requests and how many
+    /// files it wrote.
+    SubagentEnd {
+        child: String,
+        mode: String,
+        outcome: String,
+        cost_usd: f64,
+        requests: u64,
+        files_written: usize,
+    },
 }
 
 impl AuditEvent {
@@ -175,6 +197,8 @@ impl AuditEvent {
             AuditEvent::McpServer { .. } => "mcp_server",
             AuditEvent::McpCall { .. } => "mcp_call",
             AuditEvent::LanguageServer { .. } => "language_server",
+            AuditEvent::SubagentStart { .. } => "subagent_start",
+            AuditEvent::SubagentEnd { .. } => "subagent_end",
         }
     }
 }

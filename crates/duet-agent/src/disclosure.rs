@@ -163,7 +163,9 @@ impl Disclosure {
                     | AuditEvent::GitCommit { .. }
                     | AuditEvent::McpServer { .. }
                     | AuditEvent::McpCall { .. }
-                    | AuditEvent::LanguageServer { .. } => {}
+                    | AuditEvent::LanguageServer { .. }
+                    | AuditEvent::SubagentStart { .. }
+                    | AuditEvent::SubagentEnd { .. } => {}
                 },
             }
         }

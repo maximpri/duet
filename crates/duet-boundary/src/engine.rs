@@ -999,6 +999,39 @@ value; run_command with sensitive_data resolves placeholders in the command on t
         self.local.as_ref().map(LocalReader::take_stats)
     }
 
+    /// The notes the task gets: the sensitive paths (commands cannot read
+    /// them), the protected ones and the local brief, if any.
+    fn task_notes_of(st: &State) -> String {
+        let mut out = String::new();
+        if !st.sensitive_files.is_empty() {
+            let mut paths = st.sensitive_files.clone();
+            if paths.len() > LISTED_PATHS {
+                paths = paths
+                    .iter()
+                    .map(|p| match p.rsplit_once('/') {
+                        Some((dir, _)) => format!("{dir}/"),
+                        None => p.clone(),
+                    })
+                    .collect();
+                paths.dedup();
+                paths.truncate(LISTED_PATHS);
+            }
+            out.push_str(&format!(
+                "\n\nSensitive in this repository (commands cannot read these; read_file gives a summary and a \
+handle for ask_local; run_command with sensitive_data runs programs on them): {}",
+                paths.join(", ")
+            ));
+        }
+        out.push_str(&Self::ip_note(st));
+        if let Some(brief) = &st.brief {
+            out.push_str(&format!(
+                "\n\nBrief of the sensitive files for this task, written by the local model (values withheld; \
+ask_local for details):\n{brief}"
+            ));
+        }
+        out
+    }
+
     /// The outbound filter and check backed by this engine.
     pub fn outbound(self: &Arc<Self>) -> (Box<dyn OutboundFilter>, Box<dyn OutboundCheck>) {
         (
@@ -1110,6 +1143,13 @@ impl Presenter for Engine {
                 }
             }
             Source::CodeNav { path, signature } => self.code_nav_view(path, *signature, &text),
+            // A sub-agent's report: model-written text from presented content
+            // only, rescanned like public text (a value it copied from a
+            // placeholder's context, a detected secret) and kept whole.
+            Source::Subagent { child } => {
+                let mut st = self.lock();
+                self.clean_public(&mut st, &text, &format!("report of sub-agent {child}"))
+            }
             // Matches in sensitive files are masked first; only that view is kept.
             Source::Search { pattern } => {
                 let view = self.search_view(&text);
@@ -1375,33 +1415,12 @@ and are never resolved for {destination}",
         let mut out = self.sanitize(&mut st, text, "task", false);
         let note = self.operator_values(&mut st, text, &out);
         out.push_str(&note);
-        if !st.sensitive_files.is_empty() {
-            let mut paths = st.sensitive_files.clone();
-            if paths.len() > LISTED_PATHS {
-                paths = paths
-                    .iter()
-                    .map(|p| match p.rsplit_once('/') {
-                        Some((dir, _)) => format!("{dir}/"),
-                        None => p.clone(),
-                    })
-                    .collect();
-                paths.dedup();
-                paths.truncate(LISTED_PATHS);
-            }
-            out.push_str(&format!(
-                "\n\nSensitive in this repository (commands cannot read these; read_file gives a summary and a \
-handle for ask_local; run_command with sensitive_data runs programs on them): {}",
-                paths.join(", ")
-            ));
-        }
-        out.push_str(&Self::ip_note(&st));
-        if let Some(brief) = &st.brief {
-            out.push_str(&format!(
-                "\n\nBrief of the sensitive files for this task, written by the local model (values withheld; \
-ask_local for details):\n{brief}"
-            ));
-        }
+        out.push_str(&Self::task_notes_of(&st));
         out
+    }
+
+    fn task_notes(&self) -> String {
+        Self::task_notes_of(&self.lock())
     }
 
     /// A follow-up operator message: detected values become placeholders and
@@ -1948,6 +1967,25 @@ mod tests {
         assert!(shown.contains("read_raw"), "{shown}");
         assert!(shown.contains("untrusted"), "{shown}");
         assert_eq!(e.take_view_class(), Some(ViewClass::BulkyHandle));
+    }
+
+    #[test]
+    fn a_sub_agents_report_is_scanned_like_public_text_and_kept_whole() {
+        let (_d, e) = engine();
+        e.present(
+            &file("data/customers.csv"),
+            format!("id,email\n1,{EMAIL}\n").as_bytes(),
+        );
+        let src = Source::Subagent { child: "a1".into() };
+        let report = format!("Found the export bug. The customer is {EMAIL}; key {KEY}.\n");
+        let shown = e.present(&src, report.as_bytes());
+        assert!(!shown.contains(EMAIL) && !shown.contains(KEY), "{shown}");
+        assert!(shown.contains("Found the export bug"), "{shown}");
+        assert_eq!(e.take_view_class(), Some(ViewClass::Raw));
+        // Long reports are not offloaded behind a handle.
+        let long = "a finding about the code base\n".repeat(2000);
+        let shown = e.present(&src, long.as_bytes());
+        assert_eq!(shown, long);
     }
 
     #[test]

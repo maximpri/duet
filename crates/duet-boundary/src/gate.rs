@@ -52,6 +52,17 @@ impl OutboundGate {
         }
     }
 
+    /// A gate that appends to a log another gate already writes (a second
+    /// frontier model in the same run, such as sub-agents' `subagents.model`):
+    /// both share one hash chain.
+    pub fn with_audit(audit: AuditHandle) -> Self {
+        Self {
+            filters: Vec::new(),
+            checks: Vec::new(),
+            audit,
+        }
+    }
+
     pub fn with_filter(mut self, f: Box<dyn OutboundFilter>) -> Self {
         self.filters.push(f);
         self

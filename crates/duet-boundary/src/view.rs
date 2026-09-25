@@ -64,6 +64,12 @@ pub enum Source {
         tool: String,
         trust: ServerTrust,
     },
+    /// A sub-agent's report to the agent that delegated to it (`delegate`):
+    /// text a model wrote after seeing only what the boundary presented to
+    /// it. Scanned like public text and never offloaded; framed as data.
+    Subagent {
+        child: String,
+    },
 }
 
 /// How an external server's results are treated.
@@ -196,6 +202,13 @@ pub trait Presenter: Send + Sync {
     /// The task text as it may be shown to the frontier.
     fn sanitize_objective(&self, text: &str) -> String {
         text.to_owned()
+    }
+    /// What the task text is given besides itself (the sensitive paths, the
+    /// protected ones, a local brief), for a sub-agent's task: the same
+    /// knowledge of the boundary its parent was given. Empty when there is
+    /// nothing to say.
+    fn task_notes(&self) -> String {
+        String::new()
     }
     /// A later operator message in a session, as it may be shown to the
     /// frontier: sanitized like the task, without the task's notes (the
