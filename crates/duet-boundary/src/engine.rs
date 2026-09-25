@@ -14,7 +14,7 @@
 //!   secret files.
 
 use crate::bulky::{self, Shape};
-use crate::detect::{CustomPatterns, Detectors, Kind, scan_each, scan_with};
+use crate::detect::{CustomPatterns, Detectors, Kind, scan_each_in, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
 use crate::local::LocalReader;
@@ -31,6 +31,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 mod code_nav;
 mod history;
+mod pii_pass;
 mod protected;
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
@@ -87,6 +88,13 @@ fn other_spellings(value: &str, kind: Kind) -> Vec<String> {
         }
         _ => Vec::new(),
     }
+}
+
+/// The workspace path an origin names. File content carries its path as its
+/// origin; other content a label (`output of \`…\``, `tool output`, `task`),
+/// which path conditions of detection rules must not match.
+fn origin_path(origin: &str) -> Option<&str> {
+    (!origin.contains(char::is_whitespace) && !origin.contains('`')).then_some(origin)
 }
 
 fn group(digits: &str) -> String {
@@ -168,6 +176,8 @@ struct State {
     /// Placeholders for values the operator typed, and the handle holding
     /// the message each came from (persisted, so a resumed run keeps them).
     operator: OperatorValues,
+    /// Digests of the public prose the local personal-data pass has read.
+    pii_passed: std::collections::HashSet<String>,
 }
 
 /// Values the operator typed: each placeholder is also a handle for
@@ -268,6 +278,7 @@ impl Engine {
                     .ok()
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
+                pii_passed: Default::default(),
             }),
         }))
     }
@@ -412,7 +423,7 @@ impl Engine {
                     .any(|w| r.contains(&w.as_str().to_lowercase()))
             })
         };
-        let mut spans: Vec<Span> = scan_each(text, self.detectors)
+        let mut spans: Vec<Span> = scan_each_in(text, self.detectors, origin_path(origin))
             .into_iter()
             .chain(self.custom.find(text))
             .map(|f| (f.start, f.end, f.kind, f.label))
@@ -1064,6 +1075,7 @@ impl Presenter for Engine {
             Source::GitHistory { rev, path } => self.history_view(rev, path.as_deref(), &text),
             Source::File { path, ranged } => {
                 let label = path.display().to_string();
+                self.local_pii_pass(&label, &text);
                 self.lock().overlap.add_public(&text);
                 // A range the model asked for is shown unless it is longer
                 // than one `read_raw` call returns.
@@ -1095,6 +1107,7 @@ impl Presenter for Engine {
             // public command output, offloaded when bulky.
             Source::Mcp { server, tool, .. } => {
                 let label = format!("result of MCP tool `{tool}` on server `{server}`");
+                self.local_pii_pass(&label, &text);
                 if self.offload(&text) {
                     return self.bulky_view(&label, &text, Shape::Output);
                 }
@@ -1123,7 +1136,9 @@ impl Presenter for Engine {
             Source::Command { command, .. } | Source::Other { label: command }
                 if self.offload(&text) =>
             {
-                self.bulky_view(&format!("output of `{command}`"), &text, Shape::Output)
+                let label = format!("output of `{command}`");
+                self.local_pii_pass(&label, &text);
+                self.bulky_view(&label, &text, Shape::Output)
             }
             Source::Checks if self.offload(&text) => {
                 self.bulky_view("check output", &text, Shape::Output)
@@ -1135,6 +1150,7 @@ impl Presenter for Engine {
             // replaced like any public text, offloaded when bulky.
             Source::Web { url } => {
                 let label = format!("web content from {url} (untrusted)");
+                self.local_pii_pass(&label, &text);
                 if self.offload(&text) {
                     self.bulky_view(&label, &text, Shape::Output)
                 } else {
@@ -1160,6 +1176,9 @@ impl Presenter for Engine {
                 }
             }
             _ => {
+                if matches!(source, Source::Command { .. } | Source::Other { .. }) {
+                    self.local_pii_pass("tool output", &text);
+                }
                 let mut st = self.lock();
                 self.sanitize(&mut st, &text, "tool output", false)
             }

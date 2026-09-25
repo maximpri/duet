@@ -58,6 +58,9 @@ pub struct Policy {
     pub bulky_tokens: usize,
     /// Brief the frontier on the sensitive files at run start (needs a local model).
     pub local_brief: bool,
+    /// The local model marks names and postal addresses in the free text of
+    /// public content (`sensitivity.local_pii_pass`; needs a local model).
+    pub local_pii_pass: bool,
     /// Threshold for a public file the model explicitly read (`0` disables offloading).
     pub bulky_file_tokens: usize,
     /// Source the frontier sees as signatures only (`ip.interface_only`).

@@ -293,6 +293,15 @@ pub const REGISTRY: &[Setting] = &[
         "At run start the local model reads the sensitive files against the task and briefs the frontier (values withheld)."
     ),
     s!(
+        "sensitivity.local_pii_pass",
+        Bool,
+        "false",
+        Project,
+        OnlyTrue,
+        true,
+        "The local model reads the free text of public content (docs, comments, web pages, public tool results) and marks people's names and postal addresses, which no pattern finds; they become placeholders like detected values. Costs local model time on every such result."
+    ),
+    s!(
         "sensitivity.bulky_file_tokens",
         Int {
             min: 256,
