@@ -805,12 +805,221 @@ fn data_screen_purges_after_confirmation() {
     );
     assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 2);
     drop(lock);
-    key(&mut app, KeyCode::Char('X'));
-    key(&mut app, KeyCode::Char('y'));
+    // A child another test forks in this process can hold a copy of the lock
+    // until it execs; retry briefly.
+    for _ in 0..100 {
+        key(&mut app, KeyCode::Char('X'));
+        key(&mut app, KeyCode::Char('y'));
+        if !app.status().contains("in progress") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     assert!(
         app.status().contains("purged the raw data of 2 run(s)"),
         "{}",
         app.status()
     );
     assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 0);
+}
+
+/// A run in a git workspace that edits, creates and writes a sensitive file
+/// through the write journal, plus a file derived by a sensitive command.
+fn run_with_writes(app: &App, id: &str) -> std::path::PathBuf {
+    use duet_agent::journal::WriteJournal;
+    use duet_fs::Precondition;
+    let ws = app.paths.workspace.clone();
+    git_workspace(&ws);
+    std::fs::write(
+        ws.join("src/lib.rs"),
+        (1..=30).map(|i| format!("line {i}\n")).collect::<String>(),
+    )
+    .unwrap();
+    std::fs::write(ws.join(".env"), "API_TOKEN=before-value-123\n").unwrap();
+    let run_dir = ws.join(".duet/runs").join(id);
+    let t = Transcript::open(&run_dir).unwrap();
+    t.append(&Entry::Start {
+        objective: "Tidy the library".into(),
+        mode: "hybrid".into(),
+        frontier_model: "glm".into(),
+    })
+    .unwrap();
+    let mut j = WriteJournal::open(&run_dir).unwrap();
+    let edited: String = (1..=30)
+        .map(|i| match i {
+            3 => "line three\n".to_owned(),
+            20 => "line 20\ninserted after 20\n".to_owned(),
+            _ => format!("line {i}\n"),
+        })
+        .collect();
+    j.write(
+        &ws,
+        Path::new("src/lib.rs"),
+        edited.as_bytes(),
+        &Precondition::Any,
+    )
+    .unwrap();
+    j.write(
+        &ws,
+        Path::new("src/new.rs"),
+        b"pub fn fresh() {}\n",
+        &Precondition::Any,
+    )
+    .unwrap();
+    j.write(
+        &ws,
+        Path::new(".env"),
+        b"API_TOKEN=after-value-456\n",
+        &Precondition::Any,
+    )
+    .unwrap();
+    std::fs::create_dir_all(ws.join("out")).unwrap();
+    std::fs::write(ws.join("out/report.txt"), "customer kim@corp.net owes 12\n").unwrap();
+    let log = ws.join(".duet/audit").join(format!("{id}.jsonl"));
+    let mut a = AuditLog::open_anchored(&log, &run_anchors(&app.paths.state, &ws, id)).unwrap();
+    a.event(AuditEvent::SensitiveCommand {
+        command: "python report.py".into(),
+        exit_code: Some(0),
+        derived_files: vec!["out/report.txt".into()],
+    })
+    .unwrap();
+    run_dir
+}
+
+#[test]
+fn run_view_lists_changed_files_and_shows_numbered_diffs() {
+    let (_d, mut app) = fixture("", "");
+    let id = "20260925-090000-d1ff00";
+    run_with_writes(&app, id);
+    key(&mut app, KeyCode::Char('7'));
+    let out = render(&mut app);
+    for want in [
+        "start (hybrid, glm): Tidy the library",
+        "changed files 4 (+3 -1)",
+        "edit src/lib.rs  +2  -1",
+        "new  src/new.rs  +1",
+        "held .env  held locally",
+        "held out/report.txt  held locally",
+        "sensitive command held locally: python report.py",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    // Following: the file written last is selected; .env is held, so no content.
+    assert!(
+        out.contains(".env: it matches the sensitivity rules"),
+        "{out}"
+    );
+    for secret in ["before-value-123", "after-value-456", "kim@corp.net"] {
+        assert!(!out.contains(secret), "{secret} shown:\n{out}");
+    }
+    // Focus the side panel and pick src/lib.rs.
+    key(&mut app, KeyCode::Right);
+    assert_eq!(app.runs.focus, crate::runs::Focus::Side);
+    key(&mut app, KeyCode::Up);
+    key(&mut app, KeyCode::Up);
+    assert!(!app.runs.follow, "picking a file stops following");
+    let out = render(&mut app);
+    for want in [
+        "src/lib.rs (edited; rows 1-",
+        "┄ from line 1",
+        " 3    - line 3",
+        "    3 + line three",
+        "┄ from line 18",
+        "20 20   line 20",
+        "   21 + inserted after 20",
+        "21 22   line 21",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    // Scrolling the diff: a page, then a line back.
+    key(&mut app, KeyCode::PageDown);
+    assert!(app.runs.diff_scroll > 0);
+    let at = app.runs.diff_scroll;
+    key(&mut app, KeyCode::Char('K'));
+    assert_eq!(app.runs.diff_scroll, at - 1);
+    // The new file.
+    key(&mut app, KeyCode::Down);
+    let out = render(&mut app);
+    assert!(out.contains("src/new.rs (created"), "{out}");
+    assert!(out.contains(" 1 + pub fn fresh() {}"), "{out}");
+    // The derived file is held too.
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Down);
+    let out = render(&mut app);
+    assert!(
+        out.contains("out/report.txt: a command that could read sensitive data"),
+        "{out}"
+    );
+    assert!(!out.contains("kim@corp.net"));
+    // Back to the main panel: arrows scroll the feed again.
+    key(&mut app, KeyCode::Left);
+    assert_eq!(app.runs.focus, crate::runs::Focus::Main);
+    // The smallest terminal still shows both panels.
+    let small = screen(&mut app, 80, 24);
+    assert!(small.contains("changed files 4"), "{small}");
+    assert!(small.contains("withheld and blocked"), "{small}");
+}
+
+#[test]
+fn run_view_follows_edits_as_they_happen_and_reads_finished_runs() {
+    use duet_agent::journal::WriteJournal;
+    use duet_fs::Precondition;
+    let (_d, mut app) = fixture("", "");
+    let id = "20260925-091500-f011a0";
+    let run_dir = run_with_writes(&app, id);
+    let ws = app.paths.workspace.clone();
+    key(&mut app, KeyCode::Char('7'));
+    render(&mut app);
+    // The run writes README.md: the view moves to it and shows the change.
+    let mut j = WriteJournal::open(&run_dir).unwrap();
+    j.write(
+        &ws,
+        Path::new("README.md"),
+        b"# ws\n\nUsage notes.\n",
+        &Precondition::Any,
+    )
+    .unwrap();
+    app.tick();
+    let out = render(&mut app);
+    assert!(out.contains("README.md (edited"), "{out}");
+    assert!(out.contains(" 3 + Usage notes."), "{out}");
+    // Another edit to the same file updates its diff in place.
+    j.write(
+        &ws,
+        Path::new("README.md"),
+        b"# ws\n\nUsage notes, revised.\n",
+        &Precondition::Any,
+    )
+    .unwrap();
+    app.tick();
+    let out = render(&mut app);
+    assert!(out.contains("+ Usage notes, revised."), "{out}");
+    assert!(!out.contains("+ Usage notes.\n"), "{out}");
+    // A write that restores the original shows as unchanged.
+    j.write(&ws, Path::new("README.md"), b"# ws\n", &Precondition::Any)
+        .unwrap();
+    app.tick();
+    let out = render(&mut app);
+    assert!(out.contains("same README.md"), "{out}");
+    // The run ends; the view reads the same way (read-only).
+    Transcript::open(&run_dir)
+        .unwrap()
+        .append(&Entry::End {
+            terminal: duet_agent::Terminal::Completed {
+                summary: "done".into(),
+            },
+        })
+        .unwrap();
+    app.tick();
+    let out = render(&mut app);
+    assert!(out.contains("end: "), "{out}");
+    assert!(out.contains("edit src/lib.rs  +2  -1"), "{out}");
+    let status = duet_git::Git::locate()
+        .unwrap()
+        .run(&ws, &["status", "--porcelain", "--", "src"], &[], None)
+        .unwrap();
+    assert!(
+        !String::from_utf8_lossy(&status).contains("A "),
+        "the viewer staged nothing"
+    );
 }

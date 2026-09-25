@@ -107,7 +107,9 @@ fn key_help(app: &App) -> &'static str {
             "Enter open/close · i interface-only · s sealed · u unmark · p owner/project · q quit"
         }
         (_, Tab::Audit) => "↑↓ select · Enter records · Esc runs · v verify · r reload · q quit",
-        (_, Tab::Run) => "[ ] switch run · f follow · ↑↓ scroll · q quit",
+        (_, Tab::Run) => {
+            "←→ panel · ↑↓ scroll or pick file · PgUp/PgDn J/K diff · [ ] run · f follow · q quit"
+        }
         _ => "Enter edit · a add entry · p owner/project · Tab screens · q quit",
     }
 }

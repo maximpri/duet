@@ -212,9 +212,9 @@ llama.cpp, vLLM, oMLX or mlx_lm.server, then l again",
     );
     lines.push(Line::styled(configured, Style::new().fg(Color::DarkGray)));
     f.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered().title(" local servers ([ ] choose, u use it: audited, confirmed) "),
-        ),
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::bordered().title(" local servers ([ ] pick, u use) ")),
         area,
     );
 }

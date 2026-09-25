@@ -193,7 +193,10 @@ impl App {
             Tab::Models if self.doctor.is_none() => self.run_doctor(false),
             Tab::Ip => self.ip.load(&ws),
             Tab::Audit => self.audit.refresh(&ws),
-            Tab::Run => self.runs.refresh(&ws),
+            Tab::Run => {
+                let policy = self.policy();
+                self.runs.refresh(&ws, &policy)
+            }
             _ => {}
         }
     }
@@ -203,7 +206,8 @@ impl App {
     pub fn tick(&mut self) {
         self.poll_jobs();
         if self.tab == Tab::Run {
-            self.runs.refresh(&self.paths.workspace);
+            let policy = self.policy();
+            self.runs.refresh(&self.paths.workspace, &policy);
         }
     }
 
@@ -365,7 +369,7 @@ impl App {
         match self.tab {
             Tab::Ip => self.ip.selected = step(self.ip.selected, self.ip.rows().len()),
             Tab::Audit => self.audit.move_by(d, &self.paths.workspace),
-            Tab::Run => self.runs.scroll_by(d),
+            Tab::Run => self.runs.move_by(d),
             tab => {
                 let i = tab.index();
                 self.rows[i] = step(self.rows[i], settings::keys(tab).len());
@@ -414,9 +418,23 @@ impl App {
             (Tab::Audit, KeyCode::Esc) => self.audit.focus_records = false,
             (Tab::Audit, KeyCode::Char('v')) => self.audit.verify(&self.paths),
             (Tab::Audit, KeyCode::Char('r')) => self.audit.refresh(&self.paths.workspace),
-            (Tab::Run, KeyCode::Char('[')) => self.runs.select_by(-1, &self.paths.workspace),
-            (Tab::Run, KeyCode::Char(']')) => self.runs.select_by(1, &self.paths.workspace),
-            (Tab::Run, KeyCode::Char('f')) => self.runs.follow = !self.runs.follow,
+            (Tab::Run, KeyCode::Char('[')) => {
+                let policy = self.policy();
+                self.runs.select_by(-1, &self.paths.workspace, &policy)
+            }
+            (Tab::Run, KeyCode::Char(']')) => {
+                let policy = self.policy();
+                self.runs.select_by(1, &self.paths.workspace, &policy)
+            }
+            (Tab::Run, KeyCode::Char('f')) => {
+                self.runs.follow = !self.runs.follow;
+                self.tick();
+            }
+            (Tab::Run, KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l')) => {
+                self.runs.toggle_focus()
+            }
+            (Tab::Run, KeyCode::Char('J')) => self.runs.diff_by(1),
+            (Tab::Run, KeyCode::Char('K')) => self.runs.diff_by(-1),
             _ => {}
         }
     }

@@ -13,6 +13,7 @@
 
 mod app;
 mod audit;
+mod changes;
 mod data;
 mod ip;
 mod models;
