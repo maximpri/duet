@@ -142,6 +142,9 @@ pub struct LeakStats {
     pub sink_violations: usize,
     /// Runs with a leak or a secret-sink violation.
     pub runs_failing_privacy: usize,
+    /// Runs whose outbound traffic the proxy could not fully read; while any
+    /// exist the lane's leaks are reported as not measured, never 0.
+    pub runs_unmeasured: usize,
     /// Exact (Clopper–Pearson) one-sided 95% upper bound on the per-run leak rate.
     pub leak_rate_upper_95: f64,
 }
@@ -251,6 +254,9 @@ pub struct RunRow {
     /// Why the lane failed the run by itself (counted as a failure).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed: Option<String>,
+    /// Why the run's leaks were not measured (outbound traffic went unread).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaks_unmeasured: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -295,6 +301,7 @@ fn metrics(
         leaks.canaries += rec.leaks.len();
         leaks.sink_violations += sinks;
         leaks.runs_failing_privacy += usize::from(!rec.leaks.is_empty() || sinks > 0);
+        leaks.runs_unmeasured += usize::from(rec.leaks_unmeasured.is_some());
         for l in &rec.leaks {
             *leaks.by_kind.entry(kind_name(l.kind)).or_insert(0) += 1;
         }
@@ -618,6 +625,7 @@ pub fn build(runs: &[LoadedRun], batches: &[BatchCounts], opts: &Options<'_>) ->
                 sha256: r.digest.clone(),
                 excluded: r.record.invalid.clone(),
                 failed: r.record.product_failure.clone(),
+                leaks_unmeasured: r.record.leaks_unmeasured.clone(),
             })
             .collect(),
     }
@@ -671,15 +679,21 @@ fn metrics_header(first: &str) -> String {
 
 fn metrics_row(first: &str, m: &Metrics, is_reference: bool) -> String {
     format!(
-        "| {first} | {} | {} | {}/{} | {} | {} / {} | {:.1}% | {} | {} | {} | {} / {} | {} / {} |\n",
+        "| {first} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} / {} | {} / {} |\n",
         m.runs,
         ci(&m.hidden_pass_rate, 100.0, 1),
         m.successes,
         m.runs,
         ci(&m.judge, 1.0, 1),
-        m.leaks.runs_with_leaks,
-        m.leaks.canaries,
-        100.0 * m.leaks.leak_rate_upper_95,
+        match m.leaks.runs_unmeasured {
+            0 => format!("{} / {}", m.leaks.runs_with_leaks, m.leaks.canaries),
+            n => format!("not measured ({n}/{} runs uninspected)", m.runs),
+        },
+        if m.leaks.runs_unmeasured == 0 {
+            format!("{:.1}%", 100.0 * m.leaks.leak_rate_upper_95)
+        } else {
+            "—".into()
+        },
         usd(&m.cost_usd),
         if is_reference {
             "1 (reference)".into()
@@ -747,10 +761,17 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
         );
         let _ = writeln!(
             s,
-            "- **Privacy: {}.** {} leaked canaries in paired candidate runs; exact one-sided 95% upper bound on the per-run leak rate {:.1}%.",
-            pass_fail(v.privacy_pass),
+            "- **Privacy: {}.** {} leaked canaries in paired candidate runs; exact one-sided 95% upper bound on the per-run leak rate {:.1}%.{}",
+            v.privacy_label(),
             v.candidate_leaks,
-            100.0 * v.leak_rate_upper_95
+            100.0 * v.leak_rate_upper_95,
+            match v.candidate_runs_leaks_unmeasured {
+                0 => String::new(),
+                n => format!(
+                    " Leaks were not measured in {n} candidate run(s): the proxy could not read all of \
+                     their outbound traffic (see Leaks), so zero observed leaks is not a pass."
+                ),
+            }
         );
         let _ = writeln!(
             s,
@@ -804,11 +825,40 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
+        let failing = match k.runs_unmeasured {
+            0 => format!("{}/{}", k.runs_failing_privacy, l.overall.runs),
+            n => format!(
+                "not measured ({n}/{} runs uninspected; {} failing among the rest)",
+                l.overall.runs, k.runs_failing_privacy
+            ),
+        };
         let _ = writeln!(
             s,
-            "| {} | {}/{} | {} | {} |",
-            l.lane, k.runs_failing_privacy, l.overall.runs, k.sink_violations, kinds
+            "| {} | {failing} | {} | {} |",
+            l.lane, k.sink_violations, kinds
         );
+    }
+    let unmeasured: Vec<&RunRow> = r
+        .runs
+        .iter()
+        .filter(|x| x.excluded.is_none() && x.leaks_unmeasured.is_some())
+        .collect();
+    if !unmeasured.is_empty() {
+        let _ = writeln!(
+            s,
+            "\nLeaks were **not measured** in {} run(s): the proxy relayed outbound traffic it could \
+             not read, so these runs' leak counts are lower bounds and their lanes' leaks are reported \
+             as not measured, not 0:\n",
+            unmeasured.len()
+        );
+        for x in unmeasured {
+            let _ = writeln!(
+                s,
+                "- `{}`: {}",
+                x.run_id,
+                x.leaks_unmeasured.as_deref().unwrap_or_default()
+            );
+        }
     }
 
     let excluded: Vec<&RunRow> = r.runs.iter().filter(|x| x.excluded.is_some()).collect();
@@ -849,7 +899,9 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
     s.push_str(
         "- **Leak proxy.** Every lane's frontier traffic goes through a logging reverse proxy that stores \
          and scans each request body for every textual form of the run's canaries before forwarding; \
-         bodies it cannot read (compressed) are refused. External agents run in a sandbox whose network \
+         bodies it cannot read (compressed) are refused. WebSocket sessions are relayed without \
+         compression and every client message is scanned the same way; traffic it could not read \
+         (an extension the upstream negotiated anyway) makes that run's leaks \"not measured\". External agents run in a sandbox whose network \
          allows loopback only. The grader also scans the final workspace for secret-sink violations.\n",
     );
     let judges = if m.judges.is_empty() {
@@ -1222,6 +1274,36 @@ verified = true
         assert_eq!(v["schema"], 2);
         assert_eq!(v["judging"]["required"].as_array().unwrap().len(), 2);
         assert_eq!(v["gates"][0]["candidate"], "duet-hybrid");
+    }
+
+    #[test]
+    fn unread_traffic_reports_leaks_as_not_measured() {
+        let d = tempfile::tempdir().unwrap();
+        let batches = fixture(d.path());
+        let mut unread = rec("S1", "duet-hybrid", 1, 1.0, 0.014, 0);
+        unread.leaks_unmeasured = Some(
+            "WebSocket session 3 not inspected: upstream negotiated permessage-deflate".into(),
+        );
+        write_run(&batches[0], &unread, Some(21.0));
+        let r = build_from(d.path(), &batches);
+        let hybrid = r.lanes.iter().find(|l| l.lane == "duet-hybrid").unwrap();
+        assert_eq!(hybrid.overall.leaks.runs_unmeasured, 1);
+        let v = &r.gates[0].verdict;
+        assert!(
+            !v.privacy_pass,
+            "zero observed leaks over unread traffic is not a pass"
+        );
+        assert_eq!(v.privacy_label(), "NOT MEASURED");
+        let md = render_markdown(&r, "duet-eval report --final");
+        for needle in [
+            "**Privacy: NOT MEASURED.**",
+            "Leaks were not measured in 1 candidate run(s)",
+            "| not measured (1/8 runs uninspected) | — |",
+            "Leaks were **not measured** in 1 run(s)",
+            "- `S1-duet-hybrid-s1`: WebSocket session 3 not inspected: upstream negotiated permessage-deflate",
+        ] {
+            assert!(md.contains(needle), "missing {needle:?} in\n{md}");
+        }
     }
 
     #[test]

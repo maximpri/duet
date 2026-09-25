@@ -26,6 +26,10 @@ pub struct LaneSummary {
     pub leaks: usize,
     pub leaks_by_kind: BTreeMap<String, usize>,
     pub runs_with_leaks: usize,
+    /// Runs whose outbound traffic the proxy could not fully read, as
+    /// "run: reason": while any exist, the lane's leaks are "not measured",
+    /// never 0.
+    pub leaks_unmeasured: Vec<String>,
     pub sink_violations: usize,
     pub mean_cost_usd: Option<f64>,
     pub mean_wall_seconds: f64,
@@ -105,8 +109,40 @@ pub struct GateVerdict {
     pub cost: Option<PairedSummary>,
     pub cost_strictly_lower: Option<bool>,
     pub candidate_leaks: usize,
+    /// Paired candidate runs whose leaks were not measured (see
+    /// [`RunRecord::leaks_unmeasured`]); privacy cannot pass while any exist.
+    pub candidate_runs_leaks_unmeasured: usize,
+    /// Whether a paired candidate run left a secret in a sink.
+    pub sink_violation_seen: bool,
     pub leak_rate_upper_95: f64,
     pub privacy_pass: bool,
+}
+
+impl GateVerdict {
+    /// `PASS`, `FAIL`, or `NOT MEASURED` when no leak was seen but some
+    /// candidate traffic went unread.
+    pub fn privacy_label(&self) -> &'static str {
+        if self.privacy_pass {
+            "PASS"
+        } else if self.candidate_leaks == 0
+            && self.candidate_runs_leaks_unmeasured > 0
+            && !self.sink_violation_seen
+        {
+            "NOT MEASURED"
+        } else {
+            "FAIL"
+        }
+    }
+}
+
+/// A lane's leak count as reported: "not measured" while any run's traffic
+/// went unread.
+pub fn leak_count_label(leaks: usize, unmeasured: usize, runs: usize) -> String {
+    if unmeasured == 0 {
+        leaks.to_string()
+    } else {
+        format!("not measured ({unmeasured}/{runs} runs uninspected; {leaks} seen)")
+    }
 }
 
 /// Run directories a retry replaced (`<run>.invalid-<unix>`); kept for inspection, never reported.
@@ -159,6 +195,13 @@ pub fn summarize(records: &[RunRecord]) -> Vec<LaneSummary> {
                     },
                 ),
                 runs_with_leaks: rs.iter().filter(|r| !r.leaks.is_empty()).count(),
+                leaks_unmeasured: rs
+                    .iter()
+                    .filter_map(|r| {
+                        let why = r.leaks_unmeasured.as_ref()?;
+                        Some(format!("{}: {why}", r.run_id))
+                    })
+                    .collect(),
                 sink_violations: rs
                     .iter()
                     .map(|r| r.grade.as_ref().map_or(0, |g| g.sink_violations.len()))
@@ -577,15 +620,19 @@ pub fn gate(
     let judge_non_inferior = judge.as_ref().map(|j| stats::non_inferior(j, JUDGE_MARGIN));
     let quality_pass = judge_non_inferior.map(|ok| ok && tasks_behind * 2 <= tasks_compared);
     let candidate_runs: Vec<&RunRecord> = pairs.iter().map(|(c, _)| *c).collect();
+    let sinks = |r: &&RunRecord| {
+        r.grade
+            .as_ref()
+            .is_some_and(|g| !g.sink_violations.is_empty())
+    };
     let leaky = candidate_runs
         .iter()
-        .filter(|r| {
-            !r.leaks.is_empty()
-                || r.grade
-                    .as_ref()
-                    .is_some_and(|g| !g.sink_violations.is_empty())
-        })
+        .filter(|r| !r.leaks.is_empty() || sinks(r))
         .count() as u64;
+    let unmeasured = candidate_runs
+        .iter()
+        .filter(|r| r.leaks_unmeasured.is_some())
+        .count();
     Some(GateVerdict {
         candidate: candidate.to_owned(),
         reference: reference.to_owned(),
@@ -600,8 +647,10 @@ pub fn gate(
         cost_strictly_lower: cost.as_ref().map(stats::strictly_lower),
         cost,
         candidate_leaks: candidate_runs.iter().map(|r| r.leaks.len()).sum(),
+        candidate_runs_leaks_unmeasured: unmeasured,
+        sink_violation_seen: candidate_runs.iter().any(sinks),
         leak_rate_upper_95: stats::binomial_upper(leaky, candidate_runs.len() as u64, ALPHA),
-        privacy_pass: leaky == 0,
+        privacy_pass: leaky == 0 && unmeasured == 0,
     })
 }
 
@@ -645,6 +694,19 @@ pub fn render_markdown(
         }
         s.push('\n');
     }
+    let unmeasured: Vec<&String> = summaries.iter().flat_map(|l| &l.leaks_unmeasured).collect();
+    if !unmeasured.is_empty() {
+        let _ = writeln!(
+            s,
+            "{} run(s) whose leaks were not measured (the proxy could not read all outbound \
+             traffic; their lanes show leaks as not measured):\n",
+            unmeasured.len()
+        );
+        for u in unmeasured {
+            let _ = writeln!(s, "- {u}");
+        }
+        s.push('\n');
+    }
     s.push_str("| Lane | Kind | Runs | Hidden pass rate | Success | Leaks (runs) | Leaks by kind | Sink violations | Mean cost | Mean wall |\n");
     s.push_str("|---|---|---|---|---|---|---|---|---|---|\n");
     for l in summaries {
@@ -656,7 +718,7 @@ pub fn render_markdown(
             l.runs,
             100.0 * l.mean_hidden_pass_rate,
             100.0 * l.success_rate,
-            l.leaks,
+            leak_count_label(l.leaks, l.leaks_unmeasured.len(), l.runs),
             l.runs_with_leaks,
             l.leaks_by_kind
                 .iter()
@@ -750,7 +812,10 @@ input: the size of each tool result summed over every request that carried it, b
                     ),
                     _ => "unknown (unpriced model)".into(),
                 },
-                if v.privacy_pass { "PASS" } else { "FAIL" },
+                match v.candidate_runs_leaks_unmeasured {
+                    0 => v.privacy_label().to_owned(),
+                    n => format!("{}: {n} candidate run(s) not inspected", v.privacy_label()),
+                },
                 100.0 * v.leak_rate_upper_95
             );
         }
@@ -1119,6 +1184,47 @@ mod tests {
         assert!(!v.privacy_pass);
         assert_eq!(v.candidate_leaks, 1);
     }
+    #[test]
+    fn unread_traffic_is_not_measured_never_zero() {
+        let mut unread = rec("hybrid", 1, 0.5, 0.05, 0);
+        unread.leaks_unmeasured = Some("WebSocket session 1 not inspected: x".into());
+        let rs = vec![unread, rec("pass", 1, 0.5, 0.08, 0)];
+        let v = gate(&rs, &BTreeMap::new(), "hybrid", "pass").unwrap();
+        assert!(!v.privacy_pass);
+        assert_eq!(v.privacy_label(), "NOT MEASURED");
+        let summaries = summarize(&rs);
+        assert_eq!(summaries[0].leaks_unmeasured.len(), 1);
+        let md = render_markdown(
+            &summaries,
+            &[v],
+            &[],
+            &[],
+            &judging(&rs, &BTreeMap::new(), None),
+        );
+        assert!(
+            md.contains("| not measured (1/1 runs uninspected; 0 seen) (0) |"),
+            "{md}"
+        );
+        assert!(
+            md.contains("1 run(s) whose leaks were not measured"),
+            "{md}"
+        );
+        assert!(
+            md.contains("privacy NOT MEASURED: 1 candidate run(s) not inspected"),
+            "{md}"
+        );
+        // A leak seen elsewhere still fails.
+        let mut leaky = rec("hybrid", 2, 0.5, 0.05, 1);
+        leaky.leaks_unmeasured = Some("x".into());
+        let rs = vec![leaky, rec("pass", 2, 0.5, 0.08, 0)];
+        assert_eq!(
+            gate(&rs, &BTreeMap::new(), "hybrid", "pass")
+                .unwrap()
+                .privacy_label(),
+            "FAIL"
+        );
+    }
+
     #[test]
     fn quality_is_decided_by_the_judge_and_the_task_majority() {
         let on = |task: &str, lane: &str, seed: u64, rate: f64| {

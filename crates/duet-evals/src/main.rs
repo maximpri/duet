@@ -295,7 +295,10 @@ async fn main() -> Result<()> {
                             "{:<28} pass {:>5.1}%  leaks {}  cost {}  {:.0}s{}",
                             rec.run_id,
                             100.0 * rec.counted_pass_rate(),
-                            rec.leaks.len(),
+                            match rec.leaks_unmeasured {
+                                None => rec.leaks.len().to_string(),
+                                Some(_) => format!("not measured ({} seen)", rec.leaks.len()),
+                            },
                             rec.total_cost_usd
                                 .map_or("unknown".into(), |c| format!("${c:.4}")),
                             rec.wall_seconds,
