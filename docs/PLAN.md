@@ -419,6 +419,20 @@ Delivery: web, MCP, language servers and git in parallel; sub-agents and images 
 and mock servers, a threat entry in `SECURITY.md`, README usage, and a live check where a server or
 backend is available. Follow-up: an egress proxy so commands can reach package registries only.
 
+*Built (branch `chat`):* `duet chat` and sessions in the TUI Run view. A session is a run whose
+conversation continues across operator turns: each message is a turn on the same loop, tools and
+boundary, ending with a reply (`reply`, or a message without tool calls), a clarifying question
+(`ask_operator`), a finished task (`finish` with the checks) or a stop (failure, per-turn or
+session budget `session.frontier_usd` / `session.wall_clock_minutes`, `/stop` after the current
+step, Ctrl-C at once); the session stays open until the operator closes it and resumes from its
+transcript (`duet chat --resume`). Messages typed while duet works steer the turn: delivered
+together at the loop's safe point (after the step's results, before the next request) and replayed
+in place on resume. Operator messages are sanitized like task text (the sensitive-path note once
+per session) and audited (`operator_message`). `/status`, `/diff`, `/undo` (the last turn's
+journaled writes). TUI: `n` session, `o` one-shot run, input box under the conversation, `r`
+resume, `s` / `x` stop. Tests with scripted frontiers in process and through the binary.
+*Open:* the live hands-on acceptance on a fresh project.
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

@@ -59,7 +59,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-git` | Private checkpoint store; the only function that spawns `git` | Inherit the user's git config, hooks or fsmonitor |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -88,6 +88,11 @@ struct GatedFrontier;  // only type the agent can call the frontier through
 fn run(cfg, frontier: &GatedFrontier, presenter: &dyn Presenter, git, resume, interrupted)
     -> (Terminal, RunStats)
 enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which } }
+struct Session;        // open(cfg, frontier, presenter, git, interrupted, limits, resume)
+                       // turn(&mut self, message) -> TurnEnd; undo(); steering(); end(closed)
+enum TurnEnd { Replied { message }, Asked { question }, Completed { summary }, Failed { reason },
+               BudgetStopped { which }, Interrupted, Stopped }
+struct Steering;       // steer(message), stop(): the operator's side of a running turn
 ```
 
 ## 4. Lifecycle of a run and of one turn
@@ -116,6 +121,55 @@ enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which 
      e. append call + result to Transcript (synced)
 5. Loop until finish passes the checks, a budget stops, or a failure a retry cannot fix (§10).
 ```
+
+### Sessions (`duet chat`)
+
+A session is a run whose conversation continues across operator turns (`duet_agent::session`). It
+uses the same loop (`run::work`), tools, presenter, gate and transcript; what differs is how a turn
+ends and what enters the conversation between steps.
+
+```
+open    new: transcript Start (the first message is the objective the engine was primed with)
+        resume: roll back pending writes, rebuild items and usage from the transcript (as
+        `duet resume`), recover turn marks, pending notes and working time
+turn    reset the stop flag; roll back pending writes; drop a partly answered frontier turn
+        TurnStart{exchange, message as typed, journal_next}
+        operator item = notes (interrupted turn, undone writes) + message
+          first message: Presenter.sanitize_objective (sensitive-path note, brief)
+          later ones:    Presenter.sanitize_message (same sanitizer, no notes)
+        audit operator_message{exchange, placeholders}, then the item (the request that
+        carries it is audited by the gate as always)
+        work() until the turn ends:
+          reply / ask_operator tool, or a message without tool calls  -> Replied / Asked
+          finish with checks passing                                  -> Completed
+          stop requested at the safe point                            -> Stopped
+          interrupt, per-turn or session budget, failure              -> Interrupted / BudgetStopped / Failed
+        TurnEnd{exchange, seconds, end}: texts with placeholders restored for the operator
+end     transcript End: Completed (closed by the operator), Failed{session left open}, or
+        BudgetStopped{session.*}; the CLI then concludes the run as usual
+```
+
+**Safe point and steering.** The loop's safe point is the top of each iteration: every result of
+the previous response is recorded, the next request is not sent. Steering messages the operator
+sent meanwhile (`Steering::steer`) are delivered there, together and in order, as one operator item
+(`Steered{exchange, after_request, messages}` then the sanitized `Item`), so a call and its result
+are never separated and a running command is never cut short. A stop request (`Steering::stop`)
+ends the turn at the same point. Appending is the only change to the conversation: earlier items
+are never rewritten, so the provider's prefix cache still applies, and a resumed session replays the
+steering in place. A message that arrives after the last request of a turn is handed back
+(`Steering::take`) and starts the next turn.
+
+**Limits.** Each turn is bounded by the run limits (`limits.frontier_usd`,
+`limits.wall_clock_minutes`) and by what is left of the session's (`session.frontier_usd`,
+`session.wall_clock_minutes`, counting only time the agent works); the stop names the binding
+setting. The provider's own retry deadline is set far out for a session; each turn cuts its request
+off at the turn deadline.
+
+**Undo.** `TurnStart.journal_next` marks where a turn began in the write journal. `Session::undo`
+restores every file written by records from that mark on to its content before the first of them
+(removing files the turn created), records `Undone{exchange, paths}` and tells the frontier with the
+next message. Repeating it walks back turn by turn. Writes made by commands are not journaled and
+are not reverted.
 
 ## 5. Boundary internals
 
@@ -236,8 +290,9 @@ git; reset behaviour defined per entry).
   config.toml                 project settings (tighten-only)
   git/                        private checkpoint store (bare, fixed config, flock)
   runs/<run-id>/              mode 0700, files 0600; `duet purge` after data.retention_days
-    run.json                  manifest (mode, task, frontier) for `duet resume`
-    transcript.jsonl          full conversation items, synced per item
+    run.json                  manifest (mode, task, frontier; `session` for `duet chat`) for resume
+    transcript.jsonl          full conversation items, synced per item; for a session also its
+                              turns (as typed), their ends, steering and undo
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
@@ -317,6 +372,11 @@ made) is not recorded; the turn is re-decided on resume.
 - Ctrl-C stops a frontier wait or a retry at once, kills a running command's whole process tree
   (checks included), records the interrupted call in the transcript (its result is not recorded)
   and ends in resumable `Failed{interrupted}`.
+
+A session applies the same states per turn (`TurnEnd`, §4 Sessions) and stays open after any of
+them; each `duet chat` invocation concludes the run with the session's state (`Completed` when the
+operator closed it, resumable `Failed{session left open}` when they left, `BudgetStopped` when a
+session budget is spent). `duet resume` refuses a session; `duet chat --resume` continues it.
 
 A full disk is an infrastructure failure too (`duet_agent::host`). A write of run state that fails
 for lack of a host resource (disk space, quota, file handles; `FsError::is_host_resource`) pauses

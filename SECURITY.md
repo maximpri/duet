@@ -98,7 +98,8 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
 4. **Hash-chained audit log** of every outbound request (placeholder-substituted) and of the
    security decisions taken during the run: local-endpoint trust, sandbox denials, `sensitive_data`
    commands (command, exit code, files marked derived), blocked sends (which check), protected
-   edits, operator approval decisions (tool, risk class, a write's path, approved or not), run
+   edits, operator approval decisions (tool, risk class, a write's path, approved or not),
+   operator messages in a session (turn number and how many values became placeholders), run
    start (with whether the boundary is on) and end. Events hold names, paths and
    outcomes, never content. After every append the log's head is anchored outside the workspace,
    in the owner state directory (`$DUET_CONFIG_HOME/state`, else `$XDG_STATE_HOME/duet`, else
@@ -203,6 +204,37 @@ keep approval off. Turning approval down (`all` → `risky` → `off`) loosens o
 
 Approval is a check on actions, not on disclosure: what the frontier receives is decided by the
 boundary whether or not an action is approved.
+
+In a session (`duet chat`) the question is asked in the conversation and the answer is the next
+line typed after it (lines typed before it stay queued as messages); an interrupt or the end of
+input denies. With approval on, `duet chat` needs a terminal on standard input like `duet run`, and
+the TUI does not start sessions (it has no terminal for the child).
+
+## Operator messages (sessions)
+
+In a session everything the operator types for duet (the first message, each later message, and
+steering messages sent while a turn runs) crosses the boundary exactly like task text:
+
+- **Sanitized before it enters the conversation.** The first message goes through the same path as
+  a run's task (`sanitize_objective`: detectors, custom patterns, vault values tokenized, plus the
+  sensitive-path note and optional brief). Later messages and steering go through
+  `sanitize_message`: the same sanitizer without the note, which is given once per session. Their
+  words are not added to the public vocabulary, so a name the operator types stays identifying.
+  The outbound gate then sanitizes and checks the whole request again, as for every request.
+- **Audited.** Each message is recorded as an `operator_message` event (turn number, number of
+  values replaced; never the text) before the request that carries it, and that request is in the
+  log as sent, placeholders included.
+- **Local display.** The operator sees real values: their own messages as typed, and duet's
+  replies, questions and summaries with placeholders restored from the vault (in the terminal, the
+  TUI and the transcript's turn records). Nothing restored is ever sent: the conversation keeps the
+  sanitized items. Typing a placeholder shown elsewhere (for example in `duet audit show`) is
+  allowed and passes as the placeholder; typing the real value is tokenized again.
+- **Local records.** The transcript keeps the messages as typed and the restored replies, next to the
+  vault in `.duet/runs/<id>/` (mode 0600, purged with the run). `/diff` shows workspace changes only
+  to the operator and names sensitive files without showing them, as the TUI does.
+- **No new authority.** Messages direct the work, but tool results still never do; approval,
+  sandbox, budgets and the checks apply to every turn. `/undo` only restores files the session's
+  own journaled writes changed.
 
 ## Disclosure report
 
@@ -313,6 +345,9 @@ Linux differences and limits:
   that also appears in sensitive content stays replaced wherever it appears.
 - Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
   as derived data (they are build output); a program that stores derived data there escapes that rule.
+- In a session, what the operator types is sanitized by detectors and the vault; a sensitive value
+  in a form no detector recognizes (a customer's name in free text, an internal code with no custom
+  pattern) reaches the frontier as typed, as it would in a run's task text.
 
 ## Prompt injection: residual risk
 
