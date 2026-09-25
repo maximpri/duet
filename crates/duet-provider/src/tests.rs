@@ -255,6 +255,132 @@ async fn transport_error_mid_stream_retries() {
     );
 }
 
+fn dialect_provider(script: &Script, dialect: crate::Dialect) -> ChatProvider {
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    cfg.dialect = dialect;
+    cfg.backoff_scale = 0.0;
+    ChatProvider::new(cfg, Box::new(script.clone())).unwrap()
+}
+
+const ANTHROPIC_OK: &[&str] = &[
+    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg\",\"model\":\"claude-opus-5-5\",\"usage\":{\"input_tokens\":7,\"cache_read_input_tokens\":900,\"cache_creation_input_tokens\":0,\"output_tokens\":1}}}\n\n",
+    "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
+    "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}\n\n",
+    "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+];
+
+#[tokio::test]
+async fn anthropic_overload_and_rate_limits_retry_in_place() {
+    // 529 overloaded, 429 with retry-after, an overloaded error event mid-stream, then success.
+    let s = Script::new(vec![
+        Scripted::Reply {
+            status: 529,
+            headers: vec![],
+            chunks: vec![Ok(
+                "{\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}",
+            )],
+        },
+        Scripted::Reply {
+            status: 429,
+            headers: vec![("retry-after".into(), "0".into())],
+            chunks: vec![Ok(
+                "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\"}}",
+            )],
+        },
+        Scripted::Reply {
+            status: 200,
+            headers: vec![],
+            chunks: vec![
+                Ok(ANTHROPIC_OK[0]),
+                Ok(ANTHROPIC_OK[2]),
+                Ok(
+                    "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}\n\n",
+                ),
+            ],
+        },
+        Scripted::Reply {
+            status: 200,
+            headers: vec![],
+            chunks: ANTHROPIC_OK.iter().map(|c| Ok(*c)).collect(),
+        },
+    ]);
+    let r = dialect_provider(&s, crate::Dialect::Anthropic)
+        .create(&request())
+        .await
+        .unwrap();
+    assert_eq!(r.text, "hello");
+    assert_eq!(r.attempts.attempts, 4);
+    assert_eq!(
+        (r.usage.input, r.usage.cache_read, r.usage.output),
+        (7, 900, 3)
+    );
+    assert_eq!(r.attempts.billed, r.usage);
+    let bodies = s.bodies.lock().unwrap();
+    assert_eq!(
+        bodies[0]["max_tokens"],
+        crate::anthropic::DEFAULT_MAX_TOKENS
+    );
+    assert_eq!(bodies[0], bodies[3], "every attempt sends the same body");
+}
+
+#[tokio::test]
+async fn anthropic_and_responses_client_errors_are_terminal() {
+    for dialect in [crate::Dialect::Anthropic, crate::Dialect::Responses] {
+        let s = Script::new(vec![Scripted::Reply {
+            status: 400,
+            headers: vec![],
+            chunks: vec![Ok(
+                "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"tools.0: bad\"}}",
+            )],
+        }]);
+        let e = dialect_provider(&s, dialect)
+            .create(&request())
+            .await
+            .unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Status(400), "{dialect:?}");
+        assert!(!e.is_retryable());
+        let overflow = Script::new(vec![Scripted::Reply {
+            status: 400,
+            headers: vec![],
+            chunks: vec![Ok(
+                "{\"error\":{\"code\":\"context_length_exceeded\",\"message\":\"prompt is too long: 1200000 tokens > 1000000 maximum\"}}",
+            )],
+        }]);
+        assert_eq!(
+            dialect_provider(&overflow, dialect)
+                .create(&request())
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::ContextOverflow
+        );
+    }
+}
+
+#[tokio::test]
+async fn responses_streams_through_the_client() {
+    let s = Script::new(vec![Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok(
+                "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"hi\"}\n\n",
+            ),
+            Ok(
+                "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hi\"}]}],\"usage\":{\"input_tokens\":100,\"input_tokens_details\":{\"cached_tokens\":64},\"output_tokens\":2}}}\n\n",
+            ),
+        ],
+    }]);
+    let r = dialect_provider(&s, crate::Dialect::Responses)
+        .create(&request())
+        .await
+        .unwrap();
+    assert_eq!(r.text, "hi");
+    assert_eq!((r.usage.input, r.usage.cache_read), (36, 64));
+    assert_eq!(s.bodies.lock().unwrap()[0]["store"], false);
+}
+
 #[tokio::test]
 async fn auth_errors_are_not_retried() {
     let s = Script::new(vec![Scripted::Reply {
