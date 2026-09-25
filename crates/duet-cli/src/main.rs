@@ -24,6 +24,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 mod approve;
+mod chat;
 mod doctor;
 mod setup;
 
@@ -76,6 +77,28 @@ enum Cmd {
     },
     /// Continue an interrupted run.
     Resume { run_id: String },
+    /// Code in a conversation: each message you type is a turn duet works
+    /// on, with the same boundary, sandbox, budgets and audit as a run; duet
+    /// replies, asks when it needs a decision, and keeps the context for your
+    /// next message. /help inside lists the commands.
+    Chat {
+        /// The first message (otherwise typed at the prompt).
+        message: Option<String>,
+        #[arg(long, value_enum, default_value = "hybrid")]
+        mode: Mode,
+        /// Override the frontier endpoint for this session.
+        #[arg(long)]
+        frontier_url: Option<String>,
+        /// Override the frontier model for this session.
+        #[arg(long)]
+        frontier_model: Option<String>,
+        /// Acknowledge that `--mode passthrough` turns the privacy boundary off.
+        #[arg(long)]
+        no_privacy: bool,
+        /// Continue a session: the one named, or the most recent open one.
+        #[arg(long, num_args = 0..=1, value_name = "SESSION_ID")]
+        resume: Option<Option<String>>,
+    },
     /// Inspect what was sent to the frontier.
     Audit {
         #[command(subcommand)]
@@ -192,6 +215,9 @@ struct RunManifest {
     /// A local endpoint found by bootstrap for this run (no local model configured).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local: Option<LocalOverride>,
+    /// A session (`duet chat`) rather than a one-shot run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    session: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -467,6 +493,47 @@ async fn start(
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
 ) -> Result<(Terminal, duet_agent::RunStats)> {
+    let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit)?;
+    let passthrough = PassThrough { max_bytes: 60_000 };
+    let presenter: &dyn duet_boundary::view::Presenter = match &p.engine {
+        Some(e) => e.as_ref(),
+        None => &passthrough,
+    };
+    let (terminal, mut stats) = duet_agent::run(
+        &p.run_cfg,
+        &p.frontier,
+        presenter,
+        &p.git,
+        resume,
+        &limits.interrupted,
+    )
+    .await;
+    // Local model work of this invocation (a resumed run reports only its own).
+    stats.ledger.local = p.engine.as_ref().and_then(|e| e.take_local_stats());
+    Ok((terminal, stats))
+}
+
+/// What a run or a session works with.
+struct Prepared {
+    git: duet_git::Git,
+    /// The security engine (hybrid mode).
+    engine: Option<Arc<Engine>>,
+    frontier: GatedFrontier,
+    run_cfg: RunConfig,
+}
+
+/// Opens the engine, the providers and the audit log, records the start
+/// events and builds the run configuration. `audit` receives the audit log
+/// as soon as it is open.
+fn prepare(
+    ws: &Path,
+    manifest: &RunManifest,
+    cfg: &Config,
+    oversight: duet_agent::Oversight,
+    run_dir: &Path,
+    limits: &RunLimits,
+    audit: &mut Option<AuditHandle>,
+) -> Result<Prepared> {
     let git = duet_git::Git::locate()?;
     let _ = git.exclude_state_dir(ws);
     let sandbox = duet_sandbox::detect()?;
@@ -555,23 +622,12 @@ async fn start(
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
     };
-    let passthrough = PassThrough { max_bytes: 60_000 };
-    let presenter: &dyn duet_boundary::view::Presenter = match &engine {
-        Some(e) => e.as_ref(),
-        None => &passthrough,
-    };
-    let (terminal, mut stats) = duet_agent::run(
-        &run_cfg,
-        &frontier,
-        presenter,
-        &git,
-        resume,
-        &limits.interrupted,
-    )
-    .await;
-    // Local model work of this invocation (a resumed run reports only its own).
-    stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
-    Ok((terminal, stats))
+    Ok(Prepared {
+        git,
+        engine,
+        frontier,
+        run_cfg,
+    })
 }
 
 /// The disclosure report of a run, from its audit log and its cost ledger
@@ -725,6 +781,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 frontier_model: frontier_model.unwrap_or(cfg.str("frontier.model")?),
                 frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
                 local,
+                session: false,
             };
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
             std::process::exit(execute(ws, manifest, false).await?);
@@ -739,10 +796,32 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 manifest.run_id == run_id,
                 "run {run_id}: run.json names another run"
             );
+            ensure!(
+                !manifest.session,
+                "{run_id} is a session; continue it with `duet chat --resume {run_id}`"
+            );
             if let Err(why) = duet_agent::resumable(&run_dir) {
                 bail!("run {run_id} cannot be resumed: {why}");
             }
             std::process::exit(execute(ws, manifest, true).await?);
+        }
+        Cmd::Chat {
+            message,
+            mode,
+            frontier_url,
+            frontier_model,
+            no_privacy,
+            resume,
+        } => {
+            let args = chat::ChatArgs {
+                message,
+                mode,
+                frontier_url,
+                frontier_model,
+                no_privacy,
+                resume,
+            };
+            std::process::exit(chat::chat(ws, args).await?);
         }
         Cmd::Audit { action } => match action {
             AuditCmd::Show { run_id, raw } => {
