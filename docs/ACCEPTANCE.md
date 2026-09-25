@@ -3,7 +3,8 @@
 Status: audit of `main` at `234165b` (2026-09-24), before any release. It is read-only: no code was
 changed, and no models or evaluations were run. The evidence is the test suite (one full
 `tools/gate.sh` run), the measured batches under `results/` (EXT_DISK), the code, and the git history.
-The operator's standing decisions are in [PLAN.md](PLAN.md) §3.
+The operator's standing decisions are in [PLAN.md](PLAN.md) §3. Rows and defects marked "after the audit" were
+updated later on 2026-09-24 (branch `nits`) with the fix and its evidence; the rest is unchanged.
 
 The question it answers: **does Duet work, and does it meet its requirements?** Short answer:
 the core privacy claim is well supported by tests and by live measurements (0 canaries in 74 valid
@@ -73,7 +74,9 @@ Checks this audit added on the stored results (read-only scripts, in
   `l2l4`, for both lanes.
 - **Anchor verification.** `duet audit verify` on `l2l4/L2-duet-hybrid-s1` reports "chain intact: 34
   records". It then fails (exit 2) with "no anchor", because the anchor is filed under a hash of the
-  workspace path, and the results were moved to EXT_DISK after the run (defect D3).
+  workspace path, and the results were moved to EXT_DISK after the run (defect D3). *Resolved
+  after this audit (branch `nits`): anchors are now keyed by run id and first record, and this run
+  now verifies (exit 0); see P16.*
 
 ## 3. Requirements
 
@@ -121,8 +124,8 @@ Checks this audit added on the stored results (read-only scripts, in
 | P13 | Property tests in the gate | PLAN SbD-2 | **Verified** | `duet-boundary/tests/properties.rs` (9), `no_canary.rs` (1), `duet-provider/tests/properties.rs` (5); all in this gate run | Only small case counts in the gate; record one `PROPTEST_CASES=5000` run before a release |
 | P14 | Local data hygiene: `.duet/runs/<id>/` mode 0600, `duet purge` by retention; automatic deletion | TARGET §9 | **Partial** | `private_modes_and_torn_tail_repair`, `persists_privately`, `snapshots_are_private_and_readable` | `duet purge` has no test. Automatic deletion is **not implemented** (M6, documented) |
 | P15 | Per-run disclosure report: counts and kinds only, never values | PLAN SbD-3 | **Verified** | `counts_withheld_content_by_class_without_values`, `passthrough_runs_are_reported_as_unprotected`, `audit_disclosure_reports_counts_from_the_log_and_the_summary` | — |
-| P16 | Security events in the audit chain; head anchored outside the workspace; `duet audit verify` detects a rewrite | PLAN SbD-1 | **Partial** | `events_join_the_chain_without_content`, `anchor_detects_a_rewritten_or_truncated_log`, `audit_verify_checks_the_anchor_and_show_lists_events`, `doctor_verifies_recent_audit_logs_and_anchors` | Defect D3: the anchor is keyed by the workspace path, so a moved or re-mounted workspace fails verification (shown on `l2l4/L2-duet-hybrid-s1`) |
-| P17 | Run start names the sensitive paths; the local brief is off by default | TARGET §4; PLAN §3 2026-09-24 | **Verified** | `the_task_names_the_sensitive_paths`, `the_task_carries_a_cleaned_local_brief_of_the_sensitive_files`; registry default `sensitivity.local_brief = false` | README still says the brief runs at the start of a run (D6) |
+| P16 | Security events in the audit chain; head anchored outside the workspace; `duet audit verify` detects a rewrite | PLAN SbD-1 | **Verified** (updated after the audit) | `events_join_the_chain_without_content`, `anchor_detects_a_rewritten_or_truncated_log`, `audit_verify_checks_the_anchor_and_show_lists_events`, `doctor_verifies_recent_audit_logs_and_anchors`. D3 fixed on branch `nits`: anchors are filed under `audit-anchors/runs/<run-id>/<first-record hash>.json`, so they no longer depend on the workspace path; `anchors_survive_a_moved_workspace` (verify matches after a move; a re-chained log, with or without its first record, and an emptied log are still reported), `anchors_in_the_earlier_layout_are_still_read` (old-layout anchors are found in place and after a move) | — (after the fix, `duet audit verify` on the stored `l2l4/L2-duet-hybrid-s1` reports "chain intact: 34 records" and "anchor matches" against its earlier-layout anchor, exit 0) |
+| P17 | Run start names the sensitive paths; the local brief is off by default | TARGET §4; PLAN §3 2026-09-24 | **Verified** | `the_task_names_the_sensitive_paths`, `the_task_carries_a_cleaned_local_brief_of_the_sensitive_files`; registry default `sensitivity.local_brief = false` | — (README corrected after the audit: the brief is described as optional, off by default) |
 
 ### 3.4 Intellectual property
 
@@ -139,7 +142,7 @@ Checks this audit added on the stored results (read-only scripts, in
 | ID | Requirement | Source | Verdict | Evidence | Gap / next action |
 |---|---|---|---|---|---|
 | C1 | Strictly cheaper than the frontier alone (original Gate 3) | PLAN §3 2026-09-23 | **Not met** | Attempts A–C failed (`gate3a`–`gate3c`); superseded by the 2026-09-24 decision | Recorded for completeness; see C2 |
-| C2 | Report a measured privacy premium: the paired cost ratio vs passthrough (same model) with its 95% interval | PLAN §3 2026-09-24; TARGET §1 | **Partial** | `paired_ratio_is_the_ratio_of_totals` (used only by `--final`). Batch reports show the paired **difference** and its bound, not the ratio. Ratios of lane means in this audit: `gate2` 2.4×, `cost1-hybrid` 1.9×, `gate3a` 1.7×, `gate3b` 1.5×, `gate3c` 2.2×, `l2l4` 2.1× | No ratio with an interval has been published. The "~1.4×" in README, TARGET and PLAN comes from L3 in attempt B; the measured batches say 1.5–2.4× (D6). Publish the ratio with its interval from M5 |
+| C2 | Report a measured privacy premium: the paired cost ratio vs passthrough (same model) with its 95% interval | PLAN §3 2026-09-24; TARGET §1 | **Partial** | `paired_ratio_is_the_ratio_of_totals` (used only by `--final`). Batch reports show the paired **difference** and its bound, not the ratio. Ratios of lane means in this audit: `gate2` 2.4×, `cost1-hybrid` 1.9×, `gate3a` 1.7×, `gate3b` 1.5×, `gate3c` 2.2×, `l2l4` 2.1× | No ratio with an interval has been published. Publish the ratio with its interval from M5. (After the audit, README, TARGET and PLAN §5 report the measured 1.5–2.4× instead of "~1.4×"; the PLAN §3 decision row keeps its original text) |
 | C3 | Cost = list price including cache reads and writes + local electricity | TARGET §1 | **Partial** | Prices verified with source and date (`selftest`; `prices_refuse_unverified_and_compute_cost`, `prices_usage`); cache-aware usage (`openai_chat_stream_usage`, `anthropic_stream_usage`) | Electricity is **estimated** as `local.watts` × the run's wall seconds (`lanes/mod.rs`), not measured and not busy seconds (PLAN M0.2 says busy seconds). No price row for the `codex` lane's model |
 | C4 | Per-run cost ledger by content class in `summary.json`, shown per lane | PLAN M4 | **Verified** | `bulky_files_reach_the_frontier_as_a_preview_and_are_charged_as_such`, `passthrough_shows_the_whole_file_and_charges_it_as_raw`, `results_are_charged_to_their_class_for_every_request_that_carries_them`, `lanes_with_a_ledger_get_a_cost_breakdown`; ledgers in `gate3a`–`l2l4` reports | — |
 | C5 | Usage is never poisoned by retries; missing usage is estimated | PLAN M1 fixes 1, 6 | **Verified** | `retried_failures_do_not_poison_usage`, `missing_finish_is_truncation_and_missing_usage_is_estimated` | — |
@@ -177,9 +180,9 @@ Checks this audit added on the stored results (read-only scripts, in
 | CF2 | Typed registry, owner/project scopes, `duet config get/set/list/preset` | TARGET §8 | **Verified** | `every_default_is_valid`, `owner_and_project_merge_with_origins`, `set_owner_validates_and_persists`, `unknown_keys_in_files_are_errors`, `a_preset_goes_through_the_audited_loosening_path` | — |
 | CF3 | Everything configurable; "a test fails on any setting read outside the registry" | TARGET §2.7, §8; PLAN §3 | **Partial** | Reading an unknown key is a runtime error (`ConfigError::Unknown`); `every_registry_key_is_on_exactly_one_screen` | No such source-scanning test exists. Several behaviour constants are hard-coded and not configurable: `MAX_TEXT_ONLY_TURNS`, `MAX_LENGTH_STOPS` (`run.rs`), provider `max_attempts` 6, retry budget 900 s and timeouts (`client.rs`), `ask_local` ≤ 6 questions, `read_raw` ≤ 500 lines |
 | CF4 | The TUI covers every setting and shows its origin; loosening shows a diff, needs `y` and is audited; the project scope refuses owner-only keys | TARGET §8; PLAN M6 | **Verified** | `every_registry_key_is_on_exactly_one_screen`, `settings_screens_show_every_value_and_its_origin`, `loosening_shows_the_diff_and_cancel_leaves_everything_unchanged`, `confirmed_loosening_applies_and_records_what_it_weakened`, `project_scope_refuses_owner_only_keys_and_loosening`, `tightening_applies_directly_and_is_audited`, `edits_are_validated_and_cancellable` | — |
-| CF5 | TUI Audit, Run, Sensitivity-tester and Models screens | TARGET §8 | **Verified** | `audit_screen_lists_records_and_verifies`, `run_screen_follows_the_transcript`, `sensitivity_tester_explains_matches`, `models_screen_runs_doctor_offline_and_online_on_request`, `empty_workspace_screens_render` | Tested with `TestBackend` only, never in a real terminal |
+| CF5 | TUI Audit, Run, Sensitivity-tester and Models screens | TARGET §8 | **Verified** | `audit_screen_lists_records_and_verifies`, `run_screen_follows_the_transcript`, `sensitivity_tester_explains_matches`, `models_screen_runs_doctor_offline_and_online_on_request`, `empty_workspace_screens_render`; after the audit, `a_terminal_without_a_usable_size_is_refused_with_the_minimum` (no terminal, 0x0 or under 80x24: a message and exit 1, checked by hand in a pseudo-terminal too) | Tested with `TestBackend` only, never used in a real terminal beyond that size check |
 | CF6 | TUI extras: backend auto-detection, connection/cache/prefill tests, custom detector patterns, purge from Data, starting runs | TARGET §8; PLAN M6 "Open" | **Not implemented** | — | M6 |
-| CF7 | `duet doctor`: offline by default, `--online` without model calls, `--json`, exit code = worst result, key never printed | TARGET §8 | **Verified** | `offline_doctor_uses_no_network_and_never_prints_the_key`, `online_doctor_lists_models_and_context_without_model_calls`, `doctor_shows_the_approval_mode_and_warns_without_release_keys` | — |
+| CF7 | `duet doctor`: offline by default, `--online` without model calls, `--json`, exit code = worst result, key never printed | TARGET §8 | **Verified** | `offline_doctor_uses_no_network_and_never_prints_the_key`, `online_doctor_lists_models_and_context_without_model_calls`, `doctor_shows_the_approval_mode_and_notes_release_keys_in_a_development_build`, `release_keys_warn_only_in_a_release_build` | — (after the audit: the release-keys check is SKIP with a note in a development build and warns only in a build made by `tools/release.sh`, which sets `DUET_RELEASE_BUILD`) |
 | CF8 | Doctor cache-reuse check and update check; frontier presets (z.ai, Anthropic, OpenAI) | TARGET §8; PLAN M6 | **Not implemented** | — | M6; the update check needs a release channel (SC5) |
 | CF9 | Anthropic Messages and Responses dialects | TARGET §3.1, §10 | **Not implemented** | Moved to M6 (PLAN §10 scope changes) | — |
 
@@ -210,7 +213,7 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 | No known value, detected secret, personal datum or copied span reaches the frontier; failing requests are blocked | P1, P4 | Verified |
 | A resolved secret is written only to secret sinks | P8 | Verified |
 | Policy cannot be loosened by repository content | SD3 | Verified |
-| Denials, sensitive commands and blocked sends are in the anchored audit log | P16 | Partial (D3) |
+| Denials, sensitive commands and blocked sends are in the anchored audit log | P16 | Verified (D3 fixed after the audit) |
 
 ### 3.10 Supply chain
 
@@ -222,7 +225,7 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 | SC4 | Signed releases (`ssh-keygen -Y`), verification script, the key never in the repo | PLAN SbD-3 | **Verified** | `verify_release_accepts_a_signed_release_and_rejects_tampering`, `release_refuses_to_start_without_an_operator_key_or_the_right_version` (throwaway key) | Never used for a real release (deliberately: after acceptance, PLAN §3 2026-09-24) |
 | SC5 | Published release channel, outdated-version check, advisory feed | PLAN SbD-3 | **Not implemented** | Stated as "Not yet" in SECURITY | — |
 | SC6 | Build reproducibility verified independently | SECURITY Supply chain | **Not implemented** | Stated as not verified | — |
-| SC7 | Every commit passes `tools/gate.sh`; a pre-push hook runs it (no hosted CI) | PLAN §2.6, SbD-2 | **Partial** | `tools/install-hooks.sh` exists; gate passes at HEAD | Hooks are **not installed** in this clone (`.git/hooks` holds only samples) and no remote is configured, so nothing enforces the gate per commit. Install the pre-push hook |
+| SC7 | Every commit passes `tools/gate.sh`; a pre-push hook runs it (no hosted CI) | PLAN §2.6, SbD-2 | **Partial** | `tools/install-hooks.sh` exists; gate passes at HEAD | Hooks are **not installed** in this clone (`.git/hooks` holds only samples) and no remote is configured, so nothing enforces the gate per commit. Install the pre-push hook (operator). After the audit, README "Development" makes installing them the first step |
 
 ### 3.11 Evaluation harness
 
@@ -266,7 +269,7 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 |---|---|---|---|---|---|---|
 | Quality (Q) | 1 | 5 | 0 | 1 | 0 | 7 |
 | Agent loop and context (A) | 5 | 3 | 0 | 0 | 0 | 8 |
-| Privacy (P) | 12 | 3 | 1 | 0 | 1 | 17 |
+| Privacy (P) | 13 | 2 | 1 | 0 | 1 | 17 |
 | IP (IP) | 5 | 0 | 0 | 0 | 0 | 5 |
 | Cost (C) | 3 | 2 | 0 | 1 | 0 | 6 |
 | Termination / resume (T) | 1 | 3 | 2 | 0 | 0 | 6 |
@@ -277,7 +280,7 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 | Evaluation harness (EV) | 7 | 1 | 1 | 1 | 0 | 10 |
 | Novelty / provenance (N) | 4 | 1 | 0 | 0 | 0 | 5 |
 | Large repositories (LR) | 1 | 1 | 0 | 1 | 1 | 4 |
-| **Total** | **58** | **24** | **9** | **6** | **7** | **104** |
+| **Total** | **59** | **23** | **9** | **6** | **7** | **104** |
 
 ### 4.2 Release blockers
 
@@ -309,6 +312,7 @@ release:
 8. **Honest documentation (C2, D6).** README still lists "Cheaper" as a goal. It also describes a
    local brief that is off by default. The "~1.4×" premium is below the 1.5–2.4× measured per batch.
    Secure by Design requires the limits to be stated accurately.
+   *Resolved after the audit (branch `nits`), for the items listed in D6.*
 9. **Large repositories (LR1).** An operator requirement with no evidence beyond 8.4K lines.
 
 ### 4.3 Known limits (documented; acceptable for a first release if stated)
@@ -333,10 +337,10 @@ release:
 |---|---|---|---|
 | D1 | The harness grades runs that crashed (exit 101, no terminal state) as normal runs | `gate2/M1-duet-hybrid-s1` and `gate2/S1-duet-hybrid-s2` (panic at `overlap.rs:105`) graded 100% and counted in Gate 2, which PLAN §10 records as "all runs valid". The privacy result is unaffected (the crash was fail-closed, before sending) | Record `summary.json` `terminal` in `run.json`; a run without one fails |
 | D2 | A product failure is excluded as infrastructure | `gate3c/S2-duet-hybrid-s2/-s3`: Duet's gate blocked the first send (a false-positive name), and the harness marked the runs invalid ("no frontier request") | Classify by the agent's terminal state before the proxy statuses |
-| D3 | The audit anchor is keyed by the workspace path, so moving the workspace makes `duet audit verify` fail with "no anchor" (exit 2) | `l2l4/L2-duet-hybrid-s1` after the move to EXT_DISK; the anchor sits under a different path hash | Key anchors by run id plus the chain's genesis, or search the anchors by run id |
+| D3 | The audit anchor is keyed by the workspace path, so moving the workspace makes `duet audit verify` fail with "no anchor" (exit 2) | `l2l4/L2-duet-hybrid-s1` after the move to EXT_DISK; the anchor sits under a different path hash | Key anchors by run id plus the chain's genesis, or search the anchors by run id. **Fixed** after the audit (branch `nits`): keyed by run id and first-record hash, earlier layout still read; see P16 |
 | D4 | `duet resume <run_id>` does not validate the id (the `audit` commands use `checked_run_id`) and does not refuse a run that already ended | `duet-cli/src/main.rs` `Cmd::Resume`; `run.rs` ignores `Entry::End` on resume | Validate the id; refuse or confirm when the transcript has an `End` entry |
 | D5 | Electricity is computed from wall seconds, not local busy seconds | `duet-evals/src/lanes/mod.rs` (`electricity(cfg.local_watts, record.wall_seconds)`) versus PLAN M0.2 | Use the ledger's local busy seconds |
-| D6 | Documentation claims ahead of the evidence | README "Goals" still lists **Cheaper**. README says the local model briefs the frontier at run start (default off). README, TARGET and PLAN state a "~1.4×" premium (batches: 1.5–2.4×). ARCH §12 says every invariant is test-backed (inv. 7 is not). TARGET §8 promises a registry-read test that does not exist. The PLAN header ("Gate 3 of M4; SbD-2 next") and TARGET header ("implemented through M4.5 and SbD-1") are stale | A docs-only pass |
+| D6 | Documentation claims ahead of the evidence | README "Goals" still lists **Cheaper**. README says the local model briefs the frontier at run start (default off). README, TARGET and PLAN state a "~1.4×" premium (batches: 1.5–2.4×). ARCH §12 says every invariant is test-backed (inv. 7 is not). TARGET §8 promises a registry-read test that does not exist. The PLAN header ("Gate 3 of M4; SbD-2 next") and TARGET header ("implemented through M4.5 and SbD-1") are stale | A docs-only pass. **Fixed** after the audit (branch `nits`): all listed items corrected, except the PLAN §3 decision row, which keeps its original text |
 
 ## 5. What would move this to "accept"
 
