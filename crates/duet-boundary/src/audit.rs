@@ -525,6 +525,15 @@ impl AuditHandle {
         Self(Arc::new(Mutex::new(log)))
     }
 
+    /// The log, also after a panic elsewhere while it was held: the run must
+    /// still record its end (a torn line is repaired on the next open, and
+    /// `verify` reports a broken chain).
+    fn log(&self) -> std::sync::MutexGuard<'_, AuditLog> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     pub fn append(
         &self,
         endpoint: &str,
@@ -532,16 +541,13 @@ impl AuditHandle {
         request: serde_json::Value,
         interventions: Vec<String>,
     ) -> Result<AuditRecord, FsError> {
-        self.0
-            .lock()
-            .expect("audit lock")
-            .append(endpoint, model, request, interventions)
+        self.log().append(endpoint, model, request, interventions)
     }
 
     /// Appends an event. A failure is reported on stderr and does not stop the
     /// run: events record decisions already enforced elsewhere.
     pub fn record(&self, event: AuditEvent) {
-        if let Err(e) = self.0.lock().expect("audit lock").event(event) {
+        if let Err(e) = self.log().event(event) {
             eprintln!("warning: audit event not recorded: {e}");
         }
     }

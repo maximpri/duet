@@ -399,6 +399,7 @@ dependencies = [
  "duet-fs",
  "duet-git",
  "duet-sandbox",
+ "futures-util",
  "regex",
  "serde",
  "serde_json",

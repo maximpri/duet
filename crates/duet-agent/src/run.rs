@@ -7,22 +7,68 @@ use crate::ledger::Ledger;
 use crate::prompt::system_prompt;
 use crate::tools::{self, Ctx, Outcome};
 use crate::transcript::{Entry, Transcript};
-use duet_boundary::GatedFrontier;
-use duet_boundary::model::{Item, Request, StopReason, ToolCall, ToolSpec, Usage};
+use duet_boundary::audit::{AuditEvent, AuditHandle};
+use duet_boundary::model::{ErrorKind, Item, Request, StopReason, ToolCall, ToolSpec, Usage};
 use duet_boundary::view::{Presenter, ViewClass};
+use duet_boundary::{GateError, GatedFrontier};
 use duet_git::Git;
 use duet_sandbox::SandboxKind;
+use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::collections::{HashMap, HashSet};
+use std::panic::AssertUnwindSafe;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tokio::time::Instant;
 
+/// How a run ends. Every run ends in exactly one of these: infrastructure
+/// failures are retried in place until a budget stops them, and a panic ends
+/// the run as `Failed` with an internal-error reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Terminal {
     Completed { summary: String },
     Failed { reason: String },
     BudgetStopped { which: String },
+}
+
+/// The reason of a run stopped by an interrupt (resumable).
+pub const INTERRUPTED: &str = "interrupted; resume with `duet resume`";
+
+impl Terminal {
+    /// The state name, as in `summary.json` and the audit log's end event.
+    pub fn state(&self) -> &'static str {
+        match self {
+            Terminal::Completed { .. } => "completed",
+            Terminal::Failed { .. } => "failed",
+            Terminal::BudgetStopped { .. } => "budget_stopped",
+        }
+    }
+
+    fn interrupted() -> Self {
+        Terminal::Failed {
+            reason: INTERRUPTED.into(),
+        }
+    }
+
+    fn out_of_time() -> Self {
+        Terminal::BudgetStopped {
+            which: "wall_clock".into(),
+        }
+    }
+
+    /// `Failed` with the message of a caught panic.
+    pub fn internal_error(panic: &(dyn std::any::Any + Send)) -> Self {
+        let message = panic
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| panic.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "a panic without a message".into());
+        Terminal::Failed {
+            reason: format!("internal error: {message}"),
+        }
+    }
 }
 
 pub struct RunConfig {
@@ -82,17 +128,24 @@ fn add(a: &mut Usage, b: &Usage) {
 }
 
 /// Runs to a terminal state. `resume` continues an existing transcript.
+///
+/// The run ends at the earlier of `cfg.wall_clock` from now and the frontier
+/// provider's own deadline. A panic anywhere in the run (engine, tools, gate)
+/// is caught here and ends it as `Failed` with an internal-error reason; the
+/// transcript's end entry is written either way.
 pub async fn run(
     cfg: &RunConfig,
     frontier: &GatedFrontier,
     presenter: &dyn Presenter,
     git: &Git,
     resume: bool,
-    interrupted: &std::sync::atomic::AtomicBool,
+    interrupted: &AtomicBool,
 ) -> (Terminal, RunStats) {
     let started = Instant::now();
+    let own = started + cfg.wall_clock;
+    let deadline = frontier.deadline().map_or(own, |d| d.min(own));
     let mut stats = RunStats::default();
-    let terminal = match drive(
+    let driven = AssertUnwindSafe(drive(
         cfg,
         frontier,
         presenter,
@@ -100,12 +153,14 @@ pub async fn run(
         resume,
         interrupted,
         &mut stats,
-        started,
-    )
-    .await
-    {
-        Ok(t) => t,
-        Err(reason) => Terminal::Failed { reason },
+        deadline,
+    ))
+    .catch_unwind()
+    .await;
+    let terminal = match driven {
+        Ok(Ok(t)) => t,
+        Ok(Err(reason)) => Terminal::Failed { reason },
+        Err(panic) => Terminal::internal_error(panic.as_ref()),
     };
     stats.wall_seconds = started.elapsed().as_secs_f64();
     stats.ledger.finish();
@@ -117,6 +172,106 @@ pub async fn run(
     (terminal, stats)
 }
 
+/// Whether a run can be resumed: it has a transcript and did not complete.
+pub fn resumable(run_dir: &Path) -> Result<(), String> {
+    let entries = Transcript::read(run_dir).map_err(|e| e.to_string())?;
+    if !entries.iter().any(|e| matches!(e, Entry::Item { .. })) {
+        return Err("nothing to resume: the transcript is empty".into());
+    }
+    let last_end = entries.iter().rev().find_map(|e| match e {
+        Entry::End { terminal } => Some(terminal),
+        _ => None,
+    });
+    match last_end {
+        Some(Terminal::Completed { .. }) => Err("the run already completed".into()),
+        _ => Ok(()),
+    }
+}
+
+/// Ends a run's records: the audit log's end event (which anchors its final
+/// head), then `summary.json` in the run directory, written privately. Returns
+/// the summary. `audit_log` is the log's path, read for the disclosure report.
+pub fn conclude(
+    run_dir: &Path,
+    run_id: &str,
+    audit: Option<&AuditHandle>,
+    audit_log: &Path,
+    terminal: &Terminal,
+    stats: &RunStats,
+) -> Result<serde_json::Value, duet_fs::FsError> {
+    if let Some(a) = audit {
+        a.record(AuditEvent::RunEnd {
+            terminal: terminal.state().into(),
+        });
+    }
+    // The report is best effort: a defect in it must not cost the summary.
+    let disclosure = std::panic::catch_unwind(|| {
+        let lines = duet_boundary::audit::read(audit_log).ok()?;
+        Some(crate::disclosure::Disclosure::build(
+            &lines,
+            Some(&stats.ledger),
+        ))
+    })
+    .unwrap_or(None);
+    let summary = serde_json::json!({
+        "run_id": run_id,
+        "terminal": terminal,
+        "stats": stats,
+        "disclosure": disclosure,
+    });
+    duet_fs::private::write_private(
+        &run_dir.join("summary.json"),
+        &serde_json::to_vec_pretty(&summary).unwrap_or_default(),
+    )?;
+    Ok(summary)
+}
+
+/// How a failed frontier request ends the run: an outage that outlasted the
+/// wall clock is a budget stop, an interrupt during retries is resumable, and
+/// anything else (credentials, an invalid request, a blocked send) fails it.
+fn stop_for(e: GateError) -> Result<Terminal, String> {
+    match &e {
+        GateError::Provider(p) if p.kind == ErrorKind::Deadline => Ok(Terminal::out_of_time()),
+        GateError::Provider(p) if p.kind == ErrorKind::Cancelled => Ok(Terminal::interrupted()),
+        _ => Err(format!("frontier: {e}")),
+    }
+}
+
+/// Resolves once `flag` is set.
+async fn raised(flag: &AtomicBool) {
+    while !flag.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// Drops a trailing assistant turn whose tool calls did not all get results
+/// (the run stopped mid-turn), with the results it did get, so the frontier
+/// re-decides that turn.
+fn drop_unfinished_turn(items: &mut Vec<Item>) {
+    let Some(at) = items
+        .iter()
+        .rposition(|i| matches!(i, Item::Assistant { .. }))
+    else {
+        return;
+    };
+    let Item::Assistant { tool_calls, .. } = &items[at] else {
+        return;
+    };
+    if tool_calls.is_empty() {
+        return;
+    }
+    let answered: HashSet<&str> = items[at + 1..]
+        .iter()
+        .filter_map(|i| match i {
+            Item::ToolResult { call_id, .. } => Some(call_id.as_str()),
+            _ => None,
+        })
+        .collect();
+    if tool_calls.iter().any(|c| !answered.contains(c.id.as_str())) {
+        items.truncate(at);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn drive(
     cfg: &RunConfig,
@@ -124,9 +279,9 @@ async fn drive(
     presenter: &dyn Presenter,
     git: &Git,
     resume: bool,
-    interrupted: &std::sync::atomic::AtomicBool,
+    interrupted: &AtomicBool,
     stats: &mut RunStats,
-    started: Instant,
+    deadline: Instant,
 ) -> Result<Terminal, String> {
     let transcript = Transcript::open(&cfg.run_dir).map_err(|e| e.to_string())?;
     let name = cfg
@@ -185,13 +340,9 @@ async fn drive(
                 _ => {}
             }
         }
-        // A trailing assistant turn whose tool calls never got results cannot be
-        // continued; drop it so the frontier re-decides.
-        if let Some(Item::Assistant { tool_calls, .. }) = items.last()
-            && !tool_calls.is_empty()
-        {
-            items.pop();
-        }
+        // A trailing assistant turn whose tool calls did not all get results
+        // cannot be continued; drop it so the frontier re-decides.
+        drop_unfinished_turn(&mut items);
         if items.is_empty() {
             return Err("nothing to resume: the transcript is empty".into());
         }
@@ -219,15 +370,11 @@ async fn drive(
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
 
     loop {
-        if interrupted.load(std::sync::atomic::Ordering::SeqCst) {
-            return Ok(Terminal::Failed {
-                reason: "interrupted; resume with `duet resume`".into(),
-            });
+        if interrupted.load(Ordering::SeqCst) {
+            return Ok(Terminal::interrupted());
         }
-        if started.elapsed() >= cfg.wall_clock {
-            return Ok(Terminal::BudgetStopped {
-                which: "wall_clock".into(),
-            });
+        if Instant::now() >= deadline {
+            return Ok(Terminal::out_of_time());
         }
         if stats.cost_usd >= cfg.frontier_usd {
             return Ok(Terminal::BudgetStopped {
@@ -252,10 +399,17 @@ async fn drive(
             extra: reasoning_extra(cfg.reasoning_effort.as_deref()),
             ..Request::default()
         };
-        let (response, interventions) = frontier
-            .create(&request)
-            .await
-            .map_err(|e| format!("frontier: {e}"))?;
+        // Infrastructure failures are retried inside `create` until the
+        // deadline; an interrupt stops the wait at once.
+        let sent = tokio::select! {
+            r = tokio::time::timeout_at(deadline, frontier.create(&request)) => r,
+            () = raised(interrupted) => return Ok(Terminal::interrupted()),
+        };
+        let (response, interventions) = match sent {
+            Err(_) => return Ok(Terminal::out_of_time()),
+            Ok(Err(e)) => return stop_for(e),
+            Ok(Ok(r)) => r,
+        };
         let cost = (cfg.price)(&response.usage);
         stats.turns += 1;
         stats.cost_usd += cost;
@@ -377,6 +531,18 @@ async fn drive(
                     }
                 }
             };
+            // A result produced while the run was interrupted or ran out of
+            // time may be degraded (a local model call cut short), so it is
+            // not recorded: the turn is re-decided on resume. Its writes are
+            // already journaled.
+            if finished.is_none() {
+                if interrupted.load(Ordering::SeqCst) {
+                    return Ok(Terminal::interrupted());
+                }
+                if Instant::now() >= deadline {
+                    return Ok(Terminal::out_of_time());
+                }
+            }
             let class = presenter.take_view_class().unwrap_or(ViewClass::Raw);
             stats.ledger.on_result(call, &content, class);
             classes.insert(call.id.clone(), class);

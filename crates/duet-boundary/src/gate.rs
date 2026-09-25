@@ -81,6 +81,11 @@ impl GatedFrontier {
         &self.provider.config().model
     }
 
+    /// When the provider stops retrying (the run's wall-clock budget), if set.
+    pub fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.provider.config().deadline
+    }
+
     /// The run's audit log, for recording security events next to the requests.
     pub fn audit(&self) -> &AuditHandle {
         &self.gate.audit

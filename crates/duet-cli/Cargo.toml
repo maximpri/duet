@@ -29,6 +29,7 @@ toml.workspace = true
 uuid.workspace = true
 time.workspace = true
 rustix.workspace = true
+futures-util.workspace = true
 
 
 [dev-dependencies]

@@ -13,4 +13,4 @@ pub mod tools;
 pub mod transcript;
 
 pub use oversight::{ApproveMode, Approver, Oversight};
-pub use run::{RunConfig, RunStats, Terminal, run};
+pub use run::{RunConfig, RunStats, Terminal, conclude, resumable, run};

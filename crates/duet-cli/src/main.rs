@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use duet_agent::disclosure::Disclosure;
 use duet_agent::{RunConfig, Terminal};
 use duet_boundary::audit::{
-    AuditEvent, AuditLog, RunAnchors, describe_line, run_anchors, verify_report,
+    AuditEvent, AuditHandle, AuditLog, RunAnchors, describe_line, run_anchors, verify_report,
 };
 use duet_boundary::engine::Engine;
 use duet_boundary::local::LocalReader;
@@ -16,6 +16,7 @@ use duet_boundary::view::PassThrough;
 use duet_boundary::{GatedFrontier, OutboundGate};
 use duet_config::{Config, Target};
 use duet_provider::{ChatProvider, ProviderConfig, Role};
+use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -219,8 +220,32 @@ fn new_run_id() -> String {
     )
 }
 
-fn frontier_provider(cfg: &Config, url: &str, model: &str) -> Result<ChatProvider> {
+/// What stops a provider's in-place retries: the run's wall-clock deadline and
+/// its interrupt flag. Without a run (`duet local-eval`) retries are bounded.
+#[derive(Clone)]
+struct RunLimits {
+    deadline: tokio::time::Instant,
+    interrupted: Arc<AtomicBool>,
+}
+
+fn limit_retries(pc: &mut ProviderConfig, limits: Option<&RunLimits>) {
+    match limits {
+        Some(l) => {
+            pc.deadline = Some(l.deadline);
+            pc.cancel = Some(l.interrupted.clone());
+        }
+        None => pc.max_attempts = Some(6),
+    }
+}
+
+fn frontier_provider(
+    cfg: &Config,
+    url: &str,
+    model: &str,
+    limits: &RunLimits,
+) -> Result<ChatProvider> {
     let mut pc = ProviderConfig::new(url, model, Role::Frontier);
+    limit_retries(&mut pc, Some(limits));
     let key_env = cfg.str("frontier.api_key_env")?;
     if !key_env.is_empty() {
         pc.api_key_env = Some(key_env);
@@ -233,6 +258,7 @@ fn frontier_provider(cfg: &Config, url: &str, model: &str) -> Result<ChatProvide
 fn local_provider(
     cfg: &Config,
     over: Option<&LocalOverride>,
+    limits: Option<&RunLimits>,
 ) -> Result<(ChatProvider, AuditEvent)> {
     let url = match over {
         Some(o) => o.base_url.clone(),
@@ -254,6 +280,7 @@ fn local_provider(
             allow_plaintext,
         },
     );
+    limit_retries(&mut pc, limits);
     let key_env = cfg.str("local.api_key_env")?;
     if !key_env.is_empty() {
         pc.api_key_env = Some(key_env);
@@ -295,16 +322,24 @@ const PASSTHROUGH_BANNER: &str = "\
  nothing sensitive, as a reference lane.
 =====================================================================";
 
+fn audit_log_path(ws: &Path, run_id: &str) -> PathBuf {
+    ws.join(".duet/audit").join(format!("{run_id}.jsonl"))
+}
+
+fn open_audit(ws: &Path, run_id: &str) -> Result<AuditLog> {
+    Ok(AuditLog::open_anchored(
+        &audit_log_path(ws, run_id),
+        &run_anchor(ws, run_id),
+    )?)
+}
+
 fn gated(
     ws: &Path,
     run_id: &str,
     provider: ChatProvider,
     engine: Option<&Arc<Engine>>,
 ) -> Result<GatedFrontier> {
-    let audit = AuditLog::open_anchored(
-        &ws.join(".duet/audit").join(format!("{run_id}.jsonl")),
-        &run_anchor(ws, run_id),
-    )?;
+    let audit = open_audit(ws, run_id)?;
     let mut gate = OutboundGate::new(audit);
     if let Some(e) = engine {
         let (filter, check) = e.outbound();
@@ -345,8 +380,78 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
             &serde_json::to_vec_pretty(&manifest)?,
         )?;
     }
+    // From here on the run exists, and it ends in a terminal state with a
+    // summary whatever happens: an error or a panic ends it as `Failed`.
+    let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
+    let limits = RunLimits {
+        deadline: tokio::time::Instant::now() + Duration::from_secs(wall_minutes * 60),
+        interrupted: Arc::new(AtomicBool::new(false)),
+    };
+    let flag = limits.interrupted.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            eprintln!("\ninterrupt received; finishing the current step");
+            flag.store(true, Ordering::SeqCst);
+        }
+    });
+    let mut audit = None;
+    let started = std::panic::AssertUnwindSafe(start(
+        &ws, &manifest, &cfg, oversight, &run_dir, resume, &limits, &mut audit,
+    ))
+    .catch_unwind()
+    .await;
+    let (terminal, stats) = match started {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(e)) => (
+            Terminal::Failed {
+                reason: format!("{e:#}"),
+            },
+            duet_agent::RunStats::default(),
+        ),
+        Err(panic) => (
+            Terminal::internal_error(panic.as_ref()),
+            duet_agent::RunStats::default(),
+        ),
+    };
+    // A run that failed before its audit log was open still records its end.
+    let audit = match audit {
+        Some(a) => Some(a),
+        None => open_audit(&ws, &manifest.run_id)
+            .map(AuditHandle::new)
+            .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
+            .ok(),
+    };
+    let summary = duet_agent::conclude(
+        &run_dir,
+        &manifest.run_id,
+        audit.as_ref(),
+        &audit_log_path(&ws, &manifest.run_id),
+        &terminal,
+        &stats,
+    )?;
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(match terminal {
+        Terminal::Completed { .. } => 0,
+        Terminal::Failed { .. } => 1,
+        Terminal::BudgetStopped { .. } => 3,
+    })
+}
+
+/// Sets the run up and drives it to a terminal state. `audit` receives the
+/// run's audit log as soon as it is open.
+#[allow(clippy::too_many_arguments)]
+async fn start(
+    ws: &Path,
+    manifest: &RunManifest,
+    cfg: &Config,
+    oversight: duet_agent::Oversight,
+    run_dir: &Path,
+    resume: bool,
+    limits: &RunLimits,
+    audit: &mut Option<AuditHandle>,
+) -> Result<(Terminal, duet_agent::RunStats)> {
     let git = duet_git::Git::locate()?;
-    let _ = git.exclude_state_dir(&ws);
+    let _ = git.exclude_state_dir(ws);
     let sandbox = duet_sandbox::detect()?;
 
     if manifest.mode == Mode::Passthrough {
@@ -355,11 +460,11 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     let mut trust = None;
     let engine = match manifest.mode {
         Mode::Hybrid => {
-            let (local, event) = local_provider(&cfg, manifest.local.as_ref())?;
+            let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
             Some(Engine::open(
-                &run_dir,
-                policy(&cfg)?,
+                run_dir,
+                policy(cfg)?,
                 Some(LocalReader::new(local)),
             )?)
         }
@@ -367,21 +472,27 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     };
     let (driver, price_model) = match manifest.mode {
         Mode::Passthrough | Mode::Hybrid => (
-            frontier_provider(&cfg, &manifest.frontier_url, &manifest.frontier_model)?,
+            frontier_provider(
+                cfg,
+                &manifest.frontier_url,
+                &manifest.frontier_model,
+                limits,
+            )?,
             manifest.frontier_model.clone(),
         ),
         Mode::LocalOnly => {
-            let (local, event) = local_provider(&cfg, manifest.local.as_ref())?;
+            let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
             (local, String::new())
         }
     };
     if let Some(e) = &engine {
-        let files = git.list_files(&ws).unwrap_or_default();
-        let primed = e.prime(&ws, &files, &manifest.objective);
+        let files = git.list_files(ws).unwrap_or_default();
+        let primed = e.prime(ws, &files, &manifest.objective);
         eprintln!("security engine: indexed {primed} sensitive file(s)");
     }
-    let frontier = gated(&ws, &manifest.run_id, driver, engine.as_ref())?;
+    let frontier = gated(ws, &manifest.run_id, driver, engine.as_ref())?;
+    *audit = Some(frontier.audit().clone());
     frontier.audit().record(AuditEvent::RunStart {
         mode: format!("{:?}", manifest.mode).to_lowercase(),
         boundary: manifest.mode != Mode::Passthrough,
@@ -397,8 +508,8 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
     }
     let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
     let run_cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir: run_dir.clone(),
+        workspace: ws.to_path_buf(),
+        run_dir: run_dir.to_path_buf(),
         objective: manifest.objective.clone(),
         mode: format!("{:?}", manifest.mode).to_lowercase(),
         checks: cfg.list("checks.commands")?,
@@ -420,44 +531,18 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         Some(e) => e.as_ref(),
         None => &passthrough,
     };
-    let interrupted = Arc::new(AtomicBool::new(false));
-    let flag = interrupted.clone();
-    tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            eprintln!("\ninterrupt received; finishing the current step");
-            flag.store(true, Ordering::SeqCst);
-        }
-    });
-    let (terminal, mut stats) =
-        duet_agent::run(&run_cfg, &frontier, presenter, &git, resume, &interrupted).await;
+    let (terminal, mut stats) = duet_agent::run(
+        &run_cfg,
+        &frontier,
+        presenter,
+        &git,
+        resume,
+        &limits.interrupted,
+    )
+    .await;
     // Local model work of this invocation (a resumed run reports only its own).
     stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
-    // The final event also anchors the log's final head.
-    frontier.audit().record(AuditEvent::RunEnd {
-        terminal: match &terminal {
-            Terminal::Completed { .. } => "completed",
-            Terminal::Failed { .. } => "failed",
-            Terminal::BudgetStopped { .. } => "budget_stopped",
-        }
-        .into(),
-    });
-    let disclosure = read_disclosure(&ws, &manifest.run_id, Some(&stats.ledger));
-    let summary = serde_json::json!({
-        "run_id": manifest.run_id,
-        "terminal": terminal,
-        "stats": stats,
-        "disclosure": disclosure,
-    });
-    duet_fs::private::write_private(
-        &run_dir.join("summary.json"),
-        &serde_json::to_vec_pretty(&summary)?,
-    )?;
-    println!("{}", serde_json::to_string_pretty(&summary)?);
-    Ok(match terminal {
-        Terminal::Completed { .. } => 0,
-        Terminal::Failed { .. } => 1,
-        Terminal::BudgetStopped { .. } => 3,
-    })
+    Ok((terminal, stats))
 }
 
 /// The disclosure report of a run, from its audit log and its cost ledger
@@ -572,10 +657,18 @@ Add --no-privacy to confirm, or use --mode hybrid."
             std::process::exit(execute(ws, manifest, false).await?);
         }
         Cmd::Resume { run_id } => {
-            let path = ws.join(".duet/runs").join(&run_id).join("run.json");
+            let run_dir = ws.join(".duet/runs").join(checked_run_id(&run_id)?);
             let manifest: RunManifest = serde_json::from_slice(
-                &std::fs::read(&path).with_context(|| format!("no run {run_id}"))?,
+                &std::fs::read(run_dir.join("run.json"))
+                    .with_context(|| format!("no run {run_id}"))?,
             )?;
+            ensure!(
+                manifest.run_id == run_id,
+                "run {run_id}: run.json names another run"
+            );
+            if let Err(why) = duet_agent::resumable(&run_dir) {
+                bail!("run {run_id} cannot be resumed: {why}");
+            }
             std::process::exit(execute(ws, manifest, true).await?);
         }
         Cmd::Audit { action } => match action {
@@ -661,7 +754,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         Cmd::LocalEval { sizes, seed, out } => {
             let cfg = load_config(&ws)?;
-            let reader = LocalReader::new(local_provider(&cfg, None)?.0);
+            let reader = LocalReader::new(local_provider(&cfg, None, None)?.0);
             let fixtures = duet_boundary::local_eval::fixtures(seed, &sizes);
             let report = duet_boundary::local_eval::run(&reader, &fixtures, |o| {
                 eprintln!(
