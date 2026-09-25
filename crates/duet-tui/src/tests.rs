@@ -775,6 +775,23 @@ fn models_screen_runs_the_cache_probe_only_on_request() {
 }
 
 #[test]
+fn sensitivity_text_tester_names_the_imported_rule() {
+    let (_d, mut app) = fixture("", "");
+    select(&mut app, "sensitivity.custom_patterns");
+    key(&mut app, KeyCode::Char('s'));
+    typed(
+        &mut app,
+        "token dp.pt.q7W2e9R4t1Y8u3I6o0P5a2S7d4F9g1H6j3K8l0Z5x2C7v4B",
+    );
+    // The panel wraps the line: the value, then the rule that found it.
+    let out = screen(&mut app, 200, 60);
+    assert!(
+        out.contains("-> ⟨secret:1⟩ (imported rule") && out.contains("doppler-api-token"),
+        "{out}"
+    );
+}
+
+#[test]
 fn sensitivity_text_tester_shows_replacements_including_custom_patterns() {
     let (_d, mut app) = fixture("", "");
     select(&mut app, "sensitivity.custom_patterns");

@@ -7,6 +7,9 @@
 //! - Placeholders: distinct placeholder tokens in the requests sent, by kind
 //!   (`secret`, `email`, ...). The same value always has the same token, so
 //!   this is the number of distinct withheld values the frontier saw stand-ins for.
+//!   Secrets an imported detection rule found are also counted by rule id (a
+//!   placeholder named after a rule of the published rule set; no other
+//!   placeholder name is reported).
 //! - Copied spans and withheld protected lines: markers in the distinct
 //!   messages sent (the conversation is re-sent with every request; a message
 //!   is counted once).
@@ -66,6 +69,9 @@ pub struct Disclosure {
     pub requests_filtered: u64,
     /// Distinct placeholders sent, by kind.
     pub placeholders: BTreeMap<String, u64>,
+    /// Distinct secret placeholders found by an imported detection rule, by rule id.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub secret_rules: BTreeMap<String, u64>,
     /// Copied spans of sensitive text removed.
     pub copied_spans_redacted: u64,
     /// Distinct handles standing for protected function bodies and constants.
@@ -170,7 +176,16 @@ impl Disclosure {
             }
         }
         d.boundary = starts > 0 && all_bounded;
-        for (kind, _) in tokens {
+        let rules = duet_boundary::rules::imported();
+        for (kind, token) in tokens {
+            if kind == "secret"
+                && let Some(rule) = token
+                    .split_once(':')
+                    .and_then(|(_, rest)| rest.split_once('#'))
+                    .and_then(|(label, _)| rules.by_label(label))
+            {
+                *d.secret_rules.entry(rule.id().to_owned()).or_default() += 1;
+            }
             if kinds.contains(&kind.as_str()) {
                 *d.placeholders.entry(kind).or_default() += 1;
             } else if kind == "body" || kind == "value" {
@@ -213,6 +228,9 @@ everything the model read was sent to the frontier unfiltered. Nothing below was
         }
         for (kind, n) in &self.placeholders {
             row(&mut out, &format!("placeholders: {kind}"), *n);
+        }
+        for (rule, n) in &self.secret_rules {
+            row(&mut out, &format!("  secret found by rule {rule}"), *n);
         }
         row(
             &mut out,
@@ -402,6 +420,25 @@ mod tests {
             assert!(!text.contains(absent), "{absent}: {text}");
         }
         assert!(text.contains("placeholders: email"), "{text}");
+    }
+
+    #[test]
+    fn secret_placeholders_are_counted_by_detection_rule() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("a.jsonl");
+        let mut log = AuditLog::open(&path).unwrap();
+        let req = json!({"model": "m", "messages": [{"role": "user", "content":
+            "⟨secret:aws_access_token#1⟩ ⟨secret:DB_URL#1⟩ ⟨secret:github_pat#1⟩ ⟨secret:github_pat#2⟩ ⟨email:aws_access_token#1⟩"}]});
+        log.append("u", "m", req, vec![]).unwrap();
+        let r = Disclosure::build(&read(&path).unwrap(), None);
+        assert_eq!(
+            r.secret_rules,
+            BTreeMap::from([("aws-access-token".into(), 1), ("github-pat".into(), 2)])
+        );
+        assert_eq!(r.placeholders["secret"], 4);
+        let text = r.render("r1");
+        assert!(text.contains("secret found by rule github-pat"), "{text}");
+        assert!(!text.contains("DB_URL"), "{text}");
     }
 
     #[test]

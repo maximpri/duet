@@ -157,6 +157,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
         Some(c) => {
             out.push(posture(c));
             out.push(approval(c));
+            out.push(detection_rules(duet_boundary::rules::imported()));
             out.push(language_servers(c));
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
@@ -400,6 +401,36 @@ fn approval(c: &Config) -> Check {
             format!("{other}: every command and write waits for y/N; runs need a terminal"),
         ),
     }
+}
+
+/// The imported detection rules: their version, how many are in use, and any
+/// that did not compile or run without part of their definition (named here,
+/// never dropped silently).
+fn detection_rules(set: &duet_boundary::rules::RuleSet) -> Check {
+    let version = duet_boundary::rules::notice_field("version").unwrap_or("of unknown version");
+    let detail = format!(
+        "gitleaks rule set {version}: {} rules in use with duet's own detectors",
+        set.rules().len()
+    );
+    if set.failed().is_empty() && set.partial().is_empty() {
+        return check("detection rules", Status::Pass, detail);
+    }
+    let list = |fs: &[duet_boundary::rules::Failure]| {
+        fs.iter()
+            .map(|f| format!("{} ({})", f.rule, f.reason))
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
+    check(
+        "detection rules",
+        Status::Warn,
+        format!(
+            "{detail}; not compiled: {}; partly supported: {}",
+            list(set.failed()),
+            list(set.partial())
+        ),
+    )
+    .fix("these rules find nothing (or more than they should); report it, or pin the previous set with tools/update-rules.sh")
 }
 
 /// Where the owner keeps the public keys trusted to sign releases.
@@ -1116,6 +1147,23 @@ fn retention(ws: &Path, c: &Config) -> Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detection_rules_report_their_version_and_failures() {
+        let ok = detection_rules(duet_boundary::rules::imported());
+        assert_eq!(ok.status, Status::Pass, "{ok:?}");
+        assert!(ok.detail.contains("rules in use"), "{}", ok.detail);
+        let broken = duet_boundary::rules::RuleSet::compile(
+            "[[rules]]\nid = \"bad\"\nregex = '''(a)\\1'''\nkeywords = [\"a\"]\n",
+        );
+        let warn = detection_rules(&broken);
+        assert_eq!(warn.status, Status::Warn, "{warn:?}");
+        assert!(
+            warn.detail.contains("not compiled: bad ("),
+            "{}",
+            warn.detail
+        );
+    }
 
     #[test]
     fn release_keys_warn_only_in_a_release_build() {

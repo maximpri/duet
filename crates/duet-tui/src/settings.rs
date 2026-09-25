@@ -285,7 +285,16 @@ pub(crate) fn sample_lines(app: &App, text: &str) -> Vec<String> {
                     .is_some_and(|m| m.start() == 0 && m.end() == value.len())
             })
             .map_or_else(
-                || format!("{:?} detector", f.kind).to_lowercase(),
+                || {
+                    let rule = f
+                        .label
+                        .as_deref()
+                        .and_then(|l| duet_boundary::rules::imported().by_label(l));
+                    match rule {
+                        Some(r) => format!("imported rule {}", r.id()),
+                        None => format!("{:?} detector", f.kind).to_lowercase(),
+                    }
+                },
                 |p| format!("custom pattern \"{p}\""),
             );
         found.push(format!("  {value} -> {placeholder} ({by})"));
