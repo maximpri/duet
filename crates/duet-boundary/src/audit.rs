@@ -117,6 +117,26 @@ pub enum AuditEvent {
         weakens: Option<String>,
         confirmed: bool,
     },
+    /// An MCP server was started (or failed to start) for the run.
+    McpServer {
+        server: String,
+        /// `stdio` or `http`.
+        transport: String,
+        /// `started` or `failed`.
+        outcome: String,
+        tools: usize,
+    },
+    /// A call to an MCP tool: server, tool, the server's trust class and the
+    /// outcome (`ok`, `tool_error`, `error`, `timeout`, `server_stopped`,
+    /// `refused_outbound`, `interrupted`); never arguments or results.
+    McpCall {
+        server: String,
+        tool: String,
+        trust: String,
+        outcome: String,
+        /// Placeholders in the arguments were resolved (sensitive stdio servers only).
+        resolved_placeholders: bool,
+    },
 }
 
 impl AuditEvent {
@@ -135,6 +155,8 @@ impl AuditEvent {
             AuditEvent::WebRequest { .. } => "web_request",
             AuditEvent::OutboundRefused { .. } => "outbound_refused",
             AuditEvent::GitCommit { .. } => "git_commit",
+            AuditEvent::McpServer { .. } => "mcp_server",
+            AuditEvent::McpCall { .. } => "mcp_call",
         }
     }
 }

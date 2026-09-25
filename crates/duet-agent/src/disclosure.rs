@@ -160,7 +160,9 @@ impl Disclosure {
                     | AuditEvent::ConfigChange { .. }
                     | AuditEvent::WebRequest { .. }
                     | AuditEvent::OperatorMessage { .. }
-                    | AuditEvent::GitCommit { .. } => {}
+                    | AuditEvent::GitCommit { .. }
+                    | AuditEvent::McpServer { .. }
+                    | AuditEvent::McpCall { .. } => {}
                 },
             }
         }

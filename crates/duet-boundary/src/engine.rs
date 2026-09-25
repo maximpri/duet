@@ -22,7 +22,7 @@ use crate::model::{Item, Request, ToolSpec};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
 use crate::vault::Vault;
-use crate::view::{Presenter, Source, ViewClass};
+use crate::view::{Presenter, ServerTrust, Source, ViewClass};
 use duet_fs::FsError;
 use regex::Regex;
 use serde_json::{Map, Value, json};
@@ -921,6 +921,27 @@ impl Presenter for Engine {
                 let mut st = self.lock();
                 self.sanitize(&mut st, &text, &label, false)
             }
+            // A sensitive server's results are data like a sensitive command's
+            // output: held locally, described by the local model.
+            Source::Mcp {
+                server,
+                tool,
+                trust: ServerTrust::Sensitive,
+            } => {
+                let label = format!("result of MCP tool `{tool}` on server `{server}`");
+                self.lock().overlap.add_sensitive(&text);
+                self.handle_view(&label, &text)
+            }
+            // A public server's results are untrusted public data: scanned like
+            // public command output, offloaded when bulky.
+            Source::Mcp { server, tool, .. } => {
+                let label = format!("result of MCP tool `{tool}` on server `{server}`");
+                if self.offload(&text) {
+                    return self.bulky_view(&label, &text, Shape::Output);
+                }
+                let mut st = self.lock();
+                self.clean_public(&mut st, &text, &label)
+            }
             Source::Command { command, .. } | Source::Other { label: command }
                 if self.policy.command_output_sensitive
                     && !self.policy.command_is_raw_ok(command) =>
@@ -1748,6 +1769,48 @@ mod tests {
         assert!(shown.contains("read_raw"), "{shown}");
         assert!(shown.contains("untrusted"), "{shown}");
         assert_eq!(e.take_view_class(), Some(ViewClass::BulkyHandle));
+    }
+
+    #[test]
+    fn mcp_results_follow_the_servers_trust_and_outbound_text_is_checked() {
+        let (_d, e) = engine();
+        e.present(
+            &file(".env"),
+            format!("PAYMENTS_API_KEY={KEY}\n").as_bytes(),
+        );
+        let from = |trust| Source::Mcp {
+            server: "tickets".into(),
+            tool: "search".into(),
+            trust,
+        };
+        // Public: shown, with known values and detected PII replaced.
+        let result = format!("ticket 7 by {EMAIL}: rotate {KEY}\n");
+        let shown = e.present(&from(ServerTrust::Public), result.as_bytes());
+        assert!(shown.contains("ticket 7 by"), "{shown}");
+        assert!(!shown.contains(KEY) && !shown.contains(EMAIL), "{shown}");
+        // Sensitive: held locally under a handle.
+        let held = e.present(&from(ServerTrust::Sensitive), result.as_bytes());
+        assert!(
+            held.contains("ask_local") && !held.contains("ticket 7"),
+            "{held}"
+        );
+        assert!(!held.contains(KEY) && !held.contains(EMAIL), "{held}");
+
+        // Outbound: placeholders and known values are refused, never resolved.
+        let dest = "MCP server `tickets`";
+        assert_eq!(
+            e.check_outbound(dest, "open issues").unwrap(),
+            "open issues"
+        );
+        let placeholder = e.check_outbound(dest, "rotate ⟨secret:PAYMENTS_API_KEY#1⟩");
+        assert!(placeholder.unwrap_err().contains("placeholder"));
+        let known = e.check_outbound(dest, &format!("rotate {KEY} now"));
+        assert!(known.unwrap_err().contains("sensitive values"));
+        let email = e.check_outbound(dest, EMAIL);
+        assert!(
+            email.is_err(),
+            "a value seen in a public result is known too"
+        );
     }
 
     #[test]

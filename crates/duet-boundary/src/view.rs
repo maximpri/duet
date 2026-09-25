@@ -48,6 +48,22 @@ pub enum Source {
     Other {
         label: String,
     },
+    /// A tool result (or error text) from an MCP server; `trust` is the
+    /// server's configured class.
+    Mcp {
+        server: String,
+        tool: String,
+        trust: ServerTrust,
+    },
+}
+
+/// How an external server's results are treated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ServerTrust {
+    /// Untrusted public data: scanned and shown (bulky results offloaded).
+    Public,
+    /// Sensitive data: held locally as a handle with a local summary.
+    Sensitive,
 }
 
 /// The form in which a tool result reached the frontier (for the cost ledger).
