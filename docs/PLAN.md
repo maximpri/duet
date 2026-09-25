@@ -65,6 +65,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
+| 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
 | 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
 | 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
 
@@ -325,6 +326,22 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
   level with regression tests: tokens rewritten by values that spell part of them; values escaped
   inside tool-call arguments (JSON in JSON) missed by the filter and the final check; values inside
   a longer overlapping detection never registered on their own.
+- Detection coverage (own engine, maintained rules as data):
+  - Rule import: the gitleaks rule set (MIT, pinned release, license notice kept) vendored as a data
+    file and compiled into duet's detector (regex, per-rule keywords as an aho-corasick prefilter,
+    entropy thresholds, per-rule allowlists; rules whose syntax the Rust regex engine rejects are
+    reported, not silently dropped). `tools/update-rules.sh <version>` fetches, checks the hash and
+    shows the rule diff. Duet's own rules stay and take precedence; secret kinds keep their rule id
+    for the disclosure report.
+  - Detection corpus in the repo: synthetic positives for every rule (never real credentials) and
+    hard negatives (hashes, UUIDs, lockfiles, base64 of public data, identifiers, test fixtures).
+    The gate requires every positive detected and fails on a false-positive regression; recall and
+    the false-positive rate are reported.
+  - Personal data beyond US formats: international phone numbers, IBAN with its mod-97 check,
+    national IDs with checksums for the main EU/UK formats, IPv6, postal addresses in labelled fields.
+  - Optional local-model pass (`sensitivity.local_pii_pass`, off by default: it costs local time) for
+    names and addresses in free text that no pattern can find.
+  - Scanning throughput measured on large command output so the added rules stay cheap.
 - Adversarial review of the boundary before the public benchmark (a red-team pass with fresh canaries,
   encodings and injection), findings fixed at the class level.
 - Pre-push hook running `tools/gate.sh`, optional pre-commit hook running `tools/gate.sh --fast`
