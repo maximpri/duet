@@ -1030,6 +1030,15 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         read: &str,
         answer: Option<Answered<'_>>,
     ) -> (String, usize) {
+        // Most local output holds no piece that could be part of a value (or,
+        // in a summary, none tied to a position): nothing to look up.
+        let tied = match answer {
+            Some(a) if a.narrow => vec![(0, text.len())],
+            _ => probing::positional_sentences(text),
+        };
+        if probing::pieces(text, &tied).is_empty() || (answer.is_none() && tied.is_empty()) {
+            return (text.to_owned(), 0);
+        }
         for f in scan_each_in(read, self.detectors, None) {
             if probing::budgeted(f.kind) {
                 Self::register(
