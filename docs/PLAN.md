@@ -64,6 +64,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Line budgets removed (operator): no per-crate line limits; the 2026-09-23 duet-boundary budget decision is superseded |
 | 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
+| 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -388,7 +389,7 @@ OpenAI judge).
   set`: loosening shows the diff and needs `y`, the project file refuses owner-only keys and loosening,
   every applied change is appended to the config audit log; each value shows its origin. `TestBackend`
   tests per screen and per edit flow. *Open:* local backend auto-detection and connection/cache/prefill
-  tests on Models, custom detector patterns, purge from Data, starting runs from the TUI.
+  tests on Models, custom detector patterns, purge from Data, starting runs from the TUI, and a dual-panel Run view (live run beside a changed-files list with per-file diffs; decision 2026-09-24).
 - Setup and presets for Ollama, LM Studio, llama.cpp, vLLM, oMLX, z.ai, Anthropic, OpenAI; no-config
   bootstrap detecting local servers on default ports; `duet doctor` with cache-reuse check.
   *Built (branch `m6doctor`):* local presets (`duet config preset`: Ollama, LM Studio, llama.cpp,
