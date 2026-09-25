@@ -21,7 +21,7 @@ pub fn screen_of(key: &str) -> Option<Tab> {
         "sensitivity" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
         "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git"
-        | "mcp" => Some(Tab::Limits),
+        | "mcp" | "lsp" => Some(Tab::Limits),
         "data" => Some(Tab::Data),
         _ => None,
     }
@@ -130,8 +130,9 @@ fn help_for(tab: Tab) -> &'static str {
     match tab {
         Tab::Limits => {
             "Budgets and bounds for each run: frontier spend, wall clock, finish attempts, command timeouts, \
-the checks run at finish, context masking, sandbox network access and operator approval \
-(oversight.approve, owner only). A project may only lower budgets and may only turn the sandbox network off."
+the checks run at finish, context masking, sandbox network access, operator approval \
+(oversight.approve, owner only) and language servers (lsp.*; lsp.servers owner only). A project may only lower \
+budgets and may only turn the sandbox network and language servers off."
         }
         _ => {
             "Retention of raw run data (handles, transcripts, vault) and of audit logs. x purges the raw data \

@@ -29,6 +29,7 @@ use serde_json::{Map, Value, json};
 use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
+mod code_nav;
 mod history;
 mod protected;
 
@@ -1108,6 +1109,7 @@ impl Presenter for Engine {
                     self.clean_public(&mut st, &text, &label)
                 }
             }
+            Source::CodeNav { path, signature } => self.code_nav_view(path, *signature, &text),
             // Matches in sensitive files are masked first; only that view is kept.
             Source::Search { pattern } => {
                 let view = self.search_view(&text);

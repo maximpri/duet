@@ -45,6 +45,15 @@ pub enum Source {
         rev: String,
         path: Option<PathBuf>,
     },
+    /// A language server's answer about the workspace file `path`: a line of
+    /// it (a definition or reference), or, with `signature`, declaration text
+    /// (hover, symbol names). Classified exactly like the file: nothing of a
+    /// sensitive or sealed file's content, and of an interface-only file only
+    /// declarations.
+    CodeNav {
+        path: PathBuf,
+        signature: bool,
+    },
     Other {
         label: String,
     },
@@ -202,6 +211,10 @@ pub trait Presenter: Send + Sync {
         Ok(text.to_owned())
     }
 }
+
+/// How a language-server answer from a file the frontier may not see the
+/// content of is shown in its place (see [`Source::CodeNav`]).
+pub const CODE_NAV_WITHHELD: &str = "⟨withheld:";
 
 /// Shows content unchanged except for a size cap.
 pub struct PassThrough {

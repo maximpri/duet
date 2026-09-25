@@ -497,6 +497,71 @@ pub const REGISTRY: &[Setting] = &[
         "Seconds one web request (with its redirects) may take."
     ),
     s!(
+        "lsp.enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        false,
+        "Offer the code_nav and rename tools when a language server is installed (rust-analyzer, typescript-language-server, pyright-langserver or basedpyright-langserver, gopls, clangd on PATH, or lsp.servers). Servers start on first use, sandboxed without network; they can read protected source like checks, never sensitive files."
+    ),
+    // Language servers: one `[lsp.servers.<language>]` table per language;
+    // `*` stands for the language (a built-in one is replaced).
+    s!(
+        "lsp.servers.*.command",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Language server for this language (rust, typescript, python, go and c are built in; any other name adds one): a program on PATH or an absolute path, started in the command sandbox without network. It reads the workspace, protected source included."
+    ),
+    s!(
+        "lsp.servers.*.args",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Arguments of the language server's command (for example [\"--stdio\"])."
+    ),
+    s!(
+        "lsp.servers.*.extensions",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "File extensions the language server handles, without the dot; required for a language that is not built in."
+    ),
+    s!(
+        "lsp.servers.*.env",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Names of environment variables passed to the language server; every other variable is cleared (except the sandbox's base set). Values are never stored."
+    ),
+    s!(
+        "lsp.request_timeout_seconds",
+        Int { min: 1, max: 600 },
+        "30",
+        Project,
+        Any,
+        false,
+        "Seconds a language-server request (and a server's start) may take before the tool reports a timeout."
+    ),
+    s!(
+        "lsp.diagnostics_wait_ms",
+        Int { min: 0, max: 30000 },
+        "2000",
+        Project,
+        Any,
+        false,
+        "Milliseconds an edit waits for the language server's diagnostics of the file before its result is returned without them (0: never wait)."
+    ),
+    s!(
         "data.retention_days",
         Int { min: 0, max: 3650 },
         "14",
@@ -1301,6 +1366,7 @@ mod tests {
             "[local]\nallowlist = [\"evil.example:443\"]\n",
             "[sensitivity]\nraw_ok_commands = [\"cat\"]\n",
             "[local]\nallow_plaintext = true\n",
+            "[lsp.servers.rust]\ncommand = \"/tmp/evil\"\n",
         ] {
             let (_d, o, p) = files("", bad);
             assert!(
@@ -1311,6 +1377,31 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn language_servers_are_template_settings_of_the_owner() {
+        let (_d, o, p) = files(
+            "[lsp.servers.rust]\ncommand = \"/opt/ra\"\n[lsp.servers.zig]\ncommand = \"zls\"\nextensions = [\"zig\"]\n",
+            "[lsp]\nenabled = false\n",
+        );
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(c.instances("lsp.servers.*.command"), ["rust", "zig"]);
+        assert_eq!(c.list("lsp.servers.zig.extensions").unwrap(), ["zig"]);
+        assert!(c.list("lsp.servers.rust.args").unwrap().is_empty());
+        assert!(!c.bool("lsp.enabled").unwrap());
+        let v = |t: &str| parse_value(t).unwrap();
+        assert!(matches!(
+            c.set_owner_checked("lsp.servers.go.command", v("\"/opt/gopls\""), false),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        c.set_owner_checked("lsp.servers.go.command", v("\"/opt/gopls\""), true)
+            .unwrap();
+        assert_eq!(c.instances("lsp.servers.*.command"), ["go", "rust", "zig"]);
+        assert!(
+            c.propose(Target::Project, "lsp.servers.go.command", v("\"x\""))
+                .is_err()
+        );
     }
 
     #[test]

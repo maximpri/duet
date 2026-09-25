@@ -137,6 +137,23 @@ pub enum AuditEvent {
         /// Placeholders in the arguments were resolved (sensitive stdio servers only).
         resolved_placeholders: bool,
     },
+    /// A language-server tool call (`op` = `code_nav:<operation>` or
+    /// `rename`), or a server's lifecycle (`op` = `server`, `outcome` =
+    /// `started`, `restarted`, `crashed`, `refreshed` or `unavailable`).
+    /// Holds the file, never its content, the query or the new name.
+    LanguageServer {
+        language: String,
+        op: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        path: Option<String>,
+        /// `ok`, `refused`, `unavailable`, `timeout` or `error` for a call.
+        outcome: String,
+        /// Results shown, and results the boundary dropped or withheld.
+        #[serde(default)]
+        shown: u32,
+        #[serde(default)]
+        withheld: u32,
+    },
 }
 
 impl AuditEvent {
@@ -157,6 +174,7 @@ impl AuditEvent {
             AuditEvent::GitCommit { .. } => "git_commit",
             AuditEvent::McpServer { .. } => "mcp_server",
             AuditEvent::McpCall { .. } => "mcp_call",
+            AuditEvent::LanguageServer { .. } => "language_server",
         }
     }
 }

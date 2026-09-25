@@ -162,7 +162,8 @@ impl Disclosure {
                     | AuditEvent::OperatorMessage { .. }
                     | AuditEvent::GitCommit { .. }
                     | AuditEvent::McpServer { .. }
-                    | AuditEvent::McpCall { .. } => {}
+                    | AuditEvent::McpCall { .. }
+                    | AuditEvent::LanguageServer { .. } => {}
                 },
             }
         }
