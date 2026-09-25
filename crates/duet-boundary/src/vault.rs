@@ -56,7 +56,7 @@ struct Matcher {
 /// happens to spell part of one (`redacted`) must not corrupt or block it.
 /// Only exact, known strings: a general `⟨…⟩` shape would let crafted data hide
 /// a real value inside a fake marker.
-pub const FIXED_MARKERS: &[&str] = &[crate::overlap::REDACTED];
+pub const FIXED_MARKERS: &[&str] = &[crate::overlap::REDACTED, crate::engine::FRAGMENT];
 
 /// Values shorter than this are never replaced (too many false positives).
 pub const MIN_VALUE_BYTES: usize = 4;
@@ -262,6 +262,11 @@ impl Vault {
         }
         out.push_str(&text[last..]);
         out
+    }
+
+    /// Whether `text` is exactly a known token or one of Duet's fixed markers.
+    pub fn is_token(&self, text: &str) -> bool {
+        self.matcher().tokens.contains(text)
     }
 
     /// Tokens present in `text`, in order of appearance.

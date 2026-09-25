@@ -23,10 +23,12 @@ pub enum Kind {
     Data,
     /// A fragment of protected source code (a literal or distinctive token).
     Code,
+    /// A bank account or routing number (recognized by its label).
+    Account,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 10] = [
+    pub const ALL: [Kind; 11] = [
         Kind::Secret,
         Kind::Email,
         Kind::Phone,
@@ -37,7 +39,17 @@ impl Kind {
         Kind::Name,
         Kind::Data,
         Kind::Code,
+        Kind::Account,
     ];
+
+    /// Kinds whose values are identifying numbers: a run of their digits is
+    /// part of the value even when the rest is withheld.
+    pub fn is_numeric_identifier(self) -> bool {
+        matches!(
+            self,
+            Kind::Card | Kind::NationalId | Kind::Iban | Kind::Phone | Kind::Account
+        )
+    }
 
     pub fn tag(self) -> &'static str {
         match self {
@@ -51,6 +63,7 @@ impl Kind {
             Kind::Name => "name",
             Kind::Data => "data",
             Kind::Code => "code",
+            Kind::Account => "account",
         }
     }
 }
@@ -112,6 +125,15 @@ re!(
     r"(?:\+\d{1,3}[\s.-]?)?\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b"
 );
 re!(CARD, r"\b(?:\d[ -]?){13,19}\b");
+// A 12-19 digit number (spaces or dashes between digits allowed), checked for
+// a label nearby: what someone calls a card or account number is one, whether
+// or not its checksum holds.
+re!(LABELLED_NUMBER, r"\b\d(?:[ -]?\d){11,18}\b");
+re!(
+    NUMBER_LABEL,
+    r"(?i)\b(?:(credit|debit|card|visa|mastercard|amex|maestro)|(iban)|(account|acct|routing|bank|sort\s+code|bsb)|(ssn|social\s+security|passport|licen[cs]e|tax\s*id|national\s+id|id\s+(?:number|no)|personal\s+id))"
+);
+re!(WORD_RUN, r"\w+");
 re!(SSN, r"\b\d{3}-\d{2}-\d{4}\b");
 re!(IBAN, r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b");
 re!(
@@ -157,6 +179,53 @@ fn luhn(digits: &str) -> bool {
         })
         .sum();
     sum.is_multiple_of(10)
+}
+
+/// Words a label may stand from the number it names.
+const LABEL_REACH: usize = 3;
+/// Bytes searched for a label on each side of a number.
+const LABEL_WINDOW: usize = 64;
+
+/// The kind a label nearby gives the number at `start..end`: the closest
+/// label within [`LABEL_REACH`] words before it, else after it.
+fn labelled_kind(text: &str, start: usize, end: usize) -> Option<Kind> {
+    let kind_of = |c: &regex::Captures<'_>| {
+        [Kind::Card, Kind::Iban, Kind::Account, Kind::NationalId]
+            .into_iter()
+            .zip(1..)
+            .find_map(|(k, i)| c.get(i).map(|_| k))
+    };
+    let mut from = start.saturating_sub(LABEL_WINDOW);
+    while !text.is_char_boundary(from) {
+        from += 1;
+    }
+    let before = &text[from..start];
+    let near_before = NUMBER_LABEL
+        .captures_iter(before)
+        .filter(|c| {
+            WORD_RUN
+                .find_iter(&before[c.get(0).map_or(0, |m| m.end())..])
+                .count()
+                <= LABEL_REACH
+        })
+        .last();
+    if let Some(c) = near_before {
+        return kind_of(&c);
+    }
+    let mut to = (end + LABEL_WINDOW).min(text.len());
+    while !text.is_char_boundary(to) {
+        to -= 1;
+    }
+    let after = &text[end..to];
+    NUMBER_LABEL
+        .captures_iter(after)
+        .find(|c| {
+            WORD_RUN
+                .find_iter(&after[..c.get(0).map_or(0, |m| m.start())])
+                .count()
+                <= LABEL_REACH
+        })
+        .and_then(|c| kind_of(&c))
 }
 
 fn iban_valid(s: &str) -> bool {
@@ -362,6 +431,11 @@ pub fn scan_each(text: &str, d: Detectors) -> Vec<Finding> {
                 push(Kind::Card, m, None);
             }
         }
+        for m in LABELLED_NUMBER.find_iter(text) {
+            if let Some(kind) = labelled_kind(text, m.start(), m.end()) {
+                push(kind, m, None);
+            }
+        }
         for m in SSN.find_iter(text) {
             push(Kind::NationalId, m, None);
         }
@@ -451,6 +525,47 @@ mod tests {
                 .iter()
                 .any(|(k, _)| *k == Kind::Iban)
         );
+    }
+
+    #[test]
+    fn labelled_numbers_are_found_whatever_their_checksum() {
+        // Seen in a live run: a card number that fails the checksum, typed by
+        // the operator, reached the frontier as it was.
+        let k = kinds("is this credit card number valid 42977600076546677?");
+        assert_eq!(k, vec![(Kind::Card, "42977600076546677".to_owned())]);
+        for (text, kind, value) in [
+            (
+                "acct 0012-3456-7890-12 closed",
+                Kind::Account,
+                "0012-3456-7890-12",
+            ),
+            (
+                "1234 5678 9012 3456 is my debit card",
+                Kind::Card,
+                "1234 5678 9012 3456",
+            ),
+            (
+                "passport no. 120382716455",
+                Kind::NationalId,
+                "120382716455",
+            ),
+            (
+                "routing and account: 021000021000",
+                Kind::Account,
+                "021000021000",
+            ),
+        ] {
+            assert_eq!(kinds(text), vec![(kind, value.to_owned())], "{text}");
+        }
+        // Unlabelled, or labelled too far away, or too short: not this detector.
+        for text in [
+            "order 1234 5678 9012 3456",
+            "card declined; see the ticket about the retry queue timing 1790367049547",
+            "account 12345678901",
+            "created_ms 1790367049547",
+        ] {
+            assert!(kinds(text).is_empty(), "{text}: {:?}", kinds(text));
+        }
     }
 
     #[test]

@@ -130,11 +130,20 @@ const PLACEHOLDER_VALUES: &[&str] = &[
     "",
 ];
 
-/// Words that look like names in title case but are not personal data.
+/// Words that look like names in title case but are not personal data:
+/// type names, and function words that start a sentence ("No Luhn check").
 const NAME_STOPWORDS: &[&str] = &[
     "Result", "Option", "Error", "String", "Vec", "Some", "None", "Ok", "Err", "Self", "Warn",
-    "Info", "Debug",
+    "Info", "Debug", "The", "A", "An", "No", "Not", "This", "That", "These", "Those", "It", "Its",
+    "If", "When", "Then", "All", "Each", "Every", "Only", "Both", "Any", "Yes", "And", "Or", "But",
+    "In", "On", "At", "For", "From", "To", "With", "By", "Of", "As", "Is", "Are", "Was", "There",
+    "Here",
 ];
+
+/// Shown in place of a run of digits that repeats part of a withheld number.
+pub const FRAGMENT: &str = "⟨redacted:digits-of-a-withheld-number⟩";
+/// Digits in a row that make a fragment of a withheld number.
+pub const FRAGMENT_DIGITS: usize = 4;
 
 /// A detected span: byte range, kind and label.
 type Span = (usize, usize, Kind, Option<String>);
@@ -320,9 +329,15 @@ impl Engine {
                 Ok(d) => {
                     let mut st = self.lock();
                     let origin = "local brief";
-                    notes.push(self.clean_local(&mut st, &d.summary, origin));
+                    let read: String = bundle
+                        .iter()
+                        .map(|(p, t)| format!("{p}\n{t}\n"))
+                        .chain([objective.to_owned()])
+                        .collect();
+                    notes.push(self.clean_local(&mut st, &d.summary, origin, &read));
                     for f in &d.facts {
-                        notes.push(format!("- {}", self.clean_local(&mut st, f, origin)));
+                        let fact = self.clean_local(&mut st, f, origin, &read);
+                        notes.push(format!("- {fact}"));
                     }
                 }
                 Err(e) => notes.push(format!(
@@ -351,8 +366,31 @@ impl Engine {
     }
 
     /// Replaces detected secrets/PII (and, in sensitive context, names and long
-    /// numbers) with placeholders, then any value already in the vault.
+    /// numbers) with placeholders, then any value already in the vault. In
+    /// sensitive context, digit runs repeating part of a withheld number go too.
     fn sanitize(&self, st: &mut State, text: &str, origin: &str, sensitive: bool) -> String {
+        self.sanitize_read(st, text, origin, sensitive, None)
+    }
+
+    /// [`Self::sanitize`]; `read` holds the words of the content a local
+    /// model read to write `text`. A name it writes is a person only if it
+    /// took the name from there: words it adds itself (an algorithm, a card
+    /// network, a heading) are its own prose. Without this, "No Luhn check"
+    /// in a local summary made "Luhn" a vaulted name.
+    fn sanitize_read(
+        &self,
+        st: &mut State,
+        text: &str,
+        origin: &str,
+        sensitive: bool,
+        read: Option<&std::collections::HashSet<String>>,
+    ) -> String {
+        let taken = |phrase: &str| {
+            read.is_none_or(|r| {
+                TERM.find_iter(phrase)
+                    .any(|w| r.contains(&w.as_str().to_lowercase()))
+            })
+        };
         let mut spans: Vec<Span> = scan_each(text, self.detectors)
             .into_iter()
             .chain(self.custom.find(text))
@@ -373,6 +411,7 @@ impl Engine {
                         && !WORD
                             .find_iter(&text[s..e])
                             .all(|w| public.contains(&w.as_str().to_lowercase()))
+                        && taken(&text[s..e])
                     {
                         spans.push((s, e, Kind::Name, None));
                     }
@@ -399,6 +438,7 @@ impl Engine {
                 let lower = trimmed.trim().to_lowercase();
                 if PLACEHOLDER_VALUES.contains(&lower.as_str())
                     || (!lower.contains(' ') && public.contains(&lower))
+                    || !taken(trimmed)
                 {
                     continue;
                 }
@@ -459,7 +499,12 @@ impl Engine {
             last = end;
         }
         out.push_str(&text[last..]);
-        st.vault.tokenize(&out).0
+        let out = st.vault.tokenize(&out).0;
+        if sensitive {
+            redact_fragments(&st.vault, &out).0
+        } else {
+            out
+        }
     }
 
     /// The token for a detected value; in sensitive text its other spellings
@@ -621,12 +666,12 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             Some(Ok(d)) => {
                 out.push_str(&format!(
                     "Summary by the local model: {}\n",
-                    self.clean_local(&mut st, &d.summary, source_label)
+                    self.clean_local(&mut st, &d.summary, source_label, text)
                 ));
                 for f in &d.facts {
                     out.push_str(&format!(
                         "- {}\n",
-                        self.clean_local(&mut st, f, source_label)
+                        self.clean_local(&mut st, f, source_label, text)
                     ));
                 }
             }
@@ -653,9 +698,11 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         st.overlap.redact(&s).0
     }
 
-    /// Local-model output: sanitized as sensitive text, then copied spans removed.
-    fn clean_local(&self, st: &mut State, text: &str, origin: &str) -> String {
-        let s = self.sanitize(st, text, origin, true);
+    /// Local-model output about `read`: sanitized as sensitive text, then
+    /// copied spans removed.
+    fn clean_local(&self, st: &mut State, text: &str, origin: &str, read: &str) -> String {
+        let read: std::collections::HashSet<String> = words(read).collect();
+        let s = self.sanitize_read(st, text, origin, true, Some(&read));
         let s = st.overlap.redact(&s).0;
         // The local model describes; it never quotes. A request to "quote lines
         // 12-29 exactly" once carried a short fragment of hostile data out.
@@ -791,7 +838,7 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
             let a = Self::block_on(local.answer(&info.source, &text, &q))
                 .map_err(|e| format!("local model: {}", e.message))?;
             let mut st = self.lock();
-            let answer = self.clean_local(&mut st, &a.answer, &info.source);
+            let answer = self.clean_local(&mut st, &a.answer, &info.source, &text);
             let body = if a.unanswerable {
                 format!("The local model could not answer from {id}. {answer}")
             } else {
@@ -1227,6 +1274,11 @@ and are never resolved for {destination}",
                 "it contains {what}; sensitive values are never sent to {destination}"
             ));
         }
+        if forms.iter().any(|f| redact_fragments(&st.vault, f).1 > 0) {
+            return Err(format!(
+                "it contains digits of a withheld number; they are never sent to {destination}"
+            ));
+        }
         if forms.iter().any(|f| st.overlap.redact(f).1 > 0) {
             return Err(format!(
                 "it quotes sensitive content; that is never sent to {destination}"
@@ -1455,6 +1507,47 @@ fn known_value_in(st: &State, texts: &[String], fold_case: bool) -> Option<Strin
         }
     }
     None
+}
+
+/// `text` with every digit run that shares [`FRAGMENT_DIGITS`] or more
+/// consecutive digits with a withheld identifying number (card, account,
+/// national id, IBAN, phone) replaced by [`FRAGMENT`], and how many. A local
+/// answer once gave a card's first four digits as its "network prefix".
+/// Only numbers in the vault count, so unrelated years and counts pass; digits
+/// inside known placeholders are left alone.
+fn redact_fragments(vault: &Vault, text: &str) -> (String, usize) {
+    let grams: std::collections::HashSet<&[u8]> = vault
+        .values()
+        .filter(|(_, e)| e.kind.is_numeric_identifier())
+        .flat_map(|(v, _)| DIGITS.find_iter(v).map(|m| m.as_str().as_bytes()))
+        .flat_map(|d| d.windows(FRAGMENT_DIGITS))
+        .collect();
+    if grams.is_empty() {
+        return (text.to_owned(), 0);
+    }
+    let tokens: Vec<(usize, usize)> = PLACEHOLDER
+        .find_iter(text)
+        .filter(|m| vault.is_token(m.as_str()))
+        .map(|m| (m.start(), m.end()))
+        .collect();
+    let mut out = String::with_capacity(text.len());
+    let (mut last, mut n) = (0, 0);
+    for m in DIGITS.find_iter(text) {
+        let inside = tokens.iter().any(|&(s, e)| s <= m.start() && m.end() <= e);
+        if !inside
+            && m.as_str()
+                .as_bytes()
+                .windows(FRAGMENT_DIGITS)
+                .any(|w| grams.contains(w))
+        {
+            out.push_str(&text[last..m.start()]);
+            out.push_str(FRAGMENT);
+            last = m.end();
+            n += 1;
+        }
+    }
+    out.push_str(&text[last..]);
+    (out, n)
 }
 
 /// `text` with `%XX` escapes (and `+` as a space) decoded, so a value spelled
@@ -2368,5 +2461,74 @@ mod prime_tests {
             assert!(!shown.contains(v), "{v} leaked: {shown}");
         }
         assert!(shown.contains("12 passed in 0.31s"), "{shown}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_output_never_repeats_digits_of_a_withheld_number_nor_invents_names() {
+        // Seen in a live run: a local summary gave a card's first four digits
+        // as its "network prefix", and its "No Luhn validation" made "Luhn" a
+        // vaulted name that then appeared as a placeholder in the operator's summary.
+        const CARD: &str = "4539578763621486";
+        let data = "id,holder,note\n1,Jonas Zetharsko,card on file\n";
+        let summary = "Script output for one 16-digit number starting with '4539' (ends 1486); \
+            No Luhn failures. Run of 2026-09-25, 3 lines. Holder Jonas Zetharsko.";
+        let (local, _) = crate::testing::scripted_local(vec![
+            json!({"summary": summary, "facts": ["The Luhn Algorithm passes; Visa Network prefix 453957."]})
+                .to_string(),
+            json!({"answer": "The prefix is 4539 5787; valid under Luhn.", "evidence_lines": [2],
+                "unanswerable": false})
+            .to_string(),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let e = Engine::open(d.path(), policy, Some(local)).unwrap();
+        let task = e.sanitize_objective(&format!("is this credit card number valid {CARD}?"));
+        assert!(!task.contains(CARD), "{task}");
+        let shown = e.present(
+            &Source::SensitiveCommand {
+                command: "python3 check.py".into(),
+                exit_code: Some(0),
+            },
+            data.as_bytes(),
+        );
+        for leaked in ["4539", "1486", "453957", "Jonas", "Zetharsko"] {
+            assert!(!shown.contains(leaked), "{leaked} crossed: {shown}");
+        }
+        assert!(shown.contains(FRAGMENT), "{shown}");
+        // Unrelated numbers and the model's own words pass.
+        for kept in [
+            "16-digit",
+            "2026-09-25",
+            "3 lines",
+            "No Luhn failures",
+            "Luhn Algorithm",
+            "Visa Network",
+        ] {
+            assert!(shown.contains(kept), "{kept} lost: {shown}");
+        }
+        {
+            let st = e.lock();
+            for word in ["Luhn", "No Luhn", "Luhn Algorithm", "Visa Network"] {
+                assert!(!st.vault.contains(word), "{word} vaulted");
+            }
+            assert!(st.vault.contains("Zetharsko"), "a real name stays a name");
+        }
+        let handle = shown.split_whitespace().next().unwrap().to_owned();
+        let mut args = Map::new();
+        args.insert("handle".into(), json!(handle));
+        args.insert("question".into(), json!("What is the prefix?"));
+        let answer = e.call_tool("ask_local", &args).unwrap().unwrap();
+        assert!(
+            !answer.contains("4539") && !answer.contains("5787"),
+            "{answer}"
+        );
+        // Nor may they go to a third party.
+        assert!(e.check_outbound("search", "visa bin 4539 issuer").is_err());
+        assert!(e.check_outbound("search", "rust 2026 edition").is_ok());
     }
 }
