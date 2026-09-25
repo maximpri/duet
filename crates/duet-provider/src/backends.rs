@@ -107,6 +107,8 @@ pub struct FrontierPreset {
     pub api_key_env: &'static str,
     /// A `frontier.dialect` value.
     pub dialect: &'static str,
+    /// Whether the preset's default model accepts images (`frontier.vision`).
+    pub vision: bool,
 }
 
 pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
@@ -117,6 +119,7 @@ pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
         model: "glm-5.3-flash",
         api_key_env: "ZAI_API_KEY",
         dialect: "chat",
+        vision: false,
     },
     FrontierPreset {
         name: "anthropic",
@@ -125,6 +128,7 @@ pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
         model: "claude-opus-5-5",
         api_key_env: "ANTHROPIC_API_KEY",
         dialect: "anthropic",
+        vision: true,
     },
     FrontierPreset {
         name: "openai",
@@ -133,6 +137,7 @@ pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
         model: "gpt-5.5",
         api_key_env: "OPENAI_API_KEY",
         dialect: "responses",
+        vision: true,
     },
 ];
 
@@ -383,6 +388,10 @@ mod tests {
         assert_eq!(frontier_preset("anthropic").unwrap().dialect, "anthropic");
         assert_eq!(frontier_preset("openai").unwrap().dialect, "responses");
         assert_eq!(frontier_preset("zai").unwrap().dialect, "chat");
+        // GLM text models take no images; Claude and GPT models do.
+        assert!(!frontier_preset("zai").unwrap().vision);
+        assert!(frontier_preset("anthropic").unwrap().vision);
+        assert!(frontier_preset("openai").unwrap().vision);
     }
 
     #[test]

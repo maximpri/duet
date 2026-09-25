@@ -34,6 +34,9 @@ tree-sitter-rust = "0.24"
 tree-sitter-typescript = "0.23"
 tree-sitter-python = "0.25"
 aho-corasick = "1"
+# Images: decode, scale and re-encode PNG, JPEG, GIF and WebP (pure Rust, no threads).
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+base64 = "0.22"
 # Property tests (dev only).
 proptest = { version = "1", default-features = false, features = ["std"] }
 

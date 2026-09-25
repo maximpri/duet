@@ -6,9 +6,10 @@
 
 use crate::dialect::{sorted_tools, split_extra};
 use crate::error::{ErrorKind, ProviderError};
+use crate::image::responses_part;
 use crate::types::{
     Item, Part, Piece, Replay, Request, Response, StopReason, ToolCall, Usage, UsageStatus,
-    assistant_pieces, estimate_tokens,
+    assistant_pieces, attached_to_previous, estimate_tokens, images_after,
 };
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -72,12 +73,47 @@ pub fn build_body(model: &str, req: &Request, stream: bool) -> Value {
 
 fn input(req: &Request) -> Vec<Value> {
     let mut out = Vec::with_capacity(req.items.len());
-    for item in &req.items {
+    for (i, item) in req.items.iter().enumerate() {
         match item {
-            Item::User { text } => out.push(json!({"role": "user", "content": text})),
-            Item::ToolResult { call_id, content } => out.push(
-                json!({"type": "function_call_output", "call_id": call_id, "output": content}),
-            ),
+            Item::User { text } => {
+                let images = images_after(&req.items, i);
+                if images.is_empty() {
+                    out.push(json!({"role": "user", "content": text}));
+                } else {
+                    let mut parts: Vec<Value> = images.into_iter().map(responses_part).collect();
+                    if !text.is_empty() {
+                        parts.push(json!({"type": "input_text", "text": text}));
+                    }
+                    out.push(json!({"role": "user", "content": parts}));
+                }
+            }
+            Item::ToolResult { call_id, content } => {
+                let images = images_after(&req.items, i);
+                let output = if images.is_empty() {
+                    Value::String(content.clone())
+                } else {
+                    let mut parts = Vec::new();
+                    if !content.is_empty() {
+                        parts.push(json!({"type": "input_text", "text": content}));
+                    }
+                    parts.extend(images.into_iter().map(responses_part));
+                    Value::Array(parts)
+                };
+                out.push(
+                    json!({"type": "function_call_output", "call_id": call_id, "output": output}),
+                );
+            }
+            Item::Images { .. } if attached_to_previous(&req.items, i) => {}
+            Item::Images { images, .. } => {
+                let parts: Vec<Value> = images
+                    .iter()
+                    .filter(|img| img.is_loaded())
+                    .map(responses_part)
+                    .collect();
+                if !parts.is_empty() {
+                    out.push(json!({"role": "user", "content": parts}));
+                }
+            }
             Item::Assistant {
                 text,
                 tool_calls,

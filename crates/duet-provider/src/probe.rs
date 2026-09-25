@@ -202,6 +202,82 @@ pub async fn cache_reuse_with(
     })
 }
 
+/// The colours the vision probe shows, one image each.
+const PROBE_COLOURS: [(&str, [u8; 3]); 2] = [("red", [220, 30, 30]), ("blue", [30, 60, 220])];
+
+/// What the vision probe found.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VisionProbe {
+    /// The model named the colour of every probe image.
+    pub reads_images: bool,
+    /// The expected colour and the model's answer, per probe image.
+    pub answers: Vec<(String, String)>,
+    /// Input tokens reported for the first probe; an image costs tens to
+    /// hundreds, so a handful means the server dropped it.
+    pub prompt_tokens: u64,
+}
+
+/// The request of one vision probe: a built-in image of one colour (nothing
+/// from a workspace) and the question which colour it is.
+pub fn vision_probe_request(rgb: [u8; 3]) -> Request {
+    let image = crate::image::prepare(&crate::image::solid_png(64, 64, rgb), 64)
+        .expect("a generated PNG is valid");
+    Request {
+        system: String::new(),
+        items: vec![
+            Item::User {
+                text: "Which single colour fills this image? Answer with one lowercase word."
+                    .into(),
+            },
+            Item::Images {
+                call_id: None,
+                images: vec![image],
+            },
+        ],
+        max_output_tokens: Some(512),
+        ..Request::default()
+    }
+}
+
+/// Whether the model reads images: it is shown a red and then a blue image
+/// and must name each colour (and not the other). A server that drops image
+/// parts answers from the text alone. `extra` is merged into each request
+/// (a local server's template settings).
+pub async fn vision_probe(
+    provider: &ChatProvider,
+    extra: &serde_json::Map<String, Value>,
+) -> Result<VisionProbe, ProviderError> {
+    let mut answers = Vec::new();
+    let mut prompt_tokens = 0;
+    let mut reads = true;
+    for (i, (name, rgb)) in PROBE_COLOURS.iter().enumerate() {
+        let mut req = vision_probe_request(*rgb);
+        req.extra = extra.clone();
+        let r = provider.create(&req).await?;
+        if i == 0 {
+            prompt_tokens = r.usage.input + r.usage.cache_read + r.usage.cache_write;
+        }
+        let words: Vec<String> = r
+            .text
+            .to_lowercase()
+            .split(|c: char| !c.is_alphabetic())
+            .filter(|w| !w.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let named = |c: &str| words.iter().any(|w| w == c);
+        let others = PROBE_COLOURS
+            .iter()
+            .any(|(other, _)| other != name && named(other));
+        reads &= named(name) && !others;
+        answers.push(((*name).to_owned(), r.text.trim().chars().take(80).collect()));
+    }
+    Ok(VisionProbe {
+        reads_images: reads,
+        answers,
+        prompt_tokens,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

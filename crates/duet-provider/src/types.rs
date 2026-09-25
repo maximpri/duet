@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Dialect-neutral request and response types.
 
+pub use crate::image::Image;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -47,6 +48,43 @@ pub enum Item {
         call_id: String,
         content: String,
     },
+    /// Images that belong to the item right before it: the operator's
+    /// message (`call_id` `None`) or the result of the tool call `call_id`.
+    /// Kept apart from that item so text items keep one shape; each dialect
+    /// puts the images where its API takes them. Transcripts hold only their
+    /// digests (see [`Image`]); an empty list (masked) sends nothing.
+    Images {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        call_id: Option<String>,
+        images: Vec<Image>,
+    },
+}
+
+/// The loaded images attached to `items[i]` (by the `Images` item after it).
+pub fn images_after(items: &[Item], i: usize) -> Vec<&Image> {
+    match (items.get(i), items.get(i + 1)) {
+        (Some(owner), Some(Item::Images { call_id, images })) if belongs(owner, call_id) => {
+            images.iter().filter(|img| img.is_loaded()).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Whether the `Images` item `items[i]` belongs to the item before it (and
+/// is sent with that item); a stray one is sent on its own.
+pub fn attached_to_previous(items: &[Item], i: usize) -> bool {
+    match (i.checked_sub(1).and_then(|p| items.get(p)), items.get(i)) {
+        (Some(owner), Some(Item::Images { call_id, .. })) => belongs(owner, call_id),
+        _ => false,
+    }
+}
+
+fn belongs(owner: &Item, call_id: &Option<String>) -> bool {
+    match (owner, call_id) {
+        (Item::User { .. }, None) => true,
+        (Item::ToolResult { call_id: id, .. }, Some(c)) => id == c,
+        _ => false,
+    }
 }
 
 /// One part of a response's output, in the order the provider produced it.

@@ -2,9 +2,11 @@
 //! OpenAI-compatible Chat Completions dialect (z.ai, oMLX, LM Studio, llama.cpp, vLLM, Ollama).
 
 use crate::error::{ErrorKind, ProviderError};
+use crate::image::chat_part;
 use crate::recover::recover_text_tool_call;
 use crate::types::{
-    Item, Request, Response, StopReason, ToolCall, Usage, UsageStatus, estimate_tokens,
+    Item, Request, Response, StopReason, ToolCall, Usage, UsageStatus, attached_to_previous,
+    estimate_tokens, images_after,
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -16,9 +18,43 @@ pub fn build_body(model: &str, req: &Request, stream: bool) -> Value {
     if !req.system.is_empty() {
         messages.push(json!({"role": "system", "content": req.system}));
     }
-    for item in &req.items {
+    // Tool messages carry text only: images of tool results follow the run
+    // of tool messages as one user message.
+    let mut pending: Vec<Value> = Vec::new();
+    let flush = |pending: &mut Vec<Value>, messages: &mut Vec<Value>| {
+        if !pending.is_empty() {
+            messages.push(json!({"role": "user", "content": std::mem::take(pending)}));
+        }
+    };
+    for (i, item) in req.items.iter().enumerate() {
+        if !matches!(item, Item::ToolResult { .. } | Item::Images { .. }) {
+            flush(&mut pending, &mut messages);
+        }
         messages.push(match item {
-            Item::User { text } => json!({"role": "user", "content": text}),
+            Item::User { text } => {
+                let images = images_after(&req.items, i);
+                if images.is_empty() {
+                    json!({"role": "user", "content": text})
+                } else {
+                    let mut parts: Vec<Value> = images.into_iter().map(chat_part).collect();
+                    if !text.is_empty() {
+                        parts.push(json!({"type": "text", "text": text}));
+                    }
+                    json!({"role": "user", "content": parts})
+                }
+            }
+            Item::Images { .. } if attached_to_previous(&req.items, i) => continue,
+            Item::Images { images, .. } => {
+                let parts: Vec<Value> = images
+                    .iter()
+                    .filter(|img| img.is_loaded())
+                    .map(chat_part)
+                    .collect();
+                if parts.is_empty() {
+                    continue;
+                }
+                json!({"role": "user", "content": parts})
+            }
             Item::Assistant {
                 text,
                 reasoning,
@@ -41,10 +77,17 @@ pub fn build_body(model: &str, req: &Request, stream: bool) -> Value {
                 m
             }
             Item::ToolResult { call_id, content } => {
+                let images = images_after(&req.items, i);
+                if !images.is_empty() {
+                    pending.push(json!({"type": "text",
+                        "text": format!("[image from the result of tool call {call_id}]")}));
+                    pending.extend(images.into_iter().map(chat_part));
+                }
                 json!({"role": "tool", "tool_call_id": call_id, "content": content})
             }
         });
     }
+    flush(&mut pending, &mut messages);
     let mut body = json!({"model": model, "messages": messages, "stream": stream});
     if stream {
         body["stream_options"] = json!({"include_usage": true});

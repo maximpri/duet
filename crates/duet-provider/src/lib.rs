@@ -9,6 +9,7 @@ pub mod client;
 pub mod dialect;
 pub mod endpoint;
 pub mod error;
+pub mod image;
 #[cfg(any(test, feature = "test-support"))]
 pub mod mock_http;
 pub mod price;
@@ -22,7 +23,7 @@ pub mod types;
 pub use client::{ChatProvider, ProviderConfig, Role};
 pub use dialect::Dialect;
 pub use error::{ErrorKind, ProviderError};
-pub use types::{Item, Request, Response, StopReason, ToolCall, ToolSpec, Usage};
+pub use types::{Image, Item, Request, Response, StopReason, ToolCall, ToolSpec, Usage};
 
 #[cfg(test)]
 mod tests;

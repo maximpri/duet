@@ -5,9 +5,10 @@
 
 use crate::dialect::{sorted_tools, split_extra};
 use crate::error::{ErrorKind, ProviderError};
+use crate::image::anthropic_block;
 use crate::types::{
     Item, Part, Piece, Replay, Request, Response, StopReason, ToolCall, Usage, UsageStatus,
-    assistant_pieces, estimate_tokens,
+    assistant_pieces, attached_to_previous, estimate_tokens, images_after,
 };
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -114,19 +115,39 @@ fn messages(req: &Request) -> Vec<Value> {
             _ => out.push((role, vec![block])),
         }
     };
-    for item in &req.items {
+    for (i, item) in req.items.iter().enumerate() {
         match item {
             Item::User { text } => {
+                // Images before the text, as the API documentation advises.
+                for img in images_after(&req.items, i) {
+                    push("user", anthropic_block(img));
+                }
                 if !text.is_empty() {
                     push("user", json!({"type": "text", "text": text}));
                 }
             }
             Item::ToolResult { call_id, content } => {
                 let mut block = json!({"type": "tool_result", "tool_use_id": call_id});
-                if !content.is_empty() {
-                    block["content"] = Value::String(content.clone());
+                let images = images_after(&req.items, i);
+                if images.is_empty() {
+                    if !content.is_empty() {
+                        block["content"] = Value::String(content.clone());
+                    }
+                } else {
+                    let mut parts = Vec::new();
+                    if !content.is_empty() {
+                        parts.push(json!({"type": "text", "text": content}));
+                    }
+                    parts.extend(images.into_iter().map(anthropic_block));
+                    block["content"] = Value::Array(parts);
                 }
                 push("user", block);
+            }
+            Item::Images { .. } if attached_to_previous(&req.items, i) => {}
+            Item::Images { images, .. } => {
+                for img in images.iter().filter(|img| img.is_loaded()) {
+                    push("user", anthropic_block(img));
+                }
             }
             Item::Assistant {
                 text,

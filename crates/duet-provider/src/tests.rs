@@ -169,6 +169,59 @@ async fn cache_probe_sends_one_request_twice_and_reports_cached_tokens() {
     assert!(bodies[0].to_string().contains("Reference line 120"));
 }
 
+/// A reply whose text is `text` (a static string), with `prompt` input tokens.
+fn says(text: &'static str, prompt: u64) -> Scripted {
+    let content: &'static str = Box::leak(
+        format!(
+            "data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}},\"finish_reason\":\"stop\"}}]}}\n\n"
+        )
+        .into_boxed_str(),
+    );
+    let usage: &'static str = Box::leak(
+        format!(
+            "data: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":{prompt},\"completion_tokens\":1}}}}\n\n"
+        )
+        .into_boxed_str(),
+    );
+    Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![Ok(content), Ok(usage), Ok("data: [DONE]\n\n")],
+    }
+}
+
+#[tokio::test]
+async fn the_vision_probe_needs_every_colour_named() {
+    let reads = Script::new(vec![says("Red.", 96), says("blue", 96)]);
+    let r = crate::probe::vision_probe(&provider(&reads), &serde_json::Map::new())
+        .await
+        .unwrap();
+    assert!(r.reads_images, "{r:?}");
+    assert_eq!(r.prompt_tokens, 96);
+    let bodies = reads.bodies.lock().unwrap().clone();
+    let part = &bodies[0]["messages"][0]["content"][0];
+    assert_eq!(part["type"], "image_url");
+    assert!(
+        part["image_url"]["url"]
+            .as_str()
+            .unwrap()
+            .starts_with("data:image/png;base64,")
+    );
+    // A server that drops the image answers from the text alone.
+    let blind = Script::new(vec![says("white", 27), says("white", 27)]);
+    let r = crate::probe::vision_probe(&provider(&blind), &serde_json::Map::new())
+        .await
+        .unwrap();
+    assert!(!r.reads_images);
+    assert_eq!(r.answers[0], ("red".to_owned(), "white".to_owned()));
+    // Naming every colour is not reading the image.
+    let hedging = Script::new(vec![says("red or blue", 96), says("red or blue", 96)]);
+    let r = crate::probe::vision_probe(&provider(&hedging), &serde_json::Map::new())
+        .await
+        .unwrap();
+    assert!(!r.reads_images);
+}
+
 #[tokio::test]
 async fn retried_failures_do_not_poison_usage() {
     // A 429, a connection error, and a mid-stream provider error, then success.
