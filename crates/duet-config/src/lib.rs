@@ -16,10 +16,18 @@ use toml::Value;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
     Bool,
-    Int { min: i64, max: i64 },
-    Float { min: f64, max: f64 },
+    Int {
+        min: i64,
+        max: i64,
+    },
+    Float {
+        min: f64,
+        max: f64,
+    },
     Str,
     List,
+    /// A list of regular expressions; every entry must compile.
+    Patterns,
     Choice(&'static [&'static str]),
 }
 
@@ -244,6 +252,15 @@ pub const REGISTRY: &[Setting] = &[
         OnlyTrue,
         true,
         "High-entropy strings next to key-like names."
+    ),
+    s!(
+        "sensitivity.custom_patterns",
+        Patterns,
+        "[]",
+        Project,
+        AddOnly,
+        true,
+        "Regular expressions for your own sensitive values (customer ids, internal hostnames); every match becomes a `data` placeholder in sensitive and public text."
     ),
     s!(
         "sensitivity.bulky_tokens",
@@ -476,6 +493,17 @@ fn validate(s: &Setting, v: &Value) -> Result<(), ConfigError> {
         }
         (Float { min, max }, _) => bad(&format!("must be a number between {min} and {max}")),
         (List, Value::Array(a)) if a.iter().all(Value::is_str) => Ok(()),
+        (Patterns, Value::Array(a)) if a.iter().all(Value::is_str) => {
+            for p in a.iter().filter_map(Value::as_str) {
+                if p.is_empty() {
+                    return bad("an empty pattern would match everywhere");
+                }
+                if let Err(e) = regex::Regex::new(p) {
+                    return bad(&format!("{p:?} is not a valid regular expression: {e}"));
+                }
+            }
+            Ok(())
+        }
         (Choice(opts), Value::String(x)) if opts.contains(&x.as_str()) => Ok(()),
         (Choice(opts), _) => bad(&format!("must be one of {opts:?}")),
         _ => bad("wrong type"),
@@ -986,6 +1014,53 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn custom_patterns_must_compile_and_only_tighten_from_a_project() {
+        let (_d, o, p) = files("", "[sensitivity]\ncustom_patterns = [\"CUST-[0-9]{6}\"]\n");
+        let c = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(
+            c.list("sensitivity.custom_patterns").unwrap(),
+            vec!["CUST-[0-9]{6}"]
+        );
+        assert_eq!(
+            c.origin("sensitivity.custom_patterns"),
+            Some(Origin::Project)
+        );
+        for bad in [r#"["CUST-(["]"#, r#"[""]"#, "[1]"] {
+            let v = parse_value(bad).unwrap();
+            assert!(
+                matches!(
+                    c.propose(Target::Owner, "sensitivity.custom_patterns", v),
+                    Err(ConfigError::Invalid { .. })
+                ),
+                "{bad}"
+            );
+        }
+        let (_d2, o2, p2) = files("", "[sensitivity]\ncustom_patterns = [\"(\"]\n");
+        assert!(matches!(
+            Config::load(&o2, Some(&p2)),
+            Err(ConfigError::Invalid { .. })
+        ));
+        // Adding tightens; removing loosens (refused in the project file,
+        // confirmed in the owner's).
+        let more = parse_value(r#"["CUST-[0-9]{6}", "int\\.corp\\.example"]"#).unwrap();
+        let add = c
+            .propose(Target::Project, "sensitivity.custom_patterns", more)
+            .unwrap();
+        assert_eq!(add.weakens, None);
+        let none = Value::Array(vec![]);
+        assert!(matches!(
+            c.propose(Target::Project, "sensitivity.custom_patterns", none.clone()),
+            Err(ConfigError::Loosening { .. })
+        ));
+        let (_d3, o3, _) = files("[sensitivity]\ncustom_patterns = [\"x+\"]\n", "");
+        let owner = Config::load(&o3, None).unwrap();
+        let p = owner
+            .propose(Target::Owner, "sensitivity.custom_patterns", none)
+            .unwrap();
+        assert!(p.weakens.is_some());
     }
 
     #[test]

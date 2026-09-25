@@ -358,6 +358,7 @@ fn policy(cfg: &Config) -> Result<Policy> {
         detect_secrets: cfg.bool("sensitivity.detect_secrets")?,
         detect_pii: cfg.bool("sensitivity.detect_pii")?,
         detect_entropy: cfg.bool("sensitivity.detect_entropy")?,
+        custom_patterns: cfg.list("sensitivity.custom_patterns")?,
         bulky_tokens: cfg.int("sensitivity.bulky_tokens")? as usize,
         bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens")? as usize,
         local_brief: cfg.bool("sensitivity.local_brief")?,

@@ -212,6 +212,66 @@ fn looks_random(s: &str) -> bool {
 
 /// Addresses at domains reserved for documentation and testing (RFC 2606 /
 /// RFC 6761) cannot belong to anyone; code and tests use them as examples.
+/// The owner's and project's own detectors (`sensitivity.custom_patterns`):
+/// every match is a `data` value, in sensitive and public text alike.
+#[derive(Debug, Clone, Default)]
+pub struct CustomPatterns(Vec<Regex>);
+
+impl CustomPatterns {
+    /// Compiles `patterns`; an empty or invalid pattern is an error (a
+    /// pattern silently dropped would be a value silently sent).
+    pub fn compile(patterns: &[String]) -> Result<Self, String> {
+        patterns
+            .iter()
+            .map(|p| {
+                if p.is_empty() {
+                    return Err("an empty custom pattern would match everywhere".to_owned());
+                }
+                Regex::new(p).map_err(|e| format!("custom pattern {p:?}: {e}"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Self)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Every non-empty match, sorted by start (longer first).
+    pub fn find(&self, text: &str) -> Vec<Finding> {
+        let mut out: Vec<Finding> = self
+            .0
+            .iter()
+            .flat_map(|re| re.find_iter(text))
+            .filter(|m| !m.is_empty())
+            .map(|m| Finding {
+                kind: Kind::Data,
+                start: m.start(),
+                end: m.end(),
+                label: None,
+            })
+            .collect();
+        out.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
+        out.dedup();
+        out
+    }
+}
+
+/// [`scan`] plus the custom patterns, overlaps merged the same way.
+pub fn scan_with(text: &str, d: Detectors, custom: &CustomPatterns) -> Vec<Finding> {
+    let mut all = scan_each(text, d);
+    all.extend(custom.find(text));
+    all.sort_by_key(|f| (f.start, std::cmp::Reverse(f.end)));
+    let mut merged: Vec<Finding> = Vec::new();
+    for f in all {
+        match merged.last_mut() {
+            Some(last) if f.start < last.end => last.end = last.end.max(f.end),
+            _ => merged.push(f),
+        }
+    }
+    merged
+}
+
 fn reserved_example_domain(email: &str) -> bool {
     let Some((_, domain)) = email.rsplit_once('@') else {
         return false;
@@ -397,6 +457,40 @@ mod tests {
     fn ordinary_code_is_not_flagged() {
         let code = "fn parse_timestamp(s: &str) -> Result<i64, ParseError> {\n    let token = next_token(&mut it);\n    let cfg = Config::from_sources(env_file, config_file)?;\n}";
         assert!(kinds(code).is_empty(), "{:?}", kinds(code));
+    }
+
+    #[test]
+    fn custom_patterns_find_data_values_and_refuse_bad_patterns() {
+        let c =
+            CustomPatterns::compile(&["CUST-[0-9]{6}".into(), "[a-z0-9]+\\.corp\\.example".into()])
+                .unwrap();
+        let text = "order CUST-004211 from db1.corp.example, CUST-12 is too short";
+        let found: Vec<(Kind, &str)> = c
+            .find(text)
+            .iter()
+            .map(|f| (f.kind, &text[f.start..f.end]))
+            .collect();
+        assert_eq!(
+            found,
+            vec![
+                (Kind::Data, "CUST-004211"),
+                (Kind::Data, "db1.corp.example")
+            ]
+        );
+        // Empty matches never become spans.
+        assert!(
+            CustomPatterns::compile(&["x*".into()])
+                .unwrap()
+                .find("abc")
+                .is_empty()
+        );
+        assert!(CustomPatterns::compile(&["(".into()]).is_err());
+        assert!(CustomPatterns::compile(&[String::new()]).is_err());
+        // Merged with the built-in detectors.
+        let d = Detectors::default();
+        let merged = scan_with("mail kim@corp.net about CUST-004211", d, &c);
+        let kinds: Vec<Kind> = merged.iter().map(|f| f.kind).collect();
+        assert_eq!(kinds, vec![Kind::Email, Kind::Data]);
     }
 
     #[test]

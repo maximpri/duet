@@ -14,7 +14,7 @@
 //!   secret files.
 
 use crate::bulky::{self, Shape};
-use crate::detect::{Detectors, Kind, scan, scan_each};
+use crate::detect::{CustomPatterns, Detectors, Kind, scan_each, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
 use crate::local::LocalReader;
@@ -159,6 +159,8 @@ struct State {
 pub struct Engine {
     policy: Policy,
     detectors: Detectors,
+    /// `sensitivity.custom_patterns`, compiled.
+    custom: CustomPatterns,
     local: Option<LocalReader>,
     state: Mutex<State>,
     /// Files created or changed by commands that could read sensitive data.
@@ -204,9 +206,18 @@ impl Engine {
             pii: policy.detect_pii,
             entropy: policy.detect_entropy,
         };
+        // The configuration refuses invalid patterns; a policy built another
+        // way still never runs with a pattern silently dropped.
+        let custom =
+            CustomPatterns::compile(&policy.custom_patterns).map_err(|message| FsError::Io {
+                op: "compile",
+                path: "sensitivity.custom_patterns".into(),
+                message,
+            })?;
         Ok(Arc::new(Self {
             policy,
             detectors,
+            custom,
             local,
             derived: Mutex::new(
                 std::fs::read(run_dir.join("derived.json"))
@@ -342,6 +353,7 @@ impl Engine {
     fn sanitize(&self, st: &mut State, text: &str, origin: &str, sensitive: bool) -> String {
         let mut spans: Vec<Span> = scan_each(text, self.detectors)
             .into_iter()
+            .chain(self.custom.find(text))
             .map(|f| (f.start, f.end, f.kind, f.label))
             .collect();
         if sensitive {
@@ -1111,7 +1123,7 @@ at most {MAX_RAW_LINES} lines per call)."
 
     fn note_authored(&self, text: &str) {
         let mut st = self.lock();
-        for f in scan(text, self.detectors) {
+        for f in scan_with(text, self.detectors, &self.custom) {
             let value = &text[f.start..f.end];
             if !st.vault.contains(value) {
                 st.authored.insert(value.to_owned());
@@ -1444,6 +1456,53 @@ mod tests {
         let shown = e.present(&file("src/main.rs"), src.as_bytes());
         assert!(!shown.contains(KEY));
         assert!(shown.contains("fn main()"));
+    }
+
+    #[test]
+    fn custom_patterns_become_data_placeholders_in_public_and_sensitive_text() {
+        let d = tempfile::tempdir().unwrap();
+        let custom = Policy {
+            custom_patterns: vec!["CUST-[0-9]{6}".into(), r"[a-z0-9]+\.corp\.internal".into()],
+            ..policy()
+        };
+        let e = Engine::open(d.path(), custom, None).unwrap();
+        let src = "// migrate CUST-004211 via db7.corp.internal\nfn main() {}\n";
+        let shown = e.present(&file("src/main.rs"), src.as_bytes());
+        for value in ["CUST-004211", "db7.corp.internal"] {
+            assert!(!shown.contains(value), "{value} leaked: {shown}");
+        }
+        assert!(shown.contains("⟨data:"), "{shown}");
+        assert!(shown.contains("fn main()"), "{shown}");
+        let log = "ERROR refund failed for CUST-918273 on db7.corp.internal\n";
+        let shown = e.present(&file("logs/app.log"), log.as_bytes());
+        assert!(
+            !shown.contains("CUST-918273") && !shown.contains("db7.corp.internal"),
+            "{shown}"
+        );
+        let task = e.sanitize_objective("Close ticket for CUST-555001");
+        assert!(!task.contains("CUST-555001"), "{task}");
+        assert!(task.contains("⟨data:"), "{task}");
+        // Values the frontier writes back resolve to the originals locally.
+        let placeholder = task
+            .split('⟨')
+            .nth(1)
+            .and_then(|t| t.split('⟩').next())
+            .map(|t| format!("⟨{t}⟩"))
+            .unwrap();
+        assert_eq!(e.detokenize(&placeholder), "CUST-555001");
+        // Without the pattern the same text passes unchanged.
+        let (_d2, plain) = engine();
+        assert!(
+            plain
+                .sanitize_objective("Close ticket for CUST-555001")
+                .contains("CUST-555001")
+        );
+        // An invalid pattern stops the engine from opening.
+        let bad = Policy {
+            custom_patterns: vec!["(".into()],
+            ..policy()
+        };
+        assert!(Engine::open(tempfile::tempdir().unwrap().path(), bad, None).is_err());
     }
 
     #[test]

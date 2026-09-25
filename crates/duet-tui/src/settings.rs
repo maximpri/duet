@@ -41,6 +41,7 @@ pub(crate) fn kind_text(kind: Kind) -> String {
         Kind::Float { min, max } => format!("number {min}..={max}"),
         Kind::Str => "text".into(),
         Kind::List => "list of strings, as a TOML array".into(),
+        Kind::Patterns => "list of regular expressions, as a TOML array".into(),
         Kind::Choice(opts) => format!("one of {}", opts.join(", ")),
     }
 }

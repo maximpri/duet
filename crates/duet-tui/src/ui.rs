@@ -114,7 +114,9 @@ fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
     {
         let (what, hint) = match duet_config::setting(key).map(|s| s.kind) {
             _ if *append => ("add to", "one entry".to_owned()),
-            Some(duet_config::Kind::List) => ("set", "TOML array".to_owned()),
+            Some(duet_config::Kind::List | duet_config::Kind::Patterns) => {
+                ("set", "TOML array".to_owned())
+            }
             Some(duet_config::Kind::Str) | None => ("set", String::new()),
             Some(k) => ("set", crate::settings::kind_text(k)),
         };

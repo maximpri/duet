@@ -465,6 +465,7 @@ name = "duet-config"
 version = "0.1.0"
 dependencies = [
  "duet-fs",
+ "regex",
  "tempfile",
  "thiserror",
  "toml",

@@ -316,7 +316,7 @@ impl App {
         match (self.tab, code) {
             (t, KeyCode::Enter) if t.is_settings() => self.edit_selected(),
             (t, KeyCode::Char('a')) if t.is_settings() => match self.selected_setting() {
-                Some(s) if s.kind == Kind::List => {
+                Some(s) if matches!(s.kind, Kind::List | Kind::Patterns) => {
                     self.mode = Mode::Edit {
                         key: s.key,
                         buffer: String::new(),

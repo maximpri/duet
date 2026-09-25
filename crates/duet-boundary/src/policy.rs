@@ -53,6 +53,8 @@ pub struct Policy {
     pub detect_secrets: bool,
     pub detect_pii: bool,
     pub detect_entropy: bool,
+    /// The owner's and project's own detectors (`sensitivity.custom_patterns`).
+    pub custom_patterns: Vec<String>,
     pub bulky_tokens: usize,
     /// Brief the frontier on the sensitive files at run start (needs a local model).
     pub local_brief: bool,
