@@ -383,6 +383,7 @@ impl Fixture {
             git_author: None,
             mcp: None,
             lsp: None,
+            subagents: None,
         };
         Self {
             _dir: dir,
