@@ -51,6 +51,13 @@ struct Matcher {
     replacement: Vec<Option<String>>,
 }
 
+/// Fixed markers Duet itself inserts into outbound text. Like tokens, they are
+/// never rewritten and never count as a disclosed value: a vault value that
+/// happens to spell part of one (`redacted`) must not corrupt or block it.
+/// Only exact, known strings: a general `⟨…⟩` shape would let crafted data hide
+/// a real value inside a fake marker.
+pub const FIXED_MARKERS: &[&str] = &[crate::overlap::REDACTED];
+
 /// Values shorter than this are never replaced (too many false positives).
 pub const MIN_VALUE_BYTES: usize = 4;
 
@@ -157,6 +164,7 @@ impl Vault {
             let mut patterns: Vec<&str> = Vec::new();
             let mut replacement = Vec::new();
             let mut tokens: Vec<&str> = self.by_value.values().map(|e| e.token.as_str()).collect();
+            tokens.extend(FIXED_MARKERS);
             tokens.sort_unstable();
             tokens.dedup();
             for t in tokens {
@@ -175,7 +183,12 @@ impl Vault {
                 .ok();
             Matcher {
                 automaton,
-                tokens: self.by_value.values().map(|e| e.token.clone()).collect(),
+                tokens: self
+                    .by_value
+                    .values()
+                    .map(|e| e.token.clone())
+                    .chain(FIXED_MARKERS.iter().map(|m| (*m).to_owned()))
+                    .collect(),
                 replacement,
             }
         })

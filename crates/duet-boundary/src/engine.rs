@@ -101,6 +101,34 @@ fn group(digits: &str) -> String {
 /// Directories never scanned for sensitive files (build output, dependencies, state).
 const COMMAND_SCAN_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
 
+/// Values a name/address field holds when it holds no person.
+const PLACEHOLDER_VALUES: &[&str] = &[
+    "value",
+    "redacted",
+    "null",
+    "nil",
+    "none",
+    "unknown",
+    "n/a",
+    "na",
+    "tbd",
+    "todo",
+    "test",
+    "example",
+    "sample",
+    "anonymous",
+    "anon",
+    "placeholder",
+    "default",
+    "string",
+    "name",
+    "user",
+    "customer",
+    "xxx",
+    "-",
+    "",
+];
+
 /// Words that look like names in title case but are not personal data.
 const NAME_STOPWORDS: &[&str] = &[
     "Result", "Option", "Error", "String", "Vec", "Some", "None", "Ok", "Err", "Self", "Warn",
@@ -348,7 +376,16 @@ impl Engine {
             for c in PERSON_FIELD.captures_iter(text) {
                 let Some(v) = c.get(1) else { continue };
                 let trimmed = v.as_str().trim_end();
-                if trimmed.trim().is_empty() || trimmed.starts_with(['⟨', '<', '$', '{', '(']) {
+                if trimmed.trim().is_empty() || trimmed.starts_with(['⟨', '<', '$', '{', '(', '['])
+                {
+                    continue;
+                }
+                // Placeholder values (`name: value`, `name=unknown`) and a single
+                // word that also occurs in public content are not a person.
+                let lower = trimmed.trim().to_lowercase();
+                if PLACEHOLDER_VALUES.contains(&lower.as_str())
+                    || (!lower.contains(' ') && public.contains(&lower))
+                {
                     continue;
                 }
                 spans.push((v.start(), v.start() + trimmed.len(), Kind::Name, None));
@@ -1791,6 +1828,53 @@ mod prime_tests {
             "{task}"
         );
         assert!(task.contains("sensitive_data"), "{task}");
+    }
+
+    #[test]
+    fn placeholder_field_values_never_block_duets_own_markers() {
+        // Seen in a live run: `name: value` and `name: [PII/injection redacted]`
+        // in a data file made "value" and "redacted" vault names; the copy
+        // filter's own marker then contained "redacted" and the final check
+        // blocked the request, ending the run.
+        let (_d, e) = primed_engine(
+            &[(
+                "data/dead_letter.txt",
+                "name: value\nname: redacted\nname: [PII/injection redacted]\nname: Jonas Zetharsko\n",
+            )],
+            "",
+        );
+        {
+            let st = e.lock();
+            for placeholder in ["value", "redacted", "[PII/injection redacted]"] {
+                assert!(!st.vault.contains(placeholder), "{placeholder} vaulted");
+            }
+            assert!(st.vault.contains("Jonas Zetharsko"));
+        }
+        // Even a vault value that spells part of the marker leaves it intact.
+        {
+            let mut st = e.lock();
+            st.vault
+                .token_for("redacted", Kind::Name, None, "data/dead_letter.txt")
+                .unwrap();
+        }
+        let marked = format!("see {} here", crate::overlap::REDACTED);
+        let (filter, check) = e.outbound();
+        let mut req = Request {
+            items: vec![Item::ToolResult {
+                call_id: "c".into(),
+                content: marked.clone(),
+            }],
+            ..Request::default()
+        };
+        filter.apply(&mut req);
+        let body = serde_json::to_value(&req.items).unwrap();
+        assert!(
+            body.to_string().contains(crate::overlap::REDACTED),
+            "{body}"
+        );
+        assert!(check.check(&body).is_ok());
+        // A real disclosure is still blocked.
+        assert!(check.check(&json!({"x": "Jonas Zetharsko"})).is_err());
     }
 
     #[tokio::test(flavor = "multi_thread")]
