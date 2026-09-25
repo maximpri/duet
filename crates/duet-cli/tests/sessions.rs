@@ -229,6 +229,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         // 1000 prompt tokens per request: $0.001 each.
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: Default::default(),
+        web: None,
     };
     Fixture {
         _dir: dir,
