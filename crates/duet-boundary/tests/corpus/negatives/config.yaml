@@ -1,0 +1,51 @@
+# Configuration that names secrets without holding them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-config
+data:
+  LOG_LEVEL: info
+  API_BASE_URL: https://api.internal.test/v1
+  TOKEN_TTL_SECONDS: "3600"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-backend
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          image: registry.internal.test/team/api-backend:2026.09.25
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef: {name: payments, key: api-key}
+---
+name: ci
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          DATABASE_URL: postgres://app@localhost:5432/test
+---
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+      POSTGRES_USER: app
+  cache:
+    image: redis:7
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]

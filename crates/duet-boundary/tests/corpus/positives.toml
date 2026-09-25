@@ -1,0 +1,215 @@
+# Hand-written synthetic positives for the detection corpus (tests/corpus.rs).
+# Never real credentials or real people: every secret-shaped value was drawn
+# from a seeded generator; names and addresses are invented or fictional.
+#
+# A case with `rule` must be found by that imported rule (in `path` when
+# given) and withheld; a case with `kind` and `value` must have `value`
+# withheld as that kind. Positives for every imported rule are also generated
+# from the rules' own expressions; the cases here are realistic forms.
+
+# ---- imported rules: realistic forms
+
+[[case]]
+rule = "kubernetes-secret-yaml"
+path = "deploy/db-secret.yaml"
+text = """
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+type: Opaque
+data:
+  password: cjNkLXBhbmRhLXNhbXBsZS0wNDE3
+"""
+
+[[case]]
+rule = "curl-auth-header"
+text = 'curl -s -H "Authorization: Bearer h3UUQMHQf8mOELsiyOwsEMEckD449Hhr" https://api.internal.test/v1/items'
+
+[[case]]
+rule = "curl-auth-user"
+text = 'curl --user "deploy:gxT4Yqo2KLfHPeO8" https://ci.internal.test/api/queue'
+
+[[case]]
+rule = "private-key"
+text = """
+-----BEGIN RSA PRIVATE KEY-----
+rbPn2kerxzP3ltJBwHHt+RG6HU+4Ti+Xeu9EiP8g2H0/kYr4NMdce3FiZ/lJRmkx
+58odl2+lNJ8/QIF4hWSNRoiUQfPCTHY7AQ3TFIc0MHeyGyeau4Yf9z44xhJi6Edc
+H6n1Dfvtl6P9aK7j3cOjhd0lJz3L2S+fFM5ZCjn9Y2wWpde8NJxhfX3UAnpugmgY
+G4EdRQE2TAwdLhvk0oXGU8INNLMyt+7DduiAgiy9e19HALWLWnobKuhigHpPjvYh
+LfYg3vQCt8EiJNYAKTgbToZC8nx5==
+-----END RSA PRIVATE KEY-----
+"""
+
+[[case]]
+rule = "jwt"
+text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYW1wbGUtdXNlci0wNDIiLCJpYXQiOjE3OTAwMDAwMDB9.1mLrAqSfPW5WNgrtgaY0ZgM6z16kFdOPPkin_7e5eAA"
+
+[[case]]
+rule = "generic-api-key"
+text = 'client_secret: "GupC38aU1PYde2KkjTXu"'
+
+[[case]]
+rule = "hashicorp-tf-password"
+path = "infra/main.tf"
+text = """
+resource "azurerm_mssql_server" "reports" {
+  administrator_login          = "reports_admin"
+  administrator_login_password = "LipUyUP60azmbi"
+}
+"""
+
+# ---- duet's own formats
+
+[[case]]
+kind = "secret"
+value = "Xy7!pQr9sT2"
+text = 'export LEDGER_DB_PASSWORD="Xy7!pQr9sT2"'
+
+[[case]]
+kind = "secret"
+value = "S3cr3tPw"
+text = "DATABASE_URL=postgres://app:S3cr3tPw@db.internal:5432/prod"
+
+[[case]]
+kind = "secret"
+value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYW1wbGUtdXNlci0wNDIiLCJpYXQiOjE3OTAwMDAwMDB9.1mLrAqSfPW5WNgrtgaY0ZgM6z16kFdOPPkin_7e5eAA"
+text = "token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYW1wbGUtdXNlci0wNDIiLCJpYXQiOjE3OTAwMDAwMDB9.1mLrAqSfPW5WNgrtgaY0ZgM6z16kFdOPPkin_7e5eAA"
+
+[[case]]
+kind = "email"
+value = "amelia.velanwick42@mailbox-311.net"
+text = "Contact amelia.velanwick42@mailbox-311.net for the refund."
+
+[[case]]
+kind = "phone"
+value = "(415) 555-0199"
+text = "call (415) 555-0199 after 5pm"
+
+[[case]]
+kind = "card"
+value = "4111 1111 1111 1111"
+text = "paid with 4111 1111 1111 1111 on file"
+
+[[case]]
+kind = "card"
+value = "42977600076546677"
+text = "is this credit card number valid 42977600076546677?"
+
+[[case]]
+kind = "account"
+value = "0012-3456-7890-12"
+text = "acct 0012-3456-7890-12 closed"
+
+[[case]]
+kind = "id"
+value = "123-45-6789"
+text = "ssn 123-45-6789"
+
+[[case]]
+kind = "ip"
+value = "203.0.113.41"
+text = "login from 203.0.113.41 failed"
+
+# ---- international personal data
+
+[[case]]
+kind = "iban"
+value = "DE89370400440532013000"
+text = "IBAN DE89370400440532013000, BIC COBADEFFXXX"
+
+[[case]]
+kind = "iban"
+value = "GB82 WEST 1234 5698 7654 32"
+text = "Pay to GB82 WEST 1234 5698 7654 32 by Friday."
+
+[[case]]
+kind = "iban"
+value = "FR14 2004 1010 0505 0001 3M02 606"
+text = "RIB : FR14 2004 1010 0505 0001 3M02 606"
+
+[[case]]
+kind = "phone"
+value = "+44 20 7946 0958"
+text = "Office: +44 20 7946 0958 (London)"
+
+[[case]]
+kind = "phone"
+value = "+49 30 12345678"
+text = "Rückruf unter +49 30 12345678 erbeten"
+
+[[case]]
+kind = "phone"
+value = "+33 1 23 45 67 89"
+text = "Appelez le +33 1 23 45 67 89."
+
+[[case]]
+kind = "phone"
+value = "+81 3-1234-5678"
+text = "Tokyo office +81 3-1234-5678"
+
+[[case]]
+kind = "phone"
+value = "+91 98765 43210"
+text = "WhatsApp +91 98765 43210"
+
+[[case]]
+kind = "phone"
+value = "030 12345678"
+text = "Tel.: 030 12345678"
+
+[[case]]
+kind = "id"
+value = "AB 12 34 56 C"
+text = "National Insurance number AB 12 34 56 C"
+
+[[case]]
+kind = "id"
+value = "86095742719"
+text = "Steuer-ID 86095742719"
+
+[[case]]
+kind = "id"
+value = "1 84 12 76 451 089 46"
+text = "NIR : 1 84 12 76 451 089 46"
+
+[[case]]
+kind = "id"
+value = "12345678Z"
+text = "DNI 12345678Z"
+
+[[case]]
+kind = "id"
+value = "X1234567L"
+text = "NIE X1234567L"
+
+[[case]]
+kind = "id"
+value = "RSSMRA85T10A562S"
+text = "codice fiscale RSSMRA85T10A562S"
+
+[[case]]
+kind = "id"
+value = "111222333"
+text = "BSN: 111222333"
+
+[[case]]
+kind = "ip"
+value = "2001:db8:85a3::8a2e:370:7334"
+text = "client 2001:db8:85a3::8a2e:370:7334 connected"
+
+[[case]]
+kind = "address"
+value = "221B Baker Street, London NW1 6XE"
+text = "address: 221B Baker Street, London NW1 6XE"
+
+[[case]]
+kind = "address"
+value = "Hauptstraße 5, 10115 Berlin"
+text = '"shipping_address": "Hauptstraße 5, 10115 Berlin",'
+
+[[case]]
+kind = "address"
+value = "12 rue de la Paix, 75002 Paris"
+text = "Adresse : 12 rue de la Paix, 75002 Paris"

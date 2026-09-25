@@ -1,0 +1,69 @@
+# Recorded baseline of the detection corpus (tests/corpus.rs). The test fails
+# when a number rises above it; when one falls, lower it here in the same commit.
+
+# Imported rules (rules/gitleaks.toml) that do not compile, and rules compiled
+# without part of their definition (an allowlist entry, an unsupported field).
+[rules]
+failed = 0
+partial = 0
+
+# Hard negatives: lines holding a finding, scanned as that file (its name as the
+# path, so path conditions and path allowlists apply) and as text of unknown
+# origin. Measured 2026-09-25: 53 of 683 lines (7.8%); duet's detectors before
+# the rule import flagged 80 of the same lines, the imported rules add none.
+[negatives."Cargo.lock"]
+as_file = 0
+as_text = 0
+
+# Base64 of public text, a data URI, a certificate and an SSH public key: the
+# entropy detector cannot tell them from a base64 secret.
+[negatives."base64.txt"]
+as_file = 18
+as_text = 18
+
+[negatives."code.rs"]
+as_file = 0
+as_text = 0
+
+[negatives."config.yaml"]
+as_file = 0
+as_text = 0
+
+# Placeholders in credential assignments (`API_KEY=your-api-key-here`), the
+# documented example access key and test card, a labelled fictional phone number.
+[negatives."fixtures.txt"]
+as_file = 14
+as_text = 14
+
+[negatives."hashes.txt"]
+as_file = 0
+as_text = 0
+
+# Pod names with hashes, resource paths, identifiers with digits or acronyms.
+[negatives."identifiers.txt"]
+as_file = 6
+as_text = 6
+
+# A 13-digit millisecond timestamp that passes the card checksum.
+[negatives."logs.txt"]
+as_file = 1
+as_text = 1
+
+# `t.tokenHeader="X-CSRF-Token"`: a credential-named assignment.
+[negatives."minified.js"]
+as_file = 1
+as_text = 1
+
+# Two digit runs that pass the card checksum; `1.2.3.4.5` read as an IPv4 address.
+[negatives."numbers.txt"]
+as_file = 3
+as_text = 3
+
+[negatives."package-lock.json"]
+as_file = 0
+as_text = 0
+
+# URL paths around a UUID (`/api/v1/orders/<uuid>/items`) read as one high-entropy token.
+[negatives."uuids.txt"]
+as_file = 10
+as_text = 10

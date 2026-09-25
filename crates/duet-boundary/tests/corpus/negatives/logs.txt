@@ -1,0 +1,80 @@
+2026-09-25T10:00:57.617+02:00 ERROR [worker-6] request_id=5e98c6f5be9d7790 path=/api/v1/invoices status=404 duration_ms=836 bytes=32469
+2026-09-25T10:01:00.204+02:00 ERROR [worker-8] request_id=e3a86cd35a74ac8a path=/api/v1/exports status=500 duration_ms=742 bytes=15560
+2026-09-25T10:02:21.616+02:00 ERROR [worker-8] request_id=d40b138627d9f180 path=/api/v1/exports status=201 duration_ms=118 bytes=15243
+2026-09-25T10:03:35.294+02:00 WARN [worker-3] request_id=929e0eab5c64d748 path=/api/v1/orders status=404 duration_ms=23 bytes=53966
+2026-09-25T10:04:30.944+02:00 INFO [worker-6] request_id=4cf3e6d22a351bf1 path=/api/v1/exports status=500 duration_ms=1247 bytes=75561
+2026-09-25T10:05:11.190+02:00 WARN [worker-7] request_id=e15e16673e58c8e2 path=/api/v1/orders status=500 duration_ms=1342 bytes=63961
+2026-09-25T10:06:45.824+02:00 WARN [worker-2] request_id=376c77683c9e8cba path=/api/v1/invoices status=500 duration_ms=509 bytes=81961
+2026-09-25T10:07:23.629+02:00 DEBUG [worker-1] request_id=59bbf9e2a1d75bfb path=/api/v1/exports status=404 duration_ms=1416 bytes=61564
+2026-09-25T10:08:45.795+02:00 WARN [worker-3] request_id=71ea37c27b819435 path=/api/v1/exports status=500 duration_ms=1512 bytes=94373
+2026-09-25T10:09:58.731+02:00 ERROR [worker-3] request_id=6e868c500d14aa02 path=/api/v1/orders status=404 duration_ms=500 bytes=39258
+2026-09-25T10:10:49.172+02:00 INFO [worker-4] request_id=15db5aab8fc37ce6 path=/api/v1/exports status=404 duration_ms=1577 bytes=6409
+2026-09-25T10:11:49.618+02:00 ERROR [worker-3] request_id=dd0280190dc212c5 path=/api/v1/orders status=201 duration_ms=382 bytes=19861
+2026-09-25T10:12:08.716+02:00 DEBUG [worker-8] request_id=3fd55e546bbefde6 path=/api/v1/orders status=404 duration_ms=1615 bytes=454
+2026-09-25T10:13:14.310+02:00 INFO [worker-7] request_id=71a4c0eab39f6b9c path=/api/v1/invoices status=500 duration_ms=1275 bytes=31647
+2026-09-25T10:14:06.567+02:00 WARN [worker-5] request_id=5546540698f9d5fb path=/api/v1/invoices status=200 duration_ms=299 bytes=91580
+2026-09-25T10:15:13.460+02:00 INFO [worker-6] request_id=d8714e702e1a6d9b path=/api/v1/invoices status=500 duration_ms=883 bytes=25394
+2026-09-25T10:16:50.828+02:00 ERROR [worker-4] request_id=c8bb903531514345 path=/api/v1/orders status=404 duration_ms=1903 bytes=9615
+2026-09-25T10:17:29.541+02:00 ERROR [worker-2] request_id=a92e010363c558b1 path=/api/v1/exports status=200 duration_ms=15 bytes=62942
+2026-09-25T10:18:08.692+02:00 DEBUG [worker-8] request_id=59a7e248abd75682 path=/api/v1/invoices status=404 duration_ms=281 bytes=29782
+2026-09-25T10:19:57.344+02:00 WARN [worker-1] request_id=c436a64fff2d26b8 path=/api/v1/exports status=201 duration_ms=1169 bytes=27863
+2026-09-25T10:20:27.575+02:00 DEBUG [worker-5] request_id=033ee7b4b5c45c2e path=/api/v1/invoices status=201 duration_ms=1365 bytes=79032
+2026-09-25T10:21:25.121+02:00 DEBUG [worker-2] request_id=ba3ecf263a4c0193 path=/api/v1/orders status=404 duration_ms=590 bytes=47170
+2026-09-25T10:22:09.111+02:00 DEBUG [worker-4] request_id=95b2f77249e18950 path=/api/v1/exports status=200 duration_ms=1789 bytes=3914
+2026-09-25T10:23:49.445+02:00 WARN [worker-6] request_id=2ab64a4a9f010657 path=/api/v1/exports status=201 duration_ms=1944 bytes=66033
+2026-09-25T10:24:53.626+02:00 INFO [worker-2] request_id=83ee071449d7b3a0 path=/api/v1/invoices status=500 duration_ms=1413 bytes=43861
+2026-09-25T10:25:50.424+02:00 DEBUG [worker-6] request_id=d1032910ce803fca path=/api/v1/invoices status=201 duration_ms=353 bytes=88354
+2026-09-25T10:26:31.100+02:00 ERROR [worker-3] request_id=125ef1030d430dda path=/api/v1/invoices status=201 duration_ms=1268 bytes=68028
+2026-09-25T10:27:36.689+02:00 INFO [worker-6] request_id=8d3984f08b147b80 path=/api/v1/exports status=500 duration_ms=1337 bytes=67903
+2026-09-25T10:28:18.168+02:00 DEBUG [worker-5] request_id=4f848d706e2ab2d9 path=/api/v1/exports status=404 duration_ms=995 bytes=65651
+2026-09-25T10:29:24.314+02:00 WARN [worker-8] request_id=c03bd1ecd598ada0 path=/api/v1/orders status=404 duration_ms=1517 bytes=72492
+2026-09-25T10:30:25.400+02:00 ERROR [worker-4] request_id=29cf45395a660732 path=/api/v1/invoices status=200 duration_ms=595 bytes=85553
+2026-09-25T10:31:10.672+02:00 INFO [worker-3] request_id=72ea11edbfc729ef path=/api/v1/orders status=500 duration_ms=1063 bytes=95075
+2026-09-25T10:32:20.980+02:00 ERROR [worker-3] request_id=65d2379cde5f5e9d path=/api/v1/orders status=500 duration_ms=1428 bytes=83460
+2026-09-25T10:33:19.865+02:00 DEBUG [worker-4] request_id=75df706da63f66ba path=/api/v1/invoices status=201 duration_ms=880 bytes=85034
+2026-09-25T10:34:38.390+02:00 ERROR [worker-3] request_id=1a28b369a442ef0c path=/api/v1/exports status=201 duration_ms=739 bytes=13602
+2026-09-25T10:35:37.816+02:00 ERROR [worker-3] request_id=c0f00ae140e103a4 path=/api/v1/orders status=200 duration_ms=326 bytes=86651
+2026-09-25T10:36:46.295+02:00 ERROR [worker-4] request_id=5eb2442f3e02e554 path=/api/v1/orders status=404 duration_ms=825 bytes=19945
+2026-09-25T10:37:39.585+02:00 ERROR [worker-5] request_id=2cf4d9cacad83c3d path=/api/v1/orders status=404 duration_ms=1861 bytes=20883
+2026-09-25T10:38:28.375+02:00 WARN [worker-1] request_id=828405079649972b path=/api/v1/orders status=201 duration_ms=88 bytes=14028
+2026-09-25T10:39:23.872+02:00 WARN [worker-7] request_id=4519fefebf19e0a3 path=/api/v1/exports status=500 duration_ms=1246 bytes=27438
+2026-09-25T10:40:20.887+02:00 ERROR [worker-4] request_id=07220884d528e8d1 path=/api/v1/invoices status=200 duration_ms=1400 bytes=87625
+2026-09-25T10:41:09.006+02:00 INFO [worker-1] request_id=db505c491eca4cf5 path=/api/v1/orders status=200 duration_ms=114 bytes=78155
+2026-09-25T10:42:45.409+02:00 ERROR [worker-7] request_id=a0e99650cbd2e69b path=/api/v1/exports status=500 duration_ms=13 bytes=52436
+2026-09-25T10:43:04.839+02:00 INFO [worker-2] request_id=08d820ed841f4d09 path=/api/v1/exports status=200 duration_ms=1181 bytes=83123
+2026-09-25T10:44:08.619+02:00 INFO [worker-6] request_id=2ac9d82dbf2eae0d path=/api/v1/orders status=500 duration_ms=964 bytes=82247
+2026-09-25T10:45:00.222+02:00 INFO [worker-5] request_id=fe1c8fb04f8844fe path=/api/v1/invoices status=404 duration_ms=62 bytes=69472
+2026-09-25T10:46:32.251+02:00 INFO [worker-1] request_id=3f1ec08a89f5abce path=/api/v1/invoices status=201 duration_ms=895 bytes=12111
+2026-09-25T10:47:07.520+02:00 ERROR [worker-8] request_id=b168636409c8fee5 path=/api/v1/exports status=201 duration_ms=29 bytes=89198
+2026-09-25T10:48:34.904+02:00 WARN [worker-7] request_id=674033c8b4c52fa6 path=/api/v1/invoices status=500 duration_ms=336 bytes=19230
+2026-09-25T10:49:08.649+02:00 DEBUG [worker-2] request_id=68d56848a3307127 path=/api/v1/exports status=200 duration_ms=1273 bytes=67168
+2026-09-25T10:50:47.043+02:00 ERROR [worker-4] request_id=07b154739de81598 path=/api/v1/orders status=201 duration_ms=941 bytes=38161
+2026-09-25T10:51:24.901+02:00 ERROR [worker-4] request_id=838e9b1afde770fc path=/api/v1/exports status=404 duration_ms=1695 bytes=34440
+2026-09-25T10:52:00.956+02:00 ERROR [worker-4] request_id=3063fa2fe0e04d4c path=/api/v1/exports status=201 duration_ms=1751 bytes=47478
+2026-09-25T10:53:53.030+02:00 WARN [worker-2] request_id=52bd632c2642faf9 path=/api/v1/exports status=500 duration_ms=1940 bytes=41560
+2026-09-25T10:54:09.905+02:00 ERROR [worker-7] request_id=e688552b30c764d6 path=/api/v1/invoices status=500 duration_ms=1338 bytes=32358
+2026-09-25T10:55:45.619+02:00 INFO [worker-3] request_id=a79dd71d57b2c16e path=/api/v1/invoices status=500 duration_ms=1055 bytes=11500
+2026-09-25T10:56:39.988+02:00 WARN [worker-2] request_id=cb77070137b8ce53 path=/api/v1/orders status=201 duration_ms=1822 bytes=67876
+2026-09-25T10:57:28.125+02:00 ERROR [worker-8] request_id=8b2c102e28d1b1e5 path=/api/v1/exports status=200 duration_ms=1238 bytes=11753
+2026-09-25T10:58:54.473+02:00 WARN [worker-3] request_id=f754ceb931a3e8cd path=/api/v1/invoices status=200 duration_ms=1929 bytes=22486
+2026-09-25T10:59:06.065+02:00 INFO [worker-8] request_id=4aa1214585b318ef path=/api/v1/exports status=404 duration_ms=1779 bytes=99851
+1704517717 1741497042954 gc pause 59.020ms heap=1919MiB
+1787251018 1727283160286 gc pause 38.990ms heap=3750MiB
+1743885779 1727515020160 gc pause 52.725ms heap=2188MiB
+1701023693 1763400827338 gc pause 41.361ms heap=1127MiB
+1782858048 1709793854629 gc pause 17.644ms heap=1797MiB
+1735972964 1761454959548 gc pause 41.534ms heap=2522MiB
+1711802604 1704353238481 gc pause 24.610ms heap=1997MiB
+1727761451 1792410974907 gc pause 80.183ms heap=126MiB
+1786324908 1716577537544 gc pause 41.987ms heap=2752MiB
+1734840831 1773183634998 gc pause 25.677ms heap=1187MiB
+Sep 25 10:15:32 build-host dockerd[1123]: time="2026-09-25T10:15:32.123456789Z" level=info msg="Container started" container=97d9a2a362f05a9c2ef8a579952258c8aa732d6d65ebb7335fa24383b88af25b
+   Compiling duet-boundary v0.1.0 (/work/crates/duet-boundary)
+    Finished `release` profile [optimized] target(s) in 1m 12s
+npm WARN deprecated inflight@1.0.6: This module is not supported
+added 1342 packages, and audited 1343 packages in 41s
+Downloading https://files.pythonhosted.org/packages/source/r/requests/requests-2.32.3.tar.gz
+Successfully installed certifi-2024.8.30 charset-normalizer-3.3.2 idna-3.10 urllib3-2.2.3
+go: downloading golang.org/x/sys v0.25.0
+version 1.0.0+20240101120000 built at 2026-09-25 10:15:32 +0100
+@@ -12,7 +12,8 @@ fn parse_header(line: &str) -> Result<Header, ParseError> {

@@ -1,0 +1,44 @@
+# Test fixtures and documented placeholders: values that stand for secrets without being any.
+API_KEY=your-api-key-here
+password = "changeme"
+DB_PASSWORD=${DB_PASSWORD}
+token: "<TOKEN>"
+SECRET_KEY = os.environ["SECRET_KEY"]
+export GITHUB_TOKEN=$(cat ~/.config/token)
+auth_token: "{{ .Values.authToken }}"
+client_secret: ${{ secrets.CLIENT_SECRET }}
+aws_secret_access_key = <redacted>
+password: "********"
+api_key = "xxxxxxxxxxxxxxxxxxxxxxxx"
+Authorization: Bearer <access-token>
+STRIPE_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxx
+const EXAMPLE_KEY = "AKIAIOSFODNN7EXAMPLE";
+let password = "password";
+assert_eq!(mask("secret"), "******");
+user@example.com
+contact: support@example.org
+noreply@localhost.test
+phone: 555-0100
+card_number = "4242 4242 4242 4242"  # documented test card
+iban = "XX00 0000 0000 0000"
+ssn: "000-00-0000"
+let ip = "127.0.0.1";
+listen: 0.0.0.0:8080
+bind_address = "::1"
+hunter2
+correct horse battery staple
+TODO: rotate the token before release
+fixture_token = "test-token"
+session_id = "test-session"
+api_version = "2024-06-01"
+secret_name = "db-credentials"
+key_id = "k1"
+token_type = "Bearer"
+password_min_length = 12
+jwt_issuer = "https://auth.internal.test"
+encryption_key_path = "/etc/app/keys/current.pem"
+"access": "read-only",
+auth: none
+credentials: []
+secret: false
+apikey: null
