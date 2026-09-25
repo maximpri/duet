@@ -807,7 +807,9 @@ fn sandbox() -> Check {
             },
         ),
         Err(e) => check("sandbox", Status::Fail, e.to_string()).fix(format!(
-            "on Linux install bubblewrap so that {} exists; on macOS {} is part of the system",
+            "on Linux install bubblewrap so that {} exists and allow unprivileged user \
+             namespaces (in a container: a seccomp profile that permits them); on macOS {} is \
+             part of the system",
             duet_sandbox::BWRAP,
             duet_sandbox::SANDBOX_EXEC
         )),

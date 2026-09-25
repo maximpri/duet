@@ -120,7 +120,7 @@ pub async fn edit_protected(
     ))
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod tests {
     use crate::journal::WriteJournal;
     use crate::tools::{Ctx, Outcome, dispatch};
@@ -128,7 +128,6 @@ mod tests {
     use duet_boundary::policy::Policy;
     use duet_boundary::testing::scripted_local;
     use duet_git::Git;
-    use duet_sandbox::SandboxKind;
     use serde_json::{Value, json};
     use std::path::Path;
     use std::time::Duration;
@@ -184,7 +183,7 @@ mod tests {
         let mut ctx = Ctx {
             workspace: &ws,
             run_dir: &run,
-            sandbox: SandboxKind::Seatbelt,
+            sandbox: duet_sandbox::detect().unwrap(),
             git: &git,
             presenter: engine.as_ref(),
             journal: &mut journal,
@@ -203,7 +202,7 @@ mod tests {
         )
         .await;
         assert!(
-            cat.contains("Operation not permitted") && !cat.contains(CANARY),
+            cat.contains(duet_sandbox::DENIAL_MESSAGE) && !cat.contains(CANARY),
             "{cat}"
         );
         let direct = call(

@@ -710,7 +710,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod sensitive_command_tests {
     use super::*;
     use duet_boundary::engine::Engine;
@@ -783,7 +783,7 @@ mod sensitive_command_tests {
         let mut ctx = Ctx {
             workspace: &ws,
             run_dir: &run,
-            sandbox: SandboxKind::Seatbelt,
+            sandbox: duet_sandbox::detect().unwrap(),
             git: &git_bin,
             presenter: engine.as_ref(),
             journal: &mut journal,
@@ -837,7 +837,7 @@ mod sensitive_command_tests {
         let mut ctx = Ctx {
             workspace: &ws,
             run_dir: &run,
-            sandbox: SandboxKind::Seatbelt,
+            sandbox: duet_sandbox::detect().unwrap(),
             git: &git,
             presenter: engine.as_ref(),
             journal: &mut journal,
@@ -855,7 +855,7 @@ mod sensitive_command_tests {
             json!({"command": "od -c data/orders.csv; cat app.log; ls data"}),
         )
         .await;
-        assert!(plain.contains("Operation not permitted"), "{plain}");
+        assert!(plain.contains(duet_sandbox::DENIAL_MESSAGE), "{plain}");
         assert!(!plain.contains("  8   9   7"), "{plain}");
         assert!(!plain.contains("orders.csv\n"), "listing hidden: {plain}");
 
@@ -878,7 +878,7 @@ mod sensitive_command_tests {
         )
         .await;
         assert!(
-            !after.contains(BALANCE) && after.contains("Operation not permitted"),
+            !after.contains(BALANCE) && after.contains(duet_sandbox::DENIAL_MESSAGE),
             "{after}"
         );
 
