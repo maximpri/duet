@@ -278,11 +278,21 @@ environment variables named in mcp.servers.{0}.env",
 }
 
 fn config_loaded(c: &Config, owner: &Path, project: &Path) -> Check {
-    let count = |o| {
+    // A template setting counts once per configured instance.
+    let count = |o| -> usize {
         REGISTRY
             .iter()
-            .filter(|s| c.origin(s.key) == Some(o))
-            .count()
+            .map(|s| {
+                if duet_config::is_template(s.key) {
+                    c.instances(s.key)
+                        .iter()
+                        .filter(|n| c.origin(&s.key.replace('*', n)) == Some(o))
+                        .count()
+                } else {
+                    usize::from(c.origin(s.key) == Some(o))
+                }
+            })
+            .sum()
     };
     let file = |p: &Path, n: usize| {
         if p.exists() {

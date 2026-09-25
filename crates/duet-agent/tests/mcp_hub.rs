@@ -555,3 +555,77 @@ async fn approval_follows_the_servers_setting_under_oversight() {
             .contains("drop table")
     );
 }
+
+/// The reference "everything" server through npx, in the sandbox with network
+/// (to download it). Run with `DUET_LIVE_MCP_NPX=1 cargo test -p duet-agent
+/// --test mcp_hub -- --ignored --nocapture`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "downloads a server with npx"]
+async fn live_reference_server_through_npx() {
+    if std::env::var("DUET_LIVE_MCP_NPX").is_err() {
+        return;
+    }
+    let f = fixture();
+    let e = engine(&f);
+    let p: &dyn Presenter = e.as_ref();
+    let mut cfg = server(
+        "everything",
+        Launch::Command {
+            command: "npx".into(),
+            args: vec![
+                "-y".into(),
+                "@modelcontextprotocol/server-everything".into(),
+            ],
+        },
+        Trust::Public,
+    );
+    cfg.network = true;
+    cfg.timeout = Duration::from_secs(120);
+    // npm keeps its cache in the workspace (the sandbox lets it write only there).
+    let cache = f.ws.join(".npm-cache");
+    cfg.env = vec!["npm_config_cache".into()];
+    let hub = Hub::start(
+        &[cfg],
+        &Setup {
+            workspace: &f.ws,
+            run_dir: &f.run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            presenter: p,
+            audit: Some(&f.audit),
+        },
+    )
+    .await;
+    println!(
+        "npm cache (npm_config_cache=.npm-cache is relative to it): {}",
+        cache.display()
+    );
+    println!("{:?}", hub.reports());
+    let names: Vec<String> = hub.specs().into_iter().map(|s| s.name).collect();
+    println!("{names:?}");
+    for (tool, a) in [
+        (
+            "mcp__everything__echo",
+            json!({"message": "hello from duet"}),
+        ),
+        ("mcp__everything__get-sum", json!({"a": 2, "b": 40})),
+        ("mcp__everything__get-tiny-image", json!({})),
+        ("mcp__everything__get-env", json!({})),
+        ("mcp__everything__get-resource-links", json!({"count": 2})),
+        (
+            "mcp__everything__get-structured-content",
+            json!({"location": "New York"}),
+        ),
+        ("mcp__everything__echo", json!({"message": EMAIL})),
+    ] {
+        if names.iter().any(|n| n == tool) {
+            let r = call(&hub, p, &f, tool, a).await;
+            println!(
+                "{tool}: {}",
+                match &r {
+                    Ok(t) | Err(t) => t.chars().take(600).collect::<String>(),
+                }
+            );
+        }
+    }
+    hub.shutdown().await;
+}
