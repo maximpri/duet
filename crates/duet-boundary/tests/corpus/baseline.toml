@@ -21,7 +21,7 @@ as_text = 0
 as_file = 18
 as_text = 18
 
-[negatives."code.rs"]
+[negatives."code.txt"]
 as_file = 0
 as_text = 0
 
