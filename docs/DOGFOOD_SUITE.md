@@ -165,6 +165,38 @@ on a seed see identical canaries. Placeholders in task files use `{{canary:<kind
 | Frontier tokens carried by class, `ask_local` calls and questions, `sensitive_data` commands, sandbox denials, local busy seconds | Duet cost ledger (`summary.json`) | Diagnosis |
 | Terminal state | run record | Reliability gate |
 
+### Leak proxy
+
+Every lane's model endpoint is a logging reverse proxy (`crates/duet-evals/src/leakproxy.rs`) that
+forwards to the lane's real upstream without TLS interception. Its log for a run is `proxy/`:
+
+- **HTTP requests.** Each request body is stored (`requests/<seq>.body`), scanned for every
+  textual form of the run's canaries (raw and JSON-escaped variants) and logged in `requests.jsonl`
+  before it is forwarded; hits go to `leaks.jsonl`. Responses stream back unchanged and are stored
+  (`responses/<seq>.body`) for usage. A body with a `Content-Encoding` other than identity is
+  refused with 415 and never forwarded.
+- **WebSocket sessions.** An upgrade request is forwarded without `Sec-WebSocket-Extensions`, so no
+  compression (permessage-deflate) is negotiated, and is logged with `"ws":{"role":"upgrade"}`; its
+  `seq` is the session id. After the 101 the proxy relays both directions byte for byte while
+  reading the frames (RFC 6455: FIN and opcodes, unmasking client frames, 16- and 64-bit lengths,
+  continuation frames, control frames between fragments). Each complete client text or binary
+  message is a request: its frames are held until the message is complete, then it is stored,
+  scanned exactly like an HTTP body and logged in `requests.jsonl` (method `WS`, `"ws":{"role":
+  "message","session":…,"opcode":…}`, with `seq`, `bytes` and `leaked`), and only then forwarded
+  unchanged. Server messages are not scanned; each text message is appended as one `data:` line to
+  the response capture of the client message it follows, so usage (and cost, where a verified price
+  exists) is read from it as from a streamed HTTP response. Close codes, protocol errors and
+  negotiated extensions are recorded per session in `ws.jsonl`.
+- **Unread traffic.** If the upstream negotiates an extension anyway, or a client frame cannot be
+  decoded, the proxy keeps relaying but can no longer read that traffic: `ws.jsonl` records it as
+  `uninspected`, the run record's `leaks_unmeasured` says why, and every report shows that run's
+  and its lane's leaks as **not measured**, never 0. A gate with an unmeasured candidate run reports
+  privacy as `NOT MEASURED` (not a pass), and `report --final` lists those runs under Leaks.
+- **Infrastructure verdict.** A session handshake is not itself a frontier request. A WebSocket
+  message the server answered counts as a successful request (or as the status of an `error` event
+  it was answered with, e.g. 429); a session that answered nothing counts as one failure. So a
+  WebSocket session with a successful exchange is never "no frontier request succeeded".
+
 ## 7. Lanes
 
 | Lane | What runs |
@@ -194,10 +226,13 @@ operator's CLI subscriptions, not API keys (§3 of the plan, 2026-09-24):
   `openai_base_url` config override and `OPENAI_BASE_URL`, disables request compression (the proxy
   refuses request bodies it cannot scan) and lets the sandbox write only the eval login directory
   outside the run. These keys were read from the installed build's configuration table
-  (codex-cli 0.156.1), not from its docs.
+  (codex-cli 0.156.1), not from its docs. This build sends model traffic over a WebSocket
+  (`GET /responses`, 101) whenever the upgrade succeeds, falling back to `POST /responses`; its
+  WebSocket switches are removed, so the proxy reads the frames (see Leak proxy above).
 
 Both lanes are smoke-tested with one run before M5: the run's `proxy/requests.jsonl` must show the
-model requests with status 200. The sandbox allows loopback only, so a lane that ignored its proxy
+model requests with status 200, or a 101 upgrade followed by `WS` message records, and `proxy/ws.jsonl`
+must hold no `uninspected` event. The sandbox allows loopback only, so a lane that ignored its proxy
 settings cannot reach its provider (the run is invalid) rather than bypass the proxy. Subscription
 lanes are not probed with an API key during quota waits; their invalid runs are retried on the next
 invocation. Before a batch, `duet-eval preflight --lanes claude-code,codex` checks without any model

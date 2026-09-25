@@ -165,6 +165,9 @@ probe = false
 # provider's base URL for either login mode. Request compression is disabled:
 # the proxy refuses bodies it cannot scan. The harness sandbox wraps the agent
 # (macOS cannot nest sandboxes), so the agent's own sandbox is bypassed.
+# Model traffic goes over a WebSocket (GET /responses, 101) when the upgrade
+# succeeds, with POST /responses as fallback; this build cannot switch the
+# WebSocket transport off, so the proxy reads the frames (leakproxy.rs).
 # --ignore-user-config: only these overrides apply; auth still uses CODEX_HOME.
 argv = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config",
         "--color", "never", "--json", "--dangerously-bypass-approvals-and-sandbox",
@@ -186,5 +189,5 @@ setup = [
   "Token refresh needs network the run sandbox blocks: if a run fails authentication, sign in again with CODEX_HOME=~/.duet-eval/codex codex login and re-run the batch (invalid runs are retried).",
 ]
 notes = [
-  "routing via openai_base_url/OPENAI_BASE_URL is read from this Codex build's config keys, not its docs; confirm with the one-run smoke test (proxy/requests.jsonl shows POST /responses with status 200).",
+  "routing via openai_base_url/OPENAI_BASE_URL is read from this Codex build's config keys, not its docs; confirm with the one-run smoke test (proxy/requests.jsonl shows GET /responses with status 101 followed by WS message records, or POST /responses with status 200; proxy/ws.jsonl has no uninspected event).",
 ]
