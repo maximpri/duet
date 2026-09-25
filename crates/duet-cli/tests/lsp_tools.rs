@@ -131,6 +131,7 @@ fn config(ws: &Path, run_dir: &Path, lsp: Arc<Lsp>) -> RunConfig {
         git_author: None,
         mcp: None,
         lsp: Some(lsp),
+        subagents: None,
     }
 }
 

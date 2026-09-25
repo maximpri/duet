@@ -170,6 +170,7 @@ fn config(ws: &Path, run_dir: &Path, web: Option<Arc<Web>>) -> RunConfig {
         git_author: None,
         mcp: None,
         lsp: None,
+        subagents: None,
     }
 }
 

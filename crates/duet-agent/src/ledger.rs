@@ -135,6 +135,25 @@ impl Ledger {
         }
     }
 
+    /// Adds a sub-agent's ledger: its requests carried its own results, and
+    /// its dollars are the run's.
+    pub fn absorb(&mut self, other: &Ledger) {
+        for (class, c) in &other.by_class {
+            let mine = self.by_class.entry(*class).or_default();
+            mine.results += c.results;
+            mine.added_tokens += c.added_tokens;
+            mine.carried_tokens += c.carried_tokens;
+        }
+        self.request_tokens += other.request_tokens;
+        self.ask_local_calls += other.ask_local_calls;
+        self.ask_local_questions += other.ask_local_questions;
+        self.sensitive_data_commands += other.sensitive_data_commands;
+        self.sandbox_denials += other.sandbox_denials;
+        self.input_usd += other.input_usd;
+        self.output_usd += other.output_usd;
+        self.failed_attempts_usd += other.failed_attempts_usd;
+    }
+
     /// Splits input dollars between classes; call once the run has ended.
     pub fn finish(&mut self) {
         let total = self.request_tokens.max(1) as f64;

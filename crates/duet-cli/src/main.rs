@@ -29,6 +29,7 @@ mod doctor;
 mod lsp;
 mod mcp;
 mod setup;
+mod subagents;
 mod web;
 
 #[derive(Parser)]
@@ -639,6 +640,7 @@ async fn prepare(
         )
         .await?,
         lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
+        subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits)?,
     };
     Ok(Prepared {
         git,

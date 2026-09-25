@@ -111,6 +111,7 @@ async fn run(dir: &Path, presenter: &dyn Presenter, script: Vec<(&str, Value)>) 
         git_author: None,
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

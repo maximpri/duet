@@ -521,6 +521,65 @@ fn audit_screen_lists_records_and_verifies() {
 }
 
 #[test]
+fn a_sub_agents_steps_show_indented_under_its_id() {
+    let assistant = |text: &str| Entry::Item {
+        item: Item::Assistant {
+            text: text.into(),
+            reasoning: None,
+            replay: None,
+            tool_calls: vec![],
+        },
+    };
+    let nested = |entry| Entry::Subagent {
+        child: "a1".into(),
+        entry: Box::new(entry),
+    };
+    let entries = vec![
+        assistant("Delegating."),
+        Entry::SubagentStart {
+            child: "a1".into(),
+            call_id: "c1".into(),
+            mode: "write".into(),
+            task: "Fix the export.".into(),
+            paths: vec!["src/export/**".into()],
+            journal_next: 1,
+        },
+        nested(assistant("Reading the module.")),
+        nested(Entry::Shown {
+            call_id: "c2".into(),
+            class: ViewClass::HandleSummary,
+        }),
+        nested(assistant("Editing it.")),
+        Entry::SubagentEnd {
+            child: "a1".into(),
+            call_id: "c1".into(),
+            terminal: duet_agent::Terminal::Completed {
+                summary: "fixed".into(),
+            },
+            requests: 2,
+            cost_usd: 0.002,
+            seconds: 3.0,
+            written: vec!["src/export/mod.rs".into()],
+            journal_end: 3,
+        },
+        assistant("Done."),
+    ];
+    let (feed, withheld) = crate::runs::feeds(&entries, &[]);
+    assert_eq!(
+        feed,
+        [
+            "turn 1: Delegating.",
+            "sub-agent a1 (write) started (may write src/export/**): Fix the export.",
+            "  [a1] turn 1: Reading the module.",
+            "  [a1] turn 2: Editing it.",
+            "sub-agent a1 ended completed after 2 request(s), $0.0020; 1 file(s) written",
+            "turn 2: Done.",
+        ]
+    );
+    assert_eq!(withheld, ["[a1] c2: shown as HandleSummary"]);
+}
+
+#[test]
 fn run_screen_follows_the_transcript() {
     let (_d, mut app) = fixture("", "");
     let id = "20260924-130000-123456";

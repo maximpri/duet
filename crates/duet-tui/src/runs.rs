@@ -98,6 +98,13 @@ impl SessionState {
                     st.requests += 1;
                 }
                 Entry::FailedAttempts { cost_usd, .. } => st.cost_usd += cost_usd,
+                // Sub-agents' spend is the session's too.
+                Entry::Subagent { entry, .. } => match entry.as_ref() {
+                    Entry::Usage { cost_usd, .. } | Entry::FailedAttempts { cost_usd, .. } => {
+                        st.cost_usd += cost_usd
+                    }
+                    _ => {}
+                },
                 Entry::End { terminal } => {
                     st.working = false;
                     st.closed = matches!(terminal, duet_agent::Terminal::Completed { .. });
@@ -302,9 +309,19 @@ impl RunView {
 
 /// The conversation feed and the withheld-content feed of a run.
 pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<String>) {
+    feeds_from(entries, records, &mut 0)
+}
+
+/// [`feeds`], numbering assistant turns on from `turn`.
+fn feeds_from(
+    entries: &[Entry],
+    records: &[Record],
+    turn: &mut usize,
+) -> (Vec<String>, Vec<String>) {
     let mut feed = Vec::new();
     let mut withheld = Vec::new();
-    let mut turn = 0;
+    // Each sub-agent's turns are numbered on their own.
+    let mut child_turns: std::collections::HashMap<String, usize> = Default::default();
     for e in entries {
         match e {
             Entry::Start {
@@ -320,7 +337,7 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
                 Item::Assistant {
                     text, tool_calls, ..
                 } => {
-                    turn += 1;
+                    *turn += 1;
                     feed.push(format!("turn {turn}: {}", first_line(text)));
                     for c in tool_calls {
                         feed.push(format!("  -> {} {}", c.name, first_line(&c.raw_arguments)));
@@ -391,6 +408,46 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
             Entry::End { terminal } => feed.push(format!(
                 "end: {}",
                 serde_json::to_string(terminal).unwrap_or_default()
+            )),
+            Entry::SubagentStart {
+                child,
+                mode,
+                task,
+                paths,
+                ..
+            } => {
+                let writes = if paths.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (may write {})", paths.join(", "))
+                };
+                feed.push(format!(
+                    "sub-agent {child} ({mode}) started{writes}: {}",
+                    first_line(task)
+                ));
+            }
+            // A sub-agent's own steps, indented under its id.
+            Entry::Subagent { child, entry } => {
+                let turns = child_turns.entry(child.clone()).or_default();
+                let (lines, held) = feeds_from(std::slice::from_ref(entry.as_ref()), &[], turns);
+                feed.extend(lines.into_iter().map(|l| format!("  [{child}] {l}")));
+                withheld.extend(held.into_iter().map(|l| format!("[{child}] {l}")));
+            }
+            Entry::SubagentEnd {
+                child,
+                terminal,
+                requests,
+                cost_usd,
+                written,
+                ..
+            } => feed.push(format!(
+                "sub-agent {child} ended {} after {requests} request(s), ${cost_usd:.4}; {} file(s) written",
+                terminal.state(),
+                written.len()
+            )),
+            Entry::SubagentReverted { child, paths } => feed.push(format!(
+                "sub-agent {child}: its result was never recorded; {} file(s) rolled back",
+                paths.len()
             )),
         }
     }

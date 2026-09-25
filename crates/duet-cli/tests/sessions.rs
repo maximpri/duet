@@ -233,6 +233,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         git_author: None,
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     Fixture {
         _dir: dir,

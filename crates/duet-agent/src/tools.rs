@@ -485,6 +485,9 @@ pub(crate) enum Access {
     /// Everything except Duet's run state (denied to every command); the
     /// output is held locally and placeholders in the command are resolved.
     SensitiveData,
+    /// What an ordinary command may read, with the workspace read-only:
+    /// writes only to the scratch directory (sub-agents' commands).
+    ReadOnly,
 }
 
 /// Where sandboxed processes get their `TMPDIR`: outside the workspace, as
@@ -539,9 +542,12 @@ pub(crate) async fn sandboxed(
         Access::Ordinary => "ordinary",
         Access::Checks => "checks",
         Access::SensitiveData => "sensitive_data",
+        Access::ReadOnly => "read_only",
     };
     let deny_read = match access {
-        Access::Ordinary => hidden_from_processes(ctx.presenter, ctx.workspace, ctx.run_dir),
+        Access::Ordinary | Access::ReadOnly => {
+            hidden_from_processes(ctx.presenter, ctx.workspace, ctx.run_dir)
+        }
         Access::Checks => {
             let mut hidden = ctx.presenter.hidden_from_checks(ctx.workspace);
             hidden.push(sensitive_scratch(ctx.run_dir));
@@ -574,6 +580,7 @@ pub(crate) async fn sandboxed(
             ("NO_COLOR".into(), "1".into()),
         ],
         deny_read,
+        read_only: access == Access::ReadOnly,
     };
     let stop = async {
         match ctx.interrupted {

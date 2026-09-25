@@ -84,11 +84,53 @@ pub enum Entry {
     End {
         terminal: crate::run::Terminal,
     },
+    /// A sub-agent started (`delegate`). `child` is its id in the run (`a1`,
+    /// `a2`, ...), `call_id` the parent's tool call it answers, `task` the
+    /// task as the frontier wrote it, `paths` the globs a writing one may
+    /// write, and `journal_next` where its writes begin in the write journal.
+    SubagentStart {
+        child: String,
+        call_id: String,
+        mode: String,
+        task: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        paths: Vec<String>,
+        journal_next: u64,
+    },
+    /// One entry of a sub-agent's own conversation (its items, usage, ...),
+    /// nested under its id; the parent's conversation never contains them.
+    Subagent {
+        child: String,
+        entry: Box<Entry>,
+    },
+    /// A sub-agent ended in `terminal` (as the frontier wrote it), after
+    /// `requests` frontier requests costing `cost_usd`. `written` are the
+    /// files it wrote, and `journal_end` is where its writes end in the
+    /// journal.
+    SubagentEnd {
+        child: String,
+        call_id: String,
+        terminal: crate::run::Terminal,
+        requests: u64,
+        cost_usd: f64,
+        seconds: f64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        written: Vec<PathBuf>,
+        journal_end: u64,
+    },
+    /// The parent never received this sub-agent's result (the run stopped
+    /// before recording it), so on resume its writes were rolled back.
+    SubagentReverted {
+        child: String,
+        paths: Vec<PathBuf>,
+    },
 }
 
 pub struct Transcript {
     path: PathBuf,
     wait: Option<Arc<dyn HostWait>>,
+    /// A sub-agent's transcript: every entry is nested under its id.
+    child: Option<String>,
 }
 
 impl Transcript {
@@ -105,12 +147,27 @@ impl Transcript {
         Ok(Self {
             path: run_dir.join("transcript.jsonl"),
             wait,
+            child: None,
         })
+    }
+
+    /// The same transcript, with every entry appended nested under the
+    /// sub-agent `child` (`None`: at the top level).
+    pub(crate) fn nested(mut self, child: Option<String>) -> Self {
+        self.child = child;
+        self
     }
 
     /// Appends one entry, whole or not at all.
     pub fn append(&self, entry: &Entry) -> Result<(), FsError> {
-        let line = serde_json::to_string(entry).unwrap_or_default();
+        let line = match &self.child {
+            Some(child) => serde_json::to_string(&Entry::Subagent {
+                child: child.clone(),
+                entry: Box::new(entry.clone()),
+            }),
+            None => serde_json::to_string(entry),
+        }
+        .unwrap_or_default();
         duet_fs::host::persist(self.wait.as_deref(), || {
             duet_fs::private::append_line(&self.path, &line)
         })

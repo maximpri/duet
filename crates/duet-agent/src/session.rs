@@ -381,6 +381,7 @@ impl<'a> Session<'a> {
                 interactive: true,
                 steering: Some(steering.clone()),
                 exchange: 0,
+                child: None,
             },
             stats: RunStats::default(),
             exchange: 0,
@@ -453,6 +454,11 @@ impl<'a> Session<'a> {
             }
         }
         replay(entries, cfg, &mut session.conv, &mut session.stats);
+        if session.stats.subagents.children > 0 {
+            crate::run::drop_unfinished_turn(&mut session.conv.items);
+            crate::subagents::recover(cfg, frontier.audit(), &session.conv.items)
+                .map_err(|e| e.to_string())?;
+        }
         session.stats.wall_seconds = session.worked.as_secs_f64();
         Ok(session)
     }
@@ -627,6 +633,11 @@ impl<'a> Session<'a> {
         })
         .map_err(|e| e.to_string())?;
         crate::run::drop_unfinished_turn(&mut self.conv.items);
+        // A sub-agent of an interrupted turn: ended, its writes rolled back.
+        if self.stats.subagents.children > 0 {
+            crate::subagents::recover(self.cfg, self.frontier.audit(), &self.conv.items)
+                .map_err(|e| e.to_string())?;
+        }
         let journal_next = WriteJournal::open_waiting(&self.cfg.run_dir, Some(wait.clone()))
             .map_err(|e| e.to_string())?
             .next_record();

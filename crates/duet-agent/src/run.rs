@@ -2,6 +2,7 @@
 //! The frontier loop: one continuous conversation until a terminal state.
 
 use crate::context::{estimate, mask_if_needed};
+use crate::driver::Driver;
 use crate::host::HostPolicy;
 use crate::journal::WriteJournal;
 use crate::ledger::Ledger;
@@ -123,6 +124,9 @@ pub struct RunConfig {
     /// `lsp.enabled` is off or none is installed. See
     /// [`crate::code_nav::language_servers`].
     pub lsp: Option<Arc<duet_lsp::Lsp>>,
+    /// Sub-agents (`delegate`); `None` when `subagents.enabled` is off, and
+    /// always in a sub-agent's own configuration (they cannot delegate).
+    pub subagents: Option<crate::subagents::Subagents>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -141,6 +145,10 @@ pub struct RunStats {
     /// Where the frontier input went, by how tool results were shown (see `ledger`).
     #[serde(default)]
     pub ledger: Ledger,
+    /// What sub-agents did; their usage and cost are also in `usage`,
+    /// `failed_attempt_usage`, `cost_usd` and `ledger`.
+    #[serde(default, skip_serializing_if = "crate::subagents::Totals::is_empty")]
+    pub subagents: crate::subagents::Totals,
 }
 
 const MAX_TEXT_ONLY_TURNS: u32 = 3;
@@ -159,7 +167,7 @@ fn is_unused(u: &Usage) -> bool {
     u.input + u.cache_read + u.cache_write + u.output == 0
 }
 
-fn add(a: &mut Usage, b: &Usage) {
+pub(crate) fn add(a: &mut Usage, b: &Usage) {
     a.input += b.input;
     a.cache_read += b.cache_read;
     a.cache_write += b.cache_write;
@@ -412,6 +420,9 @@ pub(crate) struct Conversation {
     pub(crate) steering: Option<Arc<crate::session::Steering>>,
     /// (Session) The current operator turn.
     pub(crate) exchange: u64,
+    /// (Sub-agent) What makes this loop a sub-agent's: its id, tools, write
+    /// scope and its parent's stop request.
+    pub(crate) child: Option<Arc<crate::subagents::Child>>,
 }
 
 /// Why the loop stopped.
@@ -438,6 +449,18 @@ impl From<Terminal> for Stop {
 pub(crate) fn replay(
     entries: Vec<Entry>,
     cfg: &RunConfig,
+    conv: &mut Conversation,
+    stats: &mut RunStats,
+) {
+    // Sub-agents' spend counts for the run, whether they ended or not.
+    crate::subagents::replay(&entries, cfg, stats);
+    replay_priced(entries, &*cfg.price, conv, stats);
+}
+
+/// [`replay`] of one conversation, its usage priced by `price`.
+pub(crate) fn replay_priced(
+    entries: Vec<Entry>,
+    price: &dyn Fn(&Usage) -> f64,
     conv: &mut Conversation,
     stats: &mut RunStats,
 ) {
@@ -476,7 +499,7 @@ pub(crate) fn replay(
                 stats
                     .ledger
                     .on_request(&conv.items, &conv.system, &conv.classes);
-                stats.ledger.on_usage(&usage, &*cfg.price);
+                stats.ledger.on_usage(&usage, price);
                 add(&mut stats.usage, &usage);
                 stats.cost_usd += cost_usd;
                 stats.turns += 1;
@@ -484,7 +507,7 @@ pub(crate) fn replay(
             Entry::FailedAttempts {
                 usage, cost_usd, ..
             } => {
-                stats.ledger.on_failed_usage(&usage, &*cfg.price);
+                stats.ledger.on_failed_usage(&usage, price);
                 add(&mut stats.failed_attempt_usage, &usage);
                 stats.cost_usd += cost_usd;
             }
@@ -526,6 +549,7 @@ async fn drive(
         interactive: false,
         steering: None,
         exchange: 0,
+        child: None,
     };
     if resume {
         let restored = stored!(
@@ -541,6 +565,14 @@ async fn drive(
         replay(entries, cfg, &mut conv, stats);
         if conv.items.is_empty() {
             return Err("nothing to resume: the transcript is empty".into());
+        }
+        // Sub-agents whose results the conversation lacks are ended, and
+        // their writes rolled back, before the frontier re-decides.
+        if stats.subagents.children > 0 {
+            stored!(
+                host,
+                crate::subagents::recover(cfg, frontier.audit(), &conv.items)
+            );
         }
     } else {
         stored!(
@@ -611,6 +643,9 @@ pub(crate) fn tool_specs(
     if cfg.lsp.is_some() {
         extra.extend(crate::code_nav::specs());
     }
+    if cfg.subagents.is_some() {
+        extra.push(crate::subagents::spec());
+    }
     tools::specs_with(extra)
 }
 
@@ -627,7 +662,7 @@ pub(crate) struct Limits {
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn work(
     cfg: &RunConfig,
-    frontier: &GatedFrontier,
+    frontier: &dyn Driver,
     presenter: &dyn Presenter,
     git: &Git,
     interrupted: &AtomicBool,
@@ -641,11 +676,18 @@ pub(crate) async fn work(
     let transcript = stored!(
         host,
         Transcript::open_waiting(&cfg.run_dir, Some(wait.clone()))
-    );
+    )
+    .nested(conv.child.as_ref().map(|c| c.id.clone()));
     let mut journal = stored!(
         host,
         WriteJournal::open_waiting(&cfg.run_dir, Some(wait.clone()))
     );
+    if let Some(child) = &conv.child {
+        journal.confine(child.scope());
+    }
+    // Read-mode `delegate` calls run together; the results of those after
+    // the first wait here, by call id, until their turn to be recorded.
+    let mut delegated: HashMap<String, Outcome> = HashMap::new();
     // When the provider enforces the deadline itself, it is given a moment to
     // report a request cut off at it (with the usage of its failed attempts).
     let cutoff = if frontier.deadline().is_some() {
@@ -661,6 +703,11 @@ pub(crate) async fn work(
     loop {
         if interrupted.load(Ordering::SeqCst) {
             return Ok(Terminal::interrupted().into());
+        }
+        // A sub-agent stops at the same point when the operator stops its
+        // parent's turn.
+        if conv.child.as_ref().is_some_and(|c| c.stop_requested()) {
+            return Ok(Stop::Stopped);
         }
         // The safe point of a session: every result of the last response is
         // recorded and the next request is not sent yet. A stop ends the
@@ -838,7 +885,7 @@ pub(crate) async fn work(
 
         let mut finished = None;
         let mut replied: Option<(String, bool)> = None;
-        for call in &response.tool_calls {
+        for (i, call) in response.tool_calls.iter().enumerate() {
             stats.tool_calls += 1;
             let mut ctx = Ctx {
                 workspace: &cfg.workspace,
@@ -867,6 +914,8 @@ pub(crate) async fn work(
                     "error: arguments are not valid JSON: {}",
                     call.raw_arguments.chars().take(200).collect::<String>()
                 )
+            } else if let Some(refusal) = conv.child.as_ref().and_then(|c| c.refuse(call)) {
+                format!("error: {refusal}")
             } else if conv.interactive
                 && let Some(to_operator) = crate::session::to_operator(&call.name, &call.arguments)
             {
@@ -907,6 +956,46 @@ pub(crate) async fn work(
                         Ok(text) => Outcome::Result(text),
                         Err(e) => Outcome::Error(e),
                     }
+                } else if call.name == crate::subagents::DELEGATE
+                    && let Some(subagents) = &cfg.subagents
+                {
+                    let outcome = match delegated.remove(&call.id) {
+                        Some(o) => o,
+                        None => {
+                            let parent = crate::subagents::Parent {
+                                cfg,
+                                subagents,
+                                frontier,
+                                presenter,
+                                git,
+                                interrupted,
+                                limits,
+                                host,
+                                specs: &conv.specs,
+                                git_tools: conv.git_tools.as_ref(),
+                                stop: conv.steering.clone(),
+                            };
+                            let mut done = crate::subagents::delegate(
+                                &parent,
+                                &response.tool_calls[i..],
+                                stats,
+                            )
+                            .await;
+                            let first = done.remove(&call.id).unwrap_or_else(|| {
+                                Outcome::Error("internal error: the sub-agent did not run".into())
+                            });
+                            delegated.extend(done);
+                            first
+                        }
+                    };
+                    // A writing sub-agent added records to the same journal.
+                    noted!(host, journal.refresh());
+                    // The report is shown as public text (whatever the
+                    // sub-agents' own results were shown as).
+                    let _ = presenter.take_view_class();
+                    outcome
+                } else if conv.child.is_some() && call.name == "run_command" {
+                    crate::subagents::read_only_command(&ctx, &call.arguments).await
                 } else {
                     tools::dispatch(&mut ctx, &call.name, &call.arguments).await
                 };

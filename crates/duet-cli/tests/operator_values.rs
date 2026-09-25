@@ -135,6 +135,7 @@ async fn run(
         git_author: None,
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, _) = duet_agent::run(

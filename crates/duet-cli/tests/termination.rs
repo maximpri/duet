@@ -260,6 +260,7 @@ async fn session(s: Session<'_>) -> Ended {
         git_author: None,
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) =

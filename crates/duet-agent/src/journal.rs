@@ -28,6 +28,34 @@ pub struct WriteJournal {
     next: u64,
     paths: Vec<PathBuf>,
     wait: Option<Arc<dyn HostWait>>,
+    /// The only paths writes may go to (a sub-agent's); `None`: any.
+    scope: Option<WriteScope>,
+}
+
+/// The workspace paths a journal may write: globs over `/`-separated
+/// relative paths (see [`duet_boundary::policy::glob_match`]). Every tool
+/// write goes through the journal, so a scope confines all of them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WriteScope {
+    globs: Vec<String>,
+}
+
+impl WriteScope {
+    /// Writes only to paths matching one of `globs`; no globs, no writes.
+    pub fn only(globs: Vec<String>) -> Self {
+        Self { globs }
+    }
+
+    pub fn allows(&self, rel: &Path) -> bool {
+        let path = rel.to_string_lossy();
+        self.globs
+            .iter()
+            .any(|g| duet_boundary::policy::glob_match(g, &path))
+    }
+
+    pub fn globs(&self) -> &[String] {
+        &self.globs
+    }
 }
 
 impl WriteJournal {
@@ -51,7 +79,24 @@ impl WriteJournal {
             next,
             paths: Vec::new(),
             wait,
+            scope: None,
         })
+    }
+
+    /// Refuses every later write outside `scope` (before anything is saved or
+    /// recorded).
+    pub fn confine(&mut self, scope: WriteScope) {
+        self.scope = Some(scope);
+    }
+
+    /// Takes up numbering after writes another journal on the same run made
+    /// meanwhile (a sub-agent's), so record numbers stay unique.
+    pub fn refresh(&mut self) -> Result<(), FsError> {
+        let lines = persist(self.wait.as_deref(), || {
+            duet_fs::private::read_lines_repairing(&self.log())
+        })?;
+        self.next = self.next.max(lines.len() as u64 + 1);
+        Ok(())
     }
 
     fn log(&self) -> PathBuf {
@@ -70,6 +115,21 @@ impl WriteJournal {
         bytes: &[u8],
         pre: &Precondition,
     ) -> Result<WriteReceipt, FsError> {
+        if let Some(scope) = &self.scope
+            && !scope.allows(rel)
+        {
+            let allowed = if scope.globs.is_empty() {
+                "none".to_owned()
+            } else {
+                scope.globs.join(", ")
+            };
+            return Err(FsError::Io {
+                op: "write",
+                path: rel.to_path_buf(),
+                message: format!("outside the paths this sub-agent may write ({allowed})"),
+                errno: None,
+            });
+        }
         let wait = self.wait.clone();
         let wait = wait.as_deref();
         let n = self.next;
@@ -186,6 +246,11 @@ pub fn written(run_dir: &Path) -> Vec<Written> {
 /// The files written by records numbered `from` or later, each with its
 /// content before the first of those writes (what undoing them restores).
 pub fn written_since(run_dir: &Path, from: u64) -> Vec<Written> {
+    written_between(run_dir, from, None)
+}
+
+/// [`written_since`], limited to records numbered below `to` when given.
+pub fn written_between(run_dir: &Path, from: u64, to: Option<u64>) -> Vec<Written> {
     let text = std::fs::read_to_string(run_dir.join("writes.jsonl")).unwrap_or_default();
     let mut out: Vec<Written> = Vec::new();
     for record in text
@@ -195,7 +260,7 @@ pub fn written_since(run_dir: &Path, from: u64) -> Vec<Written> {
         let Record::Pending { n, path, existed } = record else {
             continue;
         };
-        if n < from {
+        if n < from || to.is_some_and(|t| n >= t) {
             continue;
         }
         match out.iter_mut().find(|w| w.path == path) {
@@ -242,6 +307,61 @@ mod tests {
             WriteJournal::recover(&run, &ws).unwrap().is_empty(),
             "recovery is idempotent"
         );
+    }
+
+    #[test]
+    fn a_confined_journal_writes_only_its_paths_and_numbers_stay_unique() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = d.path().join("run");
+        std::fs::create_dir_all(ws.join("src")).unwrap();
+        std::fs::write(ws.join("a.txt"), "original").unwrap();
+        let mut parent = WriteJournal::open(&run).unwrap();
+        parent
+            .write(&ws, Path::new("a.txt"), b"parent", &Precondition::Any)
+            .unwrap();
+
+        // A sub-agent's journal on the same run, confined to src/.
+        let mut child = WriteJournal::open(&run).unwrap();
+        let mark = child.next_record();
+        child.confine(WriteScope::only(vec!["src/**".into()]));
+        let refused = child
+            .write(&ws, Path::new("a.txt"), b"child", &Precondition::Any)
+            .unwrap_err();
+        assert!(refused.to_string().contains("src/**"), "{refused}");
+        assert_eq!(std::fs::read_to_string(ws.join("a.txt")).unwrap(), "parent");
+        child
+            .write(&ws, Path::new("src/x.rs"), b"fn x() {}", &Precondition::Any)
+            .unwrap();
+        let end = child.next_record();
+        let mut none = WriteJournal::open(&run).unwrap();
+        none.confine(WriteScope::default());
+        assert!(
+            none.write(&ws, Path::new("src/y.rs"), b"y", &Precondition::Any)
+                .is_err()
+        );
+
+        // The parent takes up numbering after the child's records.
+        parent.refresh().unwrap();
+        parent
+            .write(&ws, Path::new("a.txt"), b"again", &Precondition::Any)
+            .unwrap();
+        let text = std::fs::read_to_string(run.join("writes.jsonl")).unwrap();
+        let mut pending: Vec<u64> = text
+            .lines()
+            .filter_map(|l| match serde_json::from_str::<Record>(l).ok()? {
+                Record::Pending { n, .. } => Some(n),
+                Record::Applied { .. } => None,
+            })
+            .collect();
+        let count = pending.len();
+        pending.sort_unstable();
+        pending.dedup();
+        assert_eq!((count, pending.len()), (3, 3), "{text}");
+        // The child's range holds its own write only.
+        let theirs = written_between(&run, mark, Some(end));
+        assert_eq!(theirs.len(), 1);
+        assert_eq!(theirs[0].path, PathBuf::from("src/x.rs"));
     }
 
     #[test]

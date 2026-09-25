@@ -221,6 +221,7 @@ async fn history_reaches_the_frontier_only_through_the_boundary() {
         git_author: Identity::parse("Olive Operator <olive@example.test>"),
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     let (terminal, _stats) = duet_agent::run(
         &cfg,
@@ -362,6 +363,7 @@ async fn a_session_commits_its_own_files_and_undo_never_touches_history() {
         git_author: Identity::parse("Olive Operator <olive@example.test>"),
         mcp: None,
         lsp: None,
+        subagents: None,
     };
     let presenter = duet_boundary::view::PassThrough { max_bytes: 60_000 };
     let limits = SessionLimits {

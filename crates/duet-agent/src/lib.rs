@@ -4,6 +4,7 @@
 pub mod code_nav;
 pub mod context;
 pub mod disclosure;
+pub mod driver;
 pub mod git_tools;
 pub mod host;
 pub mod journal;
@@ -15,6 +16,7 @@ pub mod protected;
 pub mod purge;
 pub mod run;
 pub mod session;
+pub mod subagents;
 pub mod tools;
 pub mod transcript;
 pub mod web;

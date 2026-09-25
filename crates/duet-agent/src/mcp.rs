@@ -418,6 +418,12 @@ impl Hub {
         self.tools.contains_key(name)
     }
 
+    /// Whether `name` is one of this hub's tools and its server declares it
+    /// read-only (the only MCP tools sub-agents get).
+    pub fn read_only(&self, name: &str) -> bool {
+        self.tools.get(name).is_some_and(|e| e.read_only)
+    }
+
     /// The approval a call to `name` needs under `mode` (see `crate::oversight`).
     pub fn action(
         &self,

@@ -209,6 +209,7 @@ async fn mcp_tools_in_a_hybrid_run_leak_nothing_and_writes_need_approval() {
         git_author: None,
         mcp: Some(hub.clone()),
         lsp: None,
+        subagents: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, _) = duet_agent::run(

@@ -1017,6 +1017,29 @@ pub(crate) fn progress(
             out.push(format!("  ◦ context: {items} old tool result(s) shortened"))
         }
         Entry::Interrupted { tool, .. } => out.push(format!("  ■ {tool} stopped")),
+        Entry::SubagentStart {
+            child, mode, task, ..
+        } => out.push(format!(
+            "  ⇢ sub-agent {child} ({mode}): {}",
+            clip(&shown(task))
+        )),
+        // A sub-agent's own steps, under its id.
+        Entry::Subagent { child, entry } => out.extend(
+            progress(entry, names, shown)
+                .into_iter()
+                .map(|l| format!("  [{child}]{l}")),
+        ),
+        Entry::SubagentEnd {
+            child,
+            terminal,
+            cost_usd,
+            written,
+            ..
+        } => out.push(format!(
+            "  ⇠ sub-agent {child} {} (${cost_usd:.4}, {} file(s) written)",
+            terminal.state(),
+            written.len()
+        )),
         Entry::Steered {
             after_request,
             messages,
@@ -1075,6 +1098,63 @@ mod tests {
         assert_eq!(inbox.pop().as_deref(), Some("queued message"));
         stop.store(true, Ordering::SeqCst);
         assert_eq!(inbox.answer_after(inbox.mark(), &stop), None);
+    }
+
+    #[test]
+    fn progress_shows_a_sub_agents_steps_under_its_id() {
+        let mut names = HashMap::new();
+        let shown = |t: &str| t.to_owned();
+        let Value::Object(arguments) = json!({"path": "src/export/mod.rs"}) else {
+            unreachable!()
+        };
+        let start = Entry::SubagentStart {
+            child: "a1".into(),
+            call_id: "c1".into(),
+            mode: "read".into(),
+            task: "Find the export.".into(),
+            paths: vec![],
+            journal_next: 1,
+        };
+        let step = Entry::Subagent {
+            child: "a1".into(),
+            entry: Box::new(Entry::Item {
+                item: Item::Assistant {
+                    text: String::new(),
+                    reasoning: None,
+                    tool_calls: vec![ToolCall {
+                        id: "c2".into(),
+                        name: "read_file".into(),
+                        raw_arguments: String::new(),
+                        arguments,
+                    }],
+                    replay: None,
+                },
+            }),
+        };
+        let end = Entry::SubagentEnd {
+            child: "a1".into(),
+            call_id: "c1".into(),
+            terminal: duet_agent::Terminal::Completed {
+                summary: "found".into(),
+            },
+            requests: 2,
+            cost_usd: 0.002,
+            seconds: 1.0,
+            written: vec![],
+            journal_end: 1,
+        };
+        let lines: Vec<String> = [start, step, end]
+            .iter()
+            .flat_map(|e| progress(e, &mut names, &shown))
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                "  ⇢ sub-agent a1 (read): Find the export.",
+                "  [a1]  · read_file src/export/mod.rs",
+                "  ⇠ sub-agent a1 completed ($0.0020, 0 file(s) written)",
+            ]
+        );
     }
 
     #[test]
