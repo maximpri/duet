@@ -15,7 +15,7 @@ use duet_boundary::policy::Policy;
 use duet_boundary::view::PassThrough;
 use duet_boundary::{GatedFrontier, OutboundGate};
 use duet_config::{Config, Target};
-use duet_provider::{ChatProvider, ProviderConfig, Role};
+use duet_provider::{ChatProvider, Dialect, ProviderConfig, Role};
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -160,10 +160,13 @@ enum ConfigCmd {
         confirm: bool,
     },
     /// Point the local role at a known backend (Ollama, LM Studio, llama.cpp,
-    /// vLLM, oMLX, MLX) on loopback. Without a name, lists the presets.
+    /// vLLM, oMLX, MLX) on loopback, or the frontier at a known provider
+    /// (zai, anthropic, openai: endpoint, model, key variable and dialect).
+    /// Without a name, lists the presets.
     Preset {
         name: Option<String>,
-        /// Also set local.model.
+        /// Also set local.model (for a frontier preset: frontier.model instead
+        /// of the preset's default).
         #[arg(long)]
         model: Option<String>,
         /// A port other than the backend's default.
@@ -182,6 +185,10 @@ struct RunManifest {
     objective: String,
     frontier_url: String,
     frontier_model: String,
+    /// The frontier's wire dialect when the run started (runs from before
+    /// dialects existed have none and use Chat Completions).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    frontier_dialect: Option<String>,
     /// A local endpoint found by bootstrap for this run (no local model configured).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local: Option<LocalOverride>,
@@ -239,13 +246,21 @@ fn limit_retries(pc: &mut ProviderConfig, limits: Option<&RunLimits>) {
     }
 }
 
+/// The configured frontier dialect.
+fn frontier_dialect(cfg: &Config) -> Result<Dialect> {
+    let name = cfg.str("frontier.dialect")?;
+    Dialect::parse(&name).with_context(|| format!("unknown frontier.dialect {name}"))
+}
+
 fn frontier_provider(
     cfg: &Config,
     url: &str,
     model: &str,
+    dialect: Dialect,
     limits: &RunLimits,
 ) -> Result<ChatProvider> {
     let mut pc = ProviderConfig::new(url, model, Role::Frontier);
+    pc.dialect = dialect;
     limit_retries(&mut pc, Some(limits));
     let key_env = cfg.str("frontier.api_key_env")?;
     if !key_env.is_empty() {
@@ -478,6 +493,11 @@ async fn start(
                 cfg,
                 &manifest.frontier_url,
                 &manifest.frontier_model,
+                match &manifest.frontier_dialect {
+                    Some(name) => Dialect::parse(name)
+                        .with_context(|| format!("unknown frontier dialect {name}"))?,
+                    None => Dialect::Chat,
+                },
                 limits,
             )?,
             manifest.frontier_model.clone(),
@@ -703,6 +723,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 objective,
                 frontier_url: frontier_url.unwrap_or(cfg.str("frontier.base_url")?),
                 frontier_model: frontier_model.unwrap_or(cfg.str("frontier.model")?),
+                frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
                 local,
             };
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);

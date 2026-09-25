@@ -95,7 +95,7 @@ pub const REGISTRY: &[Setting] = &[
         Owner,
         Any,
         true,
-        "Frontier endpoint (Chat Completions)."
+        "Frontier endpoint base URL; the path follows frontier.dialect."
     ),
     s!(
         "frontier.model",
@@ -123,6 +123,15 @@ pub const REGISTRY: &[Setting] = &[
         Any,
         false,
         "Environment variable holding the frontier API key."
+    ),
+    s!(
+        "frontier.dialect",
+        Choice(&["chat", "anthropic", "responses"]),
+        r#""chat""#,
+        Owner,
+        Any,
+        false,
+        "API the frontier endpoint speaks: `chat` (OpenAI-compatible Chat Completions), `anthropic` (Anthropic Messages) or `responses` (OpenAI Responses)."
     ),
     s!(
         "local.base_url",

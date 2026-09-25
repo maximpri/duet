@@ -2,14 +2,16 @@
 //! `duet doctor`: one line per check (pass, warn, fail or skip) with a fix for
 //! anything short of pass. Offline by default: it reads configuration, the
 //! environment and local files only. `--online` also asks the configured
-//! servers for their model listings and context windows; it never calls a model
-//! and never prints a credential.
+//! servers for their model listings and context windows, and checks prompt-cache
+//! reuse by sending each model the same short built-in prompt twice (nothing from
+//! the workspace); it never prints a credential.
 
 use crate::{config_audit_path, run_anchor};
 use duet_boundary::audit::{AnchorCheck, Verification, check_anchor, verify};
 use duet_config::{Config, Origin, REGISTRY};
 use duet_provider::backends;
 use duet_provider::endpoint::{Trust, check_local_endpoint, host_port, is_loopback_host};
+use duet_provider::{ChatProvider, Dialect, Item, ProviderConfig, Request, Role};
 use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
@@ -23,6 +25,12 @@ const DISK_FAIL: u64 = 1 << 30;
 /// How many of the most recent run audit logs are verified.
 const RECENT_RUNS: usize = 5;
 const ONLINE_TIMEOUT: Duration = Duration::from_secs(5);
+/// Size of the cache-check prompt's stable prefix. Providers cache only
+/// prefixes above a minimum (up to about 4K tokens), so the frontier's is
+/// larger; a local server caches any prefix, and a smaller one keeps its
+/// prefill short.
+const FRONTIER_CACHE_PREFIX_TOKENS: usize = 5_000;
+const LOCAL_CACHE_PREFIX_TOKENS: usize = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -80,7 +88,7 @@ pub fn render_text(checks: &[Check], online: bool) -> String {
     let mut out = format!(
         "duet doctor ({})\n\n",
         if online {
-            "online: contacted the configured servers for listings only"
+            "online: contacted the configured servers (listings, and two identical built-in prompts per model for the cache check)"
         } else {
             "offline: no network; --online also checks the servers"
         }
@@ -354,6 +362,8 @@ fn release_signers(path: &Path, release_build: bool) -> Check {
 async fn frontier(c: &Config, online: bool) -> Vec<Check> {
     let url = c.str("frontier.base_url").unwrap_or_default();
     let model = c.str("frontier.model").unwrap_or_default();
+    let dialect_name = c.str("frontier.dialect").unwrap_or_default();
+    let dialect = Dialect::parse(&dialect_name).unwrap_or_default();
     let mut out = Vec::new();
     let endpoint = match host_port(&url) {
         None => check(
@@ -368,7 +378,11 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
             format!("{url} is plain HTTP: the API key and every request cross the network unencrypted"),
         )
         .fix("use the provider's https:// endpoint: duet config set frontier.base_url '\"https://...\"' --confirm"),
-        Some(_) => check("frontier", Status::Pass, format!("{url}, model {model}")),
+        Some(_) => check(
+            "frontier",
+            Status::Pass,
+            format!("{url}, model {model}, dialect {}", dialect.as_str()),
+        ),
     };
     out.push(endpoint);
     let key_env = c.str("frontier.api_key_env").unwrap_or_default();
@@ -415,50 +429,173 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
             Status::Skip,
             "not contacted offline (use --online)",
         ));
+        out.push(check(
+            "frontier cache",
+            Status::Skip,
+            "not checked offline (use --online)",
+        ));
         return out;
     }
-    out.push(
-        match backends::list_models(&url, key.as_deref(), ONLINE_TIMEOUT).await {
-            Ok(listing) => {
-                let ids = backends::model_ids(&listing);
-                if ids.iter().any(|m| m == &model) {
-                    check(
-                        "frontier model",
-                        Status::Pass,
-                        format!("reachable; {model} is listed"),
-                    )
-                } else {
-                    check(
-                        "frontier model",
-                        Status::Warn,
-                        format!(
-                            "reachable, but {model} is not among the {} listed model(s)",
-                            ids.len()
-                        ),
-                    )
-                    .fix("check frontier.model against the provider's model names")
-                }
+    let listed =
+        backends::list_frontier_models(&url, dialect, key.as_deref(), ONLINE_TIMEOUT).await;
+    // Only a model call can tell more when the endpoint answered but has no
+    // listing; an unreachable endpoint or a refused key would fail it too.
+    let reachable = match &listed {
+        Ok(_) => true,
+        Err(e) => e == "HTTP 404" || e == "HTTP 405",
+    };
+    out.push(match listed {
+        Ok(listing) => {
+            let ids = backends::model_ids(&listing);
+            if ids.iter().any(|m| m == &model) {
+                check(
+                    "frontier model",
+                    Status::Pass,
+                    format!("reachable; {model} is listed"),
+                )
+            } else {
+                check(
+                    "frontier model",
+                    Status::Warn,
+                    format!(
+                        "reachable, but {model} is not among the {} listed model(s)",
+                        ids.len()
+                    ),
+                )
+                .fix("check frontier.model against the provider's model names")
             }
-            Err(e) if e == "HTTP 404" || e == "HTTP 405" => check(
-                "frontier model",
-                Status::Warn,
-                "reachable, but the endpoint offers no model listing; the model could not be confirmed",
-            ),
-            Err(e) if e == "HTTP 401" || e == "HTTP 403" => check(
-                "frontier model",
-                Status::Fail,
-                format!("the provider rejected the key ({e})"),
-            )
-            .fix(format!("check the key in {key_env}")),
-            Err(e) => check(
-                "frontier model",
-                Status::Fail,
-                format!("cannot reach {url}: {e}"),
-            )
-            .fix("check the network and frontier.base_url"),
-        },
-    );
+        }
+        Err(e) if e == "HTTP 404" || e == "HTTP 405" => check(
+            "frontier model",
+            Status::Warn,
+            "reachable, but the endpoint offers no model listing; the model could not be confirmed",
+        ),
+        Err(e) if e == "HTTP 401" || e == "HTTP 403" => check(
+            "frontier model",
+            Status::Fail,
+            format!("the provider rejected the key ({e})"),
+        )
+        .fix(format!("check the key in {key_env}")),
+        Err(e) => check(
+            "frontier model",
+            Status::Fail,
+            format!("cannot reach {url}: {e}"),
+        )
+        .fix("check the network and frontier.base_url"),
+    });
+    out.push(if key.is_none() && !key_env.is_empty() {
+        check(
+            "frontier cache",
+            Status::Skip,
+            format!("{key_env} is not set, so no request was sent"),
+        )
+    } else if !reachable {
+        check(
+            "frontier cache",
+            Status::Skip,
+            "not checked: the model listing failed (see frontier model)",
+        )
+    } else {
+        let mut pc = ProviderConfig::new(&url, &model, Role::Frontier);
+        pc.dialect = dialect;
+        pc.api_key_env = (!key_env.is_empty()).then_some(key_env.clone());
+        match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(120))) {
+            Ok(p) => cache_check("frontier cache", &p, FRONTIER_CACHE_PREFIX_TOKENS, &model).await,
+            Err(e) => check("frontier cache", Status::Warn, e.message),
+        }
+    });
     out
+}
+
+/// Bounded retries for the doctor's two requests.
+fn online_limits(mut pc: ProviderConfig, first_byte: Duration) -> ProviderConfig {
+    pc.max_attempts = Some(2);
+    pc.first_byte_timeout = first_byte;
+    pc.idle_timeout = Duration::from_secs(60);
+    pc
+}
+
+/// The cache-check prompt: a fixed, built-in stable prefix of about
+/// `prefix_tokens` tokens and a one-word question. Nothing from the workspace.
+pub fn cache_probe(prefix_tokens: usize) -> Request {
+    const LINE: &str = "Reference entry: a ledger records each transfer once, with its date, amount and both accounts.\n";
+    let lines = (prefix_tokens * 7 / 2).div_ceil(LINE.len());
+    Request {
+        system: format!(
+            "You are answering a connectivity check. Reply with the single word ok.\n{}",
+            LINE.repeat(lines)
+        ),
+        items: vec![Item::User {
+            text: "Reply with the single word ok.".into(),
+        }],
+        max_output_tokens: Some(256),
+        ..Request::default()
+    }
+}
+
+/// Sends the same prompt twice and reports what the second read from the cache.
+async fn cache_check(
+    name: &'static str,
+    provider: &ChatProvider,
+    prefix_tokens: usize,
+    model: &str,
+) -> Check {
+    let probe = cache_probe(prefix_tokens);
+    let started = std::time::Instant::now();
+    let first = provider.create(&probe).await;
+    let cold = started.elapsed();
+    let started = std::time::Instant::now();
+    let second = match first {
+        Ok(_) => provider.create(&probe).await,
+        Err(e) => Err(e),
+    };
+    let warm = started.elapsed();
+    let second = match second {
+        Ok(r) => r,
+        Err(e) => {
+            return check(
+                name,
+                Status::Warn,
+                format!("the cache check request failed: {e}"),
+            )
+            .fix("check the model id and the key; `duet doctor --online` lists the models");
+        }
+    };
+    let u = second.usage;
+    let cost = duet_provider::price::builtin(model)
+        .map(|p| {
+            format!(
+                "; the check cost about ${:.4} at list price",
+                2.0 * p.cost(&u)
+            )
+        })
+        .unwrap_or_default();
+    let timing = format!(
+        "cold {:.1} s, warm {:.1} s",
+        cold.as_secs_f64(),
+        warm.as_secs_f64()
+    );
+    if u.cache_read > 0 {
+        check(
+            name,
+            Status::Pass,
+            format!(
+                "the repeated request read {} of {} input tokens from the cache ({timing}{cost})",
+                u.cache_read,
+                u.total_input()
+            ),
+        )
+    } else {
+        check(
+            name,
+            Status::Warn,
+            format!(
+                "the repeated request reported no cached input tokens ({} input; {timing}{cost}): every turn may pay for the whole conversation again",
+                u.total_input()
+            ),
+        )
+        .fix("use an endpoint and model with prompt caching (a local server may reuse the prefix without reporting it: compare the timings)")
+    }
 }
 
 async fn local(c: &Config, online: bool) -> Vec<Check> {
@@ -544,6 +681,11 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
             "local server",
             Status::Skip,
             "not contacted offline (use --online)",
+        ));
+        out.push(check(
+            "local cache",
+            Status::Skip,
+            "not checked offline (use --online)",
         ));
         return out;
     }
@@ -646,6 +788,21 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
                 "the server does not report a context window",
             )
             .fix(format!("make sure it serves at least {MIN_LOCAL_CONTEXT} tokens")),
+        },
+    );
+    let mut pc = ProviderConfig::new(
+        &url,
+        &model,
+        Role::Local {
+            allowlist,
+            allow_plaintext,
+        },
+    );
+    pc.api_key_env = (!key_env.is_empty()).then_some(key_env);
+    out.push(
+        match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(300))) {
+            Ok(p) => cache_check("local cache", &p, LOCAL_CACHE_PREFIX_TOKENS, "").await,
+            Err(e) => check("local cache", Status::Skip, e.message),
         },
     );
     out

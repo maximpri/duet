@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Local backend presets and loopback discovery.
+//! Local backend presets and loopback discovery, and the frontier presets.
 //!
-//! Every preset speaks OpenAI-compatible Chat Completions under `/v1`; they
+//! Every local preset speaks OpenAI-compatible Chat Completions under `/v1`; they
 //! differ in default port and in how they report models and context length.
 //! Discovery only ever contacts `127.0.0.1` on the preset ports: it never scans
 //! other hosts. It lists models (`GET /v1/models`) and tells servers apart by
@@ -95,6 +95,53 @@ pub const PRESETS: &[Preset] = &[
     },
 ];
 
+/// A known frontier provider: endpoint, a default model, the key variable and
+/// the dialect its endpoint speaks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct FrontierPreset {
+    /// The name `duet config preset` takes.
+    pub name: &'static str,
+    pub label: &'static str,
+    pub base_url: &'static str,
+    pub model: &'static str,
+    pub api_key_env: &'static str,
+    /// A `frontier.dialect` value.
+    pub dialect: &'static str,
+}
+
+pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
+    FrontierPreset {
+        name: "zai",
+        label: "z.ai GLM (coding plan)",
+        base_url: "https://api.z.ai/api/coding/paas/v4",
+        model: "glm-5.3-flash",
+        api_key_env: "ZAI_API_KEY",
+        dialect: "chat",
+    },
+    FrontierPreset {
+        name: "anthropic",
+        label: "Anthropic (Messages API)",
+        base_url: "https://api.anthropic.com/v1",
+        model: "claude-opus-5-5",
+        api_key_env: "ANTHROPIC_API_KEY",
+        dialect: "anthropic",
+    },
+    FrontierPreset {
+        name: "openai",
+        label: "OpenAI (Responses API)",
+        base_url: "https://api.openai.com/v1",
+        model: "gpt-5.5",
+        api_key_env: "OPENAI_API_KEY",
+        dialect: "responses",
+    },
+];
+
+pub fn frontier_preset(name: &str) -> Option<&'static FrontierPreset> {
+    FRONTIER_PRESETS
+        .iter()
+        .find(|p| p.name.eq_ignore_ascii_case(name))
+}
+
 pub fn preset(name: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|p| p.name.eq_ignore_ascii_case(name))
 }
@@ -138,9 +185,20 @@ async fn get_json(
     url: &str,
     bearer: Option<&str>,
 ) -> Result<Value, String> {
+    let headers = bearer
+        .map(|k| crate::Dialect::Chat.auth_headers(k))
+        .unwrap_or_default();
+    get_json_with(client, url, &headers).await
+}
+
+async fn get_json_with(
+    client: &reqwest::Client,
+    url: &str,
+    headers: &[(String, String)],
+) -> Result<Value, String> {
     let mut rb = client.get(url);
-    if let Some(k) = bearer {
-        rb = rb.bearer_auth(k);
+    for (k, v) in headers {
+        rb = rb.header(k, v);
     }
     let resp = rb.send().await.map_err(|e| {
         if e.is_connect() {
@@ -182,6 +240,27 @@ pub async fn list_models(
         &client,
         &format!("{}/models", base_url.trim_end_matches('/')),
         bearer,
+    )
+    .await
+}
+
+/// The models a frontier endpoint lists (`GET <base_url>/models`), with the
+/// credential headers of its dialect.
+pub async fn list_frontier_models(
+    base_url: &str,
+    dialect: crate::Dialect,
+    key: Option<&str>,
+    timeout: Duration,
+) -> Result<Value, String> {
+    let client = client(timeout).ok_or("cannot build an HTTP client")?;
+    let mut headers = dialect.fixed_headers();
+    if let Some(k) = key {
+        headers.extend(dialect.auth_headers(k));
+    }
+    get_json_with(
+        &client,
+        &format!("{}/models", base_url.trim_end_matches('/')),
+        &headers,
     )
     .await
 }
@@ -288,6 +367,23 @@ mod tests {
     use crate::mock_http::MockServer;
 
     const T: Duration = Duration::from_secs(2);
+
+    #[test]
+    fn frontier_presets_use_tls_known_dialects_and_distinct_names() {
+        for p in FRONTIER_PRESETS {
+            assert!(p.base_url.starts_with("https://"), "{}", p.name);
+            assert!(crate::Dialect::parse(p.dialect).is_some(), "{}", p.name);
+            assert!(
+                preset(p.name).is_none(),
+                "{} is also a local preset",
+                p.name
+            );
+            assert_eq!(frontier_preset(&p.name.to_uppercase()), Some(p));
+        }
+        assert_eq!(frontier_preset("anthropic").unwrap().dialect, "anthropic");
+        assert_eq!(frontier_preset("openai").unwrap().dialect, "responses");
+        assert_eq!(frontier_preset("zai").unwrap().dialect, "chat");
+    }
 
     #[test]
     fn presets_are_loopback_and_named_uniquely() {

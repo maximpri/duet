@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Owner setup: audited owner-config changes, local backend presets, and the
-//! no-config bootstrap that finds a local server on loopback for one run.
+//! Owner setup: audited owner-config changes, local backend and frontier
+//! presets, and the no-config bootstrap that finds a local server on loopback for one run.
 
 use crate::config_audit_path;
 use anyhow::Result;
 use duet_boundary::audit::record_config_change;
 use duet_config::{Config, Origin, Target};
-use duet_provider::backends::{self, PRESETS, Pick, Server};
+use duet_provider::backends::{self, FRONTIER_PRESETS, PRESETS, Pick, Server};
 use std::time::Duration;
 use toml::Value;
 
@@ -41,8 +41,11 @@ pub fn apply_owner(cfg: &mut Config, changes: &[(&str, Value)], confirm: bool) -
     Ok(0)
 }
 
-/// `duet config preset`: without a name, the preset table; with one, the
-/// owner's `local.base_url` (and `local.model` when given) for that backend.
+/// `duet config preset`: without a name, the preset tables; with a local
+/// backend's name, the owner's `local.base_url` (and `local.model` when given);
+/// with a frontier's name, the owner's `frontier.base_url`, `frontier.model`
+/// (the preset's unless `--model` is given), `frontier.api_key_env` and
+/// `frontier.dialect`. Every change goes through the audited owner-config path.
 pub fn preset(
     cfg: &mut Config,
     name: Option<&str>,
@@ -67,12 +70,61 @@ pub fn preset(
             );
         }
         println!(
-            "\nApply one with: duet config preset <name> [--model <id>] [--port <n>] --confirm"
+            "\n{:<9} {:<24} {:<10} {:<18} frontier.base_url / model",
+            "preset", "frontier", "dialect", "key variable"
+        );
+        for p in FRONTIER_PRESETS {
+            println!(
+                "{:<9} {:<24} {:<10} {:<18} {} / {}",
+                p.name, p.label, p.dialect, p.api_key_env, p.base_url, p.model
+            );
+        }
+        println!(
+            "\nApply one with: duet config preset <name> [--model <id>] [--port <n>] --confirm\n\
+(--port applies to local backends only)"
         );
         return Ok(0);
     };
+    if let Some(f) = backends::frontier_preset(name) {
+        anyhow::ensure!(
+            port.is_none(),
+            "--port applies to local backends; {name} is a frontier preset"
+        );
+        let changes = [
+            ("frontier.base_url", Value::String(f.base_url.to_owned())),
+            (
+                "frontier.model",
+                Value::String(model.unwrap_or(f.model).to_owned()),
+            ),
+            (
+                "frontier.api_key_env",
+                Value::String(f.api_key_env.to_owned()),
+            ),
+            ("frontier.dialect", Value::String(f.dialect.to_owned())),
+        ];
+        let code = apply_owner(cfg, &changes, confirm)?;
+        if code == 0 {
+            if std::env::var(f.api_key_env).map_or(true, |k| k.is_empty()) {
+                println!(
+                    "{} is not set in this environment; export it before `duet run` (Duet stores only the variable's name).",
+                    f.api_key_env
+                );
+            }
+            if duet_provider::price::builtin(&cfg.str("frontier.model")?).is_none() {
+                println!(
+                    "no list price is known for {}: limits.frontier_usd cannot be enforced for it.",
+                    cfg.value("frontier.model")?
+                );
+            }
+        }
+        return Ok(code);
+    }
     let Some(p) = backends::preset(name) else {
-        let names: Vec<_> = PRESETS.iter().map(|p| p.name).collect();
+        let names: Vec<_> = PRESETS
+            .iter()
+            .map(|p| p.name)
+            .chain(FRONTIER_PRESETS.iter().map(|p| p.name))
+            .collect();
         anyhow::bail!("unknown preset {name}; one of {}", names.join(", "));
     };
     let mut changes = vec![("local.base_url", Value::String(p.base_url(port)))];

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! `duet doctor`, `duet config preset` and the no-config bootstrap through the
-//! binary, against a scripted loopback server. No test calls a model: servers
-//! answer model listings only, and the one run that starts stops at the missing
-//! frontier key before any request.
+//! binary, against a scripted loopback server. No test calls a real model: the
+//! scripted servers answer model listings and, for the online cache check, a
+//! canned stream; the one run that starts stops at the missing frontier key
+//! before any request.
 
 use duet_boundary::audit::{AuditEvent, AuditLog, Verification, run_anchors, verify};
 use duet_provider::mock_http::MockServer;
@@ -97,6 +98,27 @@ fn configured(e: &Env, server: &MockServer, model: &str) {
 
 const LISTING: &str = r#"{"data":[{"id":"coder","max_model_len":65536},{"id":"glm-5.3-flash"}]}"#;
 
+/// A Chat Completions stream whose usage reports `cached` cached prompt tokens.
+fn chat_reply(cached: u64) -> String {
+    let usage = serde_json::json!({"choices": [], "usage": {"prompt_tokens": 5200,
+        "completion_tokens": 1, "prompt_tokens_details": {"cached_tokens": cached}}});
+    format!(
+        "data: {}\n\ndata: {usage}\n\ndata: [DONE]\n\n",
+        serde_json::json!({"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]})
+    )
+}
+
+fn detail<'a>(report: &'a Value, name: &str) -> &'a str {
+    report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == name)
+        .unwrap_or_else(|| panic!("no check {name}: {report}"))["detail"]
+        .as_str()
+        .unwrap()
+}
+
 #[test]
 fn offline_doctor_uses_no_network_and_never_prints_the_key() {
     let e = env();
@@ -108,6 +130,8 @@ fn offline_doctor_uses_no_network_and_never_prints_the_key() {
     assert_eq!(status(&report, "local endpoint"), "pass");
     assert_eq!(status(&report, "local server"), "skip");
     assert_eq!(status(&report, "frontier model"), "skip");
+    assert_eq!(status(&report, "frontier cache"), "skip");
+    assert_eq!(status(&report, "local cache"), "skip");
     assert_eq!(status(&report, "sandbox"), "pass");
     assert_eq!(status(&report, "git"), "pass");
     assert_eq!(status(&report, "audit"), "pass");
@@ -127,23 +151,49 @@ fn offline_doctor_uses_no_network_and_never_prints_the_key() {
 }
 
 #[test]
-fn online_doctor_lists_models_and_context_without_model_calls() {
+fn online_doctor_lists_models_context_and_cache_reuse() {
     let e = env();
-    let server = MockServer::start(&[("GET /v1/models", 200, LISTING)]);
+    let reply = chat_reply(4800);
+    let server = MockServer::start(&[
+        ("GET /v1/models", 200, LISTING),
+        ("POST /v1/chat/completions", 200, &reply),
+    ]);
     configured(&e, &server, "coder");
     let (code, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
     for (name, want) in [
         ("frontier model", "pass"),
+        ("frontier cache", "pass"),
         ("local server", "pass"),
         ("local context", "pass"),
+        ("local cache", "pass"),
     ] {
         assert_eq!(status(&report, name), want, "{name}: {report}");
     }
+    assert!(
+        detail(&report, "frontier cache").contains("read 4800 of 5200 input tokens"),
+        "{report}"
+    );
     // Loopback plain HTTP to the frontier is allowed; nothing else warns.
     assert!(code <= 1, "{report}");
     let seen = server.seen();
-    assert!(seen.iter().all(|r| r.method == "GET"), "{seen:?}");
+    // Model calls: two identical prompts each to the frontier and the local model.
+    let posts: Vec<_> = seen.iter().filter(|r| r.method == "POST").collect();
+    assert_eq!(posts.len(), 4, "{seen:?}");
+    assert!(posts.iter().all(|r| r.path == "/v1/chat/completions"));
     assert!(seen.iter().any(|r| r.path == "/v1/models" && r.bearer));
+
+    // No cached tokens on the repeat: a warning with the fix.
+    let uncached = chat_reply(0);
+    let cold = MockServer::start(&[
+        ("GET /v1/models", 200, LISTING),
+        ("POST /v1/chat/completions", 200, &uncached),
+    ]);
+    configured(&e, &cold, "coder");
+    let (code, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert_eq!(status(&report, "frontier cache"), "warn", "{report}");
+    assert_eq!(status(&report, "local cache"), "warn", "{report}");
+    assert_eq!(code, 1);
+    configured(&e, &server, "coder");
 
     // A model the server does not list fails with the fix naming one it does.
     configured(&e, &server, "missing");
@@ -210,6 +260,134 @@ fn doctor_verifies_recent_audit_logs_and_anchors() {
     let (code, report) = doctor(&e, &[], &[]);
     assert_eq!(status(&report, "audit"), "fail", "{report}");
     assert_eq!(code, 2);
+}
+
+#[test]
+fn online_doctor_speaks_the_frontier_dialect() {
+    let e = env();
+    let stream: String = [
+        r#"{"type":"message_start","message":{"id":"m","model":"claude-opus-5-5","usage":{"input_tokens":20,"cache_read_input_tokens":5100,"cache_creation_input_tokens":0,"output_tokens":1}}}"#,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":"ok"}}"#,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"#,
+        r#"{"type":"message_stop"}"#,
+    ]
+    .iter()
+    .map(|d| format!("data: {d}\n\n"))
+    .collect();
+    let server = MockServer::start(&[
+        (
+            "GET /v1/models",
+            200,
+            r#"{"data":[{"id":"claude-opus-5-5","type":"model"}],"has_more":false}"#,
+        ),
+        ("POST /v1/messages", 200, &stream),
+    ]);
+    owner_config(
+        &e,
+        &format!(
+            "[frontier]\nbase_url = \"{}\"\nmodel = \"claude-opus-5-5\"\ndialect = \"anthropic\"\n",
+            server.base_url()
+        ),
+    );
+    let (_, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert!(
+        detail(&report, "frontier").contains("dialect anthropic"),
+        "{report}"
+    );
+    assert_eq!(status(&report, "frontier model"), "pass", "{report}");
+    assert_eq!(status(&report, "frontier cache"), "pass", "{report}");
+    assert!(
+        detail(&report, "frontier cache").contains("read 5100 of 5120"),
+        "{report}"
+    );
+    let seen = server.seen();
+    assert_eq!(
+        seen.iter().filter(|r| r.path == "/v1/messages").count(),
+        2,
+        "{seen:?}"
+    );
+    // Anthropic takes the key in x-api-key, never as a bearer token.
+    assert!(seen.iter().all(|r| !r.bearer), "{seen:?}");
+}
+
+#[test]
+fn frontier_presets_set_endpoint_model_key_and_dialect_through_the_audited_path() {
+    let e = env();
+    let list = duet(&e, &["config", "preset"]);
+    for name in [
+        "zai",
+        "anthropic",
+        "openai",
+        "https://api.anthropic.com/v1",
+        "responses",
+    ] {
+        assert!(text(&list).contains(name), "{name}: {}", text(&list));
+    }
+    // A new endpoint loosens privacy: refused without --confirm, nothing written.
+    let refused = duet(&e, &["config", "preset", "anthropic"]);
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused));
+    assert!(!e.home.join("config.toml").exists());
+    let ported = duet(
+        &e,
+        &["config", "preset", "openai", "--port", "1", "--confirm"],
+    );
+    assert!(!ported.status.success());
+
+    let applied = duet_with(
+        &e,
+        &["config", "preset", "anthropic", "--confirm"],
+        &[("ANTHROPIC_API_KEY", "")],
+    );
+    assert!(applied.status.success(), "{}", text(&applied));
+    assert!(
+        text(&applied).contains("ANTHROPIC_API_KEY is not set"),
+        "{}",
+        text(&applied)
+    );
+    for (key, want) in [
+        ("frontier.base_url", "\"https://api.anthropic.com/v1\""),
+        ("frontier.model", "\"claude-opus-5-5\""),
+        ("frontier.api_key_env", "\"ANTHROPIC_API_KEY\""),
+        ("frontier.dialect", "\"anthropic\""),
+    ] {
+        assert_eq!(
+            text(&duet(&e, &["config", "get", key])).trim(),
+            want,
+            "{key}"
+        );
+    }
+    let log = e.home.join("state/config-audit.jsonl");
+    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 4 });
+
+    // --model replaces the preset's model.
+    let openai = duet(
+        &e,
+        &[
+            "config",
+            "preset",
+            "openai",
+            "--model",
+            "gpt-5.4",
+            "--confirm",
+        ],
+    );
+    assert!(openai.status.success(), "{}", text(&openai));
+    assert_eq!(
+        text(&duet(&e, &["config", "get", "frontier.model"])).trim(),
+        "\"gpt-5.4\""
+    );
+    assert_eq!(
+        text(&duet(&e, &["config", "get", "frontier.dialect"])).trim(),
+        "\"responses\""
+    );
+    // A project may not choose the frontier's dialect.
+    std::fs::create_dir_all(e.ws.join(".duet")).unwrap();
+    std::fs::write(
+        e.ws.join(".duet/config.toml"),
+        "[frontier]\ndialect = \"chat\"\n",
+    )
+    .unwrap();
+    assert!(!duet(&e, &["config", "list"]).status.success());
 }
 
 #[test]
