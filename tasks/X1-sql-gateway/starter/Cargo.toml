@@ -1,0 +1,28 @@
+[package]
+name = "sqlparser"
+description = "Extensible SQL Lexer and Parser with support for ANSI SQL:2011"
+version = "0.47.0"
+authors = ["Andy Grove <andygrove73@gmail.com>"]
+homepage = "https://github.com/sqlparser-rs/sqlparser-rs"
+documentation = "https://docs.rs/sqlparser/"
+keywords = ["ansi", "sql", "lexer", "parser"]
+repository = "https://github.com/sqlparser-rs/sqlparser-rs"
+license = "Apache-2.0"
+edition = "2021"
+
+[lib]
+name = "sqlparser"
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]
+# Vendored so the repository builds offline.
+log = { path = "vendor/log" }
+
+[lints.rust]
+# The upstream `serde`, `bigdecimal`, `visitor` and `json_example` features are not
+# available in this build (their dependencies are not vendored).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("serde", "bigdecimal", "visitor", "json_example"))'] }
