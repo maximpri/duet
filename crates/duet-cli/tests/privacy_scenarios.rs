@@ -1,0 +1,456 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//! End-to-end privacy scenarios for Duet's own boundary: whole hybrid runs and
+//! sessions through the real frontier loop, with synthetic values planted in a
+//! temporary git workspace, a scripted frontier that records every request
+//! byte for byte, and local stand-ins that answer as they should or
+//! carelessly. Each test asserts that no planted value, in any spelling the
+//! canary matcher knows, reached the frontier. See `privacy/mod.rs`.
+//!
+//! Tests marked `#[ignore]` document gaps with no defence yet; the reason
+//! names the gap. They fail today and are expected to pass once it is closed.
+
+mod privacy;
+
+use duet_agent::Terminal;
+use duet_agent::session::TurnEnd;
+use duet_boundary::testing::canary::Canaries;
+use privacy::{
+    CUSTOMERS, DB_PASSWORD, Echo, Fixture, KEY, Local, Options, Step, customer_line, first_handle,
+    first_placeholder,
+};
+use serde_json::json;
+
+/// A 17-digit number that fails the Luhn check.
+const CARD_A: &str = "48613927054718395";
+/// A Luhn-valid 16-digit number.
+const CARD_B: &str = "4917352680941621";
+
+/// Both stand-ins: the boundary must hold whether the local model describes
+/// structure or repeats what it read (in the forms the engine is meant to stop).
+const LOCALS: [Local; 2] = [Local::Cooperative, Local::Careless(Echo::HANDLED)];
+
+fn completed(t: &Terminal) -> bool {
+    matches!(t, Terminal::Completed { .. })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_a_a_labelled_number_failing_the_checksum_never_reaches_the_frontier() {
+    // Seen in a live run (DUET-2026-011): no detector took it for a card.
+    let objective =
+        format!("My credit card number is {CARD_A} and the payment form rejects it. Find out why.");
+    let f = Fixture::new("carda", &objective, Local::Cooperative);
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "src/lib.rs"})),
+        Step::Call(
+            "finish",
+            json!({"summary": "The form checks the Luhn digit; that number fails it."}),
+        ),
+    ]);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    f.assert_no_leak(&f.canaries([CARD_A]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: a 12-19 digit number the operator types without a label word within three words \
+            (card, account, ...) is sent as typed when it fails every checksum"]
+async fn card_a_an_unlabelled_number_failing_the_checksum_never_reaches_the_frontier() {
+    let objective = format!(
+        "The payment form rejects {CARD_A} although the customer says it is their Visa. Find out why."
+    );
+    let f = Fixture::new("carda-unlabelled", &objective, Local::Cooperative);
+    f.script(vec![Step::Call(
+        "finish",
+        json!({"summary": "The form checks the Luhn digit."}),
+    )]);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    f.assert_no_leak(&f.canaries([CARD_A]));
+}
+
+/// Card B as seen in a live run: the operator asks about a valid card number;
+/// the frontier asks the local model about its placeholder, reads Duet's run
+/// state with a `sensitive_data` command, and finishes naming the placeholder.
+fn card_b(name: &str, local: Local) -> Fixture {
+    let f = Fixture::new(
+        name,
+        &format!("Is this credit card number valid? {CARD_B}"),
+        local,
+    );
+    f.script(vec![
+        Step::From(Box::new(|body| {
+            let token = first_placeholder(body).expect("the number as a placeholder");
+            (
+                "ask_local",
+                json!({"handle": token, "questions": ["Does it pass the Luhn check? How many digits?"]}),
+            )
+        })),
+        Step::Call(
+            "run_command",
+            json!({"command": "ls -R .duet; cat .duet/runs/*/vault.json; tail -n 20 .duet/runs/*/transcript.jsonl",
+                "sensitive_data": true}),
+        ),
+        Step::From(Box::new(|body| {
+            let token = first_placeholder(body).expect("the number as a placeholder");
+            (
+                "finish",
+                json!({"summary": format!("{token} passes the Luhn check.")}),
+            )
+        })),
+    ]);
+    f
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_b_a_valid_card_number_stays_out_through_ask_local_and_a_run_state_read() {
+    for (i, local) in LOCALS.into_iter().enumerate() {
+        let f = card_b(&format!("cardb-{i}"), local);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        let planted = f.canaries([CARD_B]);
+        f.assert_no_leak(&planted);
+        // The sensitive command could not read Duet's run state: what the
+        // local model was given of its output holds no vaulted value.
+        for p in f.local_prompts() {
+            if p.contains("(ran with sensitive data)") {
+                assert!(
+                    planted.find(&p).is_empty(),
+                    "{local:?}: run state read: {p}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn card_b_the_placeholder_works_for_the_frontier_and_the_operator_sees_the_value() {
+    let f = card_b("cardb-use", Local::Cooperative);
+    let end = f.run().await;
+    // The operator is shown their own value in the end state.
+    assert_eq!(
+        end,
+        Terminal::Completed {
+            summary: format!("{CARD_B} passes the Luhn check.")
+        }
+    );
+    // The placeholder was a handle: the local model read the operator's
+    // message, and its answer reached the frontier with its own words intact
+    // (the algorithm and the network it named are not people).
+    let answers = f.results_of("ask_local");
+    assert_eq!(answers.len(), 1);
+    assert!(
+        answers[0].contains("16-digit number; the Luhn Algorithm accepts it"),
+        "{}",
+        answers[0]
+    );
+    let summaries = f.results_of("run_command");
+    assert!(
+        summaries[0].contains("the Luhn Algorithm; most start in the Visa Network range"),
+        "{}",
+        summaries[0]
+    );
+    let prompts = f.local_prompts();
+    assert!(
+        prompts.iter().any(|p| p.contains(CARD_B)),
+        "the local model never read the operator's value"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sensitive_data_command_cannot_read_the_vault() {
+    for (i, local) in LOCALS.into_iter().enumerate() {
+        let f = Fixture::new(
+            &format!("vault-{i}"),
+            "Check that the customer export matches the billing records.",
+            local,
+        );
+        let vault = format!(".duet/runs/{}/vault.json", f.run_id);
+        f.script(vec![
+            Step::Call("read_file", json!({"path": "data/customers.csv"})),
+            Step::Call(
+                "run_command",
+                json!({"command": format!("cat {vault}; od -c {vault} | head -40"), "sensitive_data": true}),
+            ),
+            Step::ask_latest("What does the output contain? Quote line 1."),
+            Step::Call("run_command", json!({"command": format!("cat {vault}")})),
+            Step::Call("finish", json!({"summary": "Checked."})),
+        ]);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        // The vault exists and holds the primed values.
+        let stored = std::fs::read_to_string(f.ws.join(&vault)).unwrap();
+        assert!(stored.contains(CUSTOMERS[0].card), "vault not primed");
+        let planted = f.canaries([]);
+        f.assert_no_leak(&planted);
+        for p in f.local_prompts() {
+            if p.contains("(ran with sensitive data)") {
+                assert!(planted.find(&p).is_empty(), "{local:?}: vault read: {p}");
+            }
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_derived_by_a_sensitive_data_command_stays_sensitive_when_read() {
+    // A careless whole-line echo of a transformed copy (reversed names) is the
+    // copy-window gap below, not a derived-file one: only digit runs here.
+    for (i, local) in [Local::Cooperative, Local::Careless(&[Echo::Digits])]
+        .into_iter()
+        .enumerate()
+    {
+        let f = Fixture::new(
+            &format!("derived-{i}"),
+            "Prepare an export of the customer list for the billing team.",
+            local,
+        );
+        f.script(vec![
+            Step::Call(
+                "run_command",
+                json!({"command": "tr a-z A-Z < data/customers.csv > export.txt && rev data/customers.csv > export.rev \
+                    && base64 < data/customers.csv > export.b64",
+                    "sensitive_data": true}),
+            ),
+            Step::Call("read_file", json!({"path": "export.txt"})),
+            Step::Call("read_file", json!({"path": "export.rev"})),
+            Step::Call("read_file", json!({"path": "export.b64"})),
+            Step::Call("read_file", json!({"path": "export.rev", "start_line": 2, "end_line": 3})),
+            Step::Call("run_command", json!({"command": "cat export.txt export.rev export.b64"})),
+            Step::Call("search", json!({"pattern": "[A-Z]{6,}|@"})),
+            Step::Call("finish", json!({"summary": "Export written."})),
+        ]);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        assert!(f.ws.join("export.b64").exists());
+        f.assert_no_leak(&f.canaries([]));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: files a sensitive_data command writes under target/ or node_modules/ are not \
+            marked derived, so a transformed copy there is read as public content"]
+async fn a_file_derived_into_target_stays_sensitive_when_read() {
+    let f = Fixture::new(
+        "derived-target",
+        "Prepare an export of the customer list for the billing team.",
+        Local::Cooperative,
+    );
+    f.script(vec![
+        Step::Call(
+            "run_command",
+            json!({"command": "mkdir -p target && tr a-z A-Z < data/customers.csv > target/export.txt \
+                && rev data/customers.csv > target/export.rev",
+                "sensitive_data": true}),
+        ),
+        Step::Call("read_file", json!({"path": "target/export.txt"})),
+        Step::Call("read_file", json!({"path": "target/export.rev"})),
+        Step::Call("finish", json!({"summary": "Export written."})),
+    ]);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    f.assert_no_leak(&f.canaries([]));
+}
+
+/// Ten `ask_local` calls about one card number, each a narrow question: the
+/// first digit, the last four, the length, then digits 2 to 8 one by one.
+fn probing() -> Fixture {
+    let f = Fixture::new(
+        "probing",
+        "Find out why the second customer's card is declined.",
+        Local::Careless(&[]),
+    );
+    let line = customer_line(1);
+    let mut steps = vec![Step::Call(
+        "read_file",
+        json!({"path": "data/customers.csv"}),
+    )];
+    let mut questions = vec![
+        format!("What is the first digit of the card number on line {line}?"),
+        format!("What are the last four digits of the card number on line {line}?"),
+        format!("How many digits does the card number on line {line} have?"),
+    ];
+    questions
+        .extend((2..=8).map(|n| format!("What is digit {n} of the card number on line {line}?")));
+    // Every call names the handle of the file read first.
+    for q in questions {
+        steps.push(Step::From(Box::new(move |body| {
+            let handle = first_handle(body).expect("the file's handle");
+            ("ask_local", json!({"handle": handle, "question": q}))
+        })));
+    }
+    steps.push(Step::Call(
+        "finish",
+        json!({"summary": "Declined by the issuer."}),
+    ));
+    f.script(steps);
+    f
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn narrow_questions_about_one_value_repeat_no_run_of_its_digits() {
+    let f = probing();
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    assert_eq!(f.unscripted(), 0);
+    assert_eq!(f.results_of("ask_local").len(), 10);
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: each local answer is checked alone, so single digits asked for one at a time \
+            add up to a run of the withheld number across calls"]
+async fn narrow_questions_about_one_value_do_not_add_up_to_it() {
+    let f = probing();
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    // What the frontier can assemble: the digits it was given for positions
+    // 1 to 8 (answers 1 and 4 to 10), in order.
+    let answers = f.results_of("ask_local");
+    let assembled: String = [0, 3, 4, 5, 6, 7, 8, 9]
+        .iter()
+        .filter_map(|&i| {
+            // "The first digit is 5.", "Digit 5 is 7.": the digit follows "is".
+            let (_, after) = answers[i].split_once(" is ")?;
+            after.chars().next().filter(char::is_ascii_digit)
+        })
+        .collect();
+    let found = Canaries::new([CUSTOMERS[1].card]).find(&assembled);
+    assert!(
+        found.is_empty(),
+        "the frontier assembled {assembled:?} of {} from {} answers: {answers:?}",
+        CUSTOMERS[1].card,
+        answers.len()
+    );
+}
+
+/// The frontier reads the customer file and asks the local model about the
+/// first customer's record; the local model answers carelessly in `echo`.
+async fn careless(name: &str, echo: &'static [Echo]) -> Fixture {
+    let f = Fixture::new(
+        name,
+        "Find out why the second customer's card is declined.",
+        Local::Careless(echo),
+    );
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "data/customers.csv"})),
+        Step::ask_latest(format!("Describe the record on line {}.", customer_line(0))),
+        Step::Call("finish", json!({"summary": "Declined by the issuer."})),
+    ]);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    assert_eq!(f.unscripted(), 0);
+    f
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_careless_local_answer_repeating_a_whole_line_is_cleaned() {
+    let f = careless("careless-line", &[Echo::Line]).await;
+    let answer = &f.results_of("ask_local")[0];
+    assert!(answer.contains("Line 2 reads:"), "{answer}");
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: in local output the copy window runs after known values became placeholders, \
+            so a copied line splits into runs under four words and a field no detector knows \
+            (here a date of birth) passes"]
+async fn a_careless_local_answer_repeating_a_whole_line_leaves_no_field_of_it() {
+    let f = careless("careless-line-field", &[Echo::Line]).await;
+    let born = CUSTOMERS.map(|c| c.born);
+    f.assert_no_leak(&f.canaries(born));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_careless_local_answer_repeating_digit_runs_is_cleaned() {
+    let f = careless("careless-digits", &[Echo::Digits]).await;
+    let answer = &f.results_of("ask_local")[0];
+    assert!(answer.contains("starts with"), "{answer}");
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: local output is matched against known values as written; a name or an email \
+            with a space between its characters passes (a card number is still caught by its \
+            detector)"]
+async fn a_careless_local_answer_spelling_a_value_out_is_cleaned() {
+    let f = careless("careless-spaced", &[Echo::Spaced]).await;
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: local output is not decoded; base64 is replaced only when it happens to look \
+            like an identifier (10+ letters and digits) or a high-entropy token, so a short \
+            value's encoding (a surname) passes"]
+async fn a_careless_local_answer_encoding_a_value_is_cleaned() {
+    let f = careless("careless-base64", &[Echo::Base64]).await;
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_secret_in_a_steering_message_is_replaced() {
+    let f = Fixture::new(
+        "steer",
+        "Look at src/lib.rs; total should skip refunds.",
+        Local::Cooperative,
+    );
+    f.script(vec![
+        Step::Call(
+            "reply",
+            json!({"message": "Noted; total already skips refunds."}),
+        ),
+        Step::Call("reply", json!({"message": "Understood."})),
+    ]);
+    let mut s = f.session();
+    // Queued as the turn starts: delivered at its first safe point, as a
+    // message typed while it runs is.
+    s.steering().steer(format!(
+        "Also: the payment key {KEY} was pasted into a log; rotate it."
+    ));
+    let first = s.turn(&f.cfg.objective).await;
+    assert_eq!(first.state(), "replied", "{first:?}");
+    assert_eq!(s.history()[0].steered.len(), 1, "steering not delivered");
+    let second = s
+        .turn(&format!("Use {KEY} only through the environment."))
+        .await;
+    assert!(matches!(second, TurnEnd::Replied { .. }), "{second:?}");
+    let _ = s.end(true);
+    f.assert_no_leak(&f.canaries([]));
+}
+
+/// A session in which the operator types the database password from `.env`.
+async fn password_in_a_message(name: &str, options: Options) -> Fixture {
+    let f = Fixture::with(
+        name,
+        "Look at src/lib.rs; total should skip refunds.",
+        Local::Cooperative,
+        options,
+    );
+    f.script(vec![
+        Step::Call("reply", json!({"message": "Noted."})),
+        Step::Call("reply", json!({"message": "Understood."})),
+    ]);
+    let mut s = f.session();
+    assert_eq!(s.turn(&f.cfg.objective).await.state(), "replied");
+    s.steering().steer(format!(
+        "The database password is {DB_PASSWORD}; keep it out of the code."
+    ));
+    assert_eq!(s.turn("Carry on.").await.state(), "replied");
+    let _ = s.end(true);
+    f
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced() {
+    let f = password_in_a_message("password-tracked", Options { env_ignored: false }).await;
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "gap: the engine is primed only on files git lists, so a gitignored .env (the usual \
+            case) is not in the vault and a value from it that no detector recognizes passes"]
+async fn a_value_from_an_ignored_env_file_typed_by_the_operator_is_replaced() {
+    let f = password_in_a_message("password-ignored", Options::default()).await;
+    f.assert_no_leak(&f.canaries([]));
+}
