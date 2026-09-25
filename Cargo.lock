@@ -573,6 +573,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "duet-web"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "ipnet",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
