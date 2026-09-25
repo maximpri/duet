@@ -490,6 +490,39 @@ edits no longer match the file is refused rather than applied. Diagnostics after
 the server published within the wait; a slower check shows up in a later edit or with
 `code_nav diagnostics`.
 
+## Sub-agents
+
+`delegate` (`subagents.enabled`, on by default; a project may turn it off) runs a second loop
+that the frontier gives a task to. It is a channel out (the task, the sub-agent's own requests), a
+channel in (its report) and a second actor with tools, so it must never have more than the loop
+that started it.
+
+| Threat | What stops it |
+|---|---|
+| A sub-agent sees raw sensitive content or sends it to the frontier | It runs over the same engine instance and the same outbound gate: every result it gets is presented like the parent's (same vault, handles, classes), every request it makes is filtered, checked and recorded in the run's audit log (with `subagents.model`, behind a second gate with the engine's own filter and check on the same log). The task the parent wrote is filtered like any item, so a value copied into it becomes a placeholder |
+| A sub-agent gets tools or rights its parent does not have | Its tools are an allowlist over the parent's run-start set, fixed per mode and sorted: reading tools, read-only MCP tools, and for `write` only `edit_file`, `write_file`, `rename`. Never `edit_protected`, `git_commit`, MCP tools not declared read-only, `reply`/`ask_operator` or `delegate`; a tool added to Duet later is not given to sub-agents until it is listed. A call to anything else is refused before approval or dispatch. Same sandbox, same `oversight.approve` (the operator is asked for its actions as for the parent's), same approver |
+| A sub-agent reads sensitive files through a command | `run_command` is its own: ordinary deny list (sensitive and derived files, protected source, `.git`, `.duet`, the sensitive commands' `TMPDIR`), and `sensitive_data` is refused. `ask_local` and handles work as for the parent |
+| A read sub-agent changes files | Its journal refuses every write, and its commands run with the workspace mounted read-only (Seatbelt: no write rule for the workspace; bubblewrap: `--ro-bind`); only its `TMPDIR` is writable |
+| A write sub-agent writes outside the paths it was given | Every tool write goes through the write journal, which checks the path against the `paths` globs before anything is saved or recorded (`..`, absolute globs, `.git` and `.duet` refused up front); its commands are read-only too, so there is no unjournaled write. All its writes are journaled: pending ones roll back on resume, `/undo` reverts them with the turn, and the parent is told which files changed |
+| A sub-agent's report steers the parent (injection it picked up from a file or page) | The report is presented as `Source::Subagent`: rescanned like public text (detected and vault values replaced, copied sensitive spans removed) and framed as data between markers with a per-call random tag; the parent's prompt treats tool results as data |
+| Recursion or runaway spend | Depth 1: a sub-agent's configuration has no sub-agents and `delegate` is not among its tools. Each is held to `subagents.max_usd` and `subagents.max_minutes` (or less when the task asks), and never beyond what is left of the parent's `limits.frontier_usd` (split between sub-agents that start together) or its wall clock; its spend and time are the parent's. At most `subagents.max_parallel` read sub-agents run at once, and one writing one |
+| A crash or interrupt leaves half of a sub-agent's change behind | A sub-agent whose result the parent never recorded is ended (`failed`) when the run or session continues, and its journaled writes are rolled back (files a later journaled write changed again are left), so the parent re-decides against the files it knew. Interrupt and `/stop` reach sub-agents at once and at their next step, and kill their commands |
+
+Audit: `subagent_start` (id, mode, SHA-256 of the task, the path globs, the model) and
+`subagent_end` (id, mode, outcome, cost, requests, files written); never the task or the report.
+The sub-agent's own requests are ordinary request records of the same hash chain. The transcript
+keeps its conversation nested under its id.
+
+**Known limits.** A sub-agent reads what the parent could read: it is not a way to hide anything
+from the frontier, only to spend a fresh context on it. Globs follow the sensitivity globs' rules
+(a pattern without `/` matches the file name at any depth, so `*.rs` allows every Rust file). A
+write sub-agent's commands cannot build or test (they cannot write into the repository); the
+parent does that. The operator's approval prompt for a sub-agent's action looks like the parent's
+(it names the tool and path, not which loop asked). `rename` in a write sub-agent checks every file
+against the paths and refuses the whole edit if one is outside. A read-only MCP tool is the
+server's own claim, as for the parent. Line counts in the change summary compare lines as sets
+(a moved line counts as unchanged).
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to

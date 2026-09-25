@@ -65,7 +65,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo) | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -82,7 +82,7 @@ enum UsageStatus { Reported, Estimated, Unknown }
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
               SensitiveCommand { command, exit_code }, Diff, Checks, Web { url },
               GitHistory { rev, path: Option<PathBuf> }, Other { label },
-              Mcp { server, tool, trust: ServerTrust } }
+              Mcp { server, tool, trust: ServerTrust }, Subagent { child } }
 enum ViewClass { Raw, Tokenized, HandleSummary, LocalAnswer, BulkyHandle, Protected }
 trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the frontier gets
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
@@ -97,6 +97,9 @@ struct GatedFrontier;  // only type the agent can call the frontier through
 fn run(cfg, frontier: &GatedFrontier, presenter: &dyn Presenter, git, resume, interrupted)
     -> (Terminal, RunStats)
 enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which } }
+trait Driver;          // the model a loop is driven by: model(), deadline(), audit(), create(request);
+                       // implemented by GatedFrontier (the run's frontier or subagents.model)
+struct Subagents { max_parallel, max_usd, max_time, model: Option<Arc<dyn Driver>>, price }
 struct Session;        // open(cfg, frontier, presenter, git, interrupted, limits, resume)
                        // turn(&mut self, message) -> TurnEnd; undo(); steering(); end(closed)
 enum TurnEnd { Replied { message }, Asked { question }, Completed { summary }, Failed { reason },
@@ -371,6 +374,61 @@ the ones written if a later write fails), after `note_authored` and `resolve_for
 and `didSave`, and its diagnostics are appended once they settle (quiet for 250 ms with no
 work-done progress open) within `lsp.diagnostics_wait_ms`.
 
+### 5.10 Sub-agents
+
+`crates/duet-agent/src/subagents.rs`. `RunConfig.subagents` (`None` when `subagents.enabled` is
+off) adds `delegate {task, mode, paths?, budget?}` to the fixed tool set of runs and sessions. The
+CLI builds it in `prepare` (`crates/duet-cli/src/subagents.rs`): the parent's model, or with
+`subagents.model` a second provider at the frontier endpoint behind `OutboundGate::with_audit` (the
+run's audit handle, the engine's filter and check), priced by that model.
+
+A `delegate` call is dispatched in `run::work` (the loop is shared). The call and the read requests
+right after it in the same response form a batch; a write request, or an invalid one, runs alone.
+For each sub-agent:
+
+```
+plan     id aN; spend cap = min(subagents.max_usd, budget.usd, what is left of the parent's
+         frontier_usd / sub-agents starting together); deadline = min(now + subagents.max_minutes
+         or budget.minutes, the parent's deadline); the setting that binds is remembered for the
+         BudgetStopped reason
+start    transcript SubagentStart{child, call_id, mode, task, paths, journal_next}; audit
+         subagent_start{child, mode, task_sha256, paths, model}
+context  RunConfig: the parent's, no checks, no sub-agents (depth 1), the sub-agent model's price;
+         Conversation: system = prompt::subagent_prompt(workspace, writes) (fixed per mode), tools =
+         the parent's allowed for the mode (read: files, listings, search, diff, read-only git tools,
+         code_nav, ask_local, read_raw, web, read-only MCP; write adds edit_file, write_file,
+         rename) with its own run_command and finish, sorted; items = [task + paths line +
+         Presenter::task_notes()]; child = Child{id, mode, scope, tools, the parent's stop request}
+loop     run::work(child cfg, driver, the same presenter, git, interrupt flag, host policy), boxed:
+         transcript entries nested as Subagent{child, entry}; journal confined to the paths
+         (WriteScope; read: none); calls outside its tools, sensitive_data and a finish without a
+         report are refused before approval; run_command runs with Access::ReadOnly (sandbox
+         Spec.read_only: workspace not writable); a session /stop ends it at its safe point
+end      Completed / Failed / BudgetStopped{subagents.max_usd | budget.usd | the run's ...};
+         written files from the journal range [journal_next, journal_end); SubagentEnd{...};
+         audit subagent_end{child, mode, outcome, cost_usd, requests, files_written}
+result   Completed: the report presented as Source::Subagent (rescanned like public text, never
+         offloaded, cut at 20,000 characters) between random-tag markers, plus the files it wrote
+         (created N lines / modified +a -r, visible paths only); otherwise a tool error saying
+         why, with the files it wrote (kept)
+```
+
+The batch runs with `buffered(subagents.max_parallel)` on the parent's task, so results come back
+in call order; a local-model call inside a sub-agent (`block_in_place`) pauses the others' polling
+for its duration, frontier requests stay concurrent. Each sub-agent's `RunStats` is added to the
+parent's (cost, usage, failed attempts, ledger) and to `RunStats.subagents` (children, requests,
+tool calls, cost, usage); the parent's journal takes up numbering after a writing sub-agent
+(`WriteJournal::refresh`).
+
+**Resume.** `run::replay` rebuilds each sub-agent's spend from its nested entries (its own
+`replay_priced`). Then `subagents::recover` (one-shot resume, session open and each session turn
+start) ends every sub-agent whose `delegate` call has no result in the conversation the parent
+continues with (`Failed`, "the run stopped before its result was recorded", with an audit event)
+and, for a writing one, restores the files of its journal range to their content before it,
+except files a later journaled write changed (`SubagentReverted{child, paths}`); the parent then
+re-decides the dropped step. A sub-agent whose result was recorded keeps its writes, and a session
+`/undo` of its turn reverts them with the parent's.
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -399,7 +457,8 @@ git; reset behaviour defined per entry).
   runs/<run-id>/              mode 0700, files 0600; `duet purge` after data.retention_days
     run.json                  manifest (mode, task, frontier; `session` for `duet chat`) for resume
     transcript.jsonl          full conversation items, synced per item; for a session also its
-                              turns (as typed), their ends, steering and undo
+                              turns (as typed), their ends, steering and undo; sub-agents'
+                              starts, ends, rollbacks and their own entries nested under their id
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
@@ -424,7 +483,8 @@ git; reset behaviour defined per entry).
 - **Commands:** Seatbelt (macOS) or bwrap (Linux) with absolute binary paths; workspace-write with
   `.git`/`.duet` unwritable; `.duet` (the vault, handles, transcripts, audit log) unreadable to
   every command by the sandbox itself, `.git` (committed copies) to ordinary commands and checks;
-  command `TMPDIR` outside the workspace, a separate one for `sensitive_data` commands that no
+  command `TMPDIR` outside the workspace (a sub-agent's commands can write nothing else: the
+  workspace is read-only to them, `Spec.read_only`), a separate one for `sensitive_data` commands that no
   other sandboxed process (command, check, MCP server) can read (`tools::hidden_from_processes`); sensitive and protected paths unreadable (deny-read) except for
   `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
@@ -540,3 +600,5 @@ Each is backed by a test, except where noted.
    readable by any sandboxed command.
 9. No file under `crates/` contains another coding agent's code, format or name (outside eval lane
    adapters).
+10. A sub-agent has no tool its parent lacks, cannot delegate, writes only through the journal
+    within its paths (its commands cannot write the workspace), and its requests pass the same gate.

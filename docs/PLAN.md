@@ -433,6 +433,22 @@ Delivery: web, MCP, language servers and git in parallel; sub-agents and images 
 and mock servers, a threat entry in `SECURITY.md`, README usage, and a live check where a server or
 backend is available. Follow-up: an egress proxy so commands can reach package registries only.
 
+*Built (branch `subagents`):* `delegate {task, mode, paths?, budget?}` in runs and sessions
+(`subagents.enabled`, `max_parallel`, `max_usd`, `max_minutes`, `model`). A sub-agent is
+`run::work` one level down with its own fixed prompt and tool allowlist per mode, over the same
+engine, gate, audit log and sandbox; the model is a `Driver` parameter (the run's frontier or
+`subagents.model` behind its own gate on the same audit chain), so a local-model driver (M5.2) can
+plug in. Read sub-agents run in parallel with read-only commands (sandbox `read_only`); a write
+sub-agent writes through the journal confined to its globs; depth 1; budgets shared with the
+parent; transcript entries nested under its id; `subagent_start`/`subagent_end` audit events; a
+sub-agent whose result was never recorded is ended and rolled back on resume. Scripted-frontier
+tests (hybrid canaries, confinement, depth, parallelism, budgets, interrupt, stop, crash resume,
+undo, separate model). Live check (2026-09-25, `glm-5.3-flash`): in pass-through two read
+sub-agents ran in parallel and a write sub-agent limited to `src/export/**` fixed a bug (3
+sub-agents, 18 requests, $0.0044 of the run's $0.0060); in hybrid (local oMLX) two parallel read
+sub-agents reported on a sensitive CSV through handles and `ask_local`, with no planted value in
+the audit log and the chain intact.
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

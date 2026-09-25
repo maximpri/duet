@@ -319,6 +319,42 @@ Servers read the workspace like checks do: protected source yes, sensitive files
 location, an interface-only file shows declarations only, and `rename` refuses to touch any of
 them. Details: [SECURITY.md](SECURITY.md) (Language servers).
 
+**Sub-agents** (`subagents.*` settings; on by default): the frontier gets `delegate {task, mode,
+paths?, budget?}`, which hands a sub-task to a sub-agent: a fresh loop that knows only the task
+(none of the conversation), works with the same tools, boundary and sandbox, never more, and
+answers with a report that becomes the tool result. Use it where a fresh context pays off:
+
+- `mode: "read"` to investigate: "where is the retry policy applied, and which callers override
+  it?", "why does `tests/export.rs` fail?", "summarize what `src/billing/` exposes". Read
+  sub-agents read, search, use the git tools and `ask_local`, run commands with the repository
+  read-only, and change nothing. Several asked for in one response run at the same time
+  (`subagents.max_parallel`, 3 by default), so one turn can survey several parts of a large code
+  base while the main conversation keeps only the reports.
+- `mode: "write"` with `paths` (globs such as `src/export/**`) for one focused change: it edits
+  and creates files matching `paths` only (anything else is refused), runs one at a time, and its
+  result lists the files it changed (created, or `+added -removed` lines). Its commands are
+  read-only too, so building and testing stay with the main loop.
+
+Each sub-agent is held to `subagents.max_usd` and `subagents.max_minutes` (a `budget` in the call
+can only lower them), and its spend and time count against the run's limits; one that runs out
+stops, and the frontier is told. Sub-agents cannot delegate. `/undo` in a session reverts what a
+writing sub-agent wrote in that turn, and a sub-agent cut off by a crash or Ctrl-C is rolled back
+when the run or session continues. In `duet chat` their steps show under their id (`⇢ sub-agent
+a1 (read): ...`, `[a1]  · read_file ...`, `⇠ sub-agent a1 completed`); the TUI Run view shows them
+indented the same way, and `summary.json` reports their requests and cost under `stats.subagents`.
+
+```sh
+duet config set --project subagents.max_parallel 2         # fewer at once
+duet config set --project subagents.max_usd 0.5            # lower the per-sub-agent spend
+duet config set subagents.model '"glm-5.3-flash"' --confirm # a cheaper model at the frontier endpoint
+duet config set --project subagents.enabled false          # no delegate in this repository
+```
+
+In hybrid mode a sub-agent sees exactly what the main loop would (summaries, handles and
+placeholders, never sensitive content); every request it makes passes the same outbound gate and
+is in the same audit log, with `subagent_start` and `subagent_end` events (the task's hash, never
+its text). Details: [SECURITY.md](SECURITY.md) (Sub-agents).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on
