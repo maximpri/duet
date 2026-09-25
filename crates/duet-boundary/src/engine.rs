@@ -213,6 +213,7 @@ impl Engine {
                 op: "compile",
                 path: "sensitivity.custom_patterns".into(),
                 message,
+                errno: None,
             })?;
         Ok(Arc::new(Self {
             policy,
