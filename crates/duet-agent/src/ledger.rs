@@ -176,6 +176,7 @@ mod tests {
         items.push(Item::Assistant {
             text: String::new(),
             reasoning: None,
+            replay: None,
             tool_calls: vec![read.clone()],
         });
         items.push(Item::ToolResult {

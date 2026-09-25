@@ -194,6 +194,7 @@ mod tests {
             v.push(Item::Assistant {
                 text: String::new(),
                 reasoning: None,
+                replay: None,
                 tool_calls: calls.clone(),
             });
             for c in calls {

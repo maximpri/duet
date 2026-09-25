@@ -536,6 +536,7 @@ fn run_screen_follows_the_transcript() {
         item: Item::Assistant {
             text: "Reading the log first.".into(),
             reasoning: None,
+            replay: None,
             tool_calls: vec![ToolCall {
                 id: "c1".into(),
                 name: "read_file".into(),

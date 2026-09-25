@@ -38,11 +38,121 @@ pub enum Item {
         reasoning: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tool_calls: Vec<ToolCall>,
+        /// Provider state the next request must carry back unchanged (signed or
+        /// encrypted reasoning), for the dialect that produced it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        replay: Option<Replay>,
     },
     ToolResult {
         call_id: String,
         content: String,
     },
+}
+
+/// One part of a response's output, in the order the provider produced it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Part {
+    /// A provider block kept verbatim (a signed thinking block, an encrypted
+    /// reasoning item). It holds no text Duet shows or edits.
+    Opaque { block: Value },
+    /// A text block of `bytes` bytes of the item's text.
+    Text { bytes: usize },
+    /// The tool call with this id.
+    Call { id: String },
+}
+
+/// What a dialect needs to replay an assistant turn exactly: its output
+/// layout with the opaque reasoning blocks. The text and tool calls themselves
+/// stay in the item, so outbound filters see and edit them as usual.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Replay {
+    /// The dialect that produced it; any other dialect ignores it.
+    pub dialect: String,
+    pub parts: Vec<Part>,
+}
+
+/// A piece of an assistant turn to put on the wire, in order.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Piece<'a> {
+    Opaque(&'a Value),
+    Text(&'a str),
+    Call(&'a ToolCall),
+}
+
+/// The assistant turn as the dialect `dialect` should send it: in the
+/// original order with its opaque blocks when the turn came from that dialect,
+/// otherwise text then tool calls. Text split across several blocks is split
+/// the same way again while its length is unchanged; edited text (an outbound
+/// filter replaced a value) goes out as one block where the first one was.
+pub fn assistant_pieces<'a>(
+    dialect: &str,
+    text: &'a str,
+    tool_calls: &'a [ToolCall],
+    replay: Option<&'a Replay>,
+) -> Vec<Piece<'a>> {
+    let mut out = Vec::new();
+    let Some(replay) = replay.filter(|r| r.dialect == dialect) else {
+        if !text.is_empty() {
+            out.push(Piece::Text(text));
+        }
+        out.extend(tool_calls.iter().map(Piece::Call));
+        return out;
+    };
+    let lengths: Vec<usize> = replay
+        .parts
+        .iter()
+        .filter_map(|p| match p {
+            Part::Text { bytes } => Some(*bytes),
+            _ => None,
+        })
+        .collect();
+    let split = lengths.iter().sum::<usize>() == text.len() && {
+        let mut at = 0;
+        lengths.iter().all(|n| {
+            at += n;
+            text.is_char_boundary(at)
+        })
+    };
+    let (mut at, mut text_sent) = (0usize, false);
+    let mut used = vec![false; tool_calls.len()];
+    for part in &replay.parts {
+        match part {
+            Part::Opaque { block } => out.push(Piece::Opaque(block)),
+            Part::Text { bytes } if split => {
+                if *bytes > 0 {
+                    out.push(Piece::Text(&text[at..at + bytes]));
+                }
+                at += bytes;
+                text_sent = true;
+            }
+            Part::Text { .. } => {
+                if !text_sent && !text.is_empty() {
+                    out.push(Piece::Text(text));
+                }
+                text_sent = true;
+            }
+            Part::Call { id } => {
+                if let Some(i) = tool_calls
+                    .iter()
+                    .enumerate()
+                    .position(|(i, c)| !used[i] && &c.id == id)
+                {
+                    used[i] = true;
+                    out.push(Piece::Call(&tool_calls[i]));
+                }
+            }
+        }
+    }
+    if !text_sent && !text.is_empty() {
+        out.push(Piece::Text(text));
+    }
+    for (i, c) in tool_calls.iter().enumerate() {
+        if !used[i] {
+            out.push(Piece::Call(c));
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -133,6 +243,9 @@ pub struct Response {
     pub stop: StopReason,
     pub usage: Usage,
     pub attempts: AttemptUsage,
+    /// Opaque reasoning to carry into the next request (see [`Replay`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay: Option<Replay>,
 }
 
 impl Response {
@@ -142,6 +255,7 @@ impl Response {
             text: self.text.clone(),
             reasoning: self.reasoning.clone(),
             tool_calls: self.tool_calls.clone(),
+            replay: self.replay.clone(),
         }
     }
 }

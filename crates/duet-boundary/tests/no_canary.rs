@@ -8,9 +8,10 @@
 //! and tool-call arguments (JSON inside JSON). The outbound filter and the
 //! final check run as the gate runs them.
 //!
-//! Asserted: after the filter, the check passes and no covered spelling of any
-//! canary is in the request body, raw or JSON-decoded; and a body that still
-//! holds one (6+ bytes) is refused by the check.
+//! Asserted, for the body of every wire dialect (Chat Completions, Anthropic
+//! Messages, Responses): after the filter, the check passes and no covered
+//! spelling of any canary is in the request body, raw or JSON-decoded; and a
+//! body that still holds one (6+ bytes) is refused by the check.
 //!
 //! Covered spellings (what the value filters claim, and all this test asserts):
 //! - secrets from `.env` (any characters, including `\` and `"`), provider-shaped
@@ -32,7 +33,9 @@
 use duet_boundary::engine::Engine;
 use duet_boundary::model::{Item, Request, ToolCall};
 use duet_boundary::policy::Policy;
-use duet_provider::chat::build_body;
+use duet_provider::Dialect;
+
+const DIALECTS: [Dialect; 3] = [Dialect::Chat, Dialect::Anthropic, Dialect::Responses];
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -393,6 +396,7 @@ fn request(placed: &[(Channel, String)]) -> Request {
             Item::Assistant {
                 text,
                 reasoning: Some(reasoning),
+                replay: None,
                 tool_calls: vec![ToolCall {
                     id: "call_1".into(),
                     name: "write_file".into(),
@@ -471,18 +475,22 @@ proptest! {
             .collect();
         let mut req = request(&placed);
         filter.apply(&mut req);
-        let body = build_body("m", &req, true);
-        prop_assert!(check.check(&body).is_ok(), "filtered request blocked: {:?}", check.check(&body));
-        for s in &spellings {
-            prop_assert!(!contains_anywhere(&body, s), "{:?} survived the filter: {}", s, body);
+        for dialect in DIALECTS {
+            let body = dialect.build_body("m", &req, true);
+            prop_assert!(check.check(&body).is_ok(), "{:?}: filtered request blocked: {:?}", dialect, check.check(&body));
+            for s in &spellings {
+                prop_assert!(!contains_anywhere(&body, s), "{:?}: {:?} survived the filter: {}", dialect, s, body);
+            }
         }
         // The check alone refuses a body that still holds a spelling, raw or as
-        // escaped tool-call arguments.
+        // escaped tool-call arguments (in Anthropic bodies, a decoded object).
         for s in spellings.iter().filter(|s| s.len() >= 6) {
-            let raw = request(&[(Channel::User, s.clone())]);
-            prop_assert!(check.check(&build_body("m", &raw, true)).is_err(), "check missed raw {:?}", s);
-            let args = request(&[(Channel::ToolArguments, s.clone())]);
-            prop_assert!(check.check(&build_body("m", &args, true)).is_err(), "check missed {:?} in arguments", s);
+            for dialect in DIALECTS {
+                let raw = request(&[(Channel::User, s.clone())]);
+                prop_assert!(check.check(&dialect.build_body("m", &raw, true)).is_err(), "{:?}: check missed raw {:?}", dialect, s);
+                let args = request(&[(Channel::ToolArguments, s.clone())]);
+                prop_assert!(check.check(&dialect.build_body("m", &args, true)).is_err(), "{:?}: check missed {:?} in arguments", dialect, s);
+            }
         }
     }
 }

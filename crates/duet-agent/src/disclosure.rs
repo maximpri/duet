@@ -103,7 +103,14 @@ impl Disclosure {
                     if !r.interventions.is_empty() {
                         d.requests_filtered += 1;
                     }
-                    let messages = r.request.get("messages").and_then(Value::as_array);
+                    // Chat Completions and Anthropic Messages bodies hold the
+                    // conversation in `messages`, Responses bodies in `input`;
+                    // Anthropic and Responses keep the system prompt outside it.
+                    let messages = r
+                        .request
+                        .get("messages")
+                        .or_else(|| r.request.get("input"))
+                        .and_then(Value::as_array);
                     for m in messages.into_iter().flatten() {
                         if m.get("role").and_then(Value::as_str) == Some("system") {
                             continue;
@@ -380,6 +387,28 @@ mod tests {
             assert!(!text.contains(absent), "{absent}: {text}");
         }
         assert!(text.contains("placeholders: email"), "{text}");
+    }
+
+    #[test]
+    fn anthropic_and_responses_bodies_are_read_like_chat_bodies() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("a.jsonl");
+        let mut log = AuditLog::open(&path).unwrap();
+        let anthropic = json!({"model": "m",
+            "system": [{"type": "text", "text": "⟨secret:IGNORED#9⟩"}],
+            "messages": [{"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "c", "content": "⟨email:email#1⟩"}]}]});
+        let responses = json!({"model": "m", "instructions": "⟨secret:IGNORED#9⟩",
+            "input": [{"role": "user", "content": "⟨secret:DB_URL#1⟩"},
+                      {"type": "function_call_output", "call_id": "c", "output": "⟨email:email#2⟩"}]});
+        log.append("u", "m", anthropic, vec![]).unwrap();
+        log.append("u", "m", responses, vec![]).unwrap();
+        let r = Disclosure::build(&read(&path).unwrap(), None);
+        assert_eq!(r.requests, 2);
+        assert_eq!(
+            r.placeholders,
+            BTreeMap::from([("email".into(), 2), ("secret".into(), 1)])
+        );
     }
 
     #[test]

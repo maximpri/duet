@@ -23,6 +23,7 @@ pub fn build_body(model: &str, req: &Request, stream: bool) -> Value {
                 text,
                 reasoning,
                 tool_calls,
+                ..
             } => {
                 let mut m = json!({"role": "assistant", "content": text});
                 if let Some(r) = reasoning {
@@ -251,6 +252,7 @@ impl ChatAssembler {
             stop,
             usage,
             attempts: Default::default(),
+            replay: None,
         })
     }
 }
@@ -296,6 +298,7 @@ mod tests {
                         arguments: Map::new(),
                         raw_arguments: "{\"path\": \"a\"}".into(),
                     }],
+                    replay: None,
                 },
                 Item::ToolResult {
                     call_id: "c1".into(),

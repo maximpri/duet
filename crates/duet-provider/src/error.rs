@@ -81,6 +81,22 @@ impl ProviderError {
     }
 }
 
+impl ProviderError {
+    /// The provider refused replayed reasoning (a signed thinking block or an
+    /// encrypted reasoning item) because the history before it changed, for
+    /// example after context masking. Resending the same body never helps;
+    /// resending without the replayed reasoning does.
+    pub fn is_replay_rejected(&self) -> bool {
+        if self.kind != ErrorKind::Status(400) {
+            return false;
+        }
+        let m = self.message.to_ascii_lowercase();
+        m.contains("bound to a different conversation")
+            || (m.contains("signature") && m.contains("thinking"))
+            || (m.contains("encrypted") && m.contains("reasoning"))
+    }
+}
+
 /// Classifies an HTTP error body that reports a context overflow.
 pub fn is_context_overflow(message: &str) -> bool {
     let m = message.to_ascii_lowercase();
@@ -91,6 +107,7 @@ pub fn is_context_overflow(message: &str) -> bool {
         "too many tokens",
         "prompt is too long",
         "exceeds the context",
+        "context_length_exceeded",
     ]
     .iter()
     .any(|p| m.contains(p))

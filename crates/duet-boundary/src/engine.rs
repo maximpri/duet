@@ -1224,6 +1224,7 @@ impl OutboundFilter for Sanitize {
                     text,
                     reasoning,
                     tool_calls,
+                    replay,
                 } => {
                     let mut replaced = 0;
                     for t in std::iter::once(text)
@@ -1251,6 +1252,9 @@ impl OutboundFilter for Sanitize {
                         }
                     }
                     if replaced > 0 {
+                        // Signed or encrypted reasoning cannot be edited; it is
+                        // dropped with the edited turn rather than replayed.
+                        *replay = None;
                         notes.push(format!(
                             "replaced {replaced} known value(s) in the model's own message"
                         ));
@@ -1618,6 +1622,7 @@ mod tests {
             items: vec![Item::Assistant {
                 text: String::new(),
                 reasoning: None,
+                replay: None,
                 tool_calls: vec![crate::model::ToolCall {
                     id: "c1".into(),
                     name: "write_file".into(),
@@ -1686,6 +1691,7 @@ mod tests {
             items: vec![Item::Assistant {
                 text: format!("mail {EMAIL} or call 415-555-0199"),
                 reasoning: None,
+                replay: None,
                 tool_calls: Vec::new(),
             }],
             ..Request::default()
@@ -1804,6 +1810,7 @@ mod prime_tests {
             items: vec![Item::Assistant {
                 text: "decoded: Qx7pL2mN9vR4tY8wZ3kD".into(),
                 reasoning: Some("the codes spell Qx7pL2mN9vR4tY8wZ3kD".into()),
+                replay: None,
                 tool_calls: vec![crate::model::ToolCall {
                     id: "c1".into(),
                     name: "write_file".into(),

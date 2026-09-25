@@ -7,8 +7,8 @@
 
 use crate::audit::{AuditEvent, AuditHandle, AuditLog};
 use duet_fs::FsError;
-use duet_provider::chat::build_body;
-use duet_provider::{ChatProvider, ProviderError, Request, Response};
+use duet_provider::{ChatProvider, Item, ProviderError, Request, Response};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A transformation applied to every outbound request before it is sent.
 /// Returns descriptions of what it changed (empty when nothing changed).
@@ -67,6 +67,7 @@ impl OutboundGate {
         GatedFrontier {
             gate: self,
             provider,
+            replay_floor: AtomicUsize::new(0),
         }
     }
 }
@@ -74,6 +75,11 @@ impl OutboundGate {
 pub struct GatedFrontier {
     gate: OutboundGate,
     provider: ChatProvider,
+    /// Items before this index are sent without their replayed reasoning: the
+    /// provider refused it once (the history before it had changed, e.g. by
+    /// context masking), so it is dropped from the front of the history for
+    /// the rest of the run and the prefix stays the same from then on.
+    replay_floor: AtomicUsize,
 }
 
 impl GatedFrontier {
@@ -91,9 +97,29 @@ impl GatedFrontier {
         &self.gate.audit
     }
 
-    /// Filters, checks, audits, then sends.
+    /// Filters, checks, audits, then sends. Whatever the dialect, the filters
+    /// and checks see Duet's own request and the exact body that is sent. If
+    /// the provider refuses replayed reasoning, the request is sent once more
+    /// without it (filtered, checked and audited again).
     pub async fn create(&self, request: &Request) -> Result<(Response, Vec<String>), GateError> {
+        match self.send(request).await {
+            Err(GateError::Provider(e)) if e.is_replay_rejected() => {
+                self.replay_floor
+                    .fetch_max(request.items.len(), Ordering::SeqCst);
+                self.send(request).await
+            }
+            other => other,
+        }
+    }
+
+    async fn send(&self, request: &Request) -> Result<(Response, Vec<String>), GateError> {
         let mut outbound = request.clone();
+        let floor = self.replay_floor.load(Ordering::SeqCst);
+        for item in outbound.items.iter_mut().take(floor) {
+            if let Item::Assistant { replay, .. } = item {
+                *replay = None;
+            }
+        }
         let mut interventions = Vec::new();
         for f in &self.gate.filters {
             interventions.extend(
@@ -103,7 +129,7 @@ impl GatedFrontier {
             );
         }
         let cfg = self.provider.config();
-        let body = build_body(&cfg.model, &outbound, true);
+        let body = self.provider.body(&outbound);
         for c in &self.gate.checks {
             if let Err(reason) = c.check(&body) {
                 self.gate.audit.record(AuditEvent::BlockedSend {

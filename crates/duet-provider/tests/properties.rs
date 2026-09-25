@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Property tests for the parsers that read untrusted model output: the SSE
-//! decoder, the streamed-chunk assembler and text tool-call recovery. Model
+//! decoder, the streamed-chunk assemblers of every dialect and text tool-call
+//! recovery. Model
 //! output is attacker-influenced (prompt injection, a hostile local server), so
 //! none of them may panic, whatever bytes arrive.
 //!
 //! Cases per property default to a small number so `tools/gate.sh` stays fast;
 //! set `PROPTEST_CASES` to run more (for example `PROPTEST_CASES=20000`).
 
+use duet_provider::anthropic::AnthropicAssembler;
 use duet_provider::chat::ChatAssembler;
 use duet_provider::recover::recover_text_tool_call;
+use duet_provider::responses::ResponsesAssembler;
 use duet_provider::sse::{SseDecoder, SseEvent};
-use duet_provider::types::ToolSpec;
+use duet_provider::types::{Part, Replay, ToolCall, ToolSpec, assistant_pieces};
 use proptest::prelude::*;
 use serde_json::{Map, Value, json};
 
@@ -86,7 +89,78 @@ const CHUNK_KEYS: &[&str] = &[
     "reasoning_tokens",
     "model",
     "error",
+    // Anthropic Messages and Responses events.
+    "type",
+    "message",
+    "content_block",
+    "text",
+    "thinking",
+    "signature",
+    "partial_json",
+    "input",
+    "stop_reason",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    "response",
+    "item",
+    "output_index",
+    "call_id",
+    "output",
+    "summary",
+    "encrypted_content",
+    "status",
+    "incomplete_details",
+    "reason",
+    "input_tokens_details",
 ];
+
+/// Event types of the Anthropic Messages and Responses streams.
+const EVENT_TYPES: &[&str] = &[
+    "message_start",
+    "content_block_start",
+    "content_block_delta",
+    "message_delta",
+    "message_stop",
+    "error",
+    "text",
+    "thinking",
+    "tool_use",
+    "text_delta",
+    "thinking_delta",
+    "signature_delta",
+    "input_json_delta",
+    "response.created",
+    "response.output_item.added",
+    "response.output_item.done",
+    "response.output_text.delta",
+    "response.function_call_arguments.delta",
+    "response.reasoning_summary_text.delta",
+    "response.completed",
+    "response.incomplete",
+    "response.failed",
+    "message",
+    "function_call",
+    "reasoning",
+    "output_text",
+];
+
+/// A JSON object with an event `type`, so generated events reach the branches.
+fn event() -> impl Strategy<Value = Value> {
+    (proptest::sample::select(EVENT_TYPES), json_value()).prop_map(|(t, v)| {
+        let mut m = match v {
+            Value::Object(m) => m,
+            other => {
+                let mut m = Map::new();
+                m.insert("delta".into(), other);
+                m
+            }
+        };
+        m.insert("type".into(), json!(t));
+        Value::Object(m)
+    })
+}
 
 fn json_value() -> impl Strategy<Value = Value> {
     let leaf = prop_oneof![
@@ -188,6 +262,48 @@ proptest! {
         }
         let t = tools();
         let _ = a.finish("m", recover.then_some(t.as_slice()));
+    }
+
+    #[test]
+    fn anthropic_and_responses_assemblers_never_panic(events in proptest::collection::vec(event(), 0..10), texts in proptest::collection::vec(".{0,32}", 0..3)) {
+        let mut a = AnthropicAssembler::default();
+        let mut r = ResponsesAssembler::default();
+        for e in &events {
+            let _ = a.apply(&e.to_string());
+            let _ = r.apply(&e.to_string());
+        }
+        for t in &texts {
+            let _ = a.apply(t);
+            let _ = r.apply(t);
+        }
+        let _ = a.finish("m");
+        let _ = r.finish("m");
+    }
+
+    /// Replaying a turn never panics, whatever layout a (possibly edited)
+    /// transcript holds, and never loses or duplicates the text or a call.
+    #[test]
+    fn replayed_turns_keep_their_text_and_calls(text in ".{0,24}", lengths in proptest::collection::vec(0usize..12, 0..4), ids in proptest::collection::vec("[ab]", 0..4)) {
+        let calls: Vec<ToolCall> = ["a", "b"].iter().map(|id| ToolCall {
+            id: (*id).into(), name: "x".into(), arguments: Map::new(), raw_arguments: "{}".into(),
+        }).collect();
+        let mut parts: Vec<Part> = lengths.iter().map(|&bytes| Part::Text { bytes }).collect();
+        parts.extend(ids.iter().map(|id| Part::Call { id: id.clone() }));
+        parts.push(Part::Opaque { block: json!({"type": "thinking"}) });
+        let replay = Replay { dialect: "anthropic".into(), parts };
+        let pieces = assistant_pieces("anthropic", &text, &calls, Some(&replay));
+        let mut joined = String::new();
+        let mut seen = Vec::new();
+        for p in &pieces {
+            match p {
+                duet_provider::types::Piece::Text(t) => joined.push_str(t),
+                duet_provider::types::Piece::Call(c) => seen.push(c.id.clone()),
+                duet_provider::types::Piece::Opaque(_) => {}
+            }
+        }
+        prop_assert_eq!(joined, text);
+        seen.sort();
+        prop_assert_eq!(seen, vec!["a".to_owned(), "b".to_owned()]);
     }
 
     #[test]

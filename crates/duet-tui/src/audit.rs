@@ -129,9 +129,11 @@ pub(crate) fn detail(line: &str) -> Vec<String> {
                 out.push("interventions:".into());
                 out.extend(r.interventions.iter().map(|i| format!("  {i}")));
             }
+            // `messages` (Chat Completions, Anthropic Messages) or `input` (Responses).
             let messages = r
                 .request
                 .get("messages")
+                .or_else(|| r.request.get("input"))
                 .and_then(|m| m.as_array())
                 .cloned()
                 .unwrap_or_default();
@@ -147,12 +149,19 @@ pub(crate) fn detail(line: &str) -> Vec<String> {
                 .iter()
                 .skip(messages.len().saturating_sub(SHOWN_MESSAGES))
             {
-                let role = m.get("role").and_then(|r| r.as_str()).unwrap_or("?");
-                let content = match m.get("content") {
+                let role = m
+                    .get("role")
+                    .or_else(|| m.get("type"))
+                    .and_then(|r| r.as_str())
+                    .unwrap_or("?");
+                let content = match m.get("content").or_else(|| m.get("output")) {
                     Some(serde_json::Value::String(s)) => s.clone(),
                     Some(other) if !other.is_null() => other.to_string(),
                     _ => String::new(),
                 };
+                // Chat Completions `tool_calls`, Anthropic `tool_use` blocks, a
+                // Responses `function_call` item.
+                let blocks = m.get("content").and_then(|c| c.as_array());
                 let calls = m
                     .get("tool_calls")
                     .and_then(|c| c.as_array())
@@ -160,8 +169,22 @@ pub(crate) fn detail(line: &str) -> Vec<String> {
                         c.iter()
                             .filter_map(|c| c.pointer("/function/name").and_then(|n| n.as_str()))
                             .collect::<Vec<_>>()
-                            .join(", ")
                     })
+                    .or_else(|| {
+                        blocks.map(|b| {
+                            b.iter()
+                                .filter(|b| {
+                                    b.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                                })
+                                .filter_map(|b| b.get("name").and_then(|n| n.as_str()))
+                                .collect()
+                        })
+                    })
+                    .or_else(|| {
+                        (m.get("type").and_then(|t| t.as_str()) == Some("function_call"))
+                            .then(|| m.get("name").and_then(|n| n.as_str()).into_iter().collect())
+                    })
+                    .map(|c: Vec<&str>| c.join(", "))
                     .filter(|c| !c.is_empty())
                     .map_or(String::new(), |c| format!(" [calls {c}]"));
                 out.push(format!(
@@ -271,6 +294,57 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
                 .wrap(Wrap { trim: false })
                 .block(Block::bordered().title(format!(" verify {id} "))),
             verify_area,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use duet_boundary::audit::AuditLog;
+    use serde_json::json;
+
+    fn shown(body: serde_json::Value) -> Vec<String> {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("a.jsonl");
+        AuditLog::open(&path)
+            .unwrap()
+            .append("https://f.example/v1", "m", body, vec![])
+            .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        detail(text.lines().next().unwrap())
+    }
+
+    #[test]
+    fn requests_of_every_dialect_show_their_messages_and_calls() {
+        let anthropic = shown(json!({"messages": [
+            {"role": "user", "content": [{"type": "text", "text": "fix it"}]},
+            {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "read_file", "input": {}}]}]}));
+        assert!(
+            anthropic.iter().any(|l| l.contains("2 message(s)")),
+            "{anthropic:?}"
+        );
+        assert!(
+            anthropic.iter().any(|l| l.contains("[calls read_file]")),
+            "{anthropic:?}"
+        );
+        let responses = shown(json!({"input": [
+            {"role": "user", "content": "fix it"},
+            {"type": "function_call", "call_id": "c", "name": "run_command", "arguments": "{}"},
+            {"type": "function_call_output", "call_id": "c", "output": "ok"}]}));
+        assert!(
+            responses.iter().any(|l| l.contains("3 message(s)")),
+            "{responses:?}"
+        );
+        assert!(
+            responses.iter().any(|l| l.contains("[calls run_command]")),
+            "{responses:?}"
+        );
+        assert!(
+            responses
+                .iter()
+                .any(|l| l.contains("function_call_output: ok")),
+            "{responses:?}"
         );
     }
 }

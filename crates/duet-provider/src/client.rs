@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! HTTP client for the Chat Completions dialect: streaming, deadlines and retries.
+//! HTTP client for every wire dialect: streaming, deadlines and retries.
 
-use crate::chat::{ChatAssembler, build_body};
+use crate::dialect::Dialect;
 use crate::endpoint::check_local_endpoint;
 use crate::error::{ErrorKind, ProviderError, is_context_overflow};
 use crate::retry::{backoff, parse_retry_after};
@@ -11,6 +11,7 @@ use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
 use futures_util::stream::BoxStream;
+use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -104,6 +105,8 @@ pub struct ProviderConfig {
     /// Endpoint base, e.g. `https://api.z.ai/api/coding/paas/v4` or `http://127.0.0.1:8080/v1`.
     pub base_url: String,
     pub model: String,
+    /// The API the endpoint speaks (Chat Completions unless set).
+    pub dialect: Dialect,
     /// Environment variable holding the bearer token (never the token itself).
     pub api_key_env: Option<String>,
     pub headers: Vec<(String, String)>,
@@ -132,6 +135,7 @@ impl ProviderConfig {
         Self {
             base_url: base_url.trim_end_matches('/').to_owned(),
             model: model.to_owned(),
+            dialect: Dialect::Chat,
             api_key_env: None,
             headers: Vec::new(),
             recover_text_tool_calls: matches!(role, Role::Local { .. }),
@@ -156,7 +160,8 @@ fn deadline_error(last: &str) -> ProviderError {
     )
 }
 
-/// A model endpoint speaking Chat Completions.
+/// A model endpoint speaking one of the [`Dialect`]s (the name predates the
+/// other dialects).
 pub struct ChatProvider {
     config: ProviderConfig,
     transport: Box<dyn Transport>,
@@ -188,15 +193,25 @@ impl ChatProvider {
         &self.config
     }
 
+    /// The request body exactly as [`ChatProvider::create`] sends it, for the
+    /// outbound gate to check and audit.
+    pub fn body(&self, req: &Request) -> Value {
+        self.config
+            .dialect
+            .build_body(&self.config.model, req, true)
+    }
+
     fn headers(&self) -> Result<Vec<(String, String)>, ProviderError> {
+        let dialect = self.config.dialect;
         let mut h = vec![
             ("content-type".to_owned(), "application/json".to_owned()),
             ("accept".to_owned(), "text/event-stream".to_owned()),
         ];
+        h.extend(dialect.fixed_headers());
         if let Some(var) = &self.config.api_key_env {
             let key = std::env::var(var)
                 .map_err(|_| ProviderError::new(ErrorKind::Auth, format!("{var} is not set")))?;
-            h.push(("authorization".to_owned(), format!("Bearer {key}")));
+            h.extend(dialect.auth_headers(&key));
         }
         h.extend(self.config.headers.iter().cloned());
         Ok(h)
@@ -222,9 +237,9 @@ impl ChatProvider {
         req: &Request,
         attempts: &mut AttemptUsage,
     ) -> Result<Response, ProviderError> {
-        let body = serde_json::to_vec(&build_body(&self.config.model, req, true))
+        let body = serde_json::to_vec(&self.body(req))
             .map_err(|e| ProviderError::new(ErrorKind::Malformed, e.to_string()))?;
-        let url = format!("{}/chat/completions", self.config.base_url);
+        let url = format!("{}{}", self.config.base_url, self.config.dialect.path());
         let headers = self.headers()?;
         let started = Instant::now();
         loop {
@@ -351,7 +366,7 @@ impl ChatProvider {
             return Err(e);
         }
         let mut decoder = SseDecoder::default();
-        let mut assembler = ChatAssembler::default();
+        let mut assembler = self.config.dialect.assembler();
         let mut first = true;
         loop {
             let deadline = if first {
