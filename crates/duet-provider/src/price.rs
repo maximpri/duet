@@ -24,7 +24,14 @@ impl Price {
     }
 }
 
-/// Built-in prices for the default frontier models (observed 2026-09-23).
+/// Built-in list prices for the default and preset frontier models. Sources
+/// (standard tier, USD per million tokens): z.ai
+/// <https://docs.z.ai/guides/overview/pricing> (observed 2026-09-23);
+/// Anthropic <https://platform.claude.com/docs/en/about-claude/pricing>
+/// (observed 2026-09-25; cache write is the 5-minute write); OpenAI
+/// <https://developers.openai.com/api/docs/pricing> (observed 2026-09-25; no
+/// separate cache-write price, so writes bill as input; prompts under 272K
+/// tokens).
 pub fn builtin(model: &str) -> Option<Price> {
     let p = |input, cache_read, cache_write, output| Price {
         model: model.to_owned(),
@@ -39,6 +46,8 @@ pub fn builtin(model: &str) -> Option<Price> {
         "glm-5" => p(1.00, 0.20, 1.00, 3.20),
         "claude-opus-5-5" => p(4.00, 0.20, 5.00, 20.00),
         "claude-sonnet-5" => p(2.00, 0.20, 2.50, 10.00),
+        "claude-opus-5" => p(5.00, 0.50, 6.25, 25.00),
+        "gpt-5.5" => p(5.00, 0.50, 5.00, 30.00),
         _ => return None,
     })
 }
