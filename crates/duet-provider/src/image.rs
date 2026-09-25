@@ -18,7 +18,7 @@ use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbImage};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::io::Cursor;
+use std::io::{BufRead, Read, Seek, SeekFrom};
 
 /// Largest image file read, before scaling.
 pub const MAX_INPUT_BYTES: u64 = 20 * 1024 * 1024;
@@ -82,7 +82,7 @@ impl Image {
         if !matches!(format, ImageFormat::Png | ImageFormat::Jpeg) {
             return prepare(&bytes, DEFAULT_MAX_SIDE);
         }
-        let (width, height) = ImageReader::with_format(Cursor::new(&bytes), format)
+        let (width, height) = ImageReader::with_format(InMemory::new(&bytes), format)
             .into_dimensions()
             .map_err(|e| format!("the image cannot be read: {e}"))?;
         Ok(Self {
@@ -159,6 +159,60 @@ impl Image {
     }
 }
 
+/// Bytes in memory as the seekable reader the decoders take.
+struct InMemory<'a> {
+    data: &'a [u8],
+    at: usize,
+}
+
+impl<'a> InMemory<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self { data, at: 0 }
+    }
+
+    fn rest(&self) -> &'a [u8] {
+        &self.data[self.at.min(self.data.len())..]
+    }
+}
+
+impl Read for InMemory<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let rest = self.rest();
+        let n = rest.len().min(buf.len());
+        buf[..n].copy_from_slice(&rest[..n]);
+        self.at += n;
+        Ok(n)
+    }
+}
+
+impl BufRead for InMemory<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        Ok(self.rest())
+    }
+
+    fn consume(&mut self, n: usize) {
+        self.at = (self.at + n).min(self.data.len());
+    }
+}
+
+impl Seek for InMemory<'_> {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let at = match to {
+            SeekFrom::Start(n) => i128::from(n),
+            SeekFrom::End(d) => self.data.len() as i128 + i128::from(d),
+            SeekFrom::Current(d) => self.at as i128 + i128::from(d),
+        };
+        if at < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before the start",
+            ));
+        }
+        self.at = usize::try_from(at).unwrap_or(usize::MAX);
+        Ok(self.at as u64)
+    }
+}
+
 fn human_bytes(n: u64) -> String {
     if n >= 1024 * 1024 {
         format!("{:.1} MB", n as f64 / (1024.0 * 1024.0))
@@ -210,7 +264,7 @@ pub fn prepare(raw: &[u8], max_side: u32) -> Result<Image, String> {
         ));
     }
     let format = format_of(raw).ok_or("it is not a PNG, JPEG, GIF or WebP image")?;
-    let mut reader = ImageReader::with_format(Cursor::new(raw), format);
+    let mut reader = ImageReader::with_format(InMemory::new(raw), format);
     let mut limits = Limits::default();
     limits.max_image_width = Some(MAX_DIMENSION);
     limits.max_image_height = Some(MAX_DIMENSION);
@@ -461,6 +515,20 @@ mod tests {
             }
         }
         !c
+    }
+
+    #[test]
+    fn the_in_memory_reader_reads_and_seeks() {
+        let mut r = InMemory::new(b"abcdef");
+        let mut two = [0u8; 2];
+        r.read_exact(&mut two).unwrap();
+        assert_eq!(&two, b"ab");
+        assert_eq!(r.seek(SeekFrom::End(-1)).unwrap(), 5);
+        assert_eq!(r.fill_buf().unwrap(), b"f");
+        assert_eq!(r.seek(SeekFrom::Current(-5)).unwrap(), 0);
+        assert!(r.seek(SeekFrom::Current(-1)).is_err());
+        assert_eq!(r.seek(SeekFrom::Start(10)).unwrap(), 10);
+        assert_eq!(r.read(&mut two).unwrap(), 0);
     }
 
     #[test]
