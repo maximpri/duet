@@ -65,6 +65,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
+| 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
 | 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
@@ -364,6 +365,42 @@ an advisory, and covered by a regression test before the next release.
 - Every operator message passes the same boundary as task text (sanitized, audited); sandbox,
   approval mode, budgets and terminal states apply per session and per turn.
 - Tests with a scripted frontier; a live hands-on acceptance on a fresh project.
+- Steering: a message typed while a turn runs is queued and delivered at the next tool-result
+  boundary (never killing a running command); distinct from stop (end the turn after the current
+  step) and interrupt (kill now). Sanitized, audited, persisted in place for resume.
+
+### M5.1 — Practical toolset (before the benchmark)
+
+Every new tool is a new channel, so each follows one contract (SbD):
+
+- **Inbound**: results reach the frontier only through `Presenter::present` with a new `Source`
+  whose trust class decides the view — *workspace* (classified by path exactly like `read_file`:
+  git history, language-server results), *public-untrusted* (web: scanned, bulky offload, framed as
+  data), *per-server* (MCP: `public` or `sensitive`; sensitive results stay local as handles).
+  Hidden and IP-protected paths stay hidden in every channel.
+- **Outbound**: any text the frontier sends to a third party (search query, URL, MCP arguments) is
+  checked first: placeholders are never resolved for a non-local destination and known sensitive
+  values refuse the call (fail-closed, audited).
+- **Processes**: every spawned server (MCP stdio, language servers) runs in the OS sandbox with the
+  same hidden paths as commands, a cleared environment (named variables only) and no network unless
+  configured.
+- **Side effects** (git commit, MCP tools not declared read-only) follow `oversight.approve`.
+- **Audit**: every call is an audit event (channel, target, class, outcome).
+- **Stable prefix**: the tool set is fixed at run start and sorted.
+
+| Capability | Tools | Key rules |
+|---|---|---|
+| Web | `web_search`, `web_fetch` | Host-side HTTP (commands keep no network). GET only; http/https; private, loopback, link-local and metadata addresses refused (checked after DNS and on every redirect) unless allowlisted; size cap; HTML to text. Search backends: SearXNG (self-hosted, no key) or Brave (`BRAVE_API_KEY`); fetch works without a backend. On by default; `web.enabled = false` turns it off |
+| MCP | `mcp__<server>__<tool>` | Own client (stdio and streamable HTTP, JSON-RPC 2.0). `[mcp.servers.<name>]`: command/args or url, `env` names, `trust`, `network`, `approve`. Server tool descriptions are untrusted text: scanned and length-capped. Placeholders resolved only for `trust = "sensitive"` stdio servers |
+| Language servers | `code_nav` (definition, references, hover, symbols, diagnostics), `rename` | Own LSP client; servers autodetected on PATH or configured; started lazily, sandboxed, protected source readable to them like checks. Results filtered by `path_visible`/IP level; snippets presented as their file's class. Diagnostics appended to edit results |
+| Git | `git_log`, `git_show`, `git_blame`, `git_status`, `git_commit` | Through the hardened `duet-git` runner (no hooks, no global config). History is presented by path class (sensitive paths stay sensitive in every revision; historic diffs are scanned). Commits: only paths the session wrote, never sensitive or derived files, no placeholders in the message, operator identity, no push. `.git` stays hidden from commands |
+| Sub-agents | `delegate` | A child loop with a fresh context over the same engine (same vault, policy, audit chain); read-only children run in parallel, writing children one at a time and only on the paths given; depth 1; the parent's budget is shared; results are the child's summary and diff |
+| Images | attachments, `read_file` on images | Images cannot be text-scanned. Hybrid: described by the local model (needs a vision-capable local model) unless the operator marks an image public or it is a public workspace path and `images.to_frontier` allows it. Pass-through: sent when the frontier supports vision |
+
+Delivery: web, MCP, language servers and git in parallel; sub-agents and images after M5.0 merges
+(they touch the run loop and the provider types). Each capability: tests with a scripted frontier
+and mock servers, a threat entry in `SECURITY.md`, README usage, and a live check where a server or
+backend is available. Follow-up: an egress proxy so commands can reach package registries only.
 
 ### M5 — Public benchmark (days 32–35)
 
