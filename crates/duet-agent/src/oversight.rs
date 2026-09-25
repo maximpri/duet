@@ -459,6 +459,12 @@ mod tests {
             ),
             Some(Risk::EditProtected)
         );
+        // A rename changes only source and test files (the tool refuses the
+        // rest), so only `all` asks.
+        let rename = args(json!({"path": "src/a.rs", "line": 1, "column": 4, "new_name": "b"}));
+        assert_eq!(risk(Risky, "rename", &rename), None);
+        assert_eq!(risk(All, "rename", &rename), Some(Risk::Write));
+        assert_eq!(risk(All, "code_nav", &args(json!({"op": "hover"}))), None);
         let a = classify(Risky, "write_file", &write("Cargo.toml"), &p).unwrap();
         assert_eq!((a.path.as_deref(), a.bytes), (Some("Cargo.toml"), Some(3)));
     }

@@ -234,6 +234,41 @@ async fn edits_are_synced_and_their_diagnostics_collected() {
 }
 
 #[tokio::test]
+async fn diagnostics_wait_for_a_check_in_progress() {
+    let (_d, ws) = workspace();
+    let launcher = MockLauncher {
+        opts: MockOptions {
+            slow_check: true,
+            ..MockOptions::default()
+        },
+        ..MockLauncher::default()
+    };
+    let lsp = mock_lsp(&ws, &launcher);
+    let util = Path::new("src/util.rs");
+    let broken = "fn helper() { ERROR }\n";
+    let p = lsp
+        .diagnostics(util, broken, &nothing_hidden, true, Duration::from_secs(3))
+        .await
+        .unwrap()
+        .unwrap();
+    // The quick, empty publication inside the progress is not the answer.
+    assert_eq!(p.items.len(), 1, "{:?}", p.items);
+    // A wait shorter than the check returns what was there when it ran out.
+    let p = lsp
+        .diagnostics(
+            util,
+            UTIL,
+            &nothing_hidden,
+            false,
+            Duration::from_millis(100),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(p.items.is_empty());
+}
+
+#[tokio::test]
 async fn a_crashed_server_is_restarted_once_then_unavailable() {
     let (_d, ws) = workspace();
     std::fs::write(ws.join("src/c.rs"), "fn crash() {}\nfn crash_once() {}\n").unwrap();

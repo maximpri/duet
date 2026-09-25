@@ -441,15 +441,16 @@ impl Lsp {
             let conn = self.ensure(slot, server, hidden).await?;
             let since = conn.diagnostics_seq();
             let changed = Self::sync(&conn, slot, server, &abs, text);
+            let known = conn.diagnostics(&abs);
             if changed {
                 Self::did_save(&conn, &abs, text);
-            } else if let Some(p) = conn.diagnostics(&abs) {
-                return Ok(Some(p));
+            } else if known.is_some() && !conn.busy() {
+                return Ok(known);
             }
-            (conn, since)
+            (conn, since, if changed { None } else { known })
         };
-        let (conn, since) = conn;
-        Ok(conn.diagnostics_after(&abs, since, wait).await)
+        let (conn, since, known) = conn;
+        Ok(conn.diagnostics_after(&abs, since, wait).await.or(known))
     }
 
     /// Stops every server (`shutdown` and `exit`, then kills what is left).

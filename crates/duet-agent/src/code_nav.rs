@@ -1543,3 +1543,182 @@ mod tool_tests {
         assert!(ok.contains("2 edit(s) in 2 file(s)"), "{ok}");
     }
 }
+
+/// A live check against an installed rust-analyzer, in the OS sandbox, in
+/// hybrid mode: `cargo test -p duet-agent live_rust_analyzer -- --ignored
+/// --nocapture`. The project is written to `DUET_LSP_LIVE_DIR` (default: a
+/// temporary directory).
+#[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
+mod live {
+    use super::*;
+    use crate::journal::WriteJournal;
+    use crate::tools::{Outcome, dispatch};
+    use duet_boundary::engine::Engine;
+    use duet_boundary::policy::Policy;
+
+    const EMAIL: &str = "amelia.velanwick42@mailbox-311.net";
+
+    #[tokio::test]
+    #[ignore = "needs rust-analyzer on PATH"]
+    async fn live_rust_analyzer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = std::env::var_os("DUET_LSP_LIVE_DIR")
+            .map_or_else(|| tmp.path().to_path_buf(), PathBuf::from);
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let root = base.canonicalize().unwrap();
+        let (ws, run) = (root.join("ws"), root.join("run"));
+        for dir in ["src", "data"] {
+            std::fs::create_dir_all(ws.join(dir)).unwrap();
+        }
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(ws.join("Cargo.toml"), "[package]\nname = \"live\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n").unwrap();
+        std::fs::write(ws.join("src/main.rs"), "mod util;\n\nfn main() {\n    let s = \"é😀\"; println!(\"{s} {}\", util::helper(2));\n}\n").unwrap();
+        std::fs::write(
+            ws.join("src/util.rs"),
+            "/// Doubles a number.\npub fn helper(x: u32) -> u32 {\n    x * 2\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            ws.join("data/owner.rs"),
+            format!("// {EMAIL}\npub fn owner() {{}}\n"),
+        )
+        .unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        engine.prime(
+            &ws,
+            &[
+                "data/owner.rs".into(),
+                "src/main.rs".into(),
+                "src/util.rs".into(),
+            ],
+            "",
+        );
+        let settings = duet_lsp::Settings {
+            enabled: true,
+            request_timeout: Duration::from_secs(60),
+            // The default: a check that takes longer is reported by a later edit.
+            diagnostics_wait: Duration::from_secs(2),
+            ..duet_lsp::Settings::default()
+        };
+        let sandbox = duet_sandbox::detect().unwrap();
+        let lsp = language_servers(&settings, &ws, &run, sandbox).expect("rust-analyzer on PATH");
+        let git = duet_git::Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox,
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(60),
+            network: false,
+            checks: &[],
+            audit: None,
+            interrupted: None,
+            web: None,
+            lsp: Some(&lsp),
+        };
+        let mut call = async |name: &str, args: Value| {
+            let Value::Object(args) = args else {
+                unreachable!()
+            };
+            match dispatch(&mut ctx, name, &args).await {
+                Outcome::Result(s) => Ok(s),
+                Outcome::Error(e) => Err(e),
+                other => Err(format!("{other:?}")),
+            }
+        };
+        // `helper` on line 4 is the 44th character, after a two-unit emoji.
+        let nav = |op: &str| json!({"op": op, "path": "src/main.rs", "line": 4, "column": 44});
+        let started = std::time::Instant::now();
+        let def = loop {
+            // The server answers before it has indexed the project.
+            let r = call("code_nav", nav("definition")).await;
+            if matches!(&r, Ok(t) if t.contains("src/util.rs"))
+                || started.elapsed() > Duration::from_secs(120)
+            {
+                break r;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        };
+        println!(
+            "definition ({:.1}s):\n{def:?}",
+            started.elapsed().as_secs_f64()
+        );
+        assert!(
+            def.unwrap()
+                .contains("src/util.rs:2:8  pub fn helper(x: u32) -> u32 {")
+        );
+        let refs = call("code_nav", nav("references")).await.unwrap();
+        println!("references:\n{refs}");
+        assert!(refs.contains("src/main.rs:4:44"), "{refs}");
+        let hover = call("code_nav", nav("hover")).await.unwrap();
+        println!("hover:\n{hover}");
+        assert!(hover.contains("Doubles a number."), "{hover}");
+        let symbols = call("code_nav", json!({"op": "symbols", "path": "src/util.rs"}))
+            .await
+            .unwrap();
+        println!("symbols:\n{symbols}");
+        let ws_symbols = call(
+            "code_nav",
+            json!({"op": "workspace_symbols", "query": "helper"}),
+        )
+        .await
+        .unwrap();
+        println!("workspace symbols:\n{ws_symbols}");
+        let sensitive = call(
+            "code_nav",
+            json!({"op": "symbols", "path": "data/owner.rs"}),
+        )
+        .await
+        .unwrap_err();
+        println!("sensitive: {sensitive}");
+        let t = std::time::Instant::now();
+        let edited = call(
+            "edit_file",
+            json!({"path": "src/util.rs", "edits": [{"old": "x * 2", "new": "x * \"2\""}]}),
+        )
+        .await
+        .unwrap();
+        println!("edit ({:.1}s):\n{edited}", t.elapsed().as_secs_f64());
+        let t = std::time::Instant::now();
+        let renamed = call(
+            "rename",
+            json!({"path": "src/util.rs", "line": 2, "column": 8, "new_name": "double"}),
+        )
+        .await
+        .unwrap();
+        println!("rename ({:.1}s):\n{renamed}", t.elapsed().as_secs_f64());
+        assert!(
+            std::fs::read_to_string(ws.join("src/main.rs"))
+                .unwrap()
+                .contains("util::double(2)")
+        );
+        let diags = call(
+            "code_nav",
+            json!({"op": "diagnostics", "path": "src/util.rs"}),
+        )
+        .await
+        .unwrap();
+        println!("diagnostics:\n{diags}");
+        for text in [
+            &refs,
+            &hover,
+            &symbols,
+            &ws_symbols,
+            &edited,
+            &renamed,
+            &diags,
+        ] {
+            assert!(!text.contains(EMAIL));
+        }
+        lsp.shutdown().await;
+    }
+}

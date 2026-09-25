@@ -82,7 +82,15 @@ pub struct Published {
 struct DiagState {
     seq: u64,
     by_path: HashMap<PathBuf, Published>,
+    /// Work-done progress the server has begun and not ended (indexing, a
+    /// check run): while any is open, more diagnostics may be on the way.
+    progress: std::collections::HashSet<String>,
 }
+
+/// How long diagnostics must stay unchanged, with no work in progress, to
+/// count as settled (a server often publishes quick results first, then the
+/// results of a slower check).
+pub const SETTLE: Duration = Duration::from_millis(250);
 
 type Pending = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, CallError>>>>>;
 
@@ -264,7 +272,26 @@ impl Connection {
                             };
                             let _ = seq_tx.send(seq);
                         }
-                        // Progress, log and other notifications carry nothing duet uses.
+                        (Some("$/progress"), None) => {
+                            let token = msg.pointer("/params/token").map(Value::to_string);
+                            let kind = msg.pointer("/params/value/kind").and_then(Value::as_str);
+                            if let Some(token) = token {
+                                let mut st = lock(&diags);
+                                match kind {
+                                    Some("begin") => {
+                                        st.progress.insert(token);
+                                    }
+                                    Some("end") => {
+                                        st.progress.remove(&token);
+                                    }
+                                    _ => continue,
+                                }
+                                let seq = st.seq;
+                                drop(st);
+                                let _ = seq_tx.send(seq);
+                            }
+                        }
+                        // Log and other notifications carry nothing duet uses.
                         _ => {}
                     }
                 }
@@ -389,8 +416,14 @@ impl Connection {
         lock(&self.diags).seq
     }
 
-    /// The diagnostics of `path` published after `since`, waiting up to `wait`
-    /// for them. `None` if none arrived in time.
+    /// Whether the server has work in progress.
+    pub fn busy(&self) -> bool {
+        !lock(&self.diags).progress.is_empty()
+    }
+
+    /// The latest diagnostics of `path` published after `since`, waiting up to
+    /// `wait`: once some have arrived, until they have settled (nothing new
+    /// for [`SETTLE`] and no work in progress). `None` if none arrived in time.
     pub async fn diagnostics_after(
         &self,
         path: &Path,
@@ -399,18 +432,27 @@ impl Connection {
     ) -> Option<Published> {
         let mut rx = self.diag_seq.clone();
         let deadline = tokio::time::Instant::now() + wait;
+        let mut changed = tokio::time::Instant::now();
         loop {
-            if let Some(p) = lock(&self.diags).by_path.get(path)
-                && p.seq > since
-            {
-                return Some(p.clone());
-            }
+            let found = lock(&self.diags)
+                .by_path
+                .get(path)
+                .filter(|p| p.seq > since)
+                .cloned();
             if !self.alive() {
-                return None;
+                return found;
             }
-            match tokio::time::timeout_at(deadline, rx.changed()).await {
-                Ok(Ok(())) => continue,
-                _ => return None,
+            let until = match &found {
+                Some(_) if !self.busy() => deadline.min(changed + SETTLE),
+                _ => deadline,
+            };
+            match tokio::time::timeout_at(until, rx.changed()).await {
+                Ok(Ok(())) => changed = tokio::time::Instant::now(),
+                Ok(Err(_)) => return found,
+                Err(_) if found.is_some() || tokio::time::Instant::now() >= deadline => {
+                    return found;
+                }
+                Err(_) => {}
             }
         }
     }

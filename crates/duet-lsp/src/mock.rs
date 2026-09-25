@@ -10,6 +10,8 @@
 //! three requests servers commonly send (`workspace/configuration`,
 //! `window/workDoneProgress/create`, `client/registerCapability`). Hovering
 //! a word `crash` makes it exit; `crash_once` only in its first session.
+//! With `slow_check`, a save publishes its diagnostics late, inside a
+//! work-done progress.
 //! Positions are computed in UTF-16 here, independently of the client.
 
 use crate::client::Transport;
@@ -34,6 +36,10 @@ pub struct MockOptions {
     pub resource_op: bool,
     /// Requests of this method are never answered.
     pub hang_on: Option<String>,
+    /// A save first publishes no diagnostics inside a work-done progress,
+    /// then, 400 ms later, the real ones and the end of the progress (as a
+    /// server that runs a slower check on save does).
+    pub slow_check: bool,
 }
 
 impl MockOptions {
@@ -47,6 +53,7 @@ impl MockOptions {
                 "--document-changes" => o.document_changes = true,
                 "--resource-op" => o.resource_op = true,
                 "--hang-on" => o.hang_on = it.next().cloned(),
+                "--slow-check" => o.slow_check = true,
                 "--ext" => o.extensions.extend(it.next().cloned()),
                 _ => {}
             }
@@ -470,7 +477,28 @@ where
                         st.open
                             .insert(path.clone(), (version.unwrap_or(1), text.to_owned()));
                     }
-                    if method != "textDocument/didChange" {
+                    if method == "textDocument/didSave" && st.opts.slow_check {
+                        let mut quick = st.diagnostics(&path);
+                        quick["diagnostics"] = json!([]);
+                        let progress = |kind: &str| {
+                            json!({"jsonrpc": "2.0", "method": "$/progress",
+                                "params": {"token": "check", "value": {"kind": kind, "title": "check"}}})
+                        };
+                        for m in [
+                            progress("begin"),
+                            json!({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": quick}),
+                        ] {
+                            if write_message(&mut write, &m).await.is_err() {
+                                return End::Eof;
+                            }
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                        out.push(
+                            json!({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
+                            "params": st.diagnostics(&path)}),
+                        );
+                        out.push(progress("end"));
+                    } else if method != "textDocument/didChange" {
                         out.push(
                             json!({"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics",
                             "params": st.diagnostics(&path)}),
