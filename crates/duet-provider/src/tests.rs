@@ -3,7 +3,7 @@
 
 use crate::client::{ChatProvider, HttpReply, ProviderConfig, Role, Transport};
 use crate::error::{ErrorKind, ProviderError};
-use crate::types::{Item, Request, StopReason, ToolSpec, UsageStatus};
+use crate::types::{Item, Request, StopReason, ToolSpec, Usage, UsageStatus};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
@@ -150,6 +150,38 @@ async fn retried_failures_do_not_poison_usage() {
     // Only the mid-stream failure (which produced output) is estimated, separately.
     assert!(r.attempts.estimated_failed.output > 0);
     assert_eq!(r.attempts.estimated_failed.status, UsageStatus::Estimated);
+}
+
+#[tokio::test]
+async fn a_request_that_fails_in_the_end_reports_its_failed_attempts() {
+    // Output started, then the stream broke; then a credentials error ends it.
+    let s = Script::new(vec![
+        Scripted::Reply {
+            status: 200,
+            headers: vec![],
+            chunks: vec![
+                Ok("data: {\"choices\":[{\"delta\":{\"content\":\"partial output\"}}]}\n\n"),
+                Err("connection reset"),
+            ],
+        },
+        Scripted::Reply {
+            status: 401,
+            headers: vec![],
+            chunks: vec![Ok("bad key")],
+        },
+    ]);
+    let e = provider(&s).create(&request()).await.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Auth);
+    assert!(e.failed_usage.input > 0 && e.failed_usage.output > 0);
+    assert_eq!(e.failed_usage.status, UsageStatus::Estimated);
+    // A request that failed before any output reports none.
+    let s = Script::new(vec![Scripted::Reply {
+        status: 401,
+        headers: vec![],
+        chunks: vec![Ok("bad key")],
+    }]);
+    let e = provider(&s).create(&request()).await.unwrap_err();
+    assert_eq!(e.failed_usage, Usage::default());
 }
 
 #[tokio::test]

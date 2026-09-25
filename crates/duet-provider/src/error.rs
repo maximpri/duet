@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Provider errors and their retry classification.
 
+use crate::types::Usage;
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,9 @@ pub struct ProviderError {
     pub partial_output_bytes: usize,
     /// Server-requested delay before retrying.
     pub retry_after: Option<Duration>,
+    /// Estimated usage of the request's attempts that failed after output
+    /// started (set when a request fails in the end; not billed usage).
+    pub failed_usage: Usage,
 }
 
 impl ProviderError {
@@ -51,6 +55,7 @@ impl ProviderError {
             output_started: false,
             partial_output_bytes: 0,
             retry_after: None,
+            failed_usage: Usage::default(),
         }
     }
 

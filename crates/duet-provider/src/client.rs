@@ -205,13 +205,28 @@ impl ChatProvider {
     /// Sends `req`, retrying transient failures in place. Only the deadline,
     /// the cancel flag or `max_attempts` end the retries; errors a fresh attempt
     /// cannot fix (credentials, an invalid request) are returned at once.
+    ///
+    /// Estimated usage of attempts that failed after output started is kept
+    /// apart from the billed usage: in `Response::attempts` on success, and in
+    /// `ProviderError::failed_usage` when the request fails in the end.
     pub async fn create(&self, req: &Request) -> Result<Response, ProviderError> {
+        let mut attempts = AttemptUsage::default();
+        self.retrying(req, &mut attempts).await.map_err(|mut e| {
+            e.failed_usage = attempts.estimated_failed;
+            e
+        })
+    }
+
+    async fn retrying(
+        &self,
+        req: &Request,
+        attempts: &mut AttemptUsage,
+    ) -> Result<Response, ProviderError> {
         let body = serde_json::to_vec(&build_body(&self.config.model, req, true))
             .map_err(|e| ProviderError::new(ErrorKind::Malformed, e.to_string()))?;
         let url = format!("{}/chat/completions", self.config.base_url);
         let headers = self.headers()?;
         let started = Instant::now();
-        let mut attempts = AttemptUsage::default();
         loop {
             if self.cancelled() {
                 return Err(ProviderError::new(ErrorKind::Cancelled, "interrupted"));
@@ -228,7 +243,7 @@ impl ChatProvider {
             match result {
                 Ok(mut response) => {
                     attempts.billed = response.usage;
-                    response.attempts = attempts;
+                    response.attempts = *attempts;
                     return Ok(response);
                 }
                 Err(err) => {
