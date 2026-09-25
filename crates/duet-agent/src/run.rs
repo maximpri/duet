@@ -132,6 +132,62 @@ pub struct RunConfig {
     pub images: crate::images::ImageConfig,
 }
 
+impl RunConfig {
+    /// A run of `objective` in `workspace`, keeping its state in `run_dir`,
+    /// with every other setting at its most restrictive value: no network,
+    /// no checks, no web, MCP, language servers or sub-agents, no commit
+    /// identity, no images for the frontier (`frontier.vision` off), usage
+    /// priced at zero, oversight at its default (`off`: nothing is asked, so
+    /// `git_commit` is not offered), the platform's sandbox and small limits
+    /// (60 s wall clock, $5, 30 s per command, 2 finish attempts, 1000
+    /// output tokens).
+    ///
+    /// The rule: a new field gets its restrictive default here, so code that
+    /// does not set it can never loosen anything. Callers name only what they
+    /// mean: `RunConfig { network: true, ..RunConfig::new(ws, dir, task) }`.
+    /// The CLI's run configuration and a sub-agent's (`child_config`) stay
+    /// full literals, so a new field is a compile error there until it is
+    /// decided.
+    pub fn new(
+        workspace: impl Into<PathBuf>,
+        run_dir: impl Into<PathBuf>,
+        objective: impl Into<String>,
+    ) -> Self {
+        RunConfig {
+            workspace: workspace.into(),
+            run_dir: run_dir.into(),
+            objective: objective.into(),
+            // A label (the transcript's start entry): never claim a boundary.
+            mode: "passthrough".into(),
+            checks: Vec::new(),
+            // Either kind confines every command; one that is not installed
+            // fails closed (`duet_sandbox::detect` finds the working one).
+            sandbox: if cfg!(target_os = "linux") {
+                SandboxKind::Bubblewrap
+            } else {
+                SandboxKind::Seatbelt
+            },
+            network: false,
+            command_timeout: Duration::from_secs(30),
+            wall_clock: Duration::from_secs(60),
+            frontier_usd: 5.0,
+            max_finish_attempts: 2,
+            context_window: 200_000,
+            mask_at: 0.7,
+            max_output_tokens: 1000,
+            reasoning_effort: None,
+            price: Box::new(|_| 0.0),
+            oversight: crate::oversight::Oversight::default(),
+            web: None,
+            git_author: None,
+            mcp: None,
+            lsp: None,
+            subagents: None,
+            images: crate::images::ImageConfig::default(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RunStats {
     pub turns: u64,
@@ -1125,5 +1181,29 @@ pub(crate) async fn work(
         if let Some((text, question)) = replied {
             return Ok(Stop::Reply { text, question });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_new_run_configuration_turns_every_capability_off() {
+        let cfg = RunConfig::new("/ws", "/ws/.duet/runs/r", "task");
+        assert!(!cfg.network);
+        assert!(cfg.checks.is_empty());
+        assert!(cfg.web.is_none() && cfg.mcp.is_none() && cfg.lsp.is_none());
+        assert!(cfg.subagents.is_none() && cfg.git_author.is_none());
+        assert!(!cfg.images.frontier_vision && cfg.images.attached.is_empty());
+        assert_eq!(cfg.oversight.mode, crate::oversight::ApproveMode::Off);
+        assert_eq!(cfg.mode, "passthrough");
+        let usage = Usage {
+            input: 1_000_000,
+            output: 1_000_000,
+            ..Usage::default()
+        };
+        assert_eq!((cfg.price)(&usage), 0.0);
+        assert!(cfg.frontier_usd <= 5.0 && cfg.wall_clock <= Duration::from_secs(60));
     }
 }

@@ -196,33 +196,16 @@ async fn history_reaches_the_frontier_only_through_the_boundary() {
         .wrap(provider);
     let approver = Arc::new(Approve::default());
     let cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir,
-        objective: "Add a report module.".into(),
         mode: "hybrid".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
         wall_clock: Duration::from_secs(120),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: Oversight {
             mode: ApproveMode::Risky,
             approver: Some(approver.clone()),
             git_commit: CommitPolicy::Ask,
         },
-        web: None,
         git_author: Identity::parse("Olive Operator <olive@example.test>"),
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws.clone(), run_dir, "Add a report module.")
     };
     let (terminal, _stats) = duet_agent::run(
         &cfg,
@@ -340,32 +323,14 @@ async fn a_session_commits_its_own_files_and_undo_never_touches_history() {
     let gated =
         OutboundGate::new(AuditLog::open(&root.join("audit.jsonl")).unwrap()).wrap(provider);
     let cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir,
-        objective: "Add a report module and commit it.".into(),
-        mode: "passthrough".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
         wall_clock: Duration::from_secs(120),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: Oversight {
             git_commit: CommitPolicy::Allow,
             ..Oversight::default()
         },
-        web: None,
         git_author: Identity::parse("Olive Operator <olive@example.test>"),
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws.clone(), run_dir, "Add a report module and commit it.")
     };
     let presenter = duet_boundary::view::PassThrough { max_bytes: 60_000 };
     let limits = SessionLimits {

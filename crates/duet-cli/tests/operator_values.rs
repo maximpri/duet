@@ -7,7 +7,7 @@
 //! run's end state. Nothing here contacts a model server.
 
 use bytes::Bytes;
-use duet_agent::{ApproveMode, Oversight, RunConfig, Terminal};
+use duet_agent::{RunConfig, Terminal};
 use duet_boundary::OutboundGate;
 use duet_boundary::audit::AuditLog;
 use duet_boundary::engine::Engine;
@@ -21,7 +21,6 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 /// Replies with one tool call per request, in order, and records each body.
 #[derive(Clone)]
@@ -110,33 +109,9 @@ async fn run(
         .with_check(check)
         .wrap(provider);
     let cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir: run_dir.clone(),
-        objective: objective.into(),
         mode: "hybrid".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
-        wall_clock: Duration::from_secs(60),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| u.input as f64 / 1e6),
-        oversight: Oversight {
-            mode: ApproveMode::Off,
-            approver: None,
-            ..Oversight::default()
-        },
-        web: None,
-        git_author: None,
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws.clone(), run_dir.clone(), objective)
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, _) = duet_agent::run(

@@ -628,6 +628,8 @@ async fn prepare(
         );
     }
     let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
+    // Every field from the configuration, not `..RunConfig::new`: a new field
+    // is a compile error here until the CLI sets it.
     let run_cfg = RunConfig {
         workspace: ws.to_path_buf(),
         run_dir: run_dir.to_path_buf(),

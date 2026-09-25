@@ -211,30 +211,11 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
     }
     let gated = gate.wrap(provider);
     let cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir: run_dir.clone(),
-        objective: "Add functions to the library.".into(),
         mode: if hybrid { "hybrid" } else { "passthrough" }.into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
-        wall_clock: Duration::from_secs(60),
         frontier_usd: turn_usd,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         // 1000 prompt tokens per request: $0.001 each.
         price: Box::new(|u| u.input as f64 / 1e6),
-        oversight: Default::default(),
-        web: None,
-        git_author: None,
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws.clone(), run_dir.clone(), "Add functions to the library.")
     };
     Fixture {
         _dir: dir,

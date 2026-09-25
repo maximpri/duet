@@ -19,7 +19,6 @@ use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 /// Replies with one tool call per request, in order, and records each body.
 #[derive(Clone)]
@@ -89,30 +88,8 @@ async fn run(dir: &Path, presenter: &dyn Presenter, script: Vec<(&str, Value)>) 
     let provider = ChatProvider::new(pc, Box::new(frontier.clone())).unwrap();
     let gated = OutboundGate::new(AuditLog::open(&dir.join("audit.jsonl")).unwrap()).wrap(provider);
     let cfg = RunConfig {
-        workspace: ws,
-        run_dir,
-        objective: "Change settle().".into(),
-        mode: "test".into(),
-        checks: vec![],
-        // No command runs in these scripts.
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
-        wall_clock: Duration::from_secs(60),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| (u.input as f64 + 4.0 * u.output as f64) / 1e6),
-        oversight: duet_agent::Oversight::default(),
-        web: None,
-        git_author: None,
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws, run_dir, "Change settle().")
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

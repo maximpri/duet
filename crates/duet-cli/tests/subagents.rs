@@ -333,34 +333,18 @@ impl Fixture {
 
     fn config(&self, sub: Option<Subagents>, frontier_usd: f64) -> RunConfig {
         RunConfig {
-            workspace: self.ws.clone(),
-            run_dir: self.run_dir.clone(),
-            objective: OBJECTIVE.into(),
             mode: if self.engine.is_some() {
                 "hybrid"
             } else {
                 "passthrough"
             }
             .into(),
-            checks: vec![],
             sandbox: duet_sandbox::detect().unwrap(),
-            network: false,
-            command_timeout: Duration::from_secs(30),
             wall_clock: Duration::from_secs(120),
             frontier_usd,
-            max_finish_attempts: 2,
-            context_window: 200_000,
-            mask_at: 0.7,
-            max_output_tokens: 1000,
-            reasoning_effort: None,
             price: Box::new(price),
-            oversight: Default::default(),
-            web: None,
-            git_author: None,
-            mcp: None,
-            lsp: None,
             subagents: sub,
-            images: Default::default(),
+            ..RunConfig::new(self.ws.clone(), self.run_dir.clone(), OBJECTIVE)
         }
     }
 

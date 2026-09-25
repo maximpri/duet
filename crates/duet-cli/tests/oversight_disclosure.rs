@@ -22,7 +22,6 @@ use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 const SECRET: &str = "sk_live_9f8e7d6c5b4a39281706";
 const EMAIL: &str = "marta.kowalczyk@corp-mail.net";
@@ -143,33 +142,14 @@ async fn a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld(
     });
     let deny = Arc::new(Deny::default());
     let cfg = RunConfig {
-        workspace: ws.clone(),
-        run_dir,
-        objective: "Add a package manifest.".into(),
         mode: "hybrid".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
-        wall_clock: Duration::from_secs(60),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| u.input as f64 / 1e6),
         oversight: Oversight {
             mode: ApproveMode::Risky,
             approver: Some(deny.clone()),
             ..Oversight::default()
         },
-        web: None,
-        git_author: None,
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws.clone(), run_dir, "Add a package manifest.")
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

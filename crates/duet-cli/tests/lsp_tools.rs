@@ -110,29 +110,10 @@ const FILES: [&str; 5] = [
 
 fn config(ws: &Path, run_dir: &Path, lsp: Arc<Lsp>) -> RunConfig {
     RunConfig {
-        workspace: ws.to_path_buf(),
-        run_dir: run_dir.to_path_buf(),
-        objective: "Tidy the entry point.".into(),
         mode: "hybrid".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
-        wall_clock: Duration::from_secs(60),
-        frontier_usd: 10.0,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| u.input as f64 / 1e6),
-        oversight: duet_agent::Oversight::default(),
-        web: None,
-        git_author: None,
-        mcp: None,
         lsp: Some(lsp),
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws, run_dir, "Tidy the entry point.")
     }
 }
 

@@ -444,7 +444,8 @@ fn child_specs(parent: &[ToolSpec], mode: Mode, mcp: Option<&crate::mcp::Hub>) -
 }
 
 /// A sub-agent's run configuration: the parent's, with no checks (the parent
-/// runs them), no sub-agents of its own and its model's price.
+/// runs them), no sub-agents of its own and its model's price. A full literal,
+/// not `..RunConfig::new`: every new field is decided here (inherited or not).
 fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig {
     let price = subagents.price.clone();
     RunConfig {

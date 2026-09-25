@@ -239,29 +239,10 @@ async fn session(s: Session<'_>) -> Ended {
         boundary: false,
     });
     let cfg = RunConfig {
-        workspace: ws,
-        run_dir: run_dir(root),
-        objective: "Tidy src/lib.rs.".into(),
-        mode: "test".into(),
-        checks: vec![],
-        sandbox: duet_sandbox::detect().unwrap_or(duet_sandbox::SandboxKind::Seatbelt),
-        network: false,
-        command_timeout: Duration::from_secs(30),
         wall_clock: s.wall_clock,
         frontier_usd: s.frontier_usd,
-        max_finish_attempts: 2,
-        context_window: 200_000,
-        mask_at: 0.7,
-        max_output_tokens: 1000,
-        reasoning_effort: None,
         price: Box::new(|u| (u.input as f64 + 4.0 * u.output as f64) / 1e6),
-        oversight: duet_agent::Oversight::default(),
-        web: None,
-        git_author: None,
-        mcp: None,
-        lsp: None,
-        subagents: None,
-        images: Default::default(),
+        ..RunConfig::new(ws, run_dir(root), "Tidy src/lib.rs.")
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) =
