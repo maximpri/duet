@@ -44,6 +44,34 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 - The frontier provider is treated as an honest-but-curious recipient: everything it receives may be
   retained.
 
+### Frontier provider data handling
+
+The default frontier provider is Z.ai (GLM models through `https://api.z.ai/api/coding/paas/v4`),
+operated by JINGSHENG HENGXING TECHNOLOGY PTE. LTD., Singapore. Its published terms, read on
+2026-09-25:
+
+- **API content is not stored.** The Data Processing Addendum for API Services (§4(b), "Data Return
+  and Deletion", in the privacy policy, last updated 2025-09-29) says the company does not store the
+  content that API customers or their end users provide or generate; it is processed in real time and
+  "not saved on our servers". Source: <https://docs.z.ai/legal-agreement/privacy-policy>.
+- **API content is not used for training without consent.** The Terms of Use (last updated
+  2026-04-14) say that for API Services the company uses end-user content only to provide the service,
+  comply with law, enforce its policies and prevent abuse, and "will not use End User Content to
+  develop or improve Services, unless you explicitly agree". Source:
+  <https://docs.z.ai/legal-agreement/terms-of-use>.
+- **Other users are treated differently.** For individual (non-API) users the same Terms reserve the
+  right to process user content to improve services and develop models, with no opt-out stated, and
+  the privacy policy lists training and improving models as a legitimate interest and retains chat
+  input for as long as the account exists. Personal data is generally processed in Singapore and may
+  be disclosed to affiliates, service providers and government authorities.
+
+What the terms do not guarantee: they do not say whether the GLM Coding Plan (a per-user
+subscription used through the coding endpoint) counts as "API Services" or as individual use, so
+the stricter API terms may not apply to it; the no-storage statement has no stated retention period
+for abuse monitoring, logs or metadata, no audit right and no independent attestation; the terms can
+change unilaterally. Duet therefore does not rely on them: the provider is treated as
+honest-but-curious regardless, and the boundary assumes every byte sent may be kept and used.
+
 ## Enforcement
 
 1. **Classification** of every tool result by independent layers (path, source, secret and PII
