@@ -326,7 +326,12 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
   level with regression tests: tokens rewritten by values that spell part of them; values escaped
   inside tool-call arguments (JSON in JSON) missed by the filter and the final check; values inside
   a longer overlapping detection never registered on their own.
-- Detection coverage (own engine, maintained rules as data):
+- Detection coverage (own engine, maintained rules as data) — in place (SECURITY.md, Detection):
+  gitleaks v8.30.1 vendored, 221 rules in use, 0 not compiled, 1 path-only; corpus recall 228/228
+  imported-rule positives and 30/30 hand-written, 0 of 251 positives reach the frontier end to end;
+  false positives 53 of 683 hard-negative lines (80 before; the imported rules add none); 10 MB of
+  mixed log/code at 34–43 MB/s as one text and 49–50 MB/s in 8 KB pieces (before 50–64 and 58–66),
+  the imported rules alone 85–153 MB/s with 12 of 221 past the keyword prefilter.
   - Rule import: the gitleaks rule set (MIT, pinned release, license notice kept) vendored as a data
     file and compiled into duet's detector (regex, per-rule keywords as an aho-corasick prefilter,
     entropy thresholds, per-rule allowlists; rules whose syntax the Rust regex engine rejects are

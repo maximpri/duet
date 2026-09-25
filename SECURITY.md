@@ -10,7 +10,7 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Asset | Default classification | What the frontier receives instead |
 |---|---|---|
 | Secrets and credentials (`.env*`, keys, tokens, connection strings, secrets detected in any file) | Sensitive | Placeholders such as `⟨secret:DB_URL#1⟩` |
-| Personal data (email, phone, card, national IDs, IBAN, IP, names in data files; account, card and ID numbers labelled as such, whatever their checksum) | Sensitive | Placeholders, or a handle with a local summary |
+| Personal data (email, phone numbers including international ones, card, US/UK/EU national IDs with their check digits, IBAN of every registry country, IPv4 and IPv6, labelled postal addresses, names in data files; account, card and ID numbers labelled as such, whatever their checksum; optionally names and addresses in public prose) | Sensitive | Placeholders, or a handle with a local summary |
 | Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
 | Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
 | Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
@@ -260,7 +260,7 @@ value, a placeholder's name, a command or a path:
 
 | Line | Counted as |
 |---|---|
-| Placeholders, by kind (`secret`, `email`, `phone`, `name`, ...) | distinct placeholder tokens in the requests sent (one per withheld value) |
+| Placeholders, by kind (`secret`, `email`, `phone`, `name`, `address`, ...), and secrets by the imported detection rule that found them | distinct placeholder tokens in the requests sent (one per withheld value) |
 | Copied spans removed | copied-span markers in the distinct messages sent |
 | Protected bodies and constants | distinct `⟨body:…⟩` / `⟨value:…⟩` handles sent |
 | Protected code lines withheld | line markers in the distinct messages sent |
@@ -270,6 +270,65 @@ value, a placeholder's name, a command or a path:
 
 A passthrough run is reported as having the boundary off, with nothing withheld. A run without a
 `summary.json` (interrupted, or purged) is reported from its audit log alone.
+
+## Detection
+
+Detectors run on every text the frontier could see: public tool results, the task, operator
+messages, and the frontier's own text before each request (sensitive content is withheld whole
+whatever they find in it). What they recognize:
+
+| Detector | Finds |
+|---|---|
+| Duet's own secret detectors | provider key formats (payment, forge, chat, cloud, model-provider keys), JWTs, private-key blocks, URL passwords, credential assignments (`API_KEY=…`, `"password": "…"`), high-entropy tokens (not CamelCase identifiers or `sha512-…` integrity digests) |
+| Imported secret rules | the gitleaks default rule set (v8.30.1): 221 rules for specific services' credentials (cloud, SaaS, CI, payment, messaging and AI providers), generic keys next to key-like names, credentials in `curl` commands, Kubernetes Secret manifests (in `*.yaml`), Terraform passwords (in `*.tf`). A placeholder is named after the rule (`⟨secret:gcp_api_key#1⟩`) |
+| Personal data | email; phone numbers in US format, in international (E.164) format with an assigned country code and, for the larger numbering plans, their national length, and national numbers after a phone label (`Tel.:`, `"mobile":`); card numbers (Luhn); IBANs of every registry country (registry length and mod-97, compact or printed in groups); US SSN, UK NINO, DE Steuer-ID, FR NIR, ES DNI and NIE, IT codice fiscale (each with its check digit where the format has one), NL BSN (eleven test, next to its label); IPv4 and IPv6; postal addresses in labelled fields (`address:`, `shipping_address`, `Adresse`, `Anschrift`, `dirección`, `indirizzo`, …); 12–19 digit numbers labelled as card, account or ID |
+| Sensitive text only | title-case names, person and address fields, long numbers, identifier-like strings (see Enforcement) |
+| Local personal-data pass (optional) | people's names and postal addresses in the free text of public content |
+
+**Rule provenance.** The imported rules are data, not code: gitleaks' `config/gitleaks.toml` at
+release tag v8.30.1 (commit `83d9cd6`), MIT-licensed, vendored unmodified in
+`crates/duet-boundary/rules/` with its license and a `NOTICE` recording the version, commit, git
+blob and sha256; a test checks that the file still has that hash. Duet's own detector
+(`crates/duet-boundary/src/rules.rs`) reads it; no gitleaks code is used. Of each rule it uses the
+expression (compiled by Rust's regex engine, which runs in linear time, reading classes and word
+boundaries as ASCII as RE2 does), the keywords as a prefilter (one Aho-Corasick pass per text; a
+rule runs only on text containing one of its keywords), the entropy threshold, the secret group,
+the path condition and the allowlists, plus the global allowlist (lockfiles, vendored
+dependencies, `${VAR}`-style placeholders). Where a rule's first group only marks a part of the
+match (a group inside a repetition, one of several alternative groups), the whole match is
+withheld rather than a fragment. Duet's own detectors keep precedence: an imported match inside a
+span they found is theirs. A rule the Rust engine cannot compile is listed by `duet doctor` and by
+the detection corpus, never dropped silently; today none fail, and one path-only rule
+(`pkcs12-file`, names `.p12`/`.pfx` files) has nothing to match in text.
+`tools/update-rules.sh <version>` fetches a newer release, checks the file against the tag's git
+blob, shows the rule diff and, with `--apply`, vendors it and rewrites the notice; the corpus then
+shows what changed. The disclosure report counts withheld secrets by imported rule id.
+
+**Local personal-data pass** (`sensitivity.local_pii_pass`, off by default; a project may turn it
+on). A person's name in a README or a web page has no shape a pattern can find. With the pass on,
+the prose lines of a public result (a file read, a web page, a public MCP result or command output;
+lines of four or more words with few code characters, 160 characters at least) go to the local
+model, which lists the names and postal addresses in them. Each one that occurs in the text as
+written and looks like one (two or more capitalized words; an address with a number) enters the
+vault like a detection, so that result and every later text, the frontier's own included, carry
+its placeholder. The same prose is read once per run, at most four chunks per result. The pass
+only adds: when the local model fails or misses, the result is as the detectors leave it. Its
+prompt asks for exact copies, but its output never leaves the machine.
+
+**Measured** by the detection corpus (`crates/duet-boundary/tests/corpus.rs`, in the gate; data in
+`tests/corpus/`, all synthetic):
+
+| Measure | Result (2026-09-25) |
+|---|---|
+| Imported rules | 221 in use, 0 not compiled, 0 partly supported, 1 path-only |
+| Imported-rule positives: one generated from each rule's own expression, plus 7 hand-written realistic forms | 228 of 228 found by their rule and withheld by the full detector |
+| Hand-written positives for duet's own and the international formats | 30 of 30 withheld as their kind |
+| End to end, hybrid engine: each positive in a file the model reads and in the frontier's own text | 0 of 251 reach the frontier |
+| False positives on 683 lines of hard negatives (hashes, UUIDs, Cargo.lock and package-lock excerpts, base64 of public data, identifiers, fixtures, minified JS, logs, code, config, numbers) | 53 lines (7.8%); 80 before this detection work; the imported rules add none |
+| Throughput, 10 MB of mixed log and code, release build, before and after in one process | 34–43 MB/s as one text, 49–50 MB/s in 8 KB pieces (before: 50–64 and 58–66); the imported rules alone 85–109 and 141–153 MB/s, 12 of 221 rules past the keyword prefilter |
+
+The gate fails when a rule stops compiling or a positive is missed, and when false positives rise
+above the recorded baseline (`tests/corpus/baseline.toml`, per file).
 
 ## Verification
 
@@ -307,6 +366,9 @@ The boundary's own code is also tested against generated input, in the gate on e
 - **Building blocks**: vault round trip, idempotence, no value left outside tokens, aliases never
   restored; copied-span redaction leaves no copied run; detector spans in bounds and disjoint; the
   stream parser, chunk assembler and tool-call recovery never panic on model output.
+- **Detection corpus** (`crates/duet-boundary/tests/corpus.rs`): a positive for every imported
+  rule, hand-written positives for every personal-data format, hard negatives with a recorded
+  false-positive baseline, and an end-to-end check through the engine (see Detection).
 - **Fuzzing** of the same components (`fuzz/`, `tools/fuzz.sh`), run before releases.
 
 What the value filters cover, precisely (the spellings the property asserts):
@@ -526,7 +588,24 @@ server's own claim, as for the parent. Line counts in the change summary compare
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to
-  measure what gets through.
+  measure what gets through. The detection corpus shows that each imported rule matches its own
+  format, not that the formats are complete.
+- The remaining false positives are mostly base64 of public data (certificates, data URIs, public
+  keys) and ids inside URL paths, which the entropy detector cannot tell from secrets, and
+  placeholder values in credential assignments; each costs a placeholder.
+- Imported rules: a keyword anywhere in a text enables a rule over all of it (as in gitleaks);
+  gitleaks' decoding of base64, hex and percent-encoded text and its composite rules are not
+  implemented (an unsupported field would be listed as partial); a rule with a path condition runs
+  only on content read from a matching workspace path, not on command output that prints the file.
+- Phone numbers without `+` are found only in the US format or after a phone label; an
+  international number needs an assigned country code, and one glued to other text (build
+  metadata `1.0+2024…`, a time zone) is not taken for one. A BSN (nine plain digits) counts only
+  next to its label and a NINO has no check digit (its structure only). About one unlabelled
+  11-digit number in 500 passes the Steuer-ID check and one in 23 of 8 digits and a letter the DNI
+  check: such false positives cost a placeholder.
+- Postal addresses are found in labelled fields on one line; a name or an address in free text only
+  with the local personal-data pass, which reads prose lines only (four or more words, few code
+  characters), at most four chunks of a result, and finds what the local model finds.
 - The copied-span filter works at roughly 24 tokens on outbound text in general and at 4 tokens on text the local model writes about sensitive content; fragments of up to three words can pass.
 - Summaries and answers written by the local model are derived from sensitive content by design.
   A run of digits in them (and in sensitive lines shown, such as error lines) that shares four or

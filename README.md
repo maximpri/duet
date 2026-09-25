@@ -199,6 +199,16 @@ to the project file (which only tightens and never takes owner-only keys), and e
 is recorded in the owner's config audit log. It needs an interactive terminal of at least 80x24;
 without one it says so and exits with status 1.
 
+**What the detectors find.** Duet's own secret and personal-data detectors, the gitleaks rule set
+(221 rules for specific services' credentials, used as data: pinned in
+`crates/duet-boundary/rules/`, updated with `tools/update-rules.sh <version>`), international
+phone numbers, IBANs, the main EU/UK national IDs with their check digits, IPv6 and labelled postal
+addresses. `duet doctor` shows the rule set in use; [SECURITY.md](SECURITY.md) (Detection) lists
+everything with measured recall, false positives and limits. A person's name in free text has no
+shape to detect: with `sensitivity.local_pii_pass = true` (off by default; it costs local model
+time on every public result with prose) the local model marks names and postal addresses in the
+prose of public content, and they become placeholders like detected values.
+
 **Custom detector patterns.** `sensitivity.custom_patterns` takes regular expressions for values
 only you know are sensitive (customer ids, internal host names): every match becomes a `data`
 placeholder, in sensitive and public text alike. A project may add patterns; removing one loosens
@@ -446,6 +456,8 @@ Then, day to day:
 tools/gate.sh --fast                  # format, license, privacy and provenance checks (seconds)
 PROPTEST_CASES=5000 cargo test -p duet-boundary --test no_canary   # a deeper property run
 tools/fuzz.sh 60                      # each fuzz target for 60 s (see tools/fuzz.sh --help)
+cargo test -p duet-boundary --test corpus -- --nocapture   # detection recall and false positives
+tools/update-rules.sh v8.30.1         # check a gitleaks release against the vendored rules (--apply to take it)
 ```
 
 The hooks are not installed automatically (a clone never runs code on its own). They live in the

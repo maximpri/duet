@@ -242,7 +242,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyTrue,
         true,
-        "Secret detectors (key formats, credential assignments)."
+        "Secret detectors: key formats, credential assignments, and the imported gitleaks rule set (221 service-specific rules; see SECURITY.md, Detection)."
     ),
     s!(
         "sensitivity.detect_pii",
@@ -251,7 +251,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyTrue,
         true,
-        "Personal-data detectors (email, phone, card, national ids, IBAN, IP)."
+        "Personal-data detectors: email, phone (US, international, labelled), card, US/UK/EU national ids with their checks, IBAN, IPv4/IPv6, labelled postal addresses."
     ),
     s!(
         "sensitivity.detect_entropy",
