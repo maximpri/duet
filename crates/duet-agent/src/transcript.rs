@@ -60,6 +60,14 @@ pub enum Entry {
         message: String,
         journal_next: u64,
     },
+    /// (Session) Messages the operator sent while the turn ran, delivered
+    /// at a safe point: after every result of request `after_request` was
+    /// recorded, before the next request. The sanitized `Item` follows.
+    Steered {
+        exchange: u64,
+        after_request: u64,
+        messages: Vec<String>,
+    },
     /// (Session) How an operator turn ended, and the seconds it worked.
     /// Texts are in their local form (placeholders restored).
     TurnEnd {

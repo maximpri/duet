@@ -309,6 +309,12 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
             Entry::TurnEnd { exchange, end, .. } => {
                 feed.push(format!("turn {exchange} {}", describe_end(end)))
             }
+            Entry::Steered {
+                exchange, messages, ..
+            } => feed.push(format!(
+                "operator steered turn {exchange}: {}",
+                first_line(&messages.join(" / "))
+            )),
             Entry::Undone { exchange, paths } => feed.push(format!(
                 "operator undid turn {exchange} and later: {} file(s) restored",
                 paths.len()
@@ -370,6 +376,7 @@ pub(crate) fn describe_end(end: &TurnEnd) -> String {
         TurnEnd::Failed { reason } => format!("failed: {}", first_line(reason)),
         TurnEnd::BudgetStopped { which } => format!("stopped by {which}"),
         TurnEnd::Interrupted => "interrupted".into(),
+        TurnEnd::Stopped => "stopped after a step".into(),
     }
 }
 

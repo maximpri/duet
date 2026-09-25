@@ -9,16 +9,19 @@
 //! message that starts with `/`); a line ending with `\` continues on the
 //! next line.
 //!
-//! Standard input is read by one thread into an inbox, so messages typed
-//! while duet works wait their turn, and approval questions
-//! (`oversight.approve`) are answered with the next line typed after they
-//! are asked. When standard input is not a terminal (the TUI drives a
-//! session through a pipe) nothing is prompted and the output is the same.
+//! Standard input is read by one thread into an inbox. A message typed while
+//! duet works steers the running turn: it is delivered at the next safe
+//! point (after the current step's results are recorded, before the next
+//! frontier request; a running command is never cut short), and messages
+//! queued meanwhile go together, in order. `/stop` ends the turn at that
+//! point instead; Ctrl-C ends it now (a running command is killed). Either
+//! way the session stays open. Approval questions (`oversight.approve`) are
+//! answered with the next line typed after they are asked. When standard
+//! input is not a terminal (the TUI drives a session through a pipe) nothing
+//! is prompted and the output is the same.
 //!
-//! Ctrl-C while duet works stops the turn (a running command is killed);
-//! the session stays open. At the prompt, Ctrl-C twice leaves the session,
-//! like `/quit` or the end of input; `duet chat --resume` continues it.
-//! `/close` ends it for good.
+//! At the prompt, Ctrl-C twice leaves the session, like `/quit` or the end
+//! of input; `duet chat --resume` continues it. `/close` ends it for good.
 
 use crate::approve;
 use crate::{
@@ -67,6 +70,8 @@ struct Queue {
     lines: VecDeque<(u64, String)>,
     next: u64,
     closed: bool,
+    /// An approval question waits for the operator's answer.
+    answering: bool,
 }
 
 impl Inbox {
@@ -123,15 +128,35 @@ impl Inbox {
         self.lock().lines.pop_front().map(|(_, l)| l)
     }
 
+    /// Takes the next line unless an approval question is waiting for it.
+    fn pop_unless_answering(&self) -> Option<String> {
+        let mut q = self.lock();
+        if q.answering {
+            return None;
+        }
+        q.lines.pop_front().map(|(_, l)| l)
+    }
+
+    /// Puts lines back at the front, in order (commands held for later).
+    fn requeue(&self, lines: Vec<String>) {
+        let mut q = self.lock();
+        for l in lines.into_iter().rev() {
+            q.lines.push_front((0, l));
+        }
+    }
+
     /// Whether the input ended and every line was taken.
     fn drained(&self) -> bool {
         let q = self.lock();
         q.closed && q.lines.is_empty()
     }
 
-    /// The sequence number the next line will get.
+    /// The sequence number the next line will get; from now on lines are
+    /// held for the answer until [`Inbox::answer_after`] returns.
     fn mark(&self) -> u64 {
-        self.lock().next
+        let mut q = self.lock();
+        q.answering = true;
+        q.next
     }
 
     /// Waits for the first line typed at or after `mark` and takes it (lines
@@ -141,9 +166,11 @@ impl Inbox {
         let mut q = self.lock();
         loop {
             if let Some(i) = q.lines.iter().position(|(n, _)| *n >= mark) {
+                q.answering = false;
                 return q.lines.remove(i).map(|(_, l)| l);
             }
             if q.closed || stop.load(Ordering::SeqCst) {
+                q.answering = false;
                 return None;
             }
             q = self
@@ -196,6 +223,8 @@ impl Approver for AskInline {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Message(String),
+    /// End the running turn after its current step.
+    Stop,
     Status,
     Diff,
     Undo,
@@ -223,6 +252,7 @@ pub(crate) fn parse(line: &str) -> Command {
         "status" => Command::Status,
         "diff" => Command::Diff,
         "undo" => Command::Undo,
+        "stop" => Command::Stop,
         "help" | "?" => Command::Help,
         "quit" | "exit" => Command::Quit,
         "close" => Command::Close,
@@ -232,14 +262,17 @@ pub(crate) fn parse(line: &str) -> Command {
 
 const HELP: &str = "\
 Type a message and press Enter; end a line with \\ to continue on the next.
+While duet works, a message steers it: it arrives after the current step.
 Commands (never sent to the model):
+  /stop    end duet's turn after its current step (Ctrl-C ends it now)
   /status  turns, tokens, cost and time against the budgets
   /diff    what changed in the workspace (sensitive files are only named)
   /undo    revert the file writes of the last turn (repeat for earlier turns)
   /quit    leave; the session stays open for `duet chat --resume`
   /close   end the session for good
   //text   send a message that starts with /
-Ctrl-C stops duet's current turn; at the prompt, Ctrl-C twice leaves.";
+Ctrl-C stops duet's turn at once (a running command is killed);
+at the prompt, Ctrl-C twice leaves.";
 
 fn prompt(tty: bool) {
     if tty {
@@ -561,10 +594,18 @@ async fn converse(
         }
         None => Arc::new(|t: &str| t.to_owned()),
     };
+    let ctx = TurnCtx {
+        run_dir,
+        io,
+        shown: &shown,
+        ws,
+        git: &git,
+        presenter,
+    };
     if resume {
         recap(&session, &manifest.run_id);
     } else {
-        take_turn(&mut session, &manifest.objective, run_dir, io, &shown).await;
+        turns(&mut session, manifest.objective.clone(), &ctx).await;
     }
     let closed = loop {
         if io.leave.load(Ordering::SeqCst) {
@@ -611,13 +652,14 @@ async fn converse(
                 }
                 Err(e) => println!("undo: {e}"),
             },
+            Command::Stop => println!("duet is not working; nothing to stop"),
             Command::Unknown(c) => println!("unknown command /{c}; /help lists the commands"),
             Command::Message(m) => {
                 if !io.tty {
                     // Piped input is not on screen: the output keeps the conversation.
                     println!("you> {}", m.replace('\n', "\n     "));
                 }
-                take_turn(&mut session, &m, run_dir, io, &shown).await
+                turns(&mut session, m, &ctx).await;
             }
         }
     };
@@ -626,24 +668,92 @@ async fn converse(
     Ok((terminal, stats))
 }
 
-/// Runs one turn, following its progress in the transcript as it is written.
+/// What a turn needs besides the session.
+struct TurnCtx<'a> {
+    run_dir: &'a Path,
+    io: &'a Io,
+    shown: &'a Arc<dyn Fn(&str) -> String + Send + Sync>,
+    ws: &'a Path,
+    git: &'a duet_git::Git,
+    presenter: &'a dyn Presenter,
+}
+
+/// Runs a turn for `message`; a message that arrived as a turn ended (too
+/// late to steer it) starts the next one, unless the operator stopped it.
+async fn turns(session: &mut Session<'_>, message: String, t: &TurnCtx<'_>) {
+    let mut next = Some(message);
+    while let Some(m) = next.take() {
+        let (end, late) = take_turn(session, &m, t).await;
+        if late.is_empty() {
+            continue;
+        }
+        if matches!(end, TurnEnd::Stopped | TurnEnd::Interrupted) {
+            for l in &late {
+                println!("not delivered (you stopped the turn): {}", clip(l));
+            }
+        } else if session.spent().is_none() {
+            println!("your message arrived as duet ended its turn; it starts the next one");
+            next = Some(late.join("\n\n"));
+        }
+    }
+}
+
+/// Runs one turn, following its progress in the transcript as it is
+/// written. Meanwhile the operator's lines steer it (`/stop` ends it after
+/// the current step, `/diff` and `/help` answer at once, other commands wait
+/// for the turn to end). Returns how it ended and the steering messages it
+/// ended before delivering.
 async fn take_turn(
     session: &mut Session<'_>,
     message: &str,
-    run_dir: &Path,
-    io: &Io,
-    shown: &Arc<dyn Fn(&str) -> String + Send + Sync>,
-) {
-    let path = run_dir.join("transcript.jsonl");
+    t: &TurnCtx<'_>,
+) -> (TurnEnd, Vec<String>) {
+    let io = t.io;
+    let path = t.run_dir.join("transcript.jsonl");
     let from = std::fs::metadata(&path).map_or(0, |m| m.len());
     let done = Arc::new(AtomicBool::new(false));
-    let follower = tokio::spawn(follow(path, from, done.clone(), shown.clone()));
+    let follower = tokio::spawn(follow(path, from, done.clone(), t.shown.clone()));
+    let steering = session.steering();
+    let mut held = Vec::new();
     io.working.store(true, Ordering::SeqCst);
-    let end = session.turn(message).await;
+    let end = {
+        let mut turn = std::pin::pin!(session.turn(message));
+        loop {
+            tokio::select! {
+                end = &mut turn => break end,
+                () = tokio::time::sleep(Duration::from_millis(50)) => {
+                    while let Some(line) = io.inbox.pop_unless_answering() {
+                        match parse(&line) {
+                            Command::Message(m) => {
+                                println!("  ▸ for duet after the current step: {}", clip(&m));
+                                steering.steer(m);
+                            }
+                            Command::Stop => {
+                                steering.stop();
+                                println!("  ■ stopping after the current step");
+                            }
+                            Command::Diff => print!("{}", local_diff(t.git, t.ws, t.presenter)),
+                            Command::Help => println!("{HELP}"),
+                            Command::Empty => {}
+                            Command::Unknown(c) => {
+                                println!("unknown command /{c}; /help lists the commands")
+                            }
+                            Command::Quit | Command::Close | Command::Undo | Command::Status => {
+                                println!("  (after this turn: {})", line.trim());
+                                held.push(line);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
     io.working.store(false, Ordering::SeqCst);
     done.store(true, Ordering::SeqCst);
     let _ = follower.await;
     println!("{}", describe_end(&end));
+    io.inbox.requeue(held);
+    (end, steering.take())
 }
 
 /// How a turn's end reads in the conversation.
@@ -665,6 +775,9 @@ pub(crate) fn describe_end(end: &TurnEnd) -> String {
         TurnEnd::Interrupted => {
             "this turn was interrupted; your next message continues (duet is told)".into()
         }
+        TurnEnd::Stopped => {
+            "this turn stopped after a step, as you asked; your next message continues".into()
+        }
     }
 }
 
@@ -682,6 +795,12 @@ fn recap(session: &Session<'_>, id: &str) {
     }
     for x in &history[skip..] {
         println!("you> {}", x.message.trim().replace('\n', "\n     "));
+        for m in &x.steered {
+            println!(
+                "you, while duet worked> {}",
+                m.trim().replace('\n', "\n     ")
+            );
+        }
         match &x.end {
             Some(end) => println!("{}", describe_end(end)),
             None => println!("(this turn did not end; it counts as interrupted)"),
@@ -893,6 +1012,18 @@ pub(crate) fn progress(
             out.push(format!("  ◦ context: {items} old tool result(s) shortened"))
         }
         Entry::Interrupted { tool, .. } => out.push(format!("  ■ {tool} stopped")),
+        Entry::Steered {
+            after_request,
+            messages,
+            ..
+        } => {
+            for m in messages {
+                out.push(format!(
+                    "  ▸ delivered to duet after request {after_request}: {}",
+                    clip(&shown(m))
+                ));
+            }
+        }
         _ => {}
     }
     out

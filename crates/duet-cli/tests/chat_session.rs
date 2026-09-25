@@ -21,6 +21,10 @@ enum Step {
     Call(&'static str, Value),
     /// Accept the request and never answer.
     Hang,
+    /// Answer with the step after this many milliseconds.
+    Slow(u64, Box<Step>),
+    /// The first step when the request contains the text, else the second.
+    IfSent(&'static str, Box<Step>, Box<Step>),
 }
 
 /// A loopback server speaking just enough HTTP/1.1 and SSE for one provider;
@@ -91,19 +95,33 @@ fn serve(
     }
     let mut body = vec![0; length];
     reader.read_exact(&mut body).ok()?;
+    let body = String::from_utf8_lossy(&body).into_owned();
     let n = {
         let mut b = bodies.lock().unwrap();
-        b.push(String::from_utf8_lossy(&body).into_owned());
+        b.push(body.clone());
         b.len()
     };
-    let step = steps
+    let mut step = steps
         .lock()
         .unwrap()
         .pop_front()
         .expect("unscripted request");
-    let (name, args) = match step {
-        Step::Hang => return Some(stream),
-        Step::Call(name, args) => (name, args),
+    let (name, args) = loop {
+        step = match step {
+            Step::Hang => return Some(stream),
+            Step::Call(name, args) => break (name, args),
+            Step::Slow(ms, inner) => {
+                std::thread::sleep(Duration::from_millis(ms));
+                *inner
+            }
+            Step::IfSent(needle, then, otherwise) => {
+                if body.contains(needle) {
+                    *then
+                } else {
+                    *otherwise
+                }
+            }
+        };
     };
     let call = json!({"choices": [{"delta": {"tool_calls": [{"index": 0, "id": format!("c{n}"),
         "type": "function", "function": {"name": name, "arguments": args.to_string()}}]}}]});
@@ -426,4 +444,61 @@ fn approval_without_a_terminal_refuses_a_session() {
     );
     assert!(!e.ws.join(".duet/runs").exists());
     assert_eq!(f.requests(), 0);
+}
+
+#[test]
+fn a_message_typed_while_duet_works_steers_the_turn_and_stop_ends_it() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![
+        Step::Slow(1500, Box::new(Step::Call("list_files", json!({})))),
+        Step::IfSent(
+            "tests first",
+            Box::new(Step::Call(
+                "reply",
+                json!({"message": "Understood: tests first."}),
+            )),
+            Box::new(Step::Call("reply", json!({"message": "Went ahead."}))),
+        ),
+        // Turn 2: stopped after its first step.
+        Step::Slow(1500, Box::new(Step::Call("list_files", json!({})))),
+    ]);
+    let mut chat = Chat::start(chat_command(&e, &f, &["--", "Plan the change."]));
+    let started = Instant::now();
+    while f.requests() < 1 {
+        assert!(started.elapsed() < Duration::from_secs(60), "no request");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    chat.send("Please write the tests first.");
+    chat.wait_for(
+        "▸ for duet after the current step: Please write the tests first.",
+        1,
+    );
+    chat.wait_for(
+        "▸ delivered to duet after request 1: Please write the tests first.",
+        1,
+    );
+    chat.wait_for("duet: Understood: tests first.", 1);
+
+    chat.send("Now list everything again.");
+    while f.requests() < 3 {
+        assert!(started.elapsed() < Duration::from_secs(60), "no request");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    chat.send("/stop");
+    chat.wait_for("■ stopping after the current step", 1);
+    chat.wait_for("this turn stopped after a step, as you asked", 1);
+    assert_eq!(f.requests(), 3, "no request after the stop");
+    chat.send("/quit");
+    let (code, out) = chat.finish();
+    assert_eq!(code, 0, "{out}");
+    let id = only_run_id(&e);
+    let o = command(&e, &["audit", "show", &id]).output().unwrap();
+    // Two turns and one steering delivery, each audited.
+    assert_eq!(
+        text(&o).matches("operator_message").count(),
+        3,
+        "{}",
+        text(&o)
+    );
 }

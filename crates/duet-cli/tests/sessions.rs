@@ -39,6 +39,11 @@ enum Step {
     EchoPlaceholder,
     /// Never answers.
     Hang,
+    /// Answers with the step after this many milliseconds.
+    Slow(u64, Box<Step>),
+    /// The first step when the last user message contains the text, else
+    /// the second.
+    Branch(&'static str, Box<Step>, Box<Step>),
 }
 
 #[derive(Clone, Default)]
@@ -82,9 +87,29 @@ impl Transport for Frontier {
         let text = String::from_utf8(body).unwrap();
         self.bodies.lock().unwrap().push(text.clone());
         let n = self.count();
-        let step = self.steps.lock().unwrap().pop_front().expect("unscripted");
+        let mut step = self.steps.lock().unwrap().pop_front().expect("unscripted");
+        let mut delay = 0;
+        loop {
+            step = match step {
+                Step::Slow(ms, inner) => {
+                    delay += ms;
+                    *inner
+                }
+                Step::Branch(needle, then, otherwise) => {
+                    let body: Value = serde_json::from_str(&text).unwrap();
+                    let last = user_texts(&body).pop().unwrap_or_default();
+                    if last.contains(needle) {
+                        *then
+                    } else {
+                        *otherwise
+                    }
+                }
+                other => break step = other,
+            };
+        }
         let delta = match step {
             Step::Hang => return Box::pin(futures_util::future::pending()),
+            Step::Slow(..) | Step::Branch(..) => unreachable!(),
             Step::Text(t) => json!({"content": t}),
             Step::Call(name, args) => json!({"tool_calls": [{"index": 0, "id": format!("c{n}"),
                 "type": "function", "function": {"name": name, "arguments": args.to_string()}}]}),
@@ -112,6 +137,7 @@ impl Transport for Frontier {
             "data: [DONE]\n\n".into(),
         ];
         Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
             Ok(HttpReply {
                 status: 200,
                 headers: vec![],
@@ -616,4 +642,213 @@ async fn undo_reverts_the_last_turns_writes_and_tells_the_frontier() {
     assert!(!f.ws.join("src/b.rs").exists());
     assert!(s.undo().is_err(), "nothing left to undo");
     let _ = s.end(false);
+}
+
+fn slow(ms: u64, step: Step) -> Step {
+    Step::Slow(ms, Box::new(step))
+}
+
+/// Waits until the frontier has received `n` requests.
+async fn requests(f: &Fixture, n: usize) {
+    for _ in 0..600 {
+        if f.frontier.count() >= n {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the frontier did not get {n} request(s)");
+}
+
+/// The roles and first words of a request's messages, in order.
+fn outline(body: &Value) -> Vec<String> {
+    body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            let content = m["content"].as_str().unwrap_or("");
+            format!(
+                "{}: {}",
+                m["role"].as_str().unwrap_or(""),
+                content.chars().take(40).collect::<String>()
+            )
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn steering_arrives_after_the_running_command_and_changes_the_next_step() {
+    let f = fixture(false, 10.0);
+    f.frontier.script(vec![
+        Step::Call(
+            "run_command",
+            json!({"command": "sleep 1 && echo built > built.txt && echo built"}),
+        ),
+        Step::Branch(
+            "use u64",
+            Box::new(Step::Call(
+                "write_file",
+                json!({"path": "src/b.rs", "content": "pub fn b() -> u64 { 2 }\n"}),
+            )),
+            Box::new(Step::Call(
+                "write_file",
+                json!({"path": "src/b.rs", "content": "pub fn b() -> u32 { 2 }\n"}),
+            )),
+        ),
+        Step::Call("reply", json!({"message": "b returns u64."})),
+    ]);
+    let mut s = f.open(ROOMY, false);
+    let steering = s.steering();
+    let steer = async {
+        // The command is running (the first answer arrived): steer now.
+        requests(&f, 1).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        steering.steer("Actually, use u64 for b.");
+    };
+    let (end, ()) = tokio::join!(s.turn("Add a function b returning u32."), steer);
+    assert_eq!(end.state(), "replied");
+    // The command was not cut short; the frontier then took the other branch.
+    assert!(f.ws.join("built.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(f.ws.join("src/b.rs")).unwrap(),
+        "pub fn b() -> u64 { 2 }\n"
+    );
+    // Request 2 carries the command's result, then the steering message.
+    let second = outline(&f.frontier.body(1));
+    let n = second.len();
+    assert!(second[n - 2].starts_with("tool: "), "{second:?}");
+    assert!(
+        second[n - 1].starts_with("user: [duet] The operator sent this"),
+        "{second:?}"
+    );
+    let body = serde_json::to_string(&f.frontier.body(1)).unwrap();
+    assert!(
+        body.contains("exit code 0") || body.contains("built"),
+        "{body}"
+    );
+    let entries = Transcript::read(&f.run_dir).unwrap();
+    let steered: Vec<(u64, Vec<String>)> = entries
+        .iter()
+        .filter_map(|e| match e {
+            Entry::Steered {
+                after_request,
+                messages,
+                ..
+            } => Some((*after_request, messages.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(steered, [(1, vec!["Actually, use u64 for b.".to_owned()])]);
+    assert_eq!(s.history()[0].steered, ["Actually, use u64 for b."]);
+    let _ = s.end(false);
+
+    // Resumed, the steering message is in the same place in the context.
+    f.frontier
+        .script(vec![Step::Call("reply", json!({"message": "Yes."}))]);
+    let mut s = f.open(ROOMY, true);
+    assert_eq!(s.history()[0].steered, ["Actually, use u64 for b."]);
+    s.turn("Is it u64 now?").await;
+    let resumed = outline(&f.frontier.last());
+    let at = |prefix: &str| {
+        resumed
+            .iter()
+            .position(|m| m.starts_with(prefix))
+            .unwrap_or_else(|| panic!("{prefix} not in {resumed:?}"))
+    };
+    let command_result = resumed
+        .iter()
+        .position(|m| m.starts_with("tool: "))
+        .unwrap();
+    assert!(command_result < at("user: [duet] The operator sent this"));
+    assert!(at("user: [duet] The operator sent this") < at("user: Is it u64 now?"));
+    // Nothing earlier was rewritten: the resumed request extends the last one.
+    let before = outline(&f.frontier.body(2));
+    assert_eq!(&resumed[..before.len()], &before[..], "history changed");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn queued_steering_is_delivered_together_in_order() {
+    let f = fixture(false, 10.0);
+    f.frontier.script(vec![
+        slow(600, Step::Call("list_files", json!({}))),
+        Step::Call("reply", json!({"message": "Noted both."})),
+    ]);
+    let mut s = f.open(ROOMY, false);
+    let steering = s.steering();
+    let steer = async {
+        requests(&f, 1).await;
+        steering.steer("First: keep a unchanged.");
+        steering.steer("Second: add tests.");
+    };
+    let (end, ()) = tokio::join!(s.turn("Look around."), steer);
+    assert_eq!(end.state(), "replied");
+    let users = user_texts(&f.frontier.body(1));
+    let delivered = users.last().unwrap();
+    let (first, second) = (
+        delivered.find("First: keep a unchanged.").unwrap(),
+        delivered.find("Second: add tests.").unwrap(),
+    );
+    assert!(first < second, "{delivered}");
+    assert_eq!(users.len(), 2, "one message for both: {users:?}");
+    assert!(steering.take().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_finishes_the_step_and_interrupt_does_not() {
+    let f = fixture(false, 10.0);
+    f.frontier.script(vec![
+        Step::Call(
+            "run_command",
+            json!({"command": "sleep 1 && echo done > stopped.txt"}),
+        ),
+        Step::Call(
+            "run_command",
+            json!({"command": "sleep 5 && echo done > killed.txt"}),
+        ),
+    ]);
+    let mut s = f.open(ROOMY, false);
+    let steering = s.steering();
+    let stop = async {
+        requests(&f, 1).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        steering.stop();
+        steering.steer("Too late for this turn.");
+    };
+    let (end, ()) = tokio::join!(s.turn("Run the slow step."), stop);
+    // The command ran to its end, then the turn ended without a new request.
+    assert_eq!(end, TurnEnd::Stopped);
+    assert!(f.ws.join("stopped.txt").exists());
+    assert_eq!(f.frontier.count(), 1);
+    // What the stopped turn did not deliver is handed back.
+    assert_eq!(steering.take(), ["Too late for this turn."]);
+
+    // Interrupt now: the running command is killed.
+    let flag = f.interrupted.clone();
+    let interrupt = async {
+        requests(&f, 2).await;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        flag.store(true, Ordering::SeqCst);
+    };
+    let (end, ()) = tokio::join!(s.turn("Now the slower one."), interrupt);
+    assert_eq!(end, TurnEnd::Interrupted);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!f.ws.join("killed.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_message_that_arrives_as_the_turn_ends_is_handed_back() {
+    let f = fixture(false, 10.0);
+    f.frontier.script(vec![slow(
+        500,
+        Step::Call("reply", json!({"message": "Done."})),
+    )]);
+    let mut s = f.open(ROOMY, false);
+    let steering = s.steering();
+    let steer = async {
+        requests(&f, 1).await;
+        steering.steer("One more thing.");
+    };
+    let (end, ()) = tokio::join!(s.turn("Quick question."), steer);
+    assert_eq!(end.state(), "replied");
+    assert_eq!(steering.take(), ["One more thing."]);
 }

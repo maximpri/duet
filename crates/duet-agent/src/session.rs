@@ -74,6 +74,8 @@ pub enum TurnEnd {
     },
     /// The operator interrupted the turn; a running command was stopped.
     Interrupted,
+    /// The operator asked duet to stop after the step it was taking.
+    Stopped,
 }
 
 impl TurnEnd {
@@ -85,6 +87,7 @@ impl TurnEnd {
             TurnEnd::Failed { .. } => "failed",
             TurnEnd::BudgetStopped { .. } => "budget_stopped",
             TurnEnd::Interrupted => "interrupted",
+            TurnEnd::Stopped => "stopped",
         }
     }
 }
@@ -100,12 +103,97 @@ pub struct SessionLimits {
     pub working_time: Duration,
 }
 
+/// What the operator sends while a turn runs: steering messages, delivered
+/// together and in order at the next safe point (after the results of the
+/// current step are recorded, before the next frontier request), and a
+/// request to stop the turn at that point.
+#[derive(Default)]
+pub struct Steering {
+    queue: std::sync::Mutex<std::collections::VecDeque<String>>,
+    stop: AtomicBool,
+    /// Messages delivered during the current turn.
+    delivered: std::sync::Mutex<Vec<String>>,
+}
+
+impl Steering {
+    fn lock(&self) -> std::sync::MutexGuard<'_, std::collections::VecDeque<String>> {
+        self.queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Queues a message for the running turn.
+    pub fn steer(&self, message: impl Into<String>) {
+        self.lock().push_back(message.into());
+    }
+
+    /// Asks the running turn to end after its current step.
+    pub fn stop(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+    }
+
+    /// Takes the queued messages (in the order they were sent) without
+    /// delivering them: what a turn ended before reaching.
+    pub fn take(&self) -> Vec<String> {
+        self.lock().drain(..).collect()
+    }
+
+    /// Takes the queued messages to deliver them now.
+    pub(crate) fn deliver(&self) -> Vec<String> {
+        let messages = self.take();
+        self.delivered
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(messages.iter().cloned());
+        messages
+    }
+
+    fn delivered(&self) -> Vec<String> {
+        std::mem::take(
+            &mut *self
+                .delivered
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    pub(crate) fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+}
+
+/// The conversation item that delivers steering messages, sanitized like any
+/// operator message and audited as one.
+pub(crate) fn steering_item(
+    presenter: &dyn Presenter,
+    audit: &duet_boundary::audit::AuditHandle,
+    exchange: u64,
+    messages: &[String],
+) -> Item {
+    let text = format!(
+        "[duet] The operator sent this while you were working; take it into account from your \
+next step:\n\n{}",
+        messages.join("\n\n")
+    );
+    let sanitized = presenter.sanitize_message(&text);
+    let placeholders = Vault::tokens_in(&sanitized)
+        .len()
+        .saturating_sub(Vault::tokens_in(&text).len());
+    audit.record(AuditEvent::OperatorMessage {
+        exchange,
+        placeholders,
+    });
+    Item::User { text: sanitized }
+}
+
 /// One operator turn as the conversation view shows it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
     pub number: u64,
     /// The operator's message as typed.
     pub message: String,
+    /// Messages the operator steered the turn with, as typed.
+    pub steered: Vec<String>,
     /// `None` while it runs, or when the session stopped during it.
     pub end: Option<TurnEnd>,
 }
@@ -185,8 +273,16 @@ pub fn exchanges(entries: &[Entry]) -> Vec<Exchange> {
             } => out.push(Exchange {
                 number: *exchange,
                 message: message.clone(),
+                steered: Vec::new(),
                 end: None,
             }),
+            Entry::Steered {
+                exchange, messages, ..
+            } => {
+                if let Some(x) = out.iter_mut().rev().find(|x| x.number == *exchange) {
+                    x.steered.extend(messages.iter().cloned());
+                }
+            }
             Entry::TurnEnd { exchange, end, .. } => {
                 if let Some(x) = out.iter_mut().rev().find(|x| x.number == *exchange) {
                     x.end = Some(end.clone());
@@ -236,6 +332,7 @@ pub struct Session<'a> {
     marks: Vec<(u64, u64)>,
     notes: Vec<String>,
     history: Vec<Exchange>,
+    steering: Arc<Steering>,
 }
 
 impl<'a> Session<'a> {
@@ -260,6 +357,7 @@ impl<'a> Session<'a> {
         let mut specs = tools::specs_with(presenter.extra_tools());
         specs.extend(missing_from(&specs));
         specs.sort_by(|a, b| a.name.cmp(&b.name));
+        let steering = Arc::new(Steering::default());
         let mut session = Self {
             cfg,
             frontier,
@@ -273,6 +371,8 @@ impl<'a> Session<'a> {
                 items: Vec::new(),
                 classes: HashMap::new(),
                 interactive: true,
+                steering: Some(steering.clone()),
+                exchange: 0,
             },
             stats: RunStats::default(),
             exchange: 0,
@@ -280,6 +380,7 @@ impl<'a> Session<'a> {
             marks: Vec::new(),
             notes: Vec::new(),
             history: Vec::new(),
+            steering,
         };
         let wait: Arc<dyn duet_fs::host::HostWait> = Arc::new(HostPolicy::finishing());
         let transcript = Transcript::open_waiting(&cfg.run_dir, Some(wait.clone()))
@@ -344,6 +445,12 @@ impl<'a> Session<'a> {
         replay(entries, cfg, &mut session.conv, &mut session.stats);
         session.stats.wall_seconds = session.worked.as_secs_f64();
         Ok(session)
+    }
+
+    /// Where the operator's messages and stop requests for a running turn
+    /// go (shared with the input side).
+    pub fn steering(&self) -> Arc<Steering> {
+        self.steering.clone()
     }
 
     pub fn stats(&self) -> &RunStats {
@@ -412,9 +519,13 @@ impl<'a> Session<'a> {
         self.frontier.audit().set_wait(Some(host.clone()));
         self.exchange += 1;
         let exchange = self.exchange;
+        self.conv.exchange = exchange;
+        // A stop asked for after the last turn ended is not carried over.
+        self.steering.stop.store(false, Ordering::SeqCst);
         self.history.push(Exchange {
             number: exchange,
             message: message.to_owned(),
+            steered: Vec::new(),
             end: None,
         });
         let first = self.conv.items.is_empty();
@@ -442,6 +553,7 @@ impl<'a> Session<'a> {
         };
         let end = match stop {
             Err(reason) => TurnEnd::Failed { reason },
+            Ok(Stop::Stopped) => TurnEnd::Stopped,
             Ok(Stop::Reply { text, question }) => {
                 let text = self.local(&text);
                 if question {
@@ -473,8 +585,10 @@ impl<'a> Session<'a> {
         let seconds = started.elapsed().as_secs_f64();
         self.worked += started.elapsed();
         self.stats.wall_seconds = self.worked.as_secs_f64();
+        let steered = self.steering.delivered();
         if let Some(x) = self.history.last_mut() {
             x.end = Some(end.clone());
+            x.steered = steered;
         }
         let finishing: Arc<dyn duet_fs::host::HostWait> = Arc::new(HostPolicy::finishing());
         if let Ok(t) = Transcript::open_waiting(&self.cfg.run_dir, Some(finishing)) {

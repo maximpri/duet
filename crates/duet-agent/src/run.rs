@@ -372,6 +372,10 @@ pub(crate) struct Conversation {
     /// A session: the frontier ends a turn by replying to the operator (a
     /// message without tool calls, `reply` or `ask_operator`).
     pub(crate) interactive: bool,
+    /// (Session) The operator's messages and stop request during a turn.
+    pub(crate) steering: Option<Arc<crate::session::Steering>>,
+    /// (Session) The current operator turn.
+    pub(crate) exchange: u64,
 }
 
 /// Why the loop stopped.
@@ -381,6 +385,8 @@ pub(crate) enum Stop {
     /// (Session) the frontier replied to the operator, or asked them a
     /// question, and waits for their next message.
     Reply { text: String, question: bool },
+    /// (Session) the operator asked to stop after the current step.
+    Stopped,
 }
 
 impl From<Terminal> for Stop {
@@ -480,6 +486,8 @@ async fn drive(
         items: Vec::new(),
         classes: HashMap::new(),
         interactive: false,
+        steering: None,
+        exchange: 0,
     };
     if resume {
         let restored = stored!(
@@ -534,7 +542,9 @@ async fn drive(
     .await?
     {
         Stop::Terminal(t) => Ok(t),
-        Stop::Reply { .. } => Err("internal error: a reply outside a session".into()),
+        Stop::Reply { .. } | Stop::Stopped => {
+            Err("internal error: a session stop outside a session".into())
+        }
     }
 }
 
@@ -585,6 +595,33 @@ pub(crate) async fn work(
     loop {
         if interrupted.load(Ordering::SeqCst) {
             return Ok(Terminal::interrupted().into());
+        }
+        // The safe point of a session: every result of the last response is
+        // recorded and the next request is not sent yet. A stop ends the
+        // turn here; steering messages join the conversation here.
+        if let Some(steering) = conv.steering.clone() {
+            if steering.stop_requested() {
+                return Ok(Stop::Stopped);
+            }
+            let messages = steering.deliver();
+            if !messages.is_empty() {
+                let item = crate::session::steering_item(
+                    presenter,
+                    frontier.audit(),
+                    conv.exchange,
+                    &messages,
+                );
+                stored!(
+                    host,
+                    transcript.append(&Entry::Steered {
+                        exchange: conv.exchange,
+                        after_request: stats.turns,
+                        messages,
+                    })
+                );
+                stored!(host, transcript.append(&Entry::Item { item: item.clone() }));
+                items.push(item);
+            }
         }
         if Instant::now() >= deadline {
             return Ok(Terminal::out_of_time().into());
