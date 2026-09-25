@@ -389,6 +389,57 @@ pub const REGISTRY: &[Setting] = &[
         "Maximum time the agent works over a whole session (waiting for the operator does not count); each turn is also held to limits.wall_clock_minutes."
     ),
     s!(
+        "subagents.enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        false,
+        "Offer the `delegate` tool: the frontier hands a sub-task to a sub-agent with a fresh context (the same boundary, sandbox and tools, never more): read-only ones, several at a time, or one that writes only the paths it was given. Its spend and time count against this run's limits."
+    ),
+    s!(
+        "subagents.max_parallel",
+        Int { min: 1, max: 8 },
+        "3",
+        Project,
+        Any,
+        false,
+        "How many read-only sub-agents run at the same time when the frontier delegates several at once (writing ones always run alone)."
+    ),
+    s!(
+        "subagents.max_usd",
+        Float {
+            min: 0.0,
+            max: 1_000.0
+        },
+        "1.0",
+        Project,
+        OnlyLower,
+        true,
+        "Maximum frontier spend of one sub-agent (list price); it also never exceeds what is left of the run's limits.frontier_usd. A sub-agent that reaches it stops as budget_stopped and the frontier is told."
+    ),
+    s!(
+        "subagents.max_minutes",
+        Int {
+            min: 1,
+            max: 24 * 60
+        },
+        "15",
+        Project,
+        OnlyLower,
+        false,
+        "Maximum duration of one sub-agent; it also ends when the run's own wall clock does."
+    ),
+    s!(
+        "subagents.model",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Frontier model id for sub-agents (for example a cheaper one at the same endpoint); empty uses frontier.model. Its requests pass the same outbound gate and audit log."
+    ),
+    s!(
         "checks.commands",
         List,
         "[]",

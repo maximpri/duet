@@ -163,7 +163,7 @@ fn settings_screens_show_every_value_and_its_origin() {
     );
     for tab in Tab::ALL.into_iter().filter(|t| t.is_settings()) {
         app.enter_tab(tab);
-        let out = screen(&mut app, 200, 60);
+        let out = screen(&mut app, 200, 80);
         for s in keys(tab) {
             assert!(out.contains(s.key), "{} missing on {tab:?}:\n{out}", s.key);
         }

@@ -21,7 +21,7 @@ pub fn screen_of(key: &str) -> Option<Tab> {
         "sensitivity" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
         "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git"
-        | "mcp" | "lsp" => Some(Tab::Limits),
+        | "mcp" | "lsp" | "subagents" => Some(Tab::Limits),
         "data" => Some(Tab::Data),
         _ => None,
     }
