@@ -56,7 +56,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 
 | Crate | Owns | Must never |
 |---|---|---|
-| `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly, retry, credentials, local-endpoint trust, context probes, `Usage`, `Price` | Know about tools, policy or the boundary |
+| `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly, retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers | Inherit the user's git config, hooks or fsmonitor |
@@ -76,18 +76,22 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 // duet-provider
 struct ChatProvider;   async fn create(&self, req: &Request) -> Result<Response, ProviderError>
 struct Usage { input, cache_read, cache_write, output, reasoning: u64, status: UsageStatus }
+enum Item { User { text }, Assistant { .. }, ToolResult { call_id, content },
+            Images { call_id: Option<String>, images: Vec<Image> } }   // images of the item before
+struct Image { media_type, sha256, width, height, bytes }   // bytes loaded, never serialized
 enum UsageStatus { Reported, Estimated, Unknown }
 
 // duet-boundary
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
               SensitiveCommand { command, exit_code }, Diff, Checks, Web { url },
               GitHistory { rev, path: Option<PathBuf> }, Other { label },
-              Mcp { server, tool, trust: ServerTrust }, Subagent { child } }
+              Mcp { server, tool, trust: ServerTrust }, Subagent { child }, Image { origin } }
 enum ViewClass { Raw, Tokenized, HandleSummary, LocalAnswer, BulkyHandle, Protected }
 trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the frontier gets
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
                   fn hidden_from_commands(..) -> Vec<PathBuf>; fn mark_sensitive(..);
-                  fn check_outbound(&self, destination, text) -> Result<String, String>; .. }
+                  fn check_outbound(&self, destination, text) -> Result<String, String>;
+                  fn route_image(&self, &ImageRequest) -> Route; .. }   // Frontier | Describe | Refuse
 struct Engine;         // the hybrid Presenter; PassThrough is the no-op one
 // handles render as "h12"; placeholders as "⟨secret:DB_URL#1⟩", "⟨email:email#4⟩", "⟨body:h7⟩"
 struct OutboundGate;   fn wrap(self, p: ChatProvider) -> GatedFrontier
@@ -262,7 +266,12 @@ The gate applies filters to the request, then checks, then appends to the audit 
   substitution), interventions[]}`; `duet audit verify` recomputes the chain.
 - **Audit events** share the chain: run start (boundary on/off) and end, local-endpoint trust,
   sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
-  sends (check name), protected edits. Names, paths and outcomes only, never content.
+  sends (check name), protected edits, images (origin, size, digest, destination, rule). Names,
+  paths and outcomes only, never content.
+- **Images in the body:** checks and the audit record see each image's data replaced by a digest
+  marker (`[image sha256:…, N bytes]`; `duet_provider::image::redact`), and `request_sha256` is of
+  that form; the provider sends the real body. Every check also gets the digests
+  (`OutboundCheck::check_images`); the engine's refuses any image not routed to the frontier.
 - **Anchor:** after every append the chain head (record count, last hash) is written to
   `<owner state>/audit-anchors/runs/<run-id>/<first-record hash>.json`, outside the workspace.
   The key belongs to the run, not to the workspace path, so a moved or re-mounted workspace still
@@ -431,6 +440,44 @@ except files a later journaled write changed (`SubagentReverted{child, paths}`);
 re-decides the dropped step. A sub-agent whose result was recorded keeps its writes, and a session
 `/undo` of its turn reverts them with the parent's.
 
+### 5.11 Images
+
+`crates/duet-agent/src/images.rs` over `duet-provider`'s `image` and `duet-boundary`'s `images`.
+Entry points: `read_file` on a path with an image extension (routed by `run::work` before the
+tool dispatcher), `RunConfig.images.attached` (`duet run --image` / `--image-public`, attached to
+the task), and `Session::attach` (`/image` in `duet chat` and the TUI, attached to the next
+message).
+
+```
+read / attach ─ prepare (sniff PNG/JPEG/GIF/WebP, decode with size and allocation limits,
+                scale to images.max_side, re-encode: JPEG stays JPEG, the rest PNG; ≤3.75 MB)
+              ─ Presenter::route_image(origin, operator_public, sha256, frontier.vision)
+                  pass-through: Frontier if frontier.vision, else Refuse
+                  engine: protected path → Refuse; sensitive path (policy or derived) →
+                    Describe (local.vision) or Refuse, never Frontier; public (operator mark, or
+                    images.to_frontier = public and a workspace path) → Frontier if
+                    frontier.vision, else Describe/Refuse; otherwise Describe or Refuse.
+                    Frontier records the digest (frontier-images.json).
+              ─ audit `image` {origin, bytes, sha256, destination, decision, operator_public}
+              ─ Frontier: store images/<sha256>.<ext>; tool result or message note names it;
+                  Item::Images { call_id } follows the ToolResult / User item
+                Describe: present(Source::Image { origin }, bytes) → handle + local
+                  description (image before the instruction), cleaned as sensitive text with
+                  every name-like phrase a person, copied spans removed; ask_local on the
+                  handle shows the local model the image again
+                Refuse: tool error, or (attachment) the run fails / the turn fails before sending
+```
+
+Dialects: Chat Completions puts images before the text of a user message (`image_url` data URL)
+and sends tool-result images as one user message after the run of tool messages (tool messages
+are text only); Anthropic puts `image` blocks (base64 source) before the text, and inside the
+`tool_result` content; Responses uses `input_image` parts in the user message and in
+`function_call_output.output`. An `Images` item whose images are not loaded or were masked sends
+nothing. The gate's outbound filter drops images whose digest was not routed to the frontier, and
+the check refuses any that remains. Resume and session resume load each image back from the store
+by digest (one that is missing or altered is dropped). The engine does not index image bytes as
+text when primed.
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -441,11 +488,15 @@ re-decides the dropped step. A sub-agent whose result was recorded keeps its wri
   (oldest first, the last 4 turns kept, results under 400 characters kept), by stubs naming the
   call and any handle: `[masked: run_command `cargo test` → h7, ~3100 tokens removed to save
   context; h7 is still available (...)]`. Tool calls and their results are never separated.
-  Masking happens rarely and in batches so caches are invalidated rarely.
+  Masking happens rarely and in batches so caches are invalidated rarely. Images count by their
+  own estimate (about one token per 750 pixels); a masked turn's images are dropped with their
+  result, whose stub then says to repeat the call.
 - The run's cost ledger (`summary.json` `stats.ledger`) charges every tool result, for each
   request that carries it, to the class it was shown as (raw, tokenized, handle summary, local
   answer, bulky handle), and counts `ask_local` calls and questions, `sensitive_data` commands,
-  sandbox denials and local busy seconds; the method is documented in `duet-agent/src/ledger.rs`.
+  sandbox denials and local busy seconds; images by destination (sent, described, refused) with
+  their estimated share of the reported input dollars (`stats.ledger.images`); the method is
+  documented in `duet-agent/src/ledger.rs`.
 
 ## 7. State on disk
 
@@ -468,6 +519,8 @@ git; reset behaviour defined per entry).
     spill-<uuid>.txt          long command outputs
     writes.jsonl              pending/applied records for crash recovery
     git-base                  HEAD before the run's first git_commit (what `diff` compares with)
+    images/<sha256>.<ext>     images the frontier was shown, by digest (the transcript holds digests)
+    frontier-images.json      digests of the images routed to the frontier (the gate sends no other)
     summary.json              terminal state (placeholders restored for the operator), usage, cost ledger
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
   lock, tmp/                  workspace lock; sandbox scratch space

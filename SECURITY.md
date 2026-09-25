@@ -128,6 +128,8 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
 - **Project configuration can only tighten.** It can never set owner-only keys (endpoints,
   credentials, `local.allow_plaintext`, raw-output commands, secret sinks).
 - **Sandbox on, network off** for every command; sensitive paths unreadable to commands.
+- **Images stay local.** `local.vision`, `frontier.vision` are off and `images.to_frontier` is
+  `never`: in hybrid mode no image reaches the frontier unless the operator marks it public.
 
 ## Protected source (IP levels)
 
@@ -584,6 +586,40 @@ parent does that. The operator's approval prompt for a sub-agent's action looks 
 against the paths and refuses the whole edit if one is outside. A read-only MCP tool is the
 server's own claim, as for the parent. Line counts in the change summary compare lines as sets
 (a moved line counts as unchanged).
+
+## Images
+
+`read_file` on an image, `duet run --image` / `--image-public`, and `/image` in sessions bring
+images into a run. An image is a channel in that no detector can read: a screenshot of a terminal,
+a scanned form or a photo of a whiteboard carries text (keys, names, account numbers) that the
+vault, the secret and PII detectors and the copied-span filter never see. That is why, with the
+boundary on, the frontier does not get images by default.
+
+| Threat | What stops it |
+|---|---|
+| An image holding sensitive text reaches the frontier | Hybrid default: the image stays on this machine; the local model describes it (`local.vision`) and the frontier gets the description, cleaned as sensitive text (every value a detector or the vault recognizes becomes a placeholder, every name-like phrase is treated as a person, spans copied from sensitive content are removed) plus a handle for `ask_local`. Without a local model that reads images, the image is refused with the reason, never sent anyway |
+| An image from a sensitive path reaches the frontier | Never: a sensitive path (policy globs, or a file a `sensitive_data` command wrote) is described or refused, even when the operator marks it public or `images.to_frontier = "public"`; a protected path (IP levels) is neither shown nor described |
+| An image goes to the frontier by mistake or through a defect | The frontier gets an image itself only by a named rule: the operator's public mark (`--image-public`, `/image --public`; an `image` audit event with `operator_public`), or `images.to_frontier = "public"` (confirmed owner change, a project can only tighten it) for a workspace path that is neither sensitive nor protected. The engine records the digest of each image it routes to the frontier; the outbound filter drops any other image from a request and the gate's check refuses one that remains (a blocked send) |
+| Hidden content in the file (EXIF GPS position, camera serial, PNG text chunks, later GIF frames, data appended after the image) | Every image is decoded and encoded again before any model sees it: only the first frame's pixels survive |
+| Decompression bombs and malformed files | The format is taken from the bytes (PNG, JPEG, GIF, WebP only), files over 20 MB are refused, decoding is limited to 16,384 pixels a side and 512 MB of memory, and a decoder error refuses the image; images are scaled to `images.max_side` and at most 3.75 MB encoded |
+| Image data in the audit log or transcripts | Audit request records and checks see each image's data replaced by its digest (`[image sha256:…, N bytes]`); `image` events hold origin, size, digest, destination and rule. Transcripts hold digests; the bytes are in the run directory (0600, removed by `duet purge`) |
+| The local model says it read an image it never saw | Some servers accept image parts and silently drop them; the model then describes nothing. `local.vision` is off by default and `duet doctor --online` shows the model two generated one-colour images and fails the check when the setting is on and the answers do not match |
+
+Pass-through: an image goes to the frontier when `frontier.vision` is on and is refused otherwise
+(the boundary is off, as for every other result).
+
+**Known limits.** A description is only as safe as what the local model writes and what the
+filters recognize: text in the image that the model copies in a form no detector knows (a plain-word
+password, an unlabelled short number, a first name alone) reaches the frontier. The prompt tells the
+model not to copy such text, and the strict filter treats name-like phrases as people, but neither is
+a guarantee; for images that may hold such text, keep `local.vision` off (images are then refused)
+or do not attach them. An image the operator marks public, or a workspace image with
+`images.to_frontier = "public"`, goes to the frontier unscanned: whatever it shows is disclosed.
+Path rules classify an image by where it is, not by what it shows: a screenshot of customer data
+saved under `docs/` is public by path. Text in an image cannot be prompt-injection-filtered either;
+the frontier treats it as it treats any content it is shown. Images are recognized for `read_file`
+by extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`); another binary file is read as text, as
+before. The ledger's image tokens are estimates (no provider reports them apart from other input).
 
 ## Known limits
 
