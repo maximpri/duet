@@ -519,6 +519,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "duet-lsp"
+version = "0.1.0"
+dependencies = [
+ "duet-sandbox",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "duet-mcp"
 version = "0.1.0"
 dependencies = [
