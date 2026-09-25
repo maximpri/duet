@@ -567,7 +567,7 @@ async fn converse(
         engine,
         frontier,
         run_cfg,
-    } = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit)?;
+    } = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit).await?;
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn Presenter = match &engine {
         Some(e) => e.as_ref(),
@@ -664,6 +664,7 @@ async fn converse(
         }
     };
     let (terminal, mut stats) = session.end(closed);
+    crate::mcp::stop(&run_cfg).await;
     stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
     Ok((terminal, stats))
 }

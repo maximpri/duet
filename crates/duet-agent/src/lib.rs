@@ -7,6 +7,7 @@ pub mod git_tools;
 pub mod host;
 pub mod journal;
 pub mod ledger;
+pub mod mcp;
 pub mod oversight;
 pub mod prompt;
 pub mod protected;

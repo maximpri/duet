@@ -231,6 +231,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         oversight: Default::default(),
         web: None,
         git_author: None,
+        mcp: None,
     };
     Fixture {
         _dir: dir,

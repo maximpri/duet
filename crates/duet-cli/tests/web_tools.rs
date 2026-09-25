@@ -168,6 +168,7 @@ fn config(ws: &Path, run_dir: &Path, web: Option<Arc<Web>>) -> RunConfig {
         oversight: duet_agent::Oversight::default(),
         web,
         git_author: None,
+        mcp: None,
     }
 }
 

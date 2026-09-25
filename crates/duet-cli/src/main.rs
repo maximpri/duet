@@ -26,6 +26,7 @@ use std::time::Duration;
 mod approve;
 mod chat;
 mod doctor;
+mod mcp;
 mod setup;
 mod web;
 
@@ -494,7 +495,7 @@ async fn start(
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
 ) -> Result<(Terminal, duet_agent::RunStats)> {
-    let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit)?;
+    let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit).await?;
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn duet_boundary::view::Presenter = match &p.engine {
         Some(e) => e.as_ref(),
@@ -509,6 +510,7 @@ async fn start(
         &limits.interrupted,
     )
     .await;
+    mcp::stop(&p.run_cfg).await;
     // Local model work of this invocation (a resumed run reports only its own).
     stats.ledger.local = p.engine.as_ref().and_then(|e| e.take_local_stats());
     Ok((terminal, stats))
@@ -524,9 +526,9 @@ struct Prepared {
 }
 
 /// Opens the engine, the providers and the audit log, records the start
-/// events and builds the run configuration. `audit` receives the audit log
-/// as soon as it is open.
-fn prepare(
+/// events, starts the MCP servers and builds the run configuration. `audit`
+/// receives the audit log as soon as it is open.
+async fn prepare(
     ws: &Path,
     manifest: &RunManifest,
     cfg: &Config,
@@ -624,6 +626,17 @@ fn prepare(
         oversight,
         web: web::access(cfg)?,
         git_author: approve::git_author(cfg)?,
+        mcp: mcp::start(
+            cfg,
+            ws,
+            run_dir,
+            sandbox,
+            engine
+                .as_deref()
+                .map(|e| e as &dyn duet_boundary::view::Presenter),
+            frontier.audit(),
+        )
+        .await?,
     };
     Ok(Prepared {
         git,
@@ -862,6 +875,21 @@ Add --no-privacy to confirm, or use --mode hybrid."
             match action {
                 ConfigCmd::List => {
                     for s in duet_config::REGISTRY {
+                        if duet_config::is_template(s.key) {
+                            // One line per configured instance (`*` names it).
+                            let names = cfg.instances(s.key);
+                            if names.is_empty() {
+                                println!("{}  (none configured; {})", s.key, s.help);
+                            }
+                            for n in names {
+                                let key = s.key.replace('*', &n);
+                                let origin = cfg
+                                    .origin(&key)
+                                    .map_or("?".to_owned(), |o| format!("{o:?}").to_lowercase());
+                                println!("{key} = {}  ({origin}; {})", cfg.value(&key)?, s.help);
+                            }
+                            continue;
+                        }
                         let origin = cfg
                             .origin(s.key)
                             .map_or("?".to_owned(), |o| format!("{o:?}").to_lowercase());

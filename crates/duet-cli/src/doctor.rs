@@ -159,6 +159,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
             out.push(approval(c));
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
+            out.extend(mcp_servers(c, ws, online).await);
         }
         None => out.push(check(
             "endpoints",
@@ -173,6 +174,105 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
     out.push(audit(ws));
     if let Some(c) = &cfg {
         out.push(retention(ws, c));
+    }
+    out
+}
+
+/// Configured MCP servers: stdio servers are started in the sandbox (with a
+/// run's hidden paths), HTTP servers only contacted with `--online`; each
+/// reports how many tools it offers, then is stopped.
+async fn mcp_servers(c: &Config, ws: &Path, online: bool) -> Vec<Check> {
+    let configured = crate::mcp::configured(c);
+    if configured.is_empty() {
+        return vec![check(
+            "mcp",
+            Status::Skip,
+            "no MCP servers configured ([mcp.servers.<name>] in the owner config)",
+        )];
+    }
+    let mut out = Vec::new();
+    let mut start = Vec::new();
+    for (name, s) in configured {
+        match s {
+            Err(e) => out.push(check("mcp", Status::Fail, format!("{e:#}")).fix(format!(
+                "fix [mcp.servers.{name}] in the owner config (`duet config list`)"
+            ))),
+            Ok((_, false)) => out.push(check(
+                "mcp",
+                Status::Skip,
+                format!("server `{name}`: disabled"),
+            )),
+            Ok((server, true)) if !online && server.transport_name() == "http" => out.push(check(
+                "mcp",
+                Status::Skip,
+                format!("server `{name}` (http): not contacted offline; --online connects"),
+            )),
+            Ok((server, true)) => start.push(server),
+        }
+    }
+    if start.is_empty() {
+        return out;
+    }
+    let sandbox = match duet_sandbox::detect() {
+        Ok(k) => k,
+        Err(e) => {
+            out.push(check(
+                "mcp",
+                Status::Fail,
+                format!("servers cannot start: {e}"),
+            ));
+            return out;
+        }
+    };
+    // The same hidden paths as a run, from an engine over the configured
+    // policy (no local model; nothing leaves this machine).
+    let dir = std::env::temp_dir().join(format!("duet-doctor-{}", uuid::Uuid::new_v4()));
+    let engine = match crate::policy(c).map_err(|e| e.to_string()).and_then(|p| {
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        duet_boundary::engine::Engine::open(&dir, p, None).map_err(|e| e.to_string())
+    }) {
+        Ok(e) => e,
+        Err(e) => {
+            out.push(check(
+                "mcp",
+                Status::Fail,
+                format!("servers cannot start: {e}"),
+            ));
+            return out;
+        }
+    };
+    let workspace = ws.canonicalize().unwrap_or_else(|_| ws.to_path_buf());
+    let reports = duet_agent::mcp::probe(
+        &start,
+        &duet_agent::mcp::Setup {
+            workspace: &workspace,
+            run_dir: &dir,
+            sandbox,
+            presenter: engine.as_ref(),
+            audit: None,
+        },
+    )
+    .await;
+    let _ = std::fs::remove_dir_all(&dir);
+    for r in reports {
+        out.push(match r.result {
+            Ok(n) => check(
+                "mcp",
+                Status::Pass,
+                format!("server `{}` ({}): started, {n} tool(s)", r.name, r.transport),
+            ),
+            Err(e) => check(
+                "mcp",
+                Status::Warn,
+                format!("server `{}` ({}): did not start: {e}", r.name, r.transport),
+            )
+            .fix(format!(
+                "check mcp.servers.{0}.command/args or url (`duet config list`); a stdio server runs \
+in the command sandbox without network unless mcp.servers.{0}.network = true, and gets only the \
+environment variables named in mcp.servers.{0}.env",
+                r.name
+            )),
+        });
     }
     out
 }

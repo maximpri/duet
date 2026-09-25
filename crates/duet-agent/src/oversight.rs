@@ -8,7 +8,11 @@
 //! - writes a file (`edit_file`, `write_file`) that is not an ordinary source
 //!   or test file (see [`is_source_or_test`]).
 //!
-//! With `all`, every command and every write needs approval as well. Reads,
+//! MCP tools (see `crate::mcp`) follow their server's `approve` setting under
+//! `risky`: with `writes` (the default) a tool the server does not declare
+//! read-only needs approval, with `always` every tool, with `auto` none.
+//!
+//! With `all`, every command, every write and every MCP call needs approval as well. Reads,
 //! `ask_local` and `finish` (whose checks the owner configured) never do.
 //! A denied action becomes a tool error the model can adapt to. Every decision
 //! is recorded as an audit event holding the tool, the risk class and a write's
@@ -69,6 +73,10 @@ pub enum Risk {
     Write,
     /// A commit to the repository's history (`git.commit = "ask"`, or `all`).
     GitCommit,
+    /// An MCP tool the server does not declare read-only.
+    McpWrite,
+    /// An MCP tool declared read-only (servers with `approve = "always"`, or `all`).
+    McpCall,
 }
 
 impl Risk {
@@ -80,6 +88,8 @@ impl Risk {
             Risk::Command => "command",
             Risk::Write => "write",
             Risk::GitCommit => "git_commit",
+            Risk::McpWrite => "mcp_write",
+            Risk::McpCall => "mcp_call",
         }
     }
 
@@ -95,6 +105,8 @@ impl Risk {
             Risk::Command => "runs a command",
             Risk::Write => "writes a file",
             Risk::GitCommit => "records a commit in the repository's history",
+            Risk::McpWrite => "calls an MCP tool that may change things (not declared read-only)",
+            Risk::McpCall => "calls an MCP tool",
         }
     }
 }
@@ -295,9 +307,21 @@ pub fn review(
     presenter: &dyn Presenter,
     audit: Option<&AuditHandle>,
 ) -> Result<(), String> {
-    let Some(action) = classify(oversight.mode, tool, args, presenter)
-        .or_else(|| commit_action(oversight, tool, args))
-    else {
+    decide(
+        oversight,
+        classify(oversight.mode, tool, args, presenter)
+            .or_else(|| commit_action(oversight, tool, args)),
+        audit,
+    )
+}
+
+/// Asks for approval of `action`, if there is one (see [`review`]).
+pub fn decide(
+    oversight: &Oversight,
+    action: Option<Action>,
+    audit: Option<&AuditHandle>,
+) -> Result<(), String> {
+    let Some(action) = action else {
         return Ok(());
     };
     let (approved, decided_by) = match &oversight.approver {

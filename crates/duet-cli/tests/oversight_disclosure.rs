@@ -166,6 +166,7 @@ async fn a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld(
         },
         web: None,
         git_author: None,
+        mcp: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, stats) = duet_agent::run(

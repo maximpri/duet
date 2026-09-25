@@ -100,6 +100,8 @@ pub struct RunConfig {
     /// The operator's identity for `git_commit` (`git.author`); `None` reads
     /// it from git configuration when a commit is made.
     pub git_author: Option<duet_git::Identity>,
+    /// MCP servers started for the run, with their tools; `None` when none are configured.
+    pub mcp: Option<Arc<crate::mcp::Hub>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -557,8 +559,8 @@ async fn drive(
     }
 }
 
-/// The run's tools: built-in, the presenter's, the configured web tools and
-/// the git tools. Fixed for the run (or session) and sorted, so the request
+/// The run's tools: built-in, the presenter's, the configured web tools, the
+/// git tools and the MCP servers' tools. Fixed for the run (or session) and sorted, so the request
 /// prefix never changes.
 pub(crate) fn tool_specs(
     cfg: &RunConfig,
@@ -573,6 +575,12 @@ pub(crate) fn tool_specs(
             .unwrap_or_default(),
     );
     extra.extend(git_tools.map(|g| g.specs()).unwrap_or_default());
+    extra.extend(
+        cfg.mcp
+            .as_deref()
+            .map(crate::mcp::Hub::specs)
+            .unwrap_or_default(),
+    );
     tools::specs_with(extra)
 }
 
@@ -838,16 +846,39 @@ pub(crate) async fn work(
                     }
                     Err(e) => format!("error: {e}"),
                 }
-            } else if let Err(e) = crate::oversight::review(
-                &cfg.oversight,
-                &call.name,
-                &call.arguments,
-                presenter,
-                Some(frontier.audit()),
-            ) {
+            } else if let Err(e) = match cfg.mcp.as_deref().filter(|h| h.owns(&call.name)) {
+                Some(hub) => crate::oversight::decide(
+                    &cfg.oversight,
+                    hub.action(cfg.oversight.mode, &call.name, &call.arguments),
+                    Some(frontier.audit()),
+                ),
+                None => crate::oversight::review(
+                    &cfg.oversight,
+                    &call.name,
+                    &call.arguments,
+                    presenter,
+                    Some(frontier.audit()),
+                ),
+            } {
                 format!("error: {e}")
             } else {
-                let outcome = tools::dispatch(&mut ctx, &call.name, &call.arguments).await;
+                let outcome = if let Some(hub) = cfg.mcp.as_deref().filter(|h| h.owns(&call.name)) {
+                    match hub
+                        .call(
+                            &call.name,
+                            &call.arguments,
+                            presenter,
+                            Some(frontier.audit()),
+                            Some(interrupted),
+                        )
+                        .await
+                    {
+                        Ok(text) => Outcome::Result(text),
+                        Err(e) => Outcome::Error(e),
+                    }
+                } else {
+                    tools::dispatch(&mut ctx, &call.name, &call.arguments).await
+                };
                 // An interrupt stops a running command at once (its process
                 // tree is killed); the call is recorded, its result is not.
                 if interrupted.load(Ordering::SeqCst)

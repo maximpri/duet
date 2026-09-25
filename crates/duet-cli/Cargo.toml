@@ -18,6 +18,7 @@ duet-provider.workspace = true
 duet-config.workspace = true
 duet-fs.workspace = true
 duet-git.workspace = true
+duet-mcp.workspace = true
 duet-sandbox.workspace = true
 duet-tui.workspace = true
 duet-web.workspace = true
