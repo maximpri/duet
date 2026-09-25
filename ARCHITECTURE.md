@@ -115,7 +115,9 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
 
 ```
 0. Run start (hybrid): prime the engine. Public files and the task seed the public-word list;
-   every sensitive file (git ls-files, ≤2 MB) is read once: its values enter the vault and its
+   every sensitive file (git ls-files, plus the sensitive files git does not list — an ignored
+   `.env`, logs, databases — found by the walk that builds the commands' deny list, ≤64 MB of
+   those in total; ≤2 MB per file) is read once: its values enter the vault and its
    text the copied-span index. The task gets a note naming the sensitive paths (commands cannot
    read them) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
    task (≤3 local calls, values withheld, cleaned like any local output).
@@ -203,8 +205,9 @@ Layers run independently; the result is the most restrictive class any layer ass
 | Imported secret rules | any text (path conditions and path allowlists on file content) | the gitleaks rule set as data (`rules/gitleaks.toml`, compiled by `rules.rs`): keyword prefilter (one Aho-Corasick pass), then each triggered rule's expression, entropy threshold, secret group and allowlists; a match inside an own detector's span is dropped; placeholders named after the rule |
 | PII detector | any text | email (reserved example domains skipped), phone (US, E.164, labelled national), card (Luhn), SSN, IBAN (registry length, mod-97), UK/DE/FR/ES/IT/NL national IDs with their checks (`pii.rs`), IPv4, IPv6, labelled postal addresses; 12–19 digit numbers labelled within three words (card, account, IBAN, SSN, passport, licence, tax ID, ...) as card, account or ID whatever their checksum. A regex set per detector group skips expressions that cannot match |
 | Local personal-data pass | public content, optional (`sensitivity.local_pii_pass`) | prose lines sent to the local model, which lists names and postal addresses; values that occur as written and look plausible enter the vault (`engine/pii_pass.rs`) |
+| Operator-number rule | operator text (task, session and steering messages) | every 12–19 digit number, labelled or not (`⟨id:number#n⟩`, an `ask_local` handle) |
 | Sensitive-text detector | sensitive text only | title-case name runs (split on stop words and sentence-initial function words), person/address field values of any shape, long numbers; in local-model output a name counts only if a word of it occurs in the content the model read; digit runs sharing 4+ consecutive digits with a vaulted card, account, ID, IBAN or phone number are replaced |
-| Taint | files | files a `sensitive_data` command created or changed (`derived.json`, kept across resume) |
+| Taint | files | files a `sensitive_data` command created or changed (`derived.json`, kept across resume); under `target/` and `node_modules/` (which the snapshot skips) those modified since the command started; each is indexed again, and denied to commands by name |
 | IP | path | `ip.interface_only` / `ip.sealed` |
 
 Every value found enters the run's **vault** under one token per value (`⟨kind:label#n⟩`). Values
@@ -249,8 +252,26 @@ All roles send one shared JSON schema (servers such as oMLX key their prompt cac
 put the content before the instruction, so questions about one handle reuse the processed prefix;
 each role checks its own required fields. Temperature 0; visible thinking off; content over ~60K
 characters is chunked; one retry on unparseable output, then an error the frontier sees as
-"unavailable" — never an invented answer. Every local output is sanitized as sensitive text and
-passes the copied-span filter before it enters a view.
+"unavailable" — never an invented answer.
+
+Every local output is cleaned before it enters a view (`Engine::clean_local_counted`):
+1. the 4-token copy window on the text as written (before placeholders split a copied line);
+2. other spellings (`reencoded.rs`): spaced-out runs (`V a k d r i l`, `4-5-3-9`) matched against
+   the vault's skeletons (letters and digits, lower-cased) and replaced by the value's token;
+   base64/hex runs decoded at every alignment and, if the bytes hold a vault value (any letter
+   case) or a 4-token copied window, replaced by `⟨redacted:encoded-sensitive-text⟩`;
+3. sanitized as sensitive text (never across a known placeholder), then both copy windows;
+4. short pieces of identifying values limited (`probing.rs`, state in `probes.json`): pieces
+   tied to a position (`the first digit is`, `starts with`) are `⟨withheld:characters-of-a-value⟩`;
+   in an `ask_local` answer, other 1–3 character pieces are charged to the values on the lines the
+   question names or the answer cites, at most 2 characters per value over the run.
+
+A question for characters of a value by position or piece (first/last N, the n-th, a range, a
+prefix or suffix, what it starts or ends with, whether it contains some digits, spelled out,
+reversed or encoded) is put to the local model as a question about the value's format, and all
+of its answer's pieces of a value are withheld. Each such probe is a `local_probe` audit event
+(handle, rule, pieces withheld, a running count per handle), drained from the presenter
+(`Presenter::take_events`) into the run's audit log.
 
 ### 5.4 Outbound gate
 
@@ -266,8 +287,9 @@ The gate applies filters to the request, then checks, then appends to the audit 
   substitution), interventions[]}`; `duet audit verify` recomputes the chain.
 - **Audit events** share the chain: run start (boundary on/off) and end, local-endpoint trust,
   sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
-  sends (check name), protected edits, images (origin, size, digest, destination, rule). Names,
-  paths and outcomes only, never content.
+  sends (check name), protected edits, images (origin, size, digest, destination, rule),
+  `ask_local` probes of a value (handle, rule, pieces withheld, count). Names, paths and outcomes
+  only, never content.
 - **Images in the body:** checks and the audit record see each image's data replaced by a digest
   marker (`[image sha256:…, N bytes]`; `duet_provider::image::redact`), and `request_sha256` is of
   that form; the provider sends the real body. Every check also gets the digests
@@ -518,6 +540,7 @@ git; reset behaviour defined per entry).
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
+    probes.json               characters of each value local answers showed; probes per handle
     operator.json             placeholders of operator-typed values → the handle of their message
     spill-<uuid>.txt          long command outputs
     writes.jsonl              pending/applied records for crash recovery
@@ -543,7 +566,8 @@ git; reset behaviour defined per entry).
   every command by the sandbox itself, `.git` (committed copies) to ordinary commands and checks;
   command `TMPDIR` outside the workspace (a sub-agent's commands can write nothing else: the
   workspace is read-only to them, `Spec.read_only`), a separate one for `sensitive_data` commands that no
-  other sandboxed process (command, check, MCP server) can read (`tools::hidden_from_processes`); sensitive and protected paths unreadable (deny-read) except for
+  other sandboxed process (command, check, MCP server) can read (`tools::hidden_from_processes`), where
+  their cargo builds go too (`CARGO_TARGET_DIR`); sensitive and protected paths unreadable (deny-read) except for
   `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
   On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against

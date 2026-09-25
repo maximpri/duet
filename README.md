@@ -43,15 +43,17 @@ your repository ──► security engine ──────┘
   secret belongs.
 - **Logs and data files** appear as a handle with error lines and values replaced, their repeated
   line shapes and a local summary. The frontier asks the local model questions about them
-  (`ask_local`), but never sees the raw content. Optionally (`sensitivity.local_brief`, off by
+  (`ask_local`), but never sees the raw content, and cannot take a value apart one character at a
+  time: such questions are answered with the value's format, and are logged. Optionally (`sensitivity.local_brief`, off by
   default) the local model also briefs the frontier at the start of a run on what the sensitive
   files show for the task, with values withheld.
 - **Commands cannot read sensitive files** (OS sandbox). A command that must, such as the program
   run on the real data, is marked `sensitive_data`: its output stays local behind a handle, the
-  files it writes become sensitive, and placeholders in it are filled in locally. No command can
+  files it writes become sensitive (in `target/` and `node_modules/` too; its cargo builds go to a
+  private target directory), and placeholders in it are filled in locally. No command can
   read Duet's own state (`.duet/`).
-- **Values you type** (a card number in the task, a name in a chat message) appear to the frontier
-  as placeholders too; it works with them by asking the local model, which reads your message with
+- **Values you type** (a card number in the task, a name in a chat message, any 12–19 digit
+  number, a password from your ignored `.env`) appear to the frontier as placeholders too; it works with them by asking the local model, which reads your message with
   the real value. What Duet prints for you (the run's summary, chat replies) shows your values.
 - **Large public results** (long files, outputs, listings, searches) appear as the first lines and
   an outline; the frontier reads the ranges it needs.

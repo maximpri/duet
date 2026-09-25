@@ -79,7 +79,9 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    it.
 2. **Transformation** into placeholders, handles and summaries before content enters the
    frontier's context. At run start every sensitive file is indexed (its values into the vault, its
-   text into the copied-span index), so later echoes of it are caught wherever they appear; the task
+   text into the copied-span index), whether git lists it or ignores it (a gitignored `.env`, logs,
+   databases, found by the same walk that builds the commands' deny list), so later echoes of it
+   are caught wherever they appear, including in what the operator types; the task
    names the sensitive paths, and optionally (`sensitivity.local_brief`, off by default) the local
    model's brief of them for the task (values withheld, cleaned like any local output).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
@@ -88,13 +90,22 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    history (`.git`, which holds committed copies) is unreadable to ordinary commands and checks;
    commands get a scratch `TMPDIR` outside the workspace. A command that must read sensitive files
    is run with `sensitive_data`; its output is then held locally like a data file, every file it
-   creates or changes is treated as sensitive from then on, it gets a `TMPDIR` of its own that no
-   other command may read, and placeholders in its text are resolved on this machine (in any other
-   command they stay as written). It may read `.git` (what it prints stays local, as for the
+   creates or changes is treated as sensitive from then on (under `target/` and `node_modules/` too,
+   found by modification time) and indexed again, it gets a `TMPDIR` of its own that no other
+   command may read, where its cargo builds go as well (`CARGO_TARGET_DIR`), and placeholders in its
+   text are resolved on this machine (in any other command they stay as written). It may read `.git` (what it prints stays local, as for the
    sensitive files themselves). **Duet's run state** (`.duet/` at any depth: raw handles, the
    vault, transcripts, the audit log) is unreadable to every command in every mode, `sensitive_data`
    and checks included, whatever the caller asks; `.git` and `.duet` are never writable.
    **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
+   **Local-model output** (summaries, facts, briefs, `ask_local` answers) is checked with a 4-token
+   copy window on the text as written, spaced-out values (`V a k d r i l`) and base64/hex runs
+   (decoded at every alignment) are matched against the vault and the copy index, and pieces of
+   identifying values are limited: characters tied to a position (`the first digit is 5`,
+   `starts with 45`) are withheld, and in answers each value may show at most 2 characters in short
+   pieces over the run. An `ask_local` question for characters of a value by position or piece is
+   put to the local model as a question about the value's format, and is recorded in the audit log
+   (`local_probe`, with a running count per handle).
 3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
    including the frontier's own text and tool-call arguments (known values and their other
    spellings re-tokenized, detectors re-run), copied spans of sensitive content (≈24+ tokens) are
@@ -103,7 +114,7 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
 4. **Hash-chained audit log** of every outbound request (placeholder-substituted) and of the
    security decisions taken during the run: local-endpoint trust, sandbox denials, `sensitive_data`
    commands (command, exit code, files marked derived), blocked sends (which check), protected
-   edits, operator approval decisions (tool, risk class, a write's path, approved or not),
+   edits, `ask_local` questions that probed a value (handle, rule, pieces withheld, count), operator approval decisions (tool, risk class, a write's path, approved or not),
    operator messages in a session (turn number and how many values became placeholders), run
    start (with whether the boundary is on) and end. Events hold names, paths and
    outcomes, never content. After every append the log's head is anchored outside the workspace,
@@ -227,10 +238,11 @@ steering messages sent while a turn runs) crosses the boundary exactly like task
   sensitive-path note and optional brief). Later messages and steering go through
   `sanitize_message`: the same sanitizer without the note, which is given once per session. Their
   words are not added to the public vocabulary, so a name the operator types stays identifying.
-  A 12–19 digit number the message labels (card, credit, debit, account, acct, IBAN, routing,
-  bank, SSN, social security, passport, licence, tax ID, national ID, within three words) is a
-  placeholder even when its checksum fails. The outbound gate then sanitizes and checks the whole
-  request again, as for every request.
+  Every 12–19 digit number in it (spaces or dashes allowed) is a placeholder, labelled or not
+  and whatever its checksum: a labelled one becomes a card, account or ID placeholder, any other
+  `⟨id:number#n⟩`. A number the operator types is most likely the card, account or ID they are
+  asking about, and the placeholder costs nothing (it is a handle, below). The outbound gate then
+  sanitizes and checks the whole request again, as for every request.
 - **Usable through the local model.** Each placeholder a message produced is also a handle: the
   frontier passes it to `ask_local` (`card:card#1` or `⟨card:card#1⟩`), and the local model reads
   the operator's message with the real value. The frontier is told this once, with the first
@@ -269,6 +281,7 @@ value, a placeholder's name, a command or a path:
 | Sensitive results held locally, tokenized files, protected views, bulky previews, local answers | tool results by how they were shown (cost ledger) |
 | Requests changed by the outbound filter; requests blocked, by check | audit records, `blocked_send` events and `outbound_refused` events (as `outbound:<tool>`) |
 | Sandbox denials, `sensitive_data` commands and files they marked, protected edits, approvals | audit events |
+| `ask_local` questions probing a value, pieces of values withheld from answers | `local_probe` audit events |
 
 A passthrough run is reported as having the boundary off, with nothing withheld. A run without a
 `summary.json` (interrupted, or purged) is reported from its audit log alone.
@@ -349,21 +362,25 @@ The boundary's own code is also tested against generated input, in the gate on e
   bytes) must be refused by the check alone.
 - **End-to-end privacy scenarios** (`crates/duet-cli/tests/privacy_scenarios.rs`, harness in
   `tests/privacy/`). Whole hybrid runs and sessions through the real frontier loop, composed as
-  `duet run` composes them (shipped default policy, engine primed on the files git lists, outbound
-  filter and check in the gate), in a temporary git repository holding synthetic values (a
+  `duet run` composes them (shipped default policy, engine primed on the files git lists and the
+  sensitive files it ignores, outbound filter and check in the gate), in a temporary git repository holding synthetic values (a
   gitignored `.env`, `data/customers.csv` with made-up names, emails and card numbers). A scripted
   frontier records every request byte for byte; the local model is a stand-in that describes
   structure, or answers carelessly (narrow questions literally; repeating a line, digit runs, a
   value spelled out or in base64). Every request is searched with `testing::canary` (exact, other
   case, escaped, encoded, reversed, split, digit fragments); a finding names the request, the
   channel (system, user, tool result of which tool, call arguments) and the form. Covered: card
-  numbers the operator types (failing and passing the checksum, used through `ask_local`, restored
-  for the operator), `sensitive_data` commands reading run state or writing derived files, ten
-  narrow `ask_local` questions about one value, careless local answers, secrets in session and
-  steering messages, screenshots of the customer table read with `read_file` (public and
-  sensitive path) and attached to a session message, with a stand-in that transcribes them
-  (`Options::images`; no image data may reach the frontier either). Scenarios marked `#[ignore]` reproduce open gaps (the reason names the gap;
-  see Known limits) and should pass once it is closed. To add one: build a `Fixture` (name, task,
+  numbers the operator types (labelled or not, failing and passing the checksum, used through
+  `ask_local`, restored for the operator), a value from a gitignored `.env` typed by the operator
+  or shown in a screenshot, `sensitive_data` commands reading run state or writing derived files
+  (also under `target/`), ten narrow `ask_local` questions about one value (no run of its digits,
+  and no digits that add up across answers), careless local answers (a whole line, digit runs, a
+  value spelled out or in base64), secrets in session and steering messages, screenshots of the
+  customer table read with `read_file` (public and sensitive path) and attached to a session
+  message, with a stand-in that transcribes them (`Options::images`; no image data may reach the
+  frontier either). A gap a scenario finds is closed at the class level and the scenario stays as
+  a regression test; a scenario for a gap with no defence yet is marked `#[ignore]` with the gap
+  as its reason (none is, at present). To add one: build a `Fixture` (name, task,
   stand-in), `script` the frontier's tool calls (`Step::From` builds one from the request it
   answers, to use a placeholder or handle it was shown), `run` it or open a `session`, then
   `assert_no_leak(&f.canaries([extra values]))`.
@@ -382,12 +399,13 @@ What the value filters cover, precisely (the spellings the property asserts):
 | `.env` values, detected secrets and tokens, emails, phone numbers, IBANs, card numbers, IPv4 addresses | exactly as in the sensitive content (including characters JSON escapes, such as `\` and `"`, inside tool-call arguments) |
 | Person names in sensitive content (title-case runs, person fields such as `name=`) | as written; the surname alone if it has 4+ letters and is not a word of public content |
 | Numbers of 6+ digits in sensitive content | as written, plain digits, comma-grouped, and as minor units (`51861.26`, `51,861.26`) |
+| Any of the above, in local-model output | also spelled out (its letters and digits with 1–3 other characters between each two, any case), and in base64 or hex (at any alignment, any case) |
 
 Not covered by value filters: values under 4 bytes (the final check needs 6+), a first name alone,
 other letter cases or number formats, and any re-encoding (base64, hex, character codes, a value
-split across strings). Re-encoding is stopped by access control instead: commands cannot read
-sensitive paths, `.git` or `.duet`, so no program can print their content in any encoding, and a
-`sensitive_data` command's output is held locally.
+split across strings) outside local-model output. Re-encoding is stopped by access control instead:
+commands cannot read sensitive paths, `.git` or `.duet`, so no program can print their content in
+any encoding, and a `sensitive_data` command's output is held locally.
 
 ### Command sandbox by platform
 
@@ -647,7 +665,10 @@ before. The ledger's image tokens are estimates (no provider reports them apart 
 - Postal addresses are found in labelled fields on one line; a name or an address in free text only
   with the local personal-data pass, which reads prose lines only (four or more words, few code
   characters), at most four chunks of a result, and finds what the local model finds.
-- The copied-span filter works at roughly 24 tokens on outbound text in general and at 4 tokens on text the local model writes about sensitive content; fragments of up to three words can pass.
+- The copied-span filter works at roughly 24 tokens on outbound text in general and at 4 tokens on
+  text the local model writes about sensitive content (checked on that text as written, before
+  known values become placeholders); fragments of up to three words can pass, such as a date of
+  birth the local model writes between words of its own.
 - Summaries and answers written by the local model are derived from sensitive content by design.
   A run of digits in them (and in sensitive lines shown, such as error lines) that shares four or
   more consecutive digits with a withheld card, account, ID, IBAN or phone number is replaced; so
@@ -661,23 +682,37 @@ before. The ledger's image tokens are estimates (no provider reports them apart 
   routing number, an unformatted SSN) or one described further away is caught only by the other
   detectors. The labelled-number detector runs on every text, public content included: a test
   fixture labelled as a card number becomes a placeholder (a false positive costs a placeholder,
-  a false negative a leak).
+  a false negative a leak). In the operator's own text every 12–19 digit number is a placeholder,
+  so a timestamp, order number or run id typed there is one too (usable through `ask_local`).
 - Values the frontier wrote itself (test data, examples) are shown as written, and addresses at
   reserved example domains (`example.com`, `*.test`, ...) are not treated as personal data. A value
   that also appears in sensitive content stays replaced wherever it appears.
-- Files written into `target/` or `node_modules/` by a `sensitive_data` command are not tracked
-  as derived data (they are build output); a program that stores derived data there escapes that rule.
+- Files a `sensitive_data` command writes under `target/` or `node_modules/` are found by their
+  modification time (from one second before the command started), since those directories are not
+  snapshotted: a program that sets an older time on what it writes there escapes the derived-file
+  rule. Cargo builds in such a command go to its private `CARGO_TARGET_DIR`, not to `target/`, so a
+  binary built there is not at `./target/...`; other build tools (Maven's `target/`, npm caches)
+  write in place, and what they write becomes derived and unreadable to later ordinary commands.
 - In a session, what the operator types is sanitized by detectors and the vault; a sensitive value
   in a form no detector recognizes (a customer's name in free text, an internal code with no custom
   pattern) reaches the frontier as typed, as it would in a run's task text.
-- Only files git lists are indexed at run start. A gitignored sensitive file (`.env`, logs and
-  databases usually are) enters the vault only once it is read, so until then a value from it that
-  no detector recognizes is not replaced elsewhere, for example when the operator types it.
-- Local-model output is matched against known values as written, and its 4-word copy window runs
-  after those values became placeholders. A value the local model spells out with spaces or
-  encodes (base64 of a short value such as a surname), a short field between replaced values of a
-  copied line (a date of birth), and single digits given one narrow question at a time, which add
-  up across calls, pass.
+- Sensitive files are indexed at run start up to 2 MiB each, and those git does not list up to
+  64 MiB in total; the walk skips `.git`, `.duet`, `target/` and `node_modules/`. A file beyond
+  those limits enters the vault only once it is read, so until then a value from it that no
+  detector recognizes is not replaced elsewhere, for example when the operator types it.
+- In local-model output, spelled-out and encoded forms are matched against known values (and
+  decoded text also against copied windows of sensitive text): a field no detector recognizes, such
+  as a date of birth, spelled out or encoded passes, and so do other encodings (character codes,
+  ROT13, digits written as words beyond single ones).
+- Narrow `ask_local` questions are recognized by English phrasing (first/last/n-th character or
+  digit, ranges, prefix/suffix, starts/ends with, contains, spelled out, reversed, encoded). An
+  answer to a question phrased otherwise is limited by the budget: short pieces (1–3 digits, or
+  quoted characters) of an identifying value are charged to the values on the lines the question
+  names or the answer cites, at most 2 characters per value over the run; the local model's
+  evidence lines can misdirect that charge. Yes/no answers and comparisons (`is it greater than
+  ...`, asked with a value's placeholder or described obliquely) convey bits that no piece
+  accounting sees; such probing is visible only as `local_probe` events when it matches the
+  phrasing above.
 
 ## Prompt injection: residual risk
 
@@ -757,6 +792,11 @@ Duet's own canary measurements:
 | DUET-2026-010 | Run state readable to sensitive-data commands | CWE-552 Files or Directories Accessible to External Parties (consequence CWE-201) | A `sensitive_data` command had no deny list at all, so it could read `.duet/` (the vault, handles, transcripts, the audit log). In a live run the frontier, unable to use the placeholder of a card number the operator typed, listed `.duet`, read the vault and transcripts from such commands and located the value; what it learned came back through a local summary (DUET-2026-012). Writes stayed refused. Found in review of the run, the same class: a `sensitive_data` command's `TMPDIR` was shared with ordinary commands, which could read what it left there | `.duet` at any depth is unreadable to every sandboxed process (commands in every mode, checks, MCP servers), enforced by the sandbox itself (Seatbelt rule; bubblewrap stand-in mount), whatever the caller denies; `sensitive_data` commands get a `TMPDIR` no other sandboxed process can read; placeholders the operator typed are usable handles, so the value is never looked for (`2749843`, `76411b6`, `492898c`) |
 | DUET-2026-011 | Labelled number with a failing checksum | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | "is this credit card number valid 42977600076546677?": the card detector requires a valid Luhn checksum, so the number was sent as typed. Observed in a live run | A 12–19 digit number labelled nearby (card, account, IBAN, SSN, passport, licence, tax ID, ...) is a card, account or ID value whatever its checksum, in every text (`782e5cc`) |
 | DUET-2026-012 | Digits of a withheld number in local output | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | A local summary reported a card's first four digits as its "network prefix"; the 4-token copy window and the vault match only whole values. Observed in a live run | Digit runs sharing four consecutive digits with a vaulted card, account, ID, IBAN or phone number are replaced in local-model output and sensitive lines, and refuse a web request (`782e5cc`) |
+| DUET-2026-013 | Sensitive files git ignores were not indexed | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | The engine was primed only on files `git ls-files` lists, so a gitignored `.env` (the usual case) was not in the vault until read, and a database password from it that the operator typed in a session reached the frontier as typed. Found by the privacy scenarios, not observed in a run | Every policy-sensitive file the deny-list walk finds is indexed at run start (2 MiB each, 64 MiB of unlisted files in total); files a `sensitive_data` command writes are indexed again even when already sensitive (`1c0c081`) |
+| DUET-2026-014 | Narrow local questions adding up to a value | CWE-202 Exposure of Sensitive Information Through Data Queries (consequence CWE-201) | Each `ask_local` answer was cleaned alone, so ten questions for one character or position each (first digit, digit n) gave the frontier 8 of a card's 16 digits. Found by the privacy scenarios, not observed in a run | Positional questions are put to the local model as questions about the value's format; pieces tied to a position are withheld; other short pieces are charged to a per-value budget of 2 characters over the run; each probe is a `local_probe` audit event with a running count (`87371a6`, `1c0c081`) |
+| DUET-2026-015 | Local output matched only as written | CWE-173 Improper Handling of Alternate Encoding (consequence CWE-201) | A careless local answer that repeated a whole line left a field no detector knows (a date of birth) between placeholders, because the 4-token copy window ran after values became placeholders; one that spelled a value out with spaces or wrote it in base64 passed. Found by the privacy scenarios, not observed in a run | The copy window runs on the local output as written; spaced-out runs are matched by skeleton against the vault; base64/hex runs are decoded at every alignment and matched against the vault and the copy index (`87371a6`, `1c0c081`) |
+| DUET-2026-016 | Derived files in build output | CWE-284 Improper Access Control (consequence CWE-201) | Files a `sensitive_data` command wrote under `target/` or `node_modules/` (which the snapshot skips) were not marked derived, so a transformed copy there was read as public content. Found by the privacy scenarios, not observed in a run | Files there modified since the command started are derived and denied to commands by name; cargo builds of such a command go to its private scratch directory (`fadb84f`, `1c0c081`) |
+| DUET-2026-017 | Unlabelled number in operator text | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | A 17-digit number the operator typed with no label within three words, failing every checksum, was sent as typed. Found by the privacy scenarios, not observed in a run | Every 12–19 digit number in operator text (task, session, steering) is a placeholder (an `ask_local` handle) (`1c0c081`) |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values
