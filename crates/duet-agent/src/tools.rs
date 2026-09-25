@@ -35,6 +35,8 @@ pub struct Ctx<'a> {
     /// The run's interrupt flag: when it is raised, a running command's
     /// process tree is killed at once.
     pub interrupted: Option<&'a AtomicBool>,
+    /// Host-side web access (`web_fetch`, `web_search`); `None` when off.
+    pub web: Option<&'a duet_web::Web>,
 }
 
 impl Ctx<'_> {
@@ -166,6 +168,12 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
         "run_command" => run_command(ctx, args).await,
         "finish" => return finish(ctx, args).await,
         "edit_protected" => crate::protected::edit_protected(ctx, args).await,
+        crate::web::FETCH | crate::web::SEARCH if ctx.web.is_some() => {
+            match crate::web::call(ctx, name, args).await {
+                Some(r) => r,
+                None => Err(format!("unknown tool `{name}`")),
+            }
+        }
         other => match ctx.presenter.call_tool(other, args) {
             Some(r) => r,
             None => Err(format!("unknown tool `{other}`")),
@@ -792,6 +800,7 @@ mod sensitive_command_tests {
             checks: &[],
             audit: None,
             interrupted: None,
+            web: None,
         };
         let out = call(
             &mut ctx,
@@ -846,6 +855,7 @@ mod sensitive_command_tests {
             checks: &[],
             audit: Some(&audit),
             interrupted: None,
+            web: None,
         };
 
         // Any encoding of the data is out of reach of an ordinary command.

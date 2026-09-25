@@ -27,6 +27,7 @@ mod approve;
 mod chat;
 mod doctor;
 mod setup;
+mod web;
 
 #[derive(Parser)]
 #[command(
@@ -621,6 +622,7 @@ fn prepare(
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
+        web: web::access(cfg)?,
     };
     Ok(Prepared {
         git,

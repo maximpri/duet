@@ -354,7 +354,7 @@ impl<'a> Session<'a> {
             .workspace
             .file_name()
             .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
-        let mut specs = tools::specs_with(presenter.extra_tools());
+        let mut specs = crate::run::tool_specs(cfg, presenter);
         specs.extend(missing_from(&specs));
         specs.sort_by(|a, b| a.name.cmp(&b.name));
         let steering = Arc::new(Steering::default());

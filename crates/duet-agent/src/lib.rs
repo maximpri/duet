@@ -14,6 +14,7 @@ pub mod run;
 pub mod session;
 pub mod tools;
 pub mod transcript;
+pub mod web;
 
 pub use oversight::{ApproveMode, Approver, Oversight};
 pub use run::{RunConfig, RunStats, Terminal, conclude, resumable, run};

@@ -95,6 +95,8 @@ pub struct RunConfig {
     pub price: Box<dyn Fn(&Usage) -> f64 + Send + Sync>,
     /// Operator approval of risky actions (`oversight.approve`).
     pub oversight: crate::oversight::Oversight,
+    /// Host-side web access for the web tools; `None` when `web.enabled` is off.
+    pub web: Option<Arc<duet_web::Web>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -482,7 +484,7 @@ async fn drive(
         .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
     let mut conv = Conversation {
         system: system_prompt(&name, &cfg.checks),
-        specs: tools::specs_with(presenter.extra_tools()),
+        specs: tool_specs(cfg, presenter),
         items: Vec::new(),
         classes: HashMap::new(),
         interactive: false,
@@ -546,6 +548,14 @@ async fn drive(
             Err("internal error: a session stop outside a session".into())
         }
     }
+}
+
+/// The run's tools: built-in, the presenter's and the configured web tools.
+/// Fixed for the run (or session) and sorted, so the request prefix never changes.
+pub(crate) fn tool_specs(cfg: &RunConfig, presenter: &dyn Presenter) -> Vec<ToolSpec> {
+    let mut extra = presenter.extra_tools();
+    extra.extend(cfg.web.as_deref().map(crate::web::specs).unwrap_or_default());
+    tools::specs_with(extra)
 }
 
 /// What stops the loop besides the frontier: the wall-clock deadline and the
@@ -786,6 +796,7 @@ pub(crate) async fn work(
                 checks: &cfg.checks,
                 audit: Some(frontier.audit()),
                 interrupted: Some(interrupted),
+                web: cfg.web.as_deref(),
             };
             // Only what this call shows counts for it.
             let _ = presenter.take_view_class();

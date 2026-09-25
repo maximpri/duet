@@ -431,6 +431,72 @@ pub const REGISTRY: &[Setting] = &[
         "Allow network access for sandboxed commands."
     ),
     s!(
+        "web.enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        true,
+        "Offer the web tools (`web_fetch`, and `web_search` when a backend is set). Requests are made by the host, GET only, to public addresses only; pages are scanned like public content and shown as untrusted data. Commands keep no network either way."
+    ),
+    s!(
+        "web.search.backend",
+        Choice(&["brave", "searxng", "none"]),
+        r#""none""#,
+        Owner,
+        OnlyLaterChoice,
+        true,
+        "Search backend for `web_search`: `searxng` (your own instance, web.search.searxng_url), `brave` (Brave Search API, key from web.search.brave_key_env) or `none` (no web_search tool). Queries are checked for sensitive values before they are sent."
+    ),
+    s!(
+        "web.search.searxng_url",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Base URL of a SearXNG instance with the JSON format enabled (for example http://127.0.0.1:8888); queries go to <url>/search."
+    ),
+    s!(
+        "web.search.brave_key_env",
+        Str,
+        r#""BRAVE_API_KEY""#,
+        Owner,
+        Any,
+        false,
+        "Environment variable holding the Brave Search API key (the key itself is never stored)."
+    ),
+    s!(
+        "web.allowlist_private",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Private hosts `web_fetch` may reach despite the public-address rule: host names, `*.domain`, IP addresses or CIDR networks (for example wiki.corp, 10.20.0.0/16). Cloud metadata addresses stay refused."
+    ),
+    s!(
+        "web.max_bytes",
+        Int {
+            min: 1024,
+            max: 50_000_000
+        },
+        "5000000",
+        Project,
+        OnlyLower,
+        false,
+        "Most bytes read of one web response; the rest is not downloaded and the page is marked truncated."
+    ),
+    s!(
+        "web.timeout_secs",
+        Int { min: 1, max: 300 },
+        "30",
+        Project,
+        Any,
+        false,
+        "Seconds one web request (with its redirects) may take."
+    ),
+    s!(
         "data.retention_days",
         Int { min: 0, max: 3650 },
         "14",

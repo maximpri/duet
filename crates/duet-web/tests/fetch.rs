@@ -389,3 +389,30 @@ async fn searxng_and_brave_replies_become_results() {
     let w = web(&s, &[], 10_000, None);
     assert!(matches!(w.search("x", 5).await, Err(WebError::Search(_))));
 }
+
+/// A real public page over HTTPS with the system resolver. Needs the internet,
+/// so it runs only on request: `cargo test -p duet-web -- --ignored`.
+#[tokio::test]
+#[ignore = "needs the internet"]
+async fn live_fetch_of_a_public_page() {
+    let w = Web::new(WebConfig {
+        max_bytes: 2_000_000,
+        timeout: Duration::from_secs(30),
+        allowlist: Allowlist::default(),
+        search: None,
+    });
+    let page = w.fetch("https://www.rust-lang.org").await.unwrap();
+    assert_eq!(page.status, 200);
+    assert!(page.text.contains("Rust"), "{}", page.text);
+    assert!(page.text.contains("](https://"), "links are kept");
+    println!(
+        "{} {} bytes, {} lines of text",
+        page.url,
+        page.bytes,
+        page.text.lines().count()
+    );
+    println!(
+        "{}",
+        page.text.lines().take(25).collect::<Vec<_>>().join("\n")
+    );
+}
