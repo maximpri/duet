@@ -63,6 +63,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Red-team pass parked until last (operator): it is the final step before the benchmark is published; it no longer blocks other work (M5 runs may proceed, publication of `docs/BENCHMARK.md` waits for it) |
 | 2026-09-24 | Line budgets removed (operator): no per-crate line limits; the 2026-09-23 duet-boundary budget decision is superseded |
 | 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
+| 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
