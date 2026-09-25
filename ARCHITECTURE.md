@@ -262,6 +262,9 @@ git; reset behaviour defined per entry).
   vault); command `TMPDIR` outside the workspace; sensitive and protected paths unreadable (deny-read) except for
   `sensitive_data` commands, and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
+  On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against
+  Unix sockets while the network is off, and `.git`/`.duet` entries a command created removed when
+  it ends. A sandbox that cannot start refuses the command.
 - **Git:** one helper; environment cleared; fsmonitor, hooks, filters and user/system config
   disabled.
 - **Credentials:** the owner config names an environment variable (`frontier.api_key_env`,

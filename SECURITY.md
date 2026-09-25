@@ -83,8 +83,8 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    names the sensitive paths, and optionally (`sensitivity.local_brief`, off by default) the local
    model's brief of them for the task (values withheld, cleaned like any local output).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
-   sandbox (Seatbelt on macOS, bubblewrap on Linux; the Linux sandbox has not yet been exercised by
-   a test), so no program can print them in any encoding. Git history (`.git`, which holds committed
+   sandbox (Seatbelt on macOS, bubblewrap on Linux; see [Command sandbox by
+   platform](#command-sandbox-by-platform)), so no program can print them in any encoding. Git history (`.git`, which holds committed
    copies) and Duet's run state (`.duet/`: raw handles, the vault, transcripts) are unreadable to
    commands too; commands get a scratch `TMPDIR` outside the workspace. A command that
    must read them is run with `sensitive_data`; its output is then held locally like a data file, and
@@ -257,6 +257,50 @@ other letter cases or number formats, and any re-encoding (base64, hex, characte
 split across strings). Re-encoding is stopped by access control instead: commands cannot read
 sensitive paths, `.git` or `.duet`, so no program can print their content in any encoding, and a
 `sensitive_data` command's output is held locally.
+
+### Command sandbox by platform
+
+Both sandboxes are exercised by the same behavioural tests (`crates/duet-sandbox`, and the
+end-to-end command tests in `crates/duet-agent`): denied files and directories unreadable by `cat`,
+`od`, `ls` and `cp`, through symlinks and through hard links made by the command; `.git` and
+`.duet` unreadable to ordinary commands and never writable, at any depth; writes only in the
+workspace and the scratch `TMPDIR`; no network, including Unix sockets; the environment cleared to
+the allowlist; the whole process tree killed on timeout and on interrupt.
+
+- **macOS (Seatbelt)**: tested in the gate on every commit. A refused read prints "Operation not
+  permitted".
+- **Linux (bubblewrap)**: tested with `tools/linux-check.sh` (Docker; not part of the gate, run it
+  before releases) in four setups: privileged, unprivileged user namespaces (no added
+  capabilities, the usual desktop case), Duet run as root, and a container that forbids
+  namespaces. The last run and its environment are recorded in
+  [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) (P7, SD4). How it enforces the same rules: the root is
+  mounted read-only with empty read-only `/tmp` and `/run`; the workspace and the scratch directory
+  are mounted writable and every existing `.git`/`.duet` read-only again; each denied path is
+  covered by an empty mode-000 file or directory, so a refused read prints "Permission denied";
+  commands hold no capabilities even when Duet runs as root; with the network off, a new network
+  namespace cuts off IP and a seccomp filter refuses `AF_UNIX` sockets and `io_uring`.
+- **Fail closed**: at run start (and in `duet doctor`) Duet starts bubblewrap once; if it is
+  missing or cannot create its namespaces (a kernel or container that forbids unprivileged user
+  namespaces), the run is refused with bubblewrap's error. Each command must also prove the
+  sandbox was set up before it ran; otherwise it is refused, never run unsandboxed.
+
+Linux differences and limits:
+
+- Mounts cannot stop a command from *creating* a `.git` or `.duet` (Seatbelt refuses it). Duet
+  removes every `.git`/`.duet` entry a command created as soon as the command has ended (its whole
+  process tree is dead by then) and appends a note to the command's output. Existing entries are
+  identified by inode, so one moved elsewhere is kept and a replacement is removed.
+- To find them, the workspace's directories are walked before and after each command (symlinks
+  are not followed); on very large trees this adds time to every command.
+- A denied path that does not exist when the command starts is not covered (a mount point would
+  create it in the workspace); the deny list is recomputed before each command.
+- The deny list names paths: the same files reached through another mount of the same file system
+  on the host are not covered.
+- The seccomp filter exists for x86-64 and AArch64; on other architectures commands without
+  network are refused.
+- Tested in containers on one kernel (OrbStack's, AArch64), not yet on a distribution host with
+  AppArmor user-namespace restrictions (such as Ubuntu 24.04); there Duet either works or refuses
+  to run commands.
 
 ## Known limits
 

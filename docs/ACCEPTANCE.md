@@ -23,6 +23,10 @@ disk pauses a run instead of failing it, the estimated usage of failed attempts 
 Ctrl-C kills a running command's process tree. The config-change audit helper that the CLI and
 the TUI each had is now one function (CF4, SD2 unchanged in behaviour). Only rows T2 and T3 changed.
 
+Update (branch `linux`, 2026-09-25): the Linux sandbox was run for the first time
+(`tools/linux-check.sh`), fixed and verified (blocker 5). Only rows P7, SD4 and SD5, the claim
+map in §3, the counts in §4.1 and blocker 5 changed.
+
 ## 1. How to read this
 
 | Verdict | Meaning |
@@ -124,7 +128,7 @@ Checks this audit added on the stored results (read-only scripts, in
 | P4 | Outbound gate on every request and every role (including the frontier's own text, reasoning and tool arguments): re-tokenize, re-scan, copied-span filter, final known-value check that blocks | TARGET §6.4 | **Verified** | `no_canary_survives_the_gate` (property), `outbound_filter_and_check_stop_known_values`, `the_models_own_messages_are_sanitized_too`, `values_escaped_in_tool_arguments_are_replaced_and_checked`, `a_value_inside_a_longer_detected_span_is_known_alone`, `overlap_redaction_leaves_no_copied_run`, `a_blocked_send_is_audited_by_check_name_only`. Live fail-closed blocks: `gate3a/S1-duet-hybrid-s2`, `gate3c/S2-duet-hybrid-s2/-s3` | — |
 | P5 | Classification layers: path, source, secret, PII, sensitive text, taint; any layer can mark sensitive, none can unmark | TARGET §6.1 | **Verified** | `detect.rs` (7), `globs_match_names_anywhere_and_paths_exactly`, `command_output_is_sensitive_unless_allowlisted`, `person_fields_are_replaced_whatever_their_shape`, `logs_become_a_handle_with_sanitized_error_lines`, `secrets_in_public_source_are_replaced`, `commands_cannot_read_sensitive_files_unless_their_output_stays_local` (taint) | — |
 | P6 | Placeholder vault: stable tokens; aliases for other spellings, never written back; values the frontier wrote are left alone | TARGET §6.2 | **Verified** | `stable_tokens_round_trip`, `repeated_values_keep_one_token_across_sources`, `numbers_are_replaced_in_their_other_spellings`, `surnames_are_replaced_alone_unless_the_word_is_public`, `values_the_frontier_wrote_are_shown_as_written`; properties `vault_round_trips`, `tokenize_leaves_no_value`, `tokenize_is_idempotent`, `aliases_never_detokenize` | — |
-| P7 | Commands cannot read sensitive paths, protected source, `.git` or `.duet` (OS sandbox) unless run with `sensitive_data` | TARGET §3.2; SECURITY "Still prevented" | **Partial** | macOS Seatbelt: `denied_paths_cannot_be_read_by_any_means`, `commands_cannot_read_git_history_or_run_state`, `commands_cannot_read_sensitive_files_unless_their_output_stays_local`, `protected_source_is_hidden_from_commands_but_not_from_checks`; live: 1.2–2.2 sandbox denials per hybrid run (ledger) | **Linux bubblewrap has never run.** All behavioural sandbox tests are `cfg(target_os = "macos")`; `bwrap_args_protect_reserved_dirs_and_run` checks only the argument list, and not the `deny_read` masks. Run the sandbox tests on Linux, or document macOS as the only supported platform |
+| P7 | Commands cannot read sensitive paths, protected source, `.git` or `.duet` (OS sandbox) unless run with `sensitive_data` | TARGET §3.2; SECURITY "Still prevented" | **Verified** | macOS Seatbelt (gate) and Linux bubblewrap: `denied_paths_cannot_be_read_by_any_means`, `denied_paths_stay_denied_through_symlinks`, `git_and_run_state_are_unreadable_when_denied`, `commands_cannot_read_git_history_or_run_state`, `commands_cannot_read_sensitive_files_unless_their_output_stays_local`, `protected_edits_are_implemented_locally_and_checked`, `protected_source_is_hidden_from_commands_but_not_from_checks`, `bwrap_args_protect_reserved_dirs_and_deny_reads`; fail closed: `commands_are_refused_when_namespaces_are_unavailable`, `commands_are_refused_when_bubblewrap_is_missing`. Linux run (`tools/linux-check.sh`, 2026-09-25): image `rust:1-bookworm` (`sha256:93ce27a88655…`) + Debian bubblewrap 0.8.0, rustc 1.98.1, kernel 7.0.14-orbstack (AArch64, OrbStack VM); `duet-sandbox` 20/20, `duet-agent` 24/24, `duet-boundary` all passing in each of: privileged; unprivileged (non-root, no added capabilities, `seccomp=unconfined` + `systempaths=unconfined`, i.e. unprivileged user namespaces); as root (`commands_hold_no_capabilities`). Docker's default profile (no namespaces): commands refused, `real_bubblewrap_without_namespaces_refuses`. Live: 1.2–2.2 sandbox denials per hybrid run (ledger, macOS) | Linux is not in the gate: run `tools/linux-check.sh` before releases. Not yet run on a distribution host with AppArmor user-namespace restrictions (e.g. Ubuntu 24.04; there Duet works or refuses). Found and fixed on the first run (branch `linux`): every Linux command failed (`--chdir` came after `--`); denied paths were empty but readable, nested `.git` writable, Unix sockets reachable with network off, and commands of a root-run Duet held every capability. Linux limits (new `.git`/`.duet` removed after the command rather than refused; per-command workspace walk): SECURITY "Command sandbox by platform" |
 | P8 | Secret-sink check: resolved secrets land only in owner-listed sinks or sensitive files | TARGET §6.5 | **Verified** | `secrets_are_restored_only_in_secret_files`; the grader's `finds_secret_outside_sinks_only`; 0 sink violations in every batch | — |
 | P9 | The local role accepts only loopback or owner-allowlisted hosts; plain HTTP to a non-loopback host is refused unless `local.allow_plaintext` | TARGET §3.2; SbD-1 | **Verified** | `local_role_admits_loopback_and_allowlist_only`, `plaintext_to_a_remote_host_needs_the_owner_opt_in`, `local_role_refuses_non_loopback_endpoints`, `a_remote_local_model_over_plain_http_is_refused`, `doctor_fails_a_refused_local_endpoint_and_does_not_contact_it` | Note: every live hybrid run used the operator's opt-in, so raw sensitive content crossed the LAN in plain HTTP to `192.168.50.132` (by owner decision, PLAN §9) |
 | P10 | Injection canaries never cross; prompt-injection residual risk documented | PLAN M3; SECURITY | **Verified** | M3 `hostile-logs`: hybrid 0 injection canaries, passthrough 91 (`gate2`); SECURITY "Prompt injection: residual risk" | — |
@@ -202,8 +206,8 @@ Checks this audit added on the stored results (read-only scripts, in
 | SD1 | Hybrid is the default; passthrough needs `--no-privacy` and prints a banner | SECURITY Secure defaults | **Verified** | `passthrough_needs_an_explicit_acknowledgement` | — |
 | SD2 | Loosening needs `--confirm`, prints the diff and is recorded in a hash-chained config audit | SECURITY; SbD-1 | **Verified** | `loosening_a_setting_needs_confirm_and_is_audited`, `loosening_needs_confirmation_and_tightening_does_not`, `proposals_match_what_apply_enforces` | — |
 | SD3 | Project config can only tighten and cannot set owner-only keys | SECURITY; ARCH §12 inv. 4 | **Verified** | `project_cannot_loosen`, `project_cannot_set_owner_only_keys`, `project_may_add_globs`, `approval_is_owner_only_and_turning_it_down_needs_confirmation` | — |
-| SD4 | Sandbox on, network off, environment cleared to an allowlist | SECURITY | **Partial** | macOS: `network_is_denied_by_default`, `environment_is_cleared_to_the_allowlist`, `writes_inside_workspace_and_scratch_only`, `timeout_kills_detached_descendants` | Linux not executed (see P7) |
-| SD5 | Tools and commands cannot write `.git` or `.duet` at any depth; reads are handle-relative and refuse symlinks | SECURITY "Still prevented"; ARCH §12 inv. 8 | **Verified** | `reserved_directories_are_read_only_at_any_depth`, `reserved_directories_at_any_depth`, `refuses_symlinks_on_the_path_and_at_the_leaf`, `normalizes_and_rejects_escapes`, `every_duet_path_in_the_sources_is_registered` | macOS only for commands (P7) |
+| SD4 | Sandbox on, network off, environment cleared to an allowlist | SECURITY | **Verified** | macOS (gate) and Linux: `network_is_denied_by_default`, `unix_sockets_are_unreachable_without_network`, `environment_is_cleared_to_the_allowlist`, `writes_inside_workspace_and_scratch_only`, `timeout_kills_detached_descendants`, `a_stop_kills_the_whole_tree_at_once`, `sandbox_is_detected`. Linux: see P7 for the run and its environment; a sandbox that cannot start refuses the run (`real_bubblewrap_without_namespaces_refuses`) | Linux not in the gate (see P7). The Linux seccomp filter covers x86-64 and AArch64; elsewhere commands without network are refused |
+| SD5 | Tools and commands cannot write `.git` or `.duet` at any depth; reads are handle-relative and refuse symlinks | SECURITY "Still prevented"; ARCH §12 inv. 8 | **Verified** | `reserved_directories_are_read_only_at_any_depth`, `reserved_directories_at_any_depth`, `refuses_symlinks_on_the_path_and_at_the_leaf`, `normalizes_and_rejects_escapes`, `every_duet_path_in_the_sources_is_registered` | For commands: macOS in the gate, Linux via `tools/linux-check.sh` (P7); on Linux a `.git`/`.duet` a command creates is removed after it ends |
 | SD6 | A single hardened git helper (no hooks, no fsmonitor, no global config) | PLAN M2 | **Verified** | `hostile_repository_config_cannot_run_hooks_or_fsmonitor` | — |
 | SD7 | Operator approval of risky actions (`off`/`risky`/`all`); fail closed without a terminal; decisions audited without content | SbD-3; SECURITY Oversight | **Verified** | `classification_by_mode`, `source_and_test_files_are_defined_conservatively`, `decisions_are_asked_enforced_and_audited_without_content`, `with_approval_on_a_run_without_a_terminal_is_refused_before_it_starts`, `a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld`, `only_an_explicit_yes_approves` | — |
 | SD8 | Memory-safe Rust, `unsafe_code = "forbid"` | PLAN SbD | **Verified** | Workspace lint (`Cargo.toml:50`); clippy `-D warnings` in the gate | — |
@@ -216,9 +220,9 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 
 | Claim | Row(s) | Verdict |
 |---|---|---|
-| Commands cannot read sensitive paths, protected source, `.git` or `.duet`, in any encoding | P7, IP3 | Partial (macOS only) |
-| No network from commands; a project cannot turn it on | SD4, SD3 | Partial (macOS only) |
-| `.git` and `.duet` are not writable from tools or commands | SD5 | Verified (macOS) |
+| Commands cannot read sensitive paths, protected source, `.git` or `.duet`, in any encoding | P7, IP3 | Verified (macOS in the gate; Linux via `tools/linux-check.sh`) |
+| No network from commands; a project cannot turn it on | SD4, SD3 | Verified (macOS in the gate; Linux via `tools/linux-check.sh`) |
+| `.git` and `.duet` are not writable from tools or commands | SD5 | Verified (macOS; Linux via `tools/linux-check.sh`) |
 | No known value, detected secret, personal datum or copied span reaches the frontier; failing requests are blocked | P1, P4 | Verified |
 | A resolved secret is written only to secret sinks | P8 | Verified |
 | Policy cannot be loosened by repository content | SD3 | Verified |
@@ -278,18 +282,18 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 |---|---|---|---|---|---|---|
 | Quality (Q) | 1 | 5 | 0 | 1 | 0 | 7 |
 | Agent loop and context (A) | 5 | 3 | 0 | 0 | 0 | 8 |
-| Privacy (P) | 13 | 2 | 1 | 0 | 1 | 17 |
+| Privacy (P) | 14 | 1 | 1 | 0 | 1 | 17 |
 | IP (IP) | 5 | 0 | 0 | 0 | 0 | 5 |
 | Cost (C) | 3 | 2 | 0 | 1 | 0 | 6 |
 | Termination / resume (T) | 6 | 0 | 0 | 0 | 0 | 6 |
 | Local backends (L) | 2 | 1 | 5 | 0 | 0 | 8 |
 | Config / bootstrap / TUI (CF) | 4 | 2 | 0 | 0 | 3 | 9 |
-| Security defaults (SD) | 9 | 1 | 0 | 2 | 0 | 12 |
+| Security defaults (SD) | 10 | 0 | 0 | 2 | 0 | 12 |
 | Supply chain (SC) | 4 | 1 | 0 | 0 | 2 | 7 |
 | Evaluation harness (EV) | 8 | 1 | 1 | 0 | 0 | 10 |
 | Novelty / provenance (N) | 4 | 1 | 0 | 0 | 0 | 5 |
 | Large repositories (LR) | 1 | 1 | 0 | 1 | 1 | 4 |
-| **Total** | **65** | **20** | **7** | **5** | **7** | **104** |
+| **Total** | **67** | **18** | **7** | **5** | **7** | **104** |
 
 ### 4.2 Release blockers
 
@@ -316,6 +320,9 @@ release:
    the no-config bootstrap against one real loopback server, or remove the claims.
 5. **Linux sandbox (P7, SD4).** Duet's main privacy mechanism for derived data (DUET-2026-004/006) is
    OS access control. On Linux it has never been executed. Verify on Linux, or declare macOS-only.
+   *Resolved on branch `linux`:* the sandbox and agent tests run on Linux in Docker
+   (`tools/linux-check.sh`) and pass privileged, unprivileged and as root; without namespaces
+   commands are refused. Defects found on the way were fixed (P7).
 6. **Red-team pass and fuzzing (P11, P12).** Both are required by the SbD gate and by SECURITY.md
    ("run before releases"). Neither has happened.
 7. **Security disclosure policy (SD10, SD11).** Placeholder contact, placeholder `security.txt`, and
@@ -334,7 +341,7 @@ release:
 | 2 | Termination guarantee | **Verified**: merged (`359930e`) with tests; observed live — every run in `gate2b`/`gate2c`/`gate2d` ended in a terminal state; hands-on Ctrl-C → `duet resume` → Completed on a fresh project. |
 | 3 | Retry in place | **Verified by tests** (`359930e`); not yet observed during a real outage. |
 | 4 | Local backends | **Re-scoped by operator decision (2026-09-24):** live acceptance is the configured remote oMLX server (verified live throughout); other backends are verified against mock servers only and documented as such. |
-| 5 | Linux sandbox | Open (operator decision pending). |
+| 5 | Linux sandbox | **Verified in Docker** (branch `linux`, P7/SD4): privileged, unprivileged user namespaces and root all pass; no namespaces → refused. Not in the gate; not yet run on an AppArmor-restricted host. |
 | 6 | Red-team pass and fuzzing | Fuzzing ran (SbD-2: 60 s per target, 7.5M executions, 0 failures) and property tests are in the gate. Red-team pass parked until last by operator decision. |
 | 7 | Disclosure policy | Contact placeholder kept by operator decision; provider data-retention terms still to document. |
 | 8 | Honest documentation | Resolved (`faf3098`). |
