@@ -6,6 +6,8 @@
 //! refuses to send long runs of text copied from sensitive content. Every
 //! sensitive handle is indexed as hashes of 8-token windows; outbound text with
 //! 3 or more consecutive matching windows (~24 tokens) has that span redacted.
+//! Text the local model writes about sensitive content is checked much more
+//! strictly ([`LOCAL_WINDOW`]-token windows): it should describe, never quote.
 //! Windows that also occur in public files are exempt, so ordinary shared code
 //! is never redacted.
 
@@ -33,49 +35,51 @@ fn tokens(text: &str) -> Vec<(usize, usize)> {
     out
 }
 
-fn window_hashes(text: &str) -> Vec<(u64, usize, usize)> {
+fn window_hashes(text: &str, window: usize) -> Vec<(u64, usize, usize)> {
     let toks = tokens(text);
-    if toks.len() < WINDOW {
+    if toks.len() < window {
         return Vec::new();
     }
-    (0..=toks.len() - WINDOW)
+    (0..=toks.len() - window)
         .map(|i| {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            for &(s, e) in &toks[i..i + WINDOW] {
+            for &(s, e) in &toks[i..i + window] {
                 text[s..e].to_lowercase().hash(&mut h);
             }
-            (h.finish(), toks[i].0, toks[i + WINDOW - 1].1)
+            (h.finish(), toks[i].0, toks[i + window - 1].1)
         })
         .collect()
 }
 
-#[derive(Default)]
-pub struct OverlapIndex {
+/// Local-model output is a description of sensitive content, never a
+/// quotation: any run of this many consecutive tokens copied from sensitive
+/// content is removed (the general outbound filter needs ~24).
+pub const LOCAL_WINDOW: usize = 4;
+
+/// One index: windows of `window` tokens, a span counts once `min_run`
+/// consecutive windows match sensitive text and not public text.
+struct Level {
+    window: usize,
+    min_run: usize,
     sensitive: HashSet<u64>,
     public: HashSet<u64>,
 }
 
-impl OverlapIndex {
-    pub fn add_sensitive(&mut self, text: &str) {
-        self.sensitive
-            .extend(window_hashes(text).into_iter().map(|w| w.0));
+impl Level {
+    fn new(window: usize, min_run: usize) -> Self {
+        Self {
+            window,
+            min_run,
+            sensitive: HashSet::new(),
+            public: HashSet::new(),
+        }
     }
 
-    pub fn add_public(&mut self, text: &str) {
-        self.public
-            .extend(window_hashes(text).into_iter().map(|w| w.0));
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.sensitive.is_empty()
-    }
-
-    /// Redacts copied sensitive spans. Returns the text and how many spans were removed.
-    pub fn redact(&self, text: &str) -> (String, usize) {
+    fn redact(&self, text: &str) -> (String, usize) {
         if self.sensitive.is_empty() {
             return (text.to_owned(), 0);
         }
-        let windows = window_hashes(text);
+        let windows = window_hashes(text, self.window);
         let hit: Vec<bool> = windows
             .iter()
             .map(|(h, _, _)| self.sensitive.contains(h) && !self.public.contains(h))
@@ -91,9 +95,9 @@ impl OverlapIndex {
             while j < hit.len() && hit[j] {
                 j += 1;
             }
-            if j - i >= MIN_CONSECUTIVE {
+            if j - i >= self.min_run {
                 let (s, e) = (windows[i].1, windows[j - 1].2);
-                // Windows overlap by up to WINDOW - 1 tokens, so a run separated
+                // Windows overlap by up to `window - 1` tokens, so a run separated
                 // from the previous one by a single miss can start inside it.
                 match spans.last_mut() {
                     Some(prev) if s <= prev.1 => prev.1 = prev.1.max(e),
@@ -114,6 +118,56 @@ impl OverlapIndex {
         }
         out.push_str(&text[last..]);
         (out, spans.len())
+    }
+}
+
+pub struct OverlapIndex {
+    normal: Level,
+    strict: Level,
+}
+
+impl Default for OverlapIndex {
+    fn default() -> Self {
+        Self {
+            normal: Level::new(WINDOW, MIN_CONSECUTIVE),
+            strict: Level::new(LOCAL_WINDOW, 1),
+        }
+    }
+}
+
+impl OverlapIndex {
+    pub fn add_sensitive(&mut self, text: &str) {
+        for level in [&mut self.normal, &mut self.strict] {
+            let w = level.window;
+            level
+                .sensitive
+                .extend(window_hashes(text, w).into_iter().map(|w| w.0));
+        }
+    }
+
+    pub fn add_public(&mut self, text: &str) {
+        for level in [&mut self.normal, &mut self.strict] {
+            let w = level.window;
+            level
+                .public
+                .extend(window_hashes(text, w).into_iter().map(|w| w.0));
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.normal.sensitive.is_empty()
+    }
+
+    /// Redacts copied sensitive spans (~24+ tokens). Returns the text and how
+    /// many spans were removed.
+    pub fn redact(&self, text: &str) -> (String, usize) {
+        self.normal.redact(text)
+    }
+
+    /// Redacts any run of [`LOCAL_WINDOW`] or more tokens copied from sensitive
+    /// content: for text the local model wrote about that content.
+    pub fn redact_strict(&self, text: &str) -> (String, usize) {
+        self.strict.redact(text)
     }
 }
 
