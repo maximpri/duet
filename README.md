@@ -191,7 +191,8 @@ off), and Duet launches `duet chat` in the background (output in `.duet/tmp`) an
 The main panel then shows the conversation (your messages, duet's replies and questions, steering
 with the step it arrived after) above an input box: `i` types a message (sent with `Enter`; while
 duet works it steers the turn), `s` stops the turn after its current step, `x` (or `Ctrl-C` in the
-box) stops it at once, `/status` reports turns and cost, `Esc` leaves the box. `r` resumes the
+box) stops it at once, `/status` reports turns and cost, `/image <path>` attaches an image to the
+next message (a refused one shows why at once), `Esc` leaves the box. `r` resumes the
 selected session. If you quit, the session finishes its current turn and stays open. `o` starts
 a one-shot `duet run` instead, which keeps running if you quit. With `oversight.approve` on, use
 `duet chat` or `duet run`, which have the terminal for approvals. The settings screens are generated from the registry and

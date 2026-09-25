@@ -446,7 +446,8 @@ re-decides the dropped step. A sub-agent whose result was recorded keeps its wri
 Entry points: `read_file` on a path with an image extension (routed by `run::work` before the
 tool dispatcher), `RunConfig.images.attached` (`duet run --image` / `--image-public`, attached to
 the task), and `Session::attach` (`/image` in `duet chat` and the TUI, attached to the next
-message).
+message). `images::precheck` applies the same rule from the policy alone before a run or session
+exists (the CLI before creating a run, the TUI before sending `/image`), so a refusal shows at once.
 
 ```
 read / attach ─ prepare (sniff PNG/JPEG/GIF/WebP, decode with size and allocation limits,
