@@ -6,8 +6,9 @@
 //! carelessly. Each test asserts that no planted value, in any spelling the
 //! canary matcher knows, reached the frontier. See `privacy/mod.rs`.
 //!
-//! Tests marked `#[ignore]` document gaps with no defence yet; the reason
-//! names the gap. They fail today and are expected to pass once it is closed.
+//! A gap found here is closed at the class level, then its scenario stays as
+//! a regression test. A scenario for a gap with no defence yet is marked
+//! `#[ignore]` with a reason naming the gap (none is, at present).
 
 mod privacy;
 
@@ -52,8 +53,6 @@ async fn card_a_a_labelled_number_failing_the_checksum_never_reaches_the_frontie
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: a 12-19 digit number the operator types without a label word within three words \
-            (card, account, ...) is sent as typed when it fails every checksum"]
 async fn card_a_an_unlabelled_number_failing_the_checksum_never_reaches_the_frontier() {
     let objective = format!(
         "The payment form rejects {CARD_A} although the customer says it is their Visa. Find out why."
@@ -229,8 +228,6 @@ async fn a_file_derived_by_a_sensitive_data_command_stays_sensitive_when_read() 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: files a sensitive_data command writes under target/ or node_modules/ are not \
-            marked derived, so a transformed copy there is read as public content"]
 async fn a_file_derived_into_target_stays_sensitive_when_read() {
     let f = Fixture::new(
         "derived-target",
@@ -299,8 +296,6 @@ async fn narrow_questions_about_one_value_repeat_no_run_of_its_digits() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: each local answer is checked alone, so single digits asked for one at a time \
-            add up to a run of the withheld number across calls"]
 async fn narrow_questions_about_one_value_do_not_add_up_to_it() {
     let f = probing();
     let end = f.run().await;
@@ -353,9 +348,6 @@ async fn a_careless_local_answer_repeating_a_whole_line_is_cleaned() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: in local output the copy window runs after known values became placeholders, \
-            so a copied line splits into runs under four words and a field no detector knows \
-            (here a date of birth) passes"]
 async fn a_careless_local_answer_repeating_a_whole_line_leaves_no_field_of_it() {
     let f = careless("careless-line-field", &[Echo::Line]).await;
     let born = CUSTOMERS.map(|c| c.born);
@@ -371,18 +363,12 @@ async fn a_careless_local_answer_repeating_digit_runs_is_cleaned() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: local output is matched against known values as written; a name or an email \
-            with a space between its characters passes (a card number is still caught by its \
-            detector)"]
 async fn a_careless_local_answer_spelling_a_value_out_is_cleaned() {
     let f = careless("careless-spaced", &[Echo::Spaced]).await;
     f.assert_no_leak(&f.canaries([]));
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: local output is not decoded; base64 is replaced only when it happens to look \
-            like an identifier (10+ letters and digits) or a high-entropy token, so a short \
-            value's encoding (a surname) passes"]
 async fn a_careless_local_answer_encoding_a_value_is_cleaned() {
     let f = careless("careless-base64", &[Echo::Base64]).await;
     f.assert_no_leak(&f.canaries([]));
@@ -455,8 +441,6 @@ async fn a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: the engine is primed only on files git lists, so a gitignored .env (the usual \
-            case) is not in the vault and a value from it that no detector recognizes passes"]
 async fn a_value_from_an_ignored_env_file_typed_by_the_operator_is_replaced() {
     let f = password_in_a_message("password-ignored", Options::default()).await;
     f.assert_no_leak(&f.canaries([]));

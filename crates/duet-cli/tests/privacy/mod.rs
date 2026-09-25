@@ -3,7 +3,8 @@
 //!
 //! Each scenario runs the real frontier loop (`duet_agent::run`, or a
 //! session) in hybrid mode, composed the way `duet run` composes it: the
-//! shipped default policy, the engine primed on the files git lists, the
+//! shipped default policy, the engine primed on the files git lists (and the
+//! sensitive files it does not list, which the engine finds itself), the
 //! engine's outbound filter and check in the gate, an anchored audit log under
 //! `.duet/`. The workspace is a temporary git repository holding synthetic
 //! values: a gitignored `.env` with a payment key and a database password, and
