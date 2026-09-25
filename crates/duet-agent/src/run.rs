@@ -885,6 +885,7 @@ pub(crate) async fn work(
 
         let mut finished = None;
         let mut replied: Option<(String, bool)> = None;
+        delegated.clear();
         for (i, call) in response.tool_calls.iter().enumerate() {
             stats.tool_calls += 1;
             let mut ctx = Ctx {

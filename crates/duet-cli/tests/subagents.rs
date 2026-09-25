@@ -1135,10 +1135,7 @@ async fn an_interrupted_turn_rolls_back_its_write_sub_agent_before_the_next_one(
         tokio::time::sleep(Duration::from_millis(600)).await;
         flag.store(true, Ordering::SeqCst);
     });
-    assert_eq!(
-        s.turn("PARENT: add a helper.").await,
-        TurnEnd::Interrupted
-    );
+    assert_eq!(s.turn("PARENT: add a helper.").await, TurnEnd::Interrupted);
     raiser.await.unwrap();
     assert!(f.ws.join("src/export/helper.rs").exists());
     assert_eq!(
