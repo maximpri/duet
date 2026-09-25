@@ -98,7 +98,7 @@ pub struct Bootstrap {
 }
 
 /// Loopback ports bootstrap probes: `DUET_LOCAL_PORTS` (comma-separated) or the preset ports.
-fn bootstrap_ports() -> Vec<u16> {
+pub fn bootstrap_ports() -> Vec<u16> {
     std::env::var("DUET_LOCAL_PORTS")
         .ok()
         .map(|v| v.split(',').filter_map(|p| p.trim().parse().ok()).collect())

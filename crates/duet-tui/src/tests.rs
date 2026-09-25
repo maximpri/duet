@@ -5,6 +5,7 @@
 
 use crate::app::{App, DoctorLine, Mode, Paths, Tab};
 use crate::settings::{keys, screen_of};
+use crate::{CacheReport, LocalServer};
 use duet_agent::transcript::{Entry, Transcript};
 use duet_boundary::audit::{self, AuditEvent, AuditLog, Line as Record, run_anchors};
 use duet_boundary::model::{Item, ToolCall, Usage};
@@ -17,15 +18,55 @@ use serde_json::json;
 use std::path::Path;
 use tempfile::TempDir;
 
-fn doctor() -> crate::Doctor {
-    Box::new(|online| {
-        vec![DoctorLine {
-            status: "pass".into(),
-            name: "config".into(),
-            detail: format!("fake check, online={online}"),
-            fix: None,
-        }]
-    })
+fn services() -> crate::Services {
+    crate::Services {
+        doctor: Box::new(|online| {
+            vec![DoctorLine {
+                status: "pass".into(),
+                name: "config".into(),
+                detail: format!("fake check, online={online}"),
+                fix: None,
+            }]
+        }),
+        detect: std::sync::Arc::new(|| {
+            vec![
+                LocalServer {
+                    base_url: "http://127.0.0.1:11434/v1".into(),
+                    backend: "Ollama".into(),
+                    models: vec!["qwen3:8b".into(), "coder:30b".into()],
+                },
+                LocalServer {
+                    base_url: "http://127.0.0.1:8080/v1".into(),
+                    backend: "llama.cpp server".into(),
+                    models: vec![],
+                },
+            ]
+        }),
+        cache_probe: std::sync::Arc::new(|| {
+            Ok(CacheReport {
+                base_url: "http://127.0.0.1:11434/v1".into(),
+                model: "qwen3:8b".into(),
+                prompt_tokens: 1500,
+                first_cached: 0,
+                second_cached: 1408,
+                first_seconds: 2.5,
+                second_seconds: 0.4,
+                unreported: false,
+            })
+        }),
+    }
+}
+
+/// Waits for background jobs (detection, cache probe) to finish.
+fn settle(app: &mut App) {
+    for _ in 0..500 {
+        app.tick();
+        if !app.busy() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    panic!("background job did not finish");
 }
 
 fn fixture(owner: &str, project: &str) -> (TempDir, App) {
@@ -45,7 +86,7 @@ fn fixture(owner: &str, project: &str) -> (TempDir, App) {
     if !project.is_empty() {
         std::fs::write(&paths.project, project).unwrap();
     }
-    let app = App::new(paths, doctor()).unwrap();
+    let app = App::new(paths, services()).unwrap();
     (d, app)
 }
 
@@ -568,4 +609,208 @@ fn a_terminal_without_a_usable_size_is_refused_with_the_minimum() {
         "{out}"
     );
     assert!(!out.contains("edits go to"), "{out}");
+}
+
+#[test]
+fn models_screen_detects_local_servers_and_uses_one_through_the_audited_path() {
+    let (_d, mut app) = fixture("", "");
+    key(&mut app, KeyCode::Char('l'));
+    settle(&mut app);
+    let out = render(&mut app);
+    for want in [
+        "Ollama at http://127.0.0.1:11434/v1",
+        "> qwen3:8b",
+        "coder:30b",
+        "llama.cpp server at http://127.0.0.1:8080/v1",
+        "lists no models",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    assert!(
+        app.status().contains("2 local server(s)"),
+        "{}",
+        app.status()
+    );
+    key(&mut app, KeyCode::Char(']'));
+    assert!(render(&mut app).contains("> coder:30b"));
+    key(&mut app, KeyCode::Char(']'));
+    assert_eq!(app.models.pick, 1, "stays on the last choice");
+    // The project file never takes the endpoint.
+    key(&mut app, KeyCode::Char('p'));
+    key(&mut app, KeyCode::Char('u'));
+    assert!(app.status().contains("owner-only"), "{}", app.status());
+    key(&mut app, KeyCode::Char('p'));
+    // Changing the endpoint loosens privacy: it waits for y.
+    key(&mut app, KeyCode::Char('u'));
+    assert!(matches!(app.mode, Mode::Confirm(_)));
+    assert!(render(&mut app).contains("+ \"http://127.0.0.1:11434/v1\""));
+    key(&mut app, KeyCode::Char('y'));
+    let cfg = reload(&app);
+    assert_eq!(
+        cfg.str("local.base_url").unwrap(),
+        "http://127.0.0.1:11434/v1"
+    );
+    assert_eq!(cfg.str("local.model").unwrap(), "coder:30b");
+    let events = config_audit(&app);
+    assert!(
+        matches!(&events[..], [
+            AuditEvent::ConfigChange { key: k1, confirmed: true, .. },
+            AuditEvent::ConfigChange { key: k2, .. },
+        ] if k1 == "local.base_url" && k2 == "local.model"),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn cancelling_the_endpoint_change_also_drops_the_model_change() {
+    let (_d, mut app) = fixture("", "");
+    key(&mut app, KeyCode::Char('l'));
+    settle(&mut app);
+    key(&mut app, KeyCode::Char('u'));
+    key(&mut app, KeyCode::Char('n'));
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(!app.paths.owner.exists());
+    assert!(config_audit(&app).is_empty());
+}
+
+#[test]
+fn models_screen_runs_the_cache_probe_only_on_request() {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (_d, mut app) = fixture("", "");
+    let counted = calls.clone();
+    let inner = app.services_mut().cache_probe.clone();
+    app.services_mut().cache_probe = std::sync::Arc::new(move || {
+        counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        inner()
+    });
+    for tab in Tab::ALL {
+        app.enter_tab(tab);
+        render(&mut app);
+    }
+    app.tick();
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    app.enter_tab(Tab::Models);
+    key(&mut app, KeyCode::Char('c'));
+    settle(&mut app);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let out = render(&mut app);
+    for want in [
+        "qwen3:8b at http://127.0.0.1:11434/v1",
+        "first request:       0 cached of 1500 prompt tokens, 2.5s",
+        "second request:   1408 cached (94%), 0.4s",
+        "the server reuses its prompt cache",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    // A failure is shown, not fatal.
+    app.services_mut().cache_probe = std::sync::Arc::new(|| Err("connection refused".into()));
+    key(&mut app, KeyCode::Char('c'));
+    settle(&mut app);
+    assert!(render(&mut app).contains("connection refused"));
+    assert!(app.status().contains("cache probe failed"));
+    // d returns to the doctor panel.
+    key(&mut app, KeyCode::Char('d'));
+    assert!(render(&mut app).contains("fake check, online=false"));
+}
+
+#[test]
+fn sensitivity_text_tester_shows_replacements_including_custom_patterns() {
+    let (_d, mut app) = fixture("", "");
+    select(&mut app, "sensitivity.custom_patterns");
+    key(&mut app, KeyCode::Char('a'));
+    typed(&mut app, "CUST-[0-9]{6}");
+    key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        reload(&app).list("sensitivity.custom_patterns").unwrap(),
+        vec!["CUST-[0-9]{6}"]
+    );
+    // An invalid pattern is refused by the registry.
+    key(&mut app, KeyCode::Char('a'));
+    typed(&mut app, "CUST-(");
+    key(&mut app, KeyCode::Enter);
+    assert!(
+        app.status().contains("not a valid regular expression"),
+        "{}",
+        app.status()
+    );
+    key(&mut app, KeyCode::Char('s'));
+    typed(&mut app, "refund CUST-004211 for kim@corp.net");
+    let out = screen(&mut app, 200, 60);
+    for want in [
+        "sent as: refund ⟨data:1⟩ for ⟨email:1⟩",
+        "CUST-004211 -> ⟨data:1⟩ (custom pattern \"CUST-[0-9]{6}\")",
+        "kim@corp.net -> ⟨email:1⟩ (email detector)",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    key(&mut app, KeyCode::Esc);
+    for _ in 0..40 {
+        key(&mut app, KeyCode::Backspace);
+    }
+    // Backspace after Esc edits nothing; s resumes typing.
+    key(&mut app, KeyCode::Char('s'));
+    for _ in 0..40 {
+        key(&mut app, KeyCode::Backspace);
+    }
+    typed(&mut app, "fn main() {}");
+    assert!(screen(&mut app, 200, 60).contains("nothing here would be replaced"));
+    // Removing the pattern loosens: it needs a confirmation.
+    key(&mut app, KeyCode::Esc);
+    select(&mut app, "sensitivity.custom_patterns");
+    key(&mut app, KeyCode::Enter);
+    retype(&mut app, "[]");
+    key(&mut app, KeyCode::Enter);
+    assert!(matches!(app.mode, Mode::Confirm(_)));
+}
+
+fn make_runs(app: &App, ids: &[&str]) {
+    for id in ids {
+        let dir = app.paths.workspace.join(".duet/runs").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("vault.json"), "{}").unwrap();
+    }
+}
+
+#[test]
+fn data_screen_purges_after_confirmation() {
+    let (_d, mut app) = fixture("", "");
+    make_runs(&app, &["20260901-000000-aaaaaa", "20260902-000000-bbbbbb"]);
+    let runs = app.paths.workspace.join(".duet/runs");
+    app.enter_tab(Tab::Data);
+    // Nothing is older than the retention period.
+    key(&mut app, KeyCode::Char('x'));
+    assert!(matches!(app.mode, Mode::Normal));
+    assert_eq!(app.status(), "nothing to purge");
+    key(&mut app, KeyCode::Char('X'));
+    let out = render(&mut app);
+    for want in [
+        "confirm purge",
+        "Delete the raw data of 2 run(s): every run.",
+        "20260901-000000-aaaaaa",
+        "audit logs stay",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    key(&mut app, KeyCode::Char('n'));
+    assert!(app.status().contains("nothing deleted"));
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 2);
+    // A run in progress holds the workspace lock: nothing is deleted.
+    let lock = duet_fs::lock::WorkspaceLock::acquire(&app.paths.workspace).unwrap();
+    key(&mut app, KeyCode::Char('X'));
+    key(&mut app, KeyCode::Char('y'));
+    assert!(
+        app.status().contains("a run is in progress"),
+        "{}",
+        app.status()
+    );
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 2);
+    drop(lock);
+    key(&mut app, KeyCode::Char('X'));
+    key(&mut app, KeyCode::Char('y'));
+    assert!(
+        app.status().contains("purged the raw data of 2 run(s)"),
+        "{}",
+        app.status()
+    );
+    assert_eq!(std::fs::read_dir(&runs).unwrap().count(), 0);
 }

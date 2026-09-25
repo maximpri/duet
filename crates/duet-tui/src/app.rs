@@ -2,9 +2,11 @@
 //! TUI state and key handling. Rendering lives in `ui` and the screen modules;
 //! everything here is plain state so tests can drive it without a terminal.
 
-use crate::Doctor;
+use crate::Services;
 use crate::audit::AuditView;
+use crate::data::PurgePlan;
 use crate::ip::IpView;
+use crate::models::{Job, ModelsView, Panel};
 use crate::runs::RunView;
 use crate::settings;
 use duet_boundary::audit::record_config_change;
@@ -111,6 +113,10 @@ pub(crate) enum Mode {
     Confirm(Proposal),
     /// Typing a path into the sensitivity tester.
     Tester,
+    /// Typing sample text into the detector tester.
+    Sample,
+    /// A purge waiting for an explicit yes.
+    ConfirmPurge(PurgePlan),
 }
 
 pub struct App {
@@ -123,10 +129,17 @@ pub struct App {
     pub(crate) status: String,
     /// Selected row of each settings screen.
     pub(crate) rows: [usize; 7],
-    doctor_fn: Doctor,
+    services: Services,
     /// The last doctor result and whether it included the online checks.
     pub(crate) doctor: Option<(bool, Vec<DoctorLine>)>,
+    pub(crate) models: ModelsView,
+    /// Changes still to propose after the current one (a detected server
+    /// sets `local.base_url`, then `local.model`).
+    queued: Vec<(&'static str, Value)>,
     pub(crate) tester: String,
+    /// Sample text for the detector tester, and whether its panel is shown.
+    pub(crate) sample: String,
+    pub(crate) sample_panel: bool,
     pub(crate) ip: IpView,
     pub(crate) audit: AuditView,
     pub(crate) runs: RunView,
@@ -134,7 +147,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(paths: Paths, doctor: Doctor) -> anyhow::Result<Self> {
+    pub fn new(paths: Paths, services: Services) -> anyhow::Result<Self> {
         let cfg = Config::load(&paths.owner, Some(&paths.project))?;
         let mut app = Self {
             paths,
@@ -144,9 +157,13 @@ impl App {
             mode: Mode::Normal,
             status: String::new(),
             rows: [0; 7],
-            doctor_fn: doctor,
+            services,
             doctor: None,
+            models: ModelsView::default(),
+            queued: Vec::new(),
             tester: String::new(),
+            sample: String::new(),
+            sample_panel: false,
             ip: IpView::default(),
             audit: AuditView::default(),
             runs: RunView::default(),
@@ -154,6 +171,11 @@ impl App {
         };
         app.enter_tab(Tab::Models);
         Ok(app)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn services_mut(&mut self) -> &mut Services {
+        &mut self.services
     }
 
     pub fn tab(&self) -> Tab {
@@ -176,15 +198,29 @@ impl App {
         }
     }
 
-    /// Periodic refresh: the Run screen follows its run as it grows.
+    /// Periodic refresh: the Run screen follows its run as it grows, and
+    /// finished background jobs are collected.
     pub fn tick(&mut self) {
+        self.poll_jobs();
         if self.tab == Tab::Run {
             self.runs.refresh(&self.paths.workspace);
         }
     }
 
+    /// Whether a background job (detection, cache probe) is still running.
+    pub fn busy(&self) -> bool {
+        self.models.busy()
+    }
+
+    pub(crate) fn poll_jobs(&mut self) {
+        for line in self.models.poll() {
+            self.status = line;
+        }
+    }
+
     fn run_doctor(&mut self, online: bool) {
-        let checks = (self.doctor_fn)(online);
+        self.models.panel = Panel::Doctor;
+        let checks = (self.services.doctor)(online);
         self.status = format!(
             "doctor ({}): {} check(s)",
             if online { "online" } else { "offline" },
@@ -202,6 +238,7 @@ impl App {
             protected_paths: list("sensitivity.protected_paths"),
             secret_sinks: list("sensitivity.secret_sinks"),
             raw_ok_commands: list("sensitivity.raw_ok_commands"),
+            custom_patterns: list("sensitivity.custom_patterns"),
             interface_only: list("ip.interface_only"),
             sealed: list("ip.sealed"),
             ..Policy::default()
@@ -219,6 +256,7 @@ impl App {
             self.quit = true;
             return;
         }
+        self.poll_jobs();
         match std::mem::replace(&mut self.mode, Mode::Normal) {
             Mode::Normal => self.normal_key(code),
             Mode::Edit {
@@ -252,9 +290,32 @@ impl App {
             Mode::Confirm(p) => match code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => self.commit(p, true),
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.queued.clear();
                     self.status = format!("not applied: {} unchanged", p.key);
                 }
                 _ => self.mode = Mode::Confirm(p),
+            },
+            Mode::ConfirmPurge(plan) => match code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.status = crate::data::execute(&self.paths.workspace, &plan);
+                    self.runs.forget();
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.status = "purge cancelled; nothing deleted".into();
+                }
+                _ => self.mode = Mode::ConfirmPurge(plan),
+            },
+            Mode::Sample => match code {
+                KeyCode::Esc | KeyCode::Enter => {}
+                KeyCode::Backspace => {
+                    self.sample.pop();
+                    self.mode = Mode::Sample;
+                }
+                KeyCode::Char(c) => {
+                    self.sample.push(c);
+                    self.mode = Mode::Sample;
+                }
+                _ => self.mode = Mode::Sample,
             },
             Mode::Tester => match code {
                 KeyCode::Esc | KeyCode::Enter => {}
@@ -327,7 +388,24 @@ impl App {
             },
             (Tab::Models, KeyCode::Char('d')) => self.run_doctor(false),
             (Tab::Models, KeyCode::Char('o')) => self.run_doctor(true),
-            (Tab::Sensitivity, KeyCode::Char('t')) => self.mode = Mode::Tester,
+            (Tab::Models, KeyCode::Char('l')) => self.detect(),
+            (Tab::Models, KeyCode::Char('c')) => self.probe_cache(),
+            (Tab::Models, KeyCode::Char('[')) => self.pick_by(-1),
+            (Tab::Models, KeyCode::Char(']')) => self.pick_by(1),
+            (Tab::Models, KeyCode::Char('u')) => self.use_picked(),
+            (Tab::Sensitivity, KeyCode::Char('t')) => {
+                self.sample_panel = false;
+                self.mode = Mode::Tester;
+            }
+            (Tab::Sensitivity, KeyCode::Char('s')) => {
+                self.sample_panel = true;
+                self.mode = Mode::Sample;
+            }
+            (Tab::Data, KeyCode::Char('x')) => {
+                let days = self.cfg.int("data.retention_days").unwrap_or(14);
+                self.plan_purge(duet_agent::purge::Scope::OlderThan { days });
+            }
+            (Tab::Data, KeyCode::Char('X')) => self.plan_purge(duet_agent::purge::Scope::All),
             (Tab::Ip, KeyCode::Enter | KeyCode::Right | KeyCode::Left) => self.ip.toggle(),
             (Tab::Ip, KeyCode::Char('i')) => self.mark("ip.interface_only"),
             (Tab::Ip, KeyCode::Char('s')) => self.mark("ip.sealed"),
@@ -340,6 +418,81 @@ impl App {
             (Tab::Run, KeyCode::Char(']')) => self.runs.select_by(1, &self.paths.workspace),
             (Tab::Run, KeyCode::Char('f')) => self.runs.follow = !self.runs.follow,
             _ => {}
+        }
+    }
+
+    fn detect(&mut self) {
+        self.models.panel = Panel::Servers;
+        if self.models.detecting.is_some() {
+            return;
+        }
+        let detect = self.services.detect.clone();
+        self.models.detecting = Some(Job::spawn(move || detect()));
+        self.status = "looking for local servers on 127.0.0.1 (preset ports only)".into();
+    }
+
+    fn probe_cache(&mut self) {
+        self.models.panel = Panel::Cache;
+        if self.models.probing.is_some() {
+            return;
+        }
+        let probe = self.services.cache_probe.clone();
+        self.models.probing = Some(Job::spawn(move || probe()));
+        self.status = "cache probe: two identical short requests to the local model".into();
+    }
+
+    fn pick_by(&mut self, d: isize) {
+        self.models.panel = Panel::Servers;
+        let n = self.models.choices().len();
+        self.models.pick = self
+            .models
+            .pick
+            .saturating_add_signed(d)
+            .min(n.saturating_sub(1));
+    }
+
+    /// Proposes the picked server and model; changing the endpoint loosens
+    /// privacy, so it goes through the confirmation like any edit.
+    fn use_picked(&mut self) {
+        let Some((url, model)) = self.models.choices().get(self.models.pick).cloned() else {
+            self.status = "l detects local servers first".into();
+            return;
+        };
+        if self.target != Target::Owner {
+            self.status =
+                "the local endpoint is owner-only: p switches edits to the owner config".into();
+            return;
+        }
+        self.submit_all(vec![
+            ("local.base_url", Value::String(url)),
+            ("local.model", Value::String(model)),
+        ]);
+    }
+
+    fn plan_purge(&mut self, scope: duet_agent::purge::Scope) {
+        let plan = PurgePlan::new(&self.paths.workspace, scope);
+        if plan.runs.is_empty() {
+            self.status = "nothing to purge".into();
+        } else {
+            self.mode = Mode::ConfirmPurge(plan);
+        }
+    }
+
+    /// Proposes `changes` one after another; a refusal or a cancelled
+    /// confirmation drops the rest.
+    fn submit_all(&mut self, mut changes: Vec<(&'static str, Value)>) {
+        if changes.is_empty() {
+            return;
+        }
+        let (key, value) = changes.remove(0);
+        self.queued = changes;
+        self.submit(key, value);
+    }
+
+    fn next_queued(&mut self) {
+        let rest = std::mem::take(&mut self.queued);
+        if matches!(self.mode, Mode::Normal) {
+            self.submit_all(rest);
         }
     }
 
@@ -404,8 +557,14 @@ impl App {
     /// or held for confirmation when it loosens privacy.
     pub(crate) fn submit(&mut self, key: &str, value: Value) {
         match self.cfg.propose(self.target, key, value) {
-            Err(e) => self.status = format!("refused: {e}"),
-            Ok(p) if p.old == p.new => self.status = format!("{} unchanged", p.key),
+            Err(e) => {
+                self.queued.clear();
+                self.status = format!("refused: {e}");
+            }
+            Ok(p) if p.old == p.new => {
+                self.status = format!("{} unchanged", p.key);
+                self.next_queued();
+            }
             Ok(p) if p.weakens.is_some() => self.mode = Mode::Confirm(p),
             Ok(p) => self.commit(p, false),
         }
@@ -420,6 +579,7 @@ impl App {
                 record_config_change(&self.paths.config_audit(), &change, p.target, confirmed)?;
                 Ok(())
             });
+        let applied = result.is_ok();
         self.status = match result {
             Ok(()) => format!(
                 "{} = {} written to the {} config{}; recorded in the config audit log",
@@ -435,6 +595,11 @@ impl App {
             Err(e) => self
                 .status
                 .push_str(&format!(" (reloading the config failed: {e})")),
+        }
+        if applied {
+            self.next_queued();
+        } else {
+            self.queued.clear();
         }
     }
 

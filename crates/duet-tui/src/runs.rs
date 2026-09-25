@@ -91,6 +91,11 @@ impl RunView {
         (self.feed, self.withheld) = feeds(&entries, &records);
     }
 
+    /// Drops what was read, so the next refresh re-lists and re-reads.
+    pub fn forget(&mut self) {
+        self.seen = None;
+    }
+
     pub fn select_by(&mut self, d: isize, ws: &Path) {
         self.selected = self
             .selected

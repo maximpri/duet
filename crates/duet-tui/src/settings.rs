@@ -4,7 +4,7 @@
 //! (Models) and the path tester (Sensitivity).
 
 use crate::app::{App, Tab};
-use crate::ui::{origin_name, status_style};
+use crate::ui::origin_name;
 use duet_config::{Direction, Kind, REGISTRY, Scope, Setting};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -113,7 +113,8 @@ pub(crate) fn draw(f: &mut Frame, app: &App, area: Rect) {
         Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(bottom);
     draw_detail(f, app, detail);
     match tab {
-        Tab::Models => draw_doctor(f, app, side),
+        Tab::Models => crate::models::draw(f, app, side),
+        Tab::Sensitivity if app.sample_panel => draw_sample(f, app, side),
         Tab::Sensitivity => draw_tester(f, app, side),
         _ => f.render_widget(
             Paragraph::new(help_for(tab))
@@ -132,8 +133,9 @@ the checks run at finish, context masking, sandbox network access and operator a
 (oversight.approve, owner only). A project may only lower budgets and may only turn the sandbox network off."
         }
         _ => {
-            "Retention of raw run data (handles, transcripts, vault) and of audit logs. `duet purge` deletes \
-runs older than data.retention_days. A project may only shorten raw-data retention."
+            "Retention of raw run data (handles, transcripts, vault) and of audit logs. x purges the raw data \
+of runs older than data.retention_days, X of every run (both list the runs and ask first; audit logs \
+are kept; the same as `duet purge`). A project may only shorten raw-data retention."
         }
     }
 }
@@ -169,39 +171,6 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect) {
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
             .block(Block::bordered().title(" setting ")),
-        area,
-    );
-}
-
-fn draw_doctor(f: &mut Frame, app: &App, area: Rect) {
-    let (title, lines) = match &app.doctor {
-        None => (" doctor ".to_owned(), vec![Line::from("d runs the checks")]),
-        Some((online, checks)) => {
-            let mut lines = Vec::new();
-            for c in checks {
-                lines.push(Line::from(vec![
-                    Span::styled(format!("{:<5}", c.status), status_style(&c.status)),
-                    Span::raw(format!("{:<16} {}", c.name, c.detail)),
-                ]));
-                if let Some(fix) = &c.fix {
-                    lines.push(Line::styled(
-                        format!("      fix: {}", fix.replace('\n', "; ")),
-                        Style::new().fg(Color::DarkGray),
-                    ));
-                }
-            }
-            let mode = if *online {
-                "online: listings only, never a model call"
-            } else {
-                "offline: no network; o adds --online"
-            };
-            (format!(" doctor ({mode}) "), lines)
-        }
-    };
-    f.render_widget(
-        Paragraph::new(lines)
-            .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
         area,
     );
 }
@@ -264,6 +233,93 @@ fn draw_tester(f: &mut Frame, app: &App, area: Rect) {
         " path tester (typing; Enter or Esc ends) "
     } else {
         " path tester "
+    };
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .block(Block::bordered().title(title)),
+        area,
+    );
+}
+
+/// What the detectors would replace in `text`: the text with placeholders,
+/// then each replaced value and the detector that found it. The built-in
+/// detectors follow the effective toggles; custom patterns are the effective
+/// `sensitivity.custom_patterns`.
+pub(crate) fn sample_lines(app: &App, text: &str) -> Vec<String> {
+    use duet_boundary::detect::{CustomPatterns, Detectors, Kind, scan_with};
+    let patterns = app
+        .cfg
+        .list("sensitivity.custom_patterns")
+        .unwrap_or_default();
+    let custom = match CustomPatterns::compile(&patterns) {
+        Ok(c) => c,
+        Err(e) => return vec![format!("custom patterns do not compile: {e}")],
+    };
+    let d = Detectors {
+        secrets: app.cfg.bool("sensitivity.detect_secrets").unwrap_or(true),
+        pii: app.cfg.bool("sensitivity.detect_pii").unwrap_or(true),
+        entropy: app.cfg.bool("sensitivity.detect_entropy").unwrap_or(true),
+    };
+    let findings = scan_with(text, d, &custom);
+    let mut counters = std::collections::BTreeMap::<Kind, usize>::new();
+    let mut shown = String::new();
+    let mut found = Vec::new();
+    let mut at = 0;
+    for f in &findings {
+        let n = counters.entry(f.kind).or_default();
+        *n += 1;
+        let placeholder = format!("⟨{}:{n}⟩", f.kind.tag());
+        shown.push_str(&text[at..f.start]);
+        shown.push_str(&placeholder);
+        at = f.end;
+        let value = &text[f.start..f.end];
+        let by = patterns
+            .iter()
+            .find(|p| {
+                regex::Regex::new(p)
+                    .ok()
+                    .and_then(|re| re.find(value))
+                    .is_some_and(|m| m.start() == 0 && m.end() == value.len())
+            })
+            .map_or_else(
+                || format!("{:?} detector", f.kind).to_lowercase(),
+                |p| format!("custom pattern \"{p}\""),
+            );
+        found.push(format!("  {value} -> {placeholder} ({by})"));
+    }
+    shown.push_str(&text[at..]);
+    let mut out = vec![format!("sent as: {shown}")];
+    if found.is_empty() {
+        out.push("nothing here would be replaced".into());
+    } else {
+        out.push(format!("{} value(s) replaced:", found.len()));
+        out.extend(found);
+    }
+    out.push(
+        "in sensitive content (matching files, command output) names, long numbers and \
+identifiers are replaced as well"
+            .into(),
+    );
+    out
+}
+
+fn draw_sample(f: &mut Frame, app: &App, area: Rect) {
+    let editing = matches!(app.mode, crate::app::Mode::Sample);
+    let lines: Vec<Line> = if app.sample.is_empty() && !editing {
+        vec![Line::from(
+            "s tests sample text against the detectors and custom patterns",
+        )]
+    } else {
+        sample_lines(app, &app.sample)
+            .into_iter()
+            .map(Line::from)
+            .collect()
+    };
+    let title = if editing {
+        " text tester (typing; Enter or Esc ends) "
+    } else {
+        " text tester "
     };
     f.render_widget(
         Paragraph::new(lines)

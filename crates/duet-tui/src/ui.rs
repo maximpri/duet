@@ -80,8 +80,10 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) {
         _ => crate::settings::draw(f, app, body),
     }
     draw_keys(f, app, keys);
-    if let Mode::Confirm(p) = &app.mode {
-        draw_confirm(f, app, p);
+    match &app.mode {
+        Mode::Confirm(p) => draw_confirm(f, app, p),
+        Mode::ConfirmPurge(plan) => crate::data::draw_confirm(f, plan),
+        _ => {}
     }
 }
 
@@ -90,11 +92,16 @@ fn key_help(app: &App) -> &'static str {
         (Mode::Edit { .. }, _) => "Enter apply · Esc cancel",
         (Mode::Confirm(_), _) => "y apply this loosening change · n or Esc cancel",
         (Mode::Tester, _) => "type a workspace path · Enter or Esc done",
+        (Mode::Sample, _) => "type sample text · Enter or Esc done",
+        (Mode::ConfirmPurge(_), _) => "y delete · n or Esc cancel",
         (_, Tab::Models) => {
-            "Enter edit · a add entry · d doctor · o doctor --online · p owner/project · Tab screens · q quit"
+            "Enter edit · d doctor · o online checks · l detect local · [ ] u use · c cache probe · p owner/project · q quit"
         }
         (_, Tab::Sensitivity) => {
-            "Enter edit · a add entry · t test a path · p owner/project · Tab screens · q quit"
+            "Enter edit · a add entry · t test a path · s test text · p owner/project · Tab screens · q quit"
+        }
+        (_, Tab::Data) => {
+            "Enter edit · x purge old runs · X purge all runs · p owner/project · Tab screens · q quit"
         }
         (_, Tab::Ip) => {
             "Enter open/close · i interface-only · s sealed · u unmark · p owner/project · q quit"

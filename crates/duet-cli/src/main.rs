@@ -607,6 +607,52 @@ fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Res
     Ok(())
 }
 
+/// The TUI's cache-reuse probe against the configured local model: the same
+/// endpoint trust rules as a run, two identical short requests, no retries
+/// beyond two attempts. Prints nothing (the TUI owns the terminal).
+async fn tui_cache_probe(ws: &Path) -> Result<duet_tui::CacheReport, String> {
+    let cfg = load_config(ws).map_err(|e| format!("{e:#}"))?;
+    if cfg.origin("local.base_url") == Some(duet_config::Origin::Default) {
+        return Err(
+            "no local endpoint is configured: l detects servers on loopback and u uses one".into(),
+        );
+    }
+    let text = |k: &str| cfg.str(k).map_err(|e| e.to_string());
+    let (url, model) = (text("local.base_url")?, text("local.model")?);
+    let allowlist = cfg.list("local.allowlist").map_err(|e| e.to_string())?;
+    let allow_plaintext = cfg
+        .bool("local.allow_plaintext")
+        .map_err(|e| e.to_string())?;
+    let mut pc = ProviderConfig::new(
+        &url,
+        &model,
+        Role::Local {
+            allowlist,
+            allow_plaintext,
+        },
+    );
+    pc.max_attempts = Some(2);
+    pc.first_byte_timeout = Duration::from_secs(120);
+    let key_env = text("local.api_key_env")?;
+    if !key_env.is_empty() {
+        pc.api_key_env = Some(key_env);
+    }
+    let provider = ChatProvider::with_reqwest(pc).map_err(|e| e.message)?;
+    let r = duet_provider::probe::cache_reuse(&provider)
+        .await
+        .map_err(|e| e.message)?;
+    Ok(duet_tui::CacheReport {
+        base_url: url,
+        model,
+        prompt_tokens: r.prompt_tokens,
+        first_cached: r.first_cached,
+        second_cached: r.second_cached,
+        first_seconds: r.first_seconds,
+        second_seconds: r.second_seconds,
+        unreported: r.unreported,
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -811,9 +857,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
         Cmd::Tui => {
             let handle = tokio::runtime::Handle::current();
             let at = ws.clone();
+            let on = handle.clone();
             let doctor: duet_tui::Doctor = Box::new(move |online| {
-                handle
-                    .block_on(doctor::run(&at, online))
+                on.block_on(doctor::run(&at, online))
                     .into_iter()
                     .map(|c| duet_tui::DoctorLine {
                         status: format!("{:?}", c.status).to_lowercase(),
@@ -823,8 +869,29 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     })
                     .collect()
             });
+            let on = handle.clone();
+            let detect = std::sync::Arc::new(move || {
+                on.block_on(duet_provider::backends::discover_loopback(
+                    &setup::bootstrap_ports(),
+                    Duration::from_millis(1500),
+                ))
+                .into_iter()
+                .map(|s| duet_tui::LocalServer {
+                    backend: s.backend.unwrap_or("OpenAI-compatible server").into(),
+                    base_url: s.base_url,
+                    models: s.models,
+                })
+                .collect()
+            });
+            let (on, at) = (handle.clone(), ws.clone());
+            let cache_probe = std::sync::Arc::new(move || on.block_on(tui_cache_probe(&at)));
+            let services = duet_tui::Services {
+                doctor,
+                detect,
+                cache_probe,
+            };
             tokio::task::block_in_place(|| {
-                duet_tui::run(duet_tui::Paths::for_workspace(ws), doctor)
+                duet_tui::run(duet_tui::Paths::for_workspace(ws), services)
             })?;
         }
         Cmd::Doctor { online, json } => {
