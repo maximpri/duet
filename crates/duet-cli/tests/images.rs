@@ -339,6 +339,25 @@ fn leaked_from(bodies: &[String]) -> Vec<Finding> {
     bodies.iter().flat_map(|b| leaked(b)).collect()
 }
 
+/// [`leaked`] over an audit log's records without their chain fields
+/// (timestamps and hashes are digit runs of nothing).
+fn leaked_in_log(log: &str) -> Vec<Finding> {
+    log.lines()
+        .flat_map(|line| {
+            let mut v: Value = serde_json::from_str(line).unwrap();
+            let record = v.as_object_mut().unwrap();
+            for chain in ["seq", "prev", "unix_ms", "request_sha256"] {
+                record.remove(chain);
+            }
+            if let Some(event) = record.get_mut("event").and_then(Value::as_object_mut) {
+                event.remove("sha256");
+                event.remove("bytes");
+            }
+            leaked(&v.to_string())
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_sensitive_image_never_reaches_the_frontier_and_its_description_is_filtered() {
     let w = Ws::new();
@@ -370,11 +389,8 @@ async fn a_sensitive_image_never_reaches_the_frontier_and_its_description_is_fil
         !carries(&all, &scan, &scan_file),
         "the sensitive image reached the frontier"
     );
-    assert!(
-        leaked(&all).is_empty(),
-        "{:?} reached the frontier",
-        leaked(&all)
-    );
+    let found = leaked_from(&bodies);
+    assert!(found.is_empty(), "{found:?} reached the frontier");
     // The frontier got the cleaned description and a handle, and the public
     // image itself (images.to_frontier = "public", frontier.vision on).
     let last: Value = serde_json::from_str(bodies.last().unwrap()).unwrap();
@@ -446,11 +462,8 @@ async fn a_sensitive_image_never_reaches_the_frontier_and_its_description_is_fil
     let log = std::fs::read_to_string(w.log()).unwrap();
     assert!(!carries(&log, &scan, &scan_file) && !log.contains(&ui.base64()));
     assert!(log.contains(&format!("[image sha256:{}", ui.sha256)));
-    assert!(
-        leaked(&log).is_empty(),
-        "{:?} in the audit log",
-        leaked(&log)
-    );
+    let found = leaked_in_log(&log);
+    assert!(found.is_empty(), "{found:?} in the audit log");
 }
 
 #[tokio::test(flavor = "multi_thread")]
