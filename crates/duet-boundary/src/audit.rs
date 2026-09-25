@@ -83,6 +83,10 @@ pub enum AuditEvent {
         /// `operator`, or `no_terminal` when nobody could be asked (denied).
         decided_by: String,
     },
+    /// (Session) An operator message was added to the conversation. The
+    /// message itself is in the next request record, sanitized; this holds
+    /// only the turn number and how many values in it became placeholders.
+    OperatorMessage { exchange: u64, placeholders: usize },
     /// An owner or project setting changed (`duet config set`).
     ConfigChange {
         key: String,
@@ -107,6 +111,7 @@ impl AuditEvent {
             AuditEvent::ProtectedEdit { .. } => "protected_edit",
             AuditEvent::Approval { .. } => "approval",
             AuditEvent::ConfigChange { .. } => "config_change",
+            AuditEvent::OperatorMessage { .. } => "operator_message",
         }
     }
 }

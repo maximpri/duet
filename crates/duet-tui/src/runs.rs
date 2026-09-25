@@ -11,6 +11,7 @@
 
 use crate::audit::list_runs;
 use crate::changes::{self, ChangedFile, Held, RowKind, Status};
+use duet_agent::TurnEnd;
 use duet_agent::transcript::{Entry, Transcript};
 use duet_boundary::audit::{self, AuditEvent, Line as Record};
 use duet_boundary::model::Item;
@@ -299,6 +300,19 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
                 withheld.push(format!("{call_id}: shown as {class:?}"))
             }
             Entry::Shown { .. } => {}
+            Entry::TurnStart {
+                exchange, message, ..
+            } => feed.push(format!(
+                "operator, turn {exchange}: {}",
+                first_line(message)
+            )),
+            Entry::TurnEnd { exchange, end, .. } => {
+                feed.push(format!("turn {exchange} {}", describe_end(end)))
+            }
+            Entry::Undone { exchange, paths } => feed.push(format!(
+                "operator undid turn {exchange} and later: {} file(s) restored",
+                paths.len()
+            )),
             Entry::End { terminal } => feed.push(format!(
                 "end: {}",
                 serde_json::to_string(terminal).unwrap_or_default()
@@ -328,6 +342,13 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
                 AuditEvent::SandboxDenial { command, access } => {
                     withheld.push(format!("#{} sandbox denied {access}: {command}", e.seq))
                 }
+                AuditEvent::OperatorMessage {
+                    exchange,
+                    placeholders,
+                } if *placeholders > 0 => withheld.push(format!(
+                    "#{} operator message (turn {exchange}): {placeholders} value(s) sent as placeholders",
+                    e.seq
+                )),
                 AuditEvent::ProtectedEdit { path, attempt, .. } => withheld.push(format!(
                     "#{} protected edit {path} (attempt {attempt})",
                     e.seq
@@ -338,6 +359,18 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
         }
     }
     (feed, withheld)
+}
+
+/// A turn's end in one line (its message's first line).
+pub(crate) fn describe_end(end: &TurnEnd) -> String {
+    match end {
+        TurnEnd::Replied { message } => format!("replied: {}", first_line(message)),
+        TurnEnd::Asked { question } => format!("asks: {}", first_line(question)),
+        TurnEnd::Completed { summary } => format!("completed: {}", first_line(summary)),
+        TurnEnd::Failed { reason } => format!("failed: {}", first_line(reason)),
+        TurnEnd::BudgetStopped { which } => format!("stopped by {which}"),
+        TurnEnd::Interrupted => "interrupted".into(),
+    }
 }
 
 fn focus_style(on: bool) -> Style {

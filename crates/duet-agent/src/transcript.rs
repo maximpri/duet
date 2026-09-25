@@ -49,6 +49,30 @@ pub enum Entry {
         call_id: String,
         class: duet_boundary::view::ViewClass,
     },
+    /// (Session) An operator turn begins. `message` is the operator's text as
+    /// typed, kept locally for the conversation view; the frontier receives
+    /// the sanitized `Item` that follows. `journal_next` is the write
+    /// journal's next record number, where undoing this turn starts.
+    /// `exchange` counts operator turns (not frontier requests, which
+    /// `Usage::turn` counts).
+    TurnStart {
+        exchange: u64,
+        message: String,
+        journal_next: u64,
+    },
+    /// (Session) How an operator turn ended, and the seconds it worked.
+    /// Texts are in their local form (placeholders restored).
+    TurnEnd {
+        exchange: u64,
+        seconds: f64,
+        end: crate::session::TurnEnd,
+    },
+    /// (Session) The operator reverted the journaled writes of the turns from
+    /// `exchange` on.
+    Undone {
+        exchange: u64,
+        paths: Vec<PathBuf>,
+    },
     End {
         terminal: crate::run::Terminal,
     },

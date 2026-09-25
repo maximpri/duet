@@ -11,8 +11,10 @@ pub mod prompt;
 pub mod protected;
 pub mod purge;
 pub mod run;
+pub mod session;
 pub mod tools;
 pub mod transcript;
 
 pub use oversight::{ApproveMode, Approver, Oversight};
 pub use run::{RunConfig, RunStats, Terminal, conclude, resumable, run};
+pub use session::{Session, SessionLimits, TurnEnd};

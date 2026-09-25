@@ -155,6 +155,12 @@ pub trait Presenter: Send + Sync {
     fn sanitize_objective(&self, text: &str) -> String {
         text.to_owned()
     }
+    /// A later operator message in a session, as it may be shown to the
+    /// frontier: sanitized like the task, without the task's notes (the
+    /// sensitive-path note and brief are given once per session).
+    fn sanitize_message(&self, text: &str) -> String {
+        text.to_owned()
+    }
 }
 
 /// Shows content unchanged except for a size cap.

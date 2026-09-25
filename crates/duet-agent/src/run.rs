@@ -312,24 +312,24 @@ pub(crate) async fn raised(flag: &AtomicBool) {
     }
 }
 
-/// Unwraps a state write, or ends the run as [`write_failed`] says.
+/// Unwraps a state write, or stops as [`write_failed`] says.
 macro_rules! stored {
     ($host:expr, $write:expr) => {
         match $write {
             Ok(v) => v,
-            Err(e) => return write_failed(e, $host),
+            Err(e) => return write_failed(e, $host).map(Into::into),
         }
     };
 }
 
 /// A state write whose other failures are tolerated: only a full disk that
-/// was not waited out ends the run.
+/// was not waited out stops the loop.
 macro_rules! noted {
     ($host:expr, $write:expr) => {
         if let Err(e) = $write
             && e.is_host_resource()
         {
-            return write_failed(e, $host);
+            return write_failed(e, $host).map(Into::into);
         }
     };
 }
@@ -337,7 +337,7 @@ macro_rules! noted {
 /// Drops a trailing assistant turn whose tool calls did not all get results
 /// (the run stopped mid-turn), with the results it did get, so the frontier
 /// re-decides that turn.
-fn drop_unfinished_turn(items: &mut Vec<Item>) {
+pub(crate) fn drop_unfinished_turn(items: &mut Vec<Item>) {
     let Some(at) = items
         .iter()
         .rposition(|i| matches!(i, Item::Assistant { .. }))
@@ -362,6 +362,97 @@ fn drop_unfinished_turn(items: &mut Vec<Item>) {
     }
 }
 
+/// What the frontier has seen so far, and how the loop ends a turn.
+pub(crate) struct Conversation {
+    pub(crate) system: String,
+    pub(crate) specs: Vec<ToolSpec>,
+    pub(crate) items: Vec<Item>,
+    /// How each tool result was shown, by call id (for the ledger).
+    pub(crate) classes: HashMap<String, ViewClass>,
+    /// A session: the frontier ends a turn by replying to the operator (a
+    /// message without tool calls, `reply` or `ask_operator`).
+    pub(crate) interactive: bool,
+}
+
+/// Why the loop stopped.
+pub(crate) enum Stop {
+    /// A terminal state (in a session: the state the turn ended in).
+    Terminal(Terminal),
+    /// (Session) the frontier replied to the operator, or asked them a
+    /// question, and waits for their next message.
+    Reply { text: String, question: bool },
+}
+
+impl From<Terminal> for Stop {
+    fn from(t: Terminal) -> Self {
+        Stop::Terminal(t)
+    }
+}
+
+/// Rebuilds the conversation and the run's usage from its transcript. A
+/// trailing assistant turn whose tool calls did not all get results cannot be
+/// continued and is dropped so the frontier re-decides it; so is one that
+/// precedes an operator turn (a session turn that was interrupted).
+pub(crate) fn replay(
+    entries: Vec<Entry>,
+    cfg: &RunConfig,
+    conv: &mut Conversation,
+    stats: &mut RunStats,
+) {
+    for e in &entries {
+        if let Entry::Shown { call_id, class } = e {
+            conv.classes.insert(call_id.clone(), *class);
+        }
+    }
+    // The ledger is rebuilt from the transcript; masking done before the
+    // interruption is not replayed, so carried tokens are an upper bound.
+    let mut calls: HashMap<String, ToolCall> = HashMap::new();
+    for e in entries {
+        match e {
+            Entry::Item { item } => {
+                match &item {
+                    Item::Assistant { tool_calls, .. } => {
+                        for c in tool_calls {
+                            calls.insert(c.id.clone(), c.clone());
+                        }
+                    }
+                    Item::ToolResult { call_id, content } => {
+                        if let Some(c) = calls.get(call_id) {
+                            let class = conv.classes.get(call_id).copied();
+                            stats
+                                .ledger
+                                .on_result(c, content, class.unwrap_or(ViewClass::Raw));
+                        }
+                    }
+                    Item::User { .. } => {}
+                }
+                conv.items.push(item);
+            }
+            Entry::Usage {
+                usage, cost_usd, ..
+            } => {
+                stats
+                    .ledger
+                    .on_request(&conv.items, &conv.system, &conv.classes);
+                stats.ledger.on_usage(&usage, &*cfg.price);
+                add(&mut stats.usage, &usage);
+                stats.cost_usd += cost_usd;
+                stats.turns += 1;
+            }
+            Entry::FailedAttempts {
+                usage, cost_usd, ..
+            } => {
+                stats.ledger.on_failed_usage(&usage, &*cfg.price);
+                add(&mut stats.failed_attempt_usage, &usage);
+                stats.cost_usd += cost_usd;
+            }
+            Entry::TurnStart { .. } => drop_unfinished_turn(&mut conv.items),
+            _ => {}
+        }
+    }
+    drop_unfinished_turn(&mut conv.items);
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn drive(
     cfg: &RunConfig,
@@ -383,10 +474,13 @@ async fn drive(
         .workspace
         .file_name()
         .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
-    let system = system_prompt(&name, &cfg.checks);
-    let mut items: Vec<Item> = Vec::new();
-    // How each tool result was shown, by call id (for the ledger).
-    let mut classes: HashMap<String, ViewClass> = HashMap::new();
+    let mut conv = Conversation {
+        system: system_prompt(&name, &cfg.checks),
+        specs: tools::specs_with(presenter.extra_tools()),
+        items: Vec::new(),
+        classes: HashMap::new(),
+        interactive: false,
+    };
     if resume {
         let restored = stored!(
             host,
@@ -398,58 +492,8 @@ async fn drive(
             eprintln!("rolled back {} interrupted write(s)", restored.len());
         }
         let entries = Transcript::read(&cfg.run_dir).map_err(|e| e.to_string())?;
-        for e in &entries {
-            if let Entry::Shown { call_id, class } = e {
-                classes.insert(call_id.clone(), *class);
-            }
-        }
-        // The ledger is rebuilt from the transcript; masking done before the
-        // interruption is not replayed, so carried tokens are an upper bound.
-        let mut calls: HashMap<String, ToolCall> = HashMap::new();
-        for e in entries {
-            match e {
-                Entry::Item { item } => {
-                    match &item {
-                        Item::Assistant { tool_calls, .. } => {
-                            for c in tool_calls {
-                                calls.insert(c.id.clone(), c.clone());
-                            }
-                        }
-                        Item::ToolResult { call_id, content } => {
-                            if let Some(c) = calls.get(call_id) {
-                                let class = classes.get(call_id).copied();
-                                stats
-                                    .ledger
-                                    .on_result(c, content, class.unwrap_or(ViewClass::Raw));
-                            }
-                        }
-                        Item::User { .. } => {}
-                    }
-                    items.push(item);
-                }
-                Entry::Usage {
-                    usage, cost_usd, ..
-                } => {
-                    stats.ledger.on_request(&items, &system, &classes);
-                    stats.ledger.on_usage(&usage, &*cfg.price);
-                    add(&mut stats.usage, &usage);
-                    stats.cost_usd += cost_usd;
-                    stats.turns += 1;
-                }
-                Entry::FailedAttempts {
-                    usage, cost_usd, ..
-                } => {
-                    stats.ledger.on_failed_usage(&usage, &*cfg.price);
-                    add(&mut stats.failed_attempt_usage, &usage);
-                    stats.cost_usd += cost_usd;
-                }
-                _ => {}
-            }
-        }
-        // A trailing assistant turn whose tool calls did not all get results
-        // cannot be continued; drop it so the frontier re-decides.
-        drop_unfinished_turn(&mut items);
-        if items.is_empty() {
+        replay(entries, cfg, &mut conv, stats);
+        if conv.items.is_empty() {
             return Err("nothing to resume: the transcript is empty".into());
         }
     } else {
@@ -470,10 +514,58 @@ async fn drive(
                 item: first.clone(),
             })
         );
-        items.push(first);
+        conv.items.push(first);
     }
+    let limits = Limits {
+        deadline,
+        frontier_usd: cfg.frontier_usd,
+    };
+    match work(
+        cfg,
+        frontier,
+        presenter,
+        git,
+        interrupted,
+        &mut conv,
+        stats,
+        &limits,
+        host,
+    )
+    .await?
+    {
+        Stop::Terminal(t) => Ok(t),
+        Stop::Reply { .. } => Err("internal error: a reply outside a session".into()),
+    }
+}
 
-    let specs: Vec<ToolSpec> = tools::specs_with(presenter.extra_tools());
+/// What stops the loop besides the frontier: the wall-clock deadline and the
+/// total frontier spend (of the run, or of the session) it may reach.
+pub(crate) struct Limits {
+    pub(crate) deadline: Instant,
+    pub(crate) frontier_usd: f64,
+}
+
+/// The frontier loop: requests, tool calls and their results until a
+/// terminal state, or (in a session) until the frontier replies to the
+/// operator.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn work(
+    cfg: &RunConfig,
+    frontier: &GatedFrontier,
+    presenter: &dyn Presenter,
+    git: &Git,
+    interrupted: &AtomicBool,
+    conv: &mut Conversation,
+    stats: &mut RunStats,
+    limits: &Limits,
+    host: &Arc<HostPolicy>,
+) -> Result<Stop, String> {
+    let deadline = limits.deadline;
+    let wait: Arc<dyn duet_fs::host::HostWait> = host.clone();
+    let transcript = stored!(
+        host,
+        Transcript::open_waiting(&cfg.run_dir, Some(wait.clone()))
+    );
     let mut journal = stored!(
         host,
         WriteJournal::open_waiting(&cfg.run_dir, Some(wait.clone()))
@@ -486,21 +578,25 @@ async fn drive(
         deadline
     };
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
+    let items = &mut conv.items;
+    let system = &conv.system;
+    let classes = &mut conv.classes;
 
     loop {
         if interrupted.load(Ordering::SeqCst) {
-            return Ok(Terminal::interrupted());
+            return Ok(Terminal::interrupted().into());
         }
         if Instant::now() >= deadline {
-            return Ok(Terminal::out_of_time());
+            return Ok(Terminal::out_of_time().into());
         }
-        if stats.cost_usd >= cfg.frontier_usd {
+        if stats.cost_usd >= limits.frontier_usd {
             return Ok(Terminal::BudgetStopped {
                 which: "frontier_usd".into(),
-            });
+            }
+            .into());
         }
-        let before = estimate(&items, &system);
-        let masked = mask_if_needed(&mut items, &system, cfg.context_window, cfg.mask_at);
+        let before = estimate(items, system);
+        let masked = mask_if_needed(items, system, cfg.context_window, cfg.mask_at);
         if masked > 0 {
             stats.masked_results += masked as u64;
             noted!(
@@ -508,14 +604,14 @@ async fn drive(
                 transcript.append(&Entry::Masked {
                     items: masked,
                     tokens_before: before,
-                    tokens_after: estimate(&items, &system),
+                    tokens_after: estimate(items, system),
                 })
             );
         }
         let request = Request {
             system: system.clone(),
             items: items.clone(),
-            tools: specs.clone(),
+            tools: conv.specs.clone(),
             max_output_tokens: Some(cfg.max_output_tokens),
             extra: reasoning_extra(cfg.reasoning_effort.as_deref()),
             ..Request::default()
@@ -524,10 +620,10 @@ async fn drive(
         // deadline; an interrupt stops the wait at once.
         let sent = tokio::select! {
             r = tokio::time::timeout_at(cutoff, frontier.create(&request)) => r,
-            () = raised(interrupted) => return Ok(Terminal::interrupted()),
+            () = raised(interrupted) => return Ok(Terminal::interrupted().into()),
         };
         let (response, interventions) = match sent {
-            Err(_) => return Ok(Terminal::out_of_time()),
+            Err(_) => return Ok(Terminal::out_of_time().into()),
             Ok(Err(e)) => {
                 if let GateError::Provider(p) = &e {
                     let turn = stats.turns + 1;
@@ -536,7 +632,7 @@ async fn drive(
                         charge_failed_attempts(cfg, stats, &transcript, turn, &p.failed_usage)
                     );
                 }
-                return stop_for(e, host);
+                return stop_for(e, host).map(Into::into);
             }
             Ok(Ok(r)) => r,
         };
@@ -544,7 +640,7 @@ async fn drive(
         stats.turns += 1;
         stats.cost_usd += cost;
         add(&mut stats.usage, &response.usage);
-        stats.ledger.on_request(&request.items, &system, &classes);
+        stats.ledger.on_request(&request.items, system, classes);
         stats.ledger.on_usage(&response.usage, &*cfg.price);
         let turn = stats.turns;
         noted!(
@@ -582,7 +678,8 @@ async fn drive(
                 if length_stops > MAX_LENGTH_STOPS {
                     return Ok(Terminal::Failed {
                         reason: "responses repeatedly hit the output limit".into(),
-                    });
+                    }
+                    .into());
                 }
                 // Tool calls in a truncated response are never executed.
                 let nudge = Item::User { text: "Your last response was cut off at the output limit, so none of its tool calls ran. Continue with smaller steps.".into() };
@@ -598,22 +695,33 @@ async fn drive(
             StopReason::ContentFilter => {
                 return Ok(Terminal::Failed {
                     reason: "the provider's content filter stopped the response".into(),
-                });
+                }
+                .into());
             }
             _ => {}
         }
 
         if response.tool_calls.is_empty() {
+            // In a session a message without tool calls is the reply.
+            if conv.interactive && !response.text.trim().is_empty() {
+                return Ok(Stop::Reply {
+                    text: response.text.clone(),
+                    question: false,
+                });
+            }
             text_only += 1;
             if text_only > MAX_TEXT_ONLY_TURNS {
                 return Ok(Terminal::Failed {
                     reason: "the model stopped calling tools without finishing".into(),
-                });
+                }
+                .into());
             }
-            let nudge = Item::User {
-                text: "Continue working with the tools. When the task is complete, call `finish`."
-                    .into(),
+            let text = if conv.interactive {
+                "Continue working with the tools. When you are done, call `reply` with what you did, or `ask_operator` if you need a decision."
+            } else {
+                "Continue working with the tools. When the task is complete, call `finish`."
             };
+            let nudge = Item::User { text: text.into() };
             stored!(
                 host,
                 transcript.append(&Entry::Item {
@@ -626,6 +734,7 @@ async fn drive(
         text_only = 0;
 
         let mut finished = None;
+        let mut replied: Option<(String, bool)> = None;
         for call in &response.tool_calls {
             stats.tool_calls += 1;
             let mut ctx = Ctx {
@@ -645,11 +754,23 @@ async fn drive(
             let _ = presenter.take_view_class();
             let content = if finished.is_some() {
                 "not run: the task was already finished".to_owned()
+            } else if replied.is_some() {
+                "not run: you already ended this turn with a message to the operator".to_owned()
             } else if call.arguments.is_empty() && call.raw_arguments.trim() != "{}" {
                 format!(
                     "error: arguments are not valid JSON: {}",
                     call.raw_arguments.chars().take(200).collect::<String>()
                 )
+            } else if conv.interactive
+                && let Some(to_operator) = crate::session::to_operator(&call.name, &call.arguments)
+            {
+                match to_operator {
+                    Ok((text, question)) => {
+                        replied = Some((text, question));
+                        crate::session::DELIVERED.to_owned()
+                    }
+                    Err(e) => format!("error: {e}"),
+                }
             } else if let Err(e) = crate::oversight::review(
                 &cfg.oversight,
                 &call.name,
@@ -672,7 +793,7 @@ async fn drive(
                             tool: call.name.clone(),
                         })
                     );
-                    return Ok(Terminal::interrupted());
+                    return Ok(Terminal::interrupted().into());
                 }
                 match outcome {
                     Outcome::Result(text) => text,
@@ -688,7 +809,8 @@ async fn drive(
                                 reason: format!(
                                     "checks still failing after {finish_attempts} finish attempts"
                                 ),
-                            });
+                            }
+                            .into());
                         }
                         format!("checks failed; the task is not complete:\n{report}")
                     }
@@ -700,10 +822,10 @@ async fn drive(
             // already journaled.
             if finished.is_none() {
                 if interrupted.load(Ordering::SeqCst) {
-                    return Ok(Terminal::interrupted());
+                    return Ok(Terminal::interrupted().into());
                 }
                 if Instant::now() >= deadline {
-                    return Ok(Terminal::out_of_time());
+                    return Ok(Terminal::out_of_time().into());
                 }
             }
             let class = presenter.take_view_class().unwrap_or(ViewClass::Raw);
@@ -729,7 +851,10 @@ async fn drive(
             items.push(result);
         }
         if let Some(summary) = finished {
-            return Ok(Terminal::Completed { summary });
+            return Ok(Terminal::Completed { summary }.into());
+        }
+        if let Some((text, question)) = replied {
+            return Ok(Stop::Reply { text, question });
         }
     }
 }

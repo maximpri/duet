@@ -117,6 +117,12 @@ impl WriteJournal {
         self.paths.clone()
     }
 
+    /// The number the next write will be recorded under (a session marks
+    /// where each operator turn begins with it, for undo).
+    pub fn next_record(&self) -> u64 {
+        self.next
+    }
+
     /// Rolls back writes that were started but not recorded as applied.
     /// Returns the paths restored.
     pub fn recover(run_dir: &Path, workspace: &Path) -> Result<Vec<PathBuf>, FsError> {
@@ -174,6 +180,12 @@ pub struct Written {
 /// The files `run_dir`'s journal records, in order of first write. Reads
 /// only; a missing journal is an empty list.
 pub fn written(run_dir: &Path) -> Vec<Written> {
+    written_since(run_dir, 0)
+}
+
+/// The files written by records numbered `from` or later, each with its
+/// content before the first of those writes (what undoing them restores).
+pub fn written_since(run_dir: &Path, from: u64) -> Vec<Written> {
     let text = std::fs::read_to_string(run_dir.join("writes.jsonl")).unwrap_or_default();
     let mut out: Vec<Written> = Vec::new();
     for record in text
@@ -183,6 +195,9 @@ pub fn written(run_dir: &Path) -> Vec<Written> {
         let Record::Pending { n, path, existed } = record else {
             continue;
         };
+        if n < from {
+            continue;
+        }
         match out.iter_mut().find(|w| w.path == path) {
             Some(w) => w.last = n,
             None => out.push(Written {

@@ -365,6 +365,30 @@ pub const REGISTRY: &[Setting] = &[
         "Timeout for each sandboxed command."
     ),
     s!(
+        "session.frontier_usd",
+        Float {
+            min: 0.0,
+            max: 10_000.0
+        },
+        "20.0",
+        Project,
+        OnlyLower,
+        true,
+        "Maximum frontier spend over a whole session (`duet chat`); each turn is also held to limits.frontier_usd."
+    ),
+    s!(
+        "session.wall_clock_minutes",
+        Int {
+            min: 1,
+            max: 7 * 24 * 60
+        },
+        "480",
+        Project,
+        OnlyLower,
+        false,
+        "Maximum time the agent works over a whole session (waiting for the operator does not count); each turn is also held to limits.wall_clock_minutes."
+    ),
+    s!(
         "checks.commands",
         List,
         "[]",

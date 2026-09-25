@@ -1200,6 +1200,14 @@ ask_local for details):\n{brief}"
         }
         out
     }
+
+    /// A follow-up operator message: detected values become placeholders and
+    /// known vault values are tokenized, as in the task. Its words do not join
+    /// the public vocabulary (a name the operator types stays identifying).
+    fn sanitize_message(&self, text: &str) -> String {
+        let mut st = self.lock();
+        self.sanitize(&mut st, text, "operator", false)
+    }
 }
 
 /// Outbound filter: sanitizes every item again (idempotent). The model's own

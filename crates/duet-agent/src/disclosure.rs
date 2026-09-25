@@ -150,7 +150,8 @@ impl Disclosure {
                     }
                     AuditEvent::RunEnd { .. }
                     | AuditEvent::EndpointTrust { .. }
-                    | AuditEvent::ConfigChange { .. } => {}
+                    | AuditEvent::ConfigChange { .. }
+                    | AuditEvent::OperatorMessage { .. } => {}
                 },
             }
         }
