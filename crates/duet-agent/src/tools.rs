@@ -474,6 +474,47 @@ pub(crate) enum Access {
     SensitiveData,
 }
 
+/// Where sandboxed processes get their `TMPDIR`: outside the workspace, as
+/// `.duet/` (run state) is unreadable and unwritable to them.
+pub(crate) fn scratch_root() -> PathBuf {
+    std::env::temp_dir().join("duet-scratch")
+}
+
+/// The run's name in scratch paths.
+pub(crate) fn run_name(run_dir: &Path) -> String {
+    run_dir
+        .file_name()
+        .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned())
+}
+
+/// The `TMPDIR` of the run's `sensitive_data` commands. What they leave there
+/// is derived data, like the files they write, so every other sandboxed
+/// process denies it ([`hidden_from_processes`]). Created here, so a deny rule
+/// covers it as a directory even for a process started before the first
+/// sensitive command.
+pub(crate) fn sensitive_scratch(run_dir: &Path) -> PathBuf {
+    let dir = scratch_root().join(format!("{}-sensitive", run_name(run_dir)));
+    if std::fs::create_dir_all(&dir).is_ok() {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    dir
+}
+
+/// What a sandboxed process other than a `sensitive_data` command or a check
+/// (an ordinary command, an MCP or language server) may not read: the
+/// presenter's hidden paths and the sensitive commands' `TMPDIR`. Duet's run
+/// state is denied by the sandbox itself, to every process.
+pub(crate) fn hidden_from_processes(
+    presenter: &dyn Presenter,
+    workspace: &Path,
+    run_dir: &Path,
+) -> Vec<PathBuf> {
+    let mut hidden = presenter.hidden_from_commands(workspace);
+    hidden.push(sensitive_scratch(run_dir));
+    hidden
+}
+
 /// Runs `command` in the sandbox with the given `access`.
 pub(crate) async fn sandboxed(
     ctx: &Ctx<'_>,
@@ -486,25 +527,16 @@ pub(crate) async fn sandboxed(
         Access::Checks => "checks",
         Access::SensitiveData => "sensitive_data",
     };
-    // Outside the workspace: `.duet/` (run state) is unreadable and unwritable
-    // to commands, so their TMPDIR lives in a per-run system temp directory.
-    // Commands that read sensitive data get their own, which no other command
-    // may read: what they leave there is derived data, like the files they write.
-    let run_name = ctx
-        .run_dir
-        .file_name()
-        .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned());
-    let scratch_root = std::env::temp_dir().join("duet-scratch");
-    let sensitive_scratch = scratch_root.join(format!("{run_name}-sensitive"));
-    let mut deny_read = match access {
-        Access::Ordinary => ctx.presenter.hidden_from_commands(ctx.workspace),
-        Access::Checks => ctx.presenter.hidden_from_checks(ctx.workspace),
+    let deny_read = match access {
+        Access::Ordinary => hidden_from_processes(ctx.presenter, ctx.workspace, ctx.run_dir),
+        Access::Checks => {
+            let mut hidden = ctx.presenter.hidden_from_checks(ctx.workspace);
+            hidden.push(sensitive_scratch(ctx.run_dir));
+            hidden
+        }
         // Everything but run state, which the sandbox denies to every command.
         Access::SensitiveData => Vec::new(),
     };
-    if access != Access::SensitiveData && sensitive_scratch.exists() {
-        deny_read.push(sensitive_scratch.clone());
-    }
     // Placeholders in a sensitive_data command are resolved locally: its output
     // stays on this machine. Elsewhere they stay as written.
     let exec = match access {
@@ -514,8 +546,8 @@ pub(crate) async fn sandboxed(
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
         scratch: match access {
-            Access::SensitiveData => sensitive_scratch,
-            _ => scratch_root.join(run_name),
+            Access::SensitiveData => sensitive_scratch(ctx.run_dir),
+            _ => scratch_root().join(run_name(ctx.run_dir)),
         },
         network: ctx.network,
         timeout,
@@ -727,6 +759,21 @@ mod tests {
         let mut sorted = names.clone();
         sorted.sort();
         assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn every_other_process_denies_the_sensitive_commands_scratch() {
+        // Servers start before the first sensitive command: the directory must
+        // already exist, so the sandbox covers it as a directory.
+        let d = tempfile::tempdir().unwrap();
+        let run = d.path().join(format!("t{}", uuid::Uuid::new_v4().simple()));
+        let passthrough = duet_boundary::view::PassThrough { max_bytes: 100 };
+        let hidden = hidden_from_processes(&passthrough, d.path(), &run);
+        let scratch = sensitive_scratch(&run);
+        assert_eq!(hidden, vec![scratch.clone()]);
+        assert!(scratch.is_dir());
+        assert_ne!(scratch, scratch_root().join(run_name(&run)));
+        std::fs::remove_dir(scratch).unwrap();
     }
 
     #[test]

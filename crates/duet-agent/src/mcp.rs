@@ -234,14 +234,8 @@ fn tool_spec(
 }
 
 fn scratch(setup: &Setup<'_>, server: &str) -> std::path::PathBuf {
-    std::env::temp_dir()
-        .join("duet-scratch")
-        .join(
-            setup
-                .run_dir
-                .file_name()
-                .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned()),
-        )
+    crate::tools::scratch_root()
+        .join(crate::tools::run_name(setup.run_dir))
         .join(format!("mcp-{server}"))
 }
 
@@ -277,7 +271,11 @@ async fn connect(
                 output_cap: 0,
                 spill_file: None,
                 extra_env,
-                deny_read: setup.presenter.hidden_from_commands(setup.workspace),
+                deny_read: crate::tools::hidden_from_processes(
+                    setup.presenter,
+                    setup.workspace,
+                    setup.run_dir,
+                ),
             };
             let argv: Vec<String> = std::iter::once(command.clone())
                 .chain(args.iter().cloned())

@@ -396,8 +396,8 @@ git; reset behaviour defined per entry).
 - **Commands:** Seatbelt (macOS) or bwrap (Linux) with absolute binary paths; workspace-write with
   `.git`/`.duet` unwritable; `.duet` (the vault, handles, transcripts, audit log) unreadable to
   every command by the sandbox itself, `.git` (committed copies) to ordinary commands and checks;
-  command `TMPDIR` outside the workspace, a separate one for `sensitive_data` commands that other
-  commands cannot read; sensitive and protected paths unreadable (deny-read) except for
+  command `TMPDIR` outside the workspace, a separate one for `sensitive_data` commands that no
+  other sandboxed process (command, check, MCP server) can read (`tools::hidden_from_processes`); sensitive and protected paths unreadable (deny-read) except for
   `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
   On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against

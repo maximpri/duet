@@ -1274,6 +1274,32 @@ mod tests {
         );
         // Git metadata stays readable unless the caller denies it.
         assert!(all.contains("bare = false"), "{all}");
+        // A long-lived server process (MCP, language server) is held to the same rule.
+        use tokio::io::AsyncReadExt;
+        let mut p = spawn(
+            KIND,
+            &spec(&ws),
+            &[
+                "/bin/sh".into(),
+                "-c".into(),
+                "cat .duet/runs/r1/vault.json 2>&1".into(),
+            ],
+            &ws,
+        )
+        .await
+        .unwrap();
+        let (input, mut output, _err) = p.take_streams().unwrap();
+        let mut served = String::new();
+        tokio::time::timeout(Duration::from_secs(10), output.read_to_string(&mut served))
+            .await
+            .unwrap()
+            .unwrap();
+        drop(input);
+        p.stop(Duration::from_secs(5)).await;
+        assert!(
+            !served.contains("4539") && served.contains(DENIAL_MESSAGE),
+            "{served}"
+        );
     }
 
     #[tokio::test]
