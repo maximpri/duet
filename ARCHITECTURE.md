@@ -43,7 +43,8 @@ duet-provider    duet-fs    duet-sandbox                  (leaf crates)
 duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
 duet-web                     (leaf: host-side HTTP for the web tools; reqwest, url, ipnet)
-duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web   (not duet-provider)
+duet-mcp                     (leaf: MCP client, JSON-RPC 2.0 over stdio and streamable HTTP; reqwest)
+duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
@@ -59,6 +60,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers | Inherit the user's git config, hooks or fsmonitor |
 | `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
+| `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo) | Construct a frontier provider (it receives `GatedFrontier`) |
@@ -77,7 +79,8 @@ enum UsageStatus { Reported, Estimated, Unknown }
 // duet-boundary
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
               SensitiveCommand { command, exit_code }, Diff, Checks, Web { url },
-              GitHistory { rev, path: Option<PathBuf> }, Other { label } }
+              GitHistory { rev, path: Option<PathBuf> }, Other { label },
+              Mcp { server, tool, trust: ServerTrust } }
 enum ViewClass { Raw, Tokenized, HandleSummary, LocalAnswer, BulkyHandle, Protected }
 trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the frontier gets
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
@@ -311,6 +314,32 @@ committer = operator, message on stdin), `update-ref HEAD <new> <old>` (compare-
 real index entries of those paths only → `git_commit` audit event. Approval is in
 `oversight::review` (`Risk::GitCommit`: `git.commit = "ask"`, or `oversight.approve = "all"`).
 `diff` compares with `git-base` when present, so a run's own commits never hide its changes.
+
+### 5.8 MCP servers
+
+`crates/duet-agent/src/mcp.rs` (`Hub`) over `duet-mcp`. The CLI reads `[mcp.servers.<name>]`
+(template settings `mcp.servers.*.<field>` in the registry, owner-only) into `ServerConfig`s and
+starts a `Hub` in `prepare` (runs and sessions alike; `RunConfig.mcp`, `None` without servers):
+each enabled server in parallel, a stdio server through `duet_sandbox::spawn` (the command profile:
+`Presenter::hidden_from_commands` as deny-read, writes to the workspace and a per-server scratch
+directory, network per `network`, the base environment plus the variables named in `env`; under
+bubblewrap its input is a named pipe, since bubblewrap's standard input carries the seccomp
+filter), an HTTP server from the host. `initialize`, then `tools/list` once: the tools become
+`mcp__<server>__<tool>` (`[A-Za-z0-9_-]`, at most 64 characters, a hash suffix when shortened or
+colliding), with descriptions and every schema string passed through `present(Source::Mcp {
+trust: Public })` and capped (1,024 characters; schemas 8 KiB, then without docs, then a bare
+object). `tool_specs` adds them to the fixed, sorted tool set.
+
+A call (`work` in `run.rs` routes names the hub owns): approval via `Hub::action` and
+`oversight::decide` (the server's `approve` under `oversight.approve`) → outbound: for a
+`sensitive` stdio server every argument string is detokenized; for any other server every string
+(and key) goes through `check_outbound` (refusal: tool error + `outbound_refused`) → `tools/call`
+with the server's timeout, abandoned on interrupt → the rendered text through
+`present(Source::Mcp { trust })` (public: scanned like public command output, bulky offloaded;
+sensitive: handle and local summary), framed between random-tag markers as data → an `mcp_call`
+audit event (server, tool, trust, outcome, whether placeholders were resolved). A closed transport
+marks the server stopped (its process tree killed); later calls to it are tool errors. The hub is
+shut down after the run or session (input closed or HTTP `DELETE`, then the tree killed).
 
 ## 6. Context management
 

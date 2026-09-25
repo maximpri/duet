@@ -251,6 +251,41 @@ With the default `git.commit = "ask"` and approval off (`oversight.approve = "of
 asked, so `git_commit` is not offered; the read-only git tools always are. Details:
 [SECURITY.md](SECURITY.md) (Git tools).
 
+**MCP servers** (`[mcp.servers.<name>]` in the owner config; the only plugin mechanism): Duet's
+own Model Context Protocol client (stdio and streamable HTTP) starts each enabled server at run
+start and offers its tools as `mcp__<server>__<tool>`. A stdio server runs in the command sandbox
+(same hidden paths as commands, the workspace as working directory, no network unless `network =
+true`, only the environment variables named in `env`); an HTTP server is reached from the host
+(`https`, or `http` to loopback; credentials by variable name in `headers_env`).
+
+```toml
+[mcp.servers.everything]                  # a stdio server
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-everything"]
+network = true                            # npx downloads the package
+env = ["npm_config_cache"]                # e.g. npm_config_cache=.npm-cache (inside the workspace)
+
+[mcp.servers.tickets]                     # a remote server
+url = "https://mcp.example.com/mcp"
+headers_env = ["Authorization=TICKETS_AUTH"]   # $TICKETS_AUTH holds "Bearer ..."
+trust = "sensitive"                       # results stay on this machine
+approve = "always"                        # ask before every call (oversight.approve = "risky")
+```
+
+`trust = "public"` (default): results are scanned and shown like public command output, and a call
+whose arguments hold a placeholder or a known sensitive value is refused. `trust = "sensitive"`:
+results stay on this machine (a handle and a local summary, like a `sensitive_data` command); for a
+stdio server, placeholders in the arguments are resolved to their values (it is local). `approve`
+(`writes` by default) decides which tools need the operator under `oversight.approve = "risky"`:
+tools the server does not declare read-only, every tool (`always`) or none (`auto`); with `all`,
+every call is asked. Tool descriptions and schemas are untrusted text: scanned and length-capped.
+A server that fails to start, stops or hangs costs its calls (tool errors), never the run. Every
+start and call is an audit event. `duet doctor` starts each stdio server (HTTP servers with
+`--online`) and reports how many tools it offers; `duet config list` shows every server's settings.
+Settings are owner-only and changes that start programs or reach servers need `--confirm`, e.g.
+`duet config set mcp.servers.fs.command '"my-mcp-server"' --confirm`. Details:
+[SECURITY.md](SECURITY.md) (MCP servers).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on

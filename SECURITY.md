@@ -393,6 +393,39 @@ files, never a commit: a reverted file that was committed shows as changed. Comm
 read `.git`, so tools run by commands that need history (for example version stamping in a build)
 fail in hybrid mode as before.
 
+## MCP servers
+
+MCP servers (`[mcp.servers.<name>]`, owner config only; nothing is configured by default) are
+third-party programs and endpoints the frontier can call. Each is a channel out (tool arguments), a
+channel in (tool descriptions, schemas, results, error text) and, for a stdio server, a process
+on this machine.
+
+| Threat | What stops it |
+|---|---|
+| A repository configures a server (runs a program, reaches an endpoint) | Every `mcp.*` setting is owner-only: a project file that names one is refused; owner changes that start programs or reach servers need `--confirm` and are in the config audit log |
+| A stdio server reads sensitive files, `.git` or Duet's run state | It runs in the command sandbox with the same deny-read list as commands (`hidden_from_commands`: sensitive and derived files, protected source, every `.git` and `.duet`), writes limited to the workspace and a per-server scratch directory, `.git`/`.duet` read-only |
+| A stdio server exfiltrates over the network or reads credentials from the environment | No network unless `network = true` for that server; the environment is cleared to the sandbox's base set plus the variables named in `env` (values never stored) |
+| Arguments carry a sensitive value to a server | Public servers and every HTTP server: each argument string and key goes through `check_outbound`; a placeholder, a vault value (plain, URL-encoded, any letter case) or a copied sensitive span refuses the call (fail closed, `outbound_refused`). Placeholders are resolved only for a `trust = "sensitive"` stdio server, whose results stay local |
+| Descriptions or schemas carry instructions or sensitive-looking text | Untrusted: every string is scanned by the presenter (detected values and vault values replaced), descriptions capped at 1,024 characters, schemas at 8 KiB (then documentation dropped, then a bare object schema); each description is prefixed with its server, trust and whether it is declared read-only |
+| Results carry instructions or data | Presented as `Source::Mcp` by the server's trust: `public` is scanned and tokenized like public command output (bulky results offloaded), `sensitive` is held locally as a handle with a local summary; framed as untrusted data between markers with a per-call random tag. Non-text content (images, audio, binary resources) is described, never passed on |
+| A tool changes things the operator did not intend | `approve` (default `writes`) under `oversight.approve = "risky"`: tools not declared read-only need approval (`always`: every tool); with `all` every call is asked; denials are tool errors and `approval` audit events (tool and risk class, never arguments). A server's read-only annotation is its own claim: set `approve = "always"` for servers you do not trust to label tools |
+| A hung, crashing or flooding server | Each start and call has the server's timeout (cancellation sent); a closed transport marks the server stopped and kills its process tree; messages over 8 MiB and results over 1 MiB are cut; a failing server is a tool error, never the end of the run |
+| Tokens for HTTP servers leaking | Read from the variables named in `headers_env` at start, marked sensitive in the HTTP client, never written to config, logs, errors or the audit log; the URL may not hold credentials; redirects are not followed (they would carry the headers elsewhere); plain `http` only to loopback |
+
+Audit: `mcp_server` (server, transport, started or failed, tool count) at start and `mcp_call`
+(server, tool, trust, outcome, whether placeholders were resolved) per call; never arguments or
+results.
+
+**Known limits.** A public server widens who receives what the frontier knows, like the web:
+public source, the task text or a paraphrase of a local answer can be sent in arguments; only
+values Duet knows are stopped. A `sensitive` stdio server receives real values: it is trusted with
+them (it runs sandboxed, but with `network = true` it could send them on). The sandbox's deny-read
+list is fixed when a stdio server starts, so files that become derived data later in the run are
+not hidden from an already-running server. An HTTP server's own behaviour is outside Duet's
+control; its results are scanned (public) or held locally (sensitive), nothing more. Server
+requests to the client (sampling, roots, elicitation) are declined; resources and prompts are not
+used. The tool list is read once at start: a server that changes its tools later is not re-read.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to
@@ -419,7 +452,7 @@ such instructions; the frontier may follow them. What that can and cannot achiev
 malicious code the owner later runs outside the sandbox), run arbitrary commands inside the sandbox,
 ask the local model questions about sensitive content with `ask_local`, and run `sensitive_data`
 commands, and send what it knows (never a known sensitive value) to public hosts in `web_fetch` URLs
-and `web_search` queries (see Web tools). With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
+and `web_search` queries (see Web tools) and in arguments to public MCP servers (see MCP servers). With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
 protected edits and writes outside ordinary source and test files. Local answers are derived from sensitive content by design and can convey meaning in
 paraphrase; the protected-source limits above apply. **Review the diff before running, committing or
 deploying what a run produced.**
