@@ -18,6 +18,8 @@ pub mod local_eval;
 pub mod overlap;
 pub mod pii;
 pub mod policy;
+pub mod probing;
+pub mod reencoded;
 pub mod rules;
 pub mod skeleton;
 #[cfg(any(test, feature = "test-support"))]

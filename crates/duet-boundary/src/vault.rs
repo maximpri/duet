@@ -39,6 +39,9 @@ pub struct Vault {
     /// Built on first use after a change; see [`Vault::tokenize`].
     #[serde(skip)]
     matcher: OnceLock<Matcher>,
+    /// Built on first use after a change; see [`Vault::find_spelled`].
+    #[serde(skip)]
+    spelled: OnceLock<Spelled>,
 }
 
 /// One automaton over every value (4+ bytes) and every token. A token matches
@@ -46,9 +49,35 @@ pub struct Vault {
 #[derive(Debug)]
 struct Matcher {
     automaton: Option<AhoCorasick>,
+    /// Every value (4+ bytes), for overlapping search ([`Vault::values_in`]).
+    overlapping: Option<AhoCorasick>,
+    /// The values `overlapping` searches for, by pattern index.
+    values: Vec<String>,
     tokens: std::collections::HashSet<String>,
     /// Per pattern: the replacement, or `None` for a token kept as is.
     replacement: Vec<Option<String>>,
+}
+
+/// Values as other spellings of them match: every value in either letter case
+/// (for decoded text), and every value's skeleton (for text spelled out with
+/// separators between its characters).
+#[derive(Debug)]
+struct Spelled {
+    /// Values (4+ bytes), ASCII case ignored.
+    folded: Option<AhoCorasick>,
+    folded_tokens: Vec<String>,
+    /// Skeletons ([`skeleton`]) of 4+ characters.
+    skeletons: Option<AhoCorasick>,
+    skeleton_tokens: Vec<String>,
+}
+
+/// `text` reduced to its letters and digits, lower-cased: what is left of a
+/// value however its characters are separated (`V a k`, `4539-1488`, `a.b`).
+pub fn skeleton(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 /// Fixed markers Duet itself inserts into outbound text. Like tokens, they are
@@ -56,7 +85,12 @@ struct Matcher {
 /// happens to spell part of one (`redacted`) must not corrupt or block it.
 /// Only exact, known strings: a general `⟨…⟩` shape would let crafted data hide
 /// a real value inside a fake marker.
-pub const FIXED_MARKERS: &[&str] = &[crate::overlap::REDACTED, crate::engine::FRAGMENT];
+pub const FIXED_MARKERS: &[&str] = &[
+    crate::overlap::REDACTED,
+    crate::engine::FRAGMENT,
+    crate::reencoded::ENCODED,
+    crate::probing::WITHHELD,
+];
 
 /// Values shorter than this are never replaced (too many false positives).
 pub const MIN_VALUE_BYTES: usize = 4;
@@ -122,7 +156,7 @@ impl Vault {
                 alias: false,
             },
         );
-        self.matcher = OnceLock::new();
+        self.changed();
         self.persist()?;
         Ok(token)
     }
@@ -142,8 +176,14 @@ impl Vault {
                 ..entry
             },
         );
-        self.matcher = OnceLock::new();
+        self.changed();
         self.persist()
+    }
+
+    /// Drops the matchers built for the previous contents.
+    fn changed(&mut self) {
+        self.matcher = OnceLock::new();
+        self.spelled = OnceLock::new();
     }
 
     /// Whether `value` (or a spelling of it) is a known sensitive value.
@@ -181,8 +221,19 @@ impl Vault {
                 .match_kind(MatchKind::LeftmostLongest)
                 .build(&patterns)
                 .ok();
+            let values: Vec<String> = self
+                .by_value
+                .keys()
+                .filter(|v| v.len() >= MIN_VALUE_BYTES)
+                .cloned()
+                .collect();
+            let overlapping = (!values.is_empty())
+                .then(|| AhoCorasick::new(&values).ok())
+                .flatten();
             Matcher {
                 automaton,
+                overlapping,
+                values,
                 tokens: self
                     .by_value
                     .values()
@@ -300,6 +351,90 @@ impl Vault {
     /// Values of the given kinds (for scanning outbound text).
     pub fn values(&self) -> impl Iterator<Item = (&str, &Entry)> {
         self.by_value.iter().map(|(v, e)| (v.as_str(), e))
+    }
+
+    /// Every distinct value (4+ bytes) that occurs in `text` as written, with
+    /// its entry. Overlapping occurrences count, so a surname inside a full
+    /// name is found too.
+    pub fn values_in(&self, text: &str) -> Vec<(&str, &Entry)> {
+        let m = self.matcher();
+        let Some(ac) = &m.overlapping else {
+            return Vec::new();
+        };
+        let mut seen = std::collections::BTreeSet::new();
+        for hit in ac.find_overlapping_iter(text) {
+            seen.insert(hit.pattern().as_usize());
+        }
+        seen.into_iter()
+            .filter_map(|i| self.by_value.get_key_value(m.values[i].as_str()))
+            .map(|(v, e)| (v.as_str(), e))
+            .collect()
+    }
+
+    fn spelled(&self) -> &Spelled {
+        self.spelled.get_or_init(|| {
+            let (mut folded, mut folded_tokens) = (Vec::new(), Vec::new());
+            let (mut skeletons, mut skeleton_tokens) = (Vec::new(), Vec::new());
+            for (v, e) in &self.by_value {
+                if v.len() >= MIN_VALUE_BYTES {
+                    folded.push(v.clone());
+                    folded_tokens.push(e.token.clone());
+                }
+                let s = skeleton(v);
+                if s.chars().count() >= MIN_VALUE_BYTES {
+                    skeletons.push(s);
+                    skeleton_tokens.push(e.token.clone());
+                }
+            }
+            let build = |patterns: &[String], fold: bool| {
+                (!patterns.is_empty())
+                    .then(|| {
+                        AhoCorasick::builder()
+                            .match_kind(MatchKind::LeftmostLongest)
+                            .ascii_case_insensitive(fold)
+                            .build(patterns)
+                            .ok()
+                    })
+                    .flatten()
+            };
+            Spelled {
+                folded: build(&folded, true),
+                folded_tokens,
+                skeletons: build(&skeletons, false),
+                skeleton_tokens,
+            }
+        })
+    }
+
+    /// The token of the first value (4+ bytes) found in `bytes`, letter case
+    /// ignored: for text decoded from another encoding, where a value may
+    /// appear in any case.
+    pub fn find_folded(&self, bytes: &[u8]) -> Option<&str> {
+        let s = self.spelled();
+        let hit = s.folded.as_ref()?.find(bytes)?;
+        Some(s.folded_tokens[hit.pattern().as_usize()].as_str())
+    }
+
+    /// Values spelled out in `skeleton` (a [`skeleton`] of some text): the
+    /// character range of each (leftmost longest, not overlapping) and its
+    /// token.
+    pub fn find_spelled(&self, skeleton: &str) -> Vec<(usize, usize, &str)> {
+        let s = self.spelled();
+        let Some(ac) = &s.skeletons else {
+            return Vec::new();
+        };
+        // Character offsets: skeletons may hold non-ASCII letters.
+        let starts: Vec<usize> = skeleton.char_indices().map(|(i, _)| i).collect();
+        let char_at = |byte: usize| starts.partition_point(|&b| b < byte);
+        ac.find_iter(skeleton)
+            .map(|hit| {
+                (
+                    char_at(hit.start()),
+                    char_at(hit.end()),
+                    s.skeleton_tokens[hit.pattern().as_usize()].as_str(),
+                )
+            })
+            .collect()
     }
 }
 
