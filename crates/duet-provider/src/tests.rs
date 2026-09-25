@@ -123,6 +123,53 @@ async fn streams_a_response_with_reported_usage() {
 }
 
 #[tokio::test]
+async fn cache_probe_sends_one_request_twice_and_reports_cached_tokens() {
+    let cold = Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+            ),
+            Ok(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1500,\"completion_tokens\":1}}\n\n",
+            ),
+            Ok("data: [DONE]\n\n"),
+        ],
+    };
+    let warm = Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+            ),
+            Ok(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":1500,\"completion_tokens\":1,\"prompt_tokens_details\":{\"cached_tokens\":1408}}}\n\n",
+            ),
+            Ok("data: [DONE]\n\n"),
+        ],
+    };
+    let s = Script::new(vec![cold, warm]);
+    let r = crate::probe::cache_reuse(&provider(&s)).await.unwrap();
+    assert_eq!(
+        (
+            r.prompt_tokens,
+            r.first_cached,
+            r.second_cached,
+            r.unreported
+        ),
+        (1500, 0, 1408, false)
+    );
+    assert!((r.reuse() - 1408.0 / 1500.0).abs() < 1e-9);
+    let bodies = s.bodies.lock().unwrap().clone();
+    assert_eq!(bodies.len(), 2);
+    assert_eq!(bodies[0], bodies[1], "the two requests are identical");
+    // Nothing from a workspace: only the fixed probe text.
+    assert!(bodies[0].to_string().contains("Reference line 120"));
+}
+
+#[tokio::test]
 async fn retried_failures_do_not_poison_usage() {
     // A 429, a connection error, and a mid-stream provider error, then success.
     let s = Script::new(vec![

@@ -6,6 +6,9 @@
 //! `/api/v0/models`. Returns `None` when nothing reports a window; callers then
 //! use configuration.
 
+use crate::client::ChatProvider;
+use crate::error::ProviderError;
+use crate::types::{Item, Request, UsageStatus};
 use serde_json::Value;
 
 // LM Studio reports both the loaded window and the model's maximum; the loaded one comes first.
@@ -110,6 +113,67 @@ pub async fn probe_context_window(
         }
     }
     None
+}
+
+/// What two identical requests showed about the server's prompt cache.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CacheReuse {
+    /// Prompt tokens of the second request (cached and not).
+    pub prompt_tokens: u64,
+    pub first_cached: u64,
+    pub second_cached: u64,
+    pub first_seconds: f64,
+    pub second_seconds: f64,
+    /// The server reported no usage, so cached counts are unknown.
+    pub unreported: bool,
+}
+
+impl CacheReuse {
+    /// Share of the second prompt served from the cache.
+    pub fn reuse(&self) -> f64 {
+        if self.prompt_tokens == 0 {
+            0.0
+        } else {
+            self.second_cached as f64 / self.prompt_tokens as f64
+        }
+    }
+}
+
+/// The probe's fixed prompt: long enough (about 1,500 tokens) for servers
+/// that cache in blocks, with nothing from any workspace in it.
+pub fn cache_probe_request() -> Request {
+    let reference: String = (1..=120)
+        .map(|i| format!("Reference line {i:03}: the quick brown fox jumps over the lazy dog.\n"))
+        .collect();
+    Request {
+        system: format!("You answer with one word.\n{reference}"),
+        items: vec![Item::User {
+            text: "Reply with the single word: ok".into(),
+        }],
+        max_output_tokens: Some(8),
+        temperature: Some(0.0),
+        ..Request::default()
+    }
+}
+
+/// Sends the same short request twice and reports the cached prompt tokens
+/// of each. Two model calls: run it only when the operator asks.
+pub async fn cache_reuse(provider: &ChatProvider) -> Result<CacheReuse, ProviderError> {
+    let request = cache_probe_request();
+    let started = std::time::Instant::now();
+    let first = provider.create(&request).await?;
+    let first_seconds = started.elapsed().as_secs_f64();
+    let started = std::time::Instant::now();
+    let second = provider.create(&request).await?;
+    let second_seconds = started.elapsed().as_secs_f64();
+    Ok(CacheReuse {
+        prompt_tokens: second.usage.input + second.usage.cache_read + second.usage.cache_write,
+        first_cached: first.usage.cache_read,
+        second_cached: second.usage.cache_read,
+        first_seconds,
+        second_seconds,
+        unreported: second.usage.status == UsageStatus::Estimated,
+    })
 }
 
 #[cfg(test)]
