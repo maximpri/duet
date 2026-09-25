@@ -414,6 +414,7 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "bytes",
+ "duet-config",
  "duet-fs",
  "duet-provider",
  "futures-util",

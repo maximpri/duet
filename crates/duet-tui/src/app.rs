@@ -7,7 +7,7 @@ use crate::audit::AuditView;
 use crate::ip::IpView;
 use crate::runs::RunView;
 use crate::settings;
-use duet_boundary::audit::{AuditEvent, AuditLog};
+use duet_boundary::audit::record_config_change;
 use duet_boundary::policy::Policy;
 use duet_config::{Config, Kind, Proposal, Setting, Target, parse_value};
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
@@ -417,14 +417,7 @@ impl App {
             .apply(p.target, p.key, p.new.clone(), confirmed)
             .map_err(anyhow::Error::from)
             .and_then(|change| {
-                AuditLog::open(&self.paths.config_audit())?.event(AuditEvent::ConfigChange {
-                    key: change.key,
-                    file: p.target.as_str().into(),
-                    old: change.old.to_string(),
-                    new: change.new.to_string(),
-                    weakens: change.weakens,
-                    confirmed,
-                })?;
+                record_config_change(&self.paths.config_audit(), &change, p.target, confirmed)?;
                 Ok(())
             });
         self.status = match result {

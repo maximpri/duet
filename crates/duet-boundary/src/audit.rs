@@ -515,6 +515,25 @@ impl AuditLog {
     }
 }
 
+/// Appends an applied configuration change to the config audit log at `log`.
+/// The one place a change is recorded: `duet config set` and the settings
+/// screens both call it.
+pub fn record_config_change(
+    log: &Path,
+    change: &duet_config::Change,
+    target: duet_config::Target,
+    confirmed: bool,
+) -> Result<EventRecord, FsError> {
+    AuditLog::open(log)?.event(AuditEvent::ConfigChange {
+        key: change.key.clone(),
+        file: target.as_str().into(),
+        old: change.old.to_string(),
+        new: change.new.to_string(),
+        weakens: change.weakens.clone(),
+        confirmed,
+    })
+}
+
 /// A shared handle to one run's log: the gate appends requests, the agent and
 /// the composition root append events.
 #[derive(Clone)]

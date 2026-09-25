@@ -4,10 +4,9 @@
 
 use crate::config_audit_path;
 use anyhow::Result;
-use duet_boundary::audit::{AuditEvent, AuditLog};
-use duet_config::{Change, Config, Origin, Target};
+use duet_boundary::audit::record_config_change;
+use duet_config::{Config, Origin, Target};
 use duet_provider::backends::{self, PRESETS, Pick, Server};
-use std::path::Path;
 use std::time::Duration;
 use toml::Value;
 
@@ -36,23 +35,10 @@ pub fn apply_owner(cfg: &mut Config, changes: &[(&str, Value)], confirm: bool) -
     }
     for (key, new) in changes {
         let change = cfg.apply(Target::Owner, key, new.clone(), confirm)?;
-        record_change(&config_audit_path(), &change, Target::Owner, confirm)?;
+        record_config_change(&config_audit_path(), &change, Target::Owner, confirm)?;
         println!("{key} = {}", cfg.value(key)?);
     }
     Ok(0)
-}
-
-/// Appends an applied change to the owner's config audit log at `log`.
-pub fn record_change(log: &Path, change: &Change, target: Target, confirmed: bool) -> Result<()> {
-    AuditLog::open(log)?.event(AuditEvent::ConfigChange {
-        key: change.key.clone(),
-        file: target.as_str().into(),
-        old: change.old.to_string(),
-        new: change.new.to_string(),
-        weakens: change.weakens.clone(),
-        confirmed,
-    })?;
-    Ok(())
 }
 
 /// `duet config preset`: without a name, the preset table; with one, the

@@ -731,7 +731,12 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     }
                     // A project may only tighten, so nothing here needs confirming.
                     let change = cfg.apply(Target::Project, &key, v, confirm)?;
-                    setup::record_change(&config_audit_path(), &change, Target::Project, confirm)?;
+                    duet_boundary::audit::record_config_change(
+                        &config_audit_path(),
+                        &change,
+                        Target::Project,
+                        confirm,
+                    )?;
                     println!("{key} = {}", cfg.value(&key)?);
                 }
                 ConfigCmd::Preset {
