@@ -957,7 +957,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         // The local model describes; it never quotes. A request to "quote lines
         // 12-29 exactly" once carried a short fragment of hostile data out.
         let s = st.overlap.redact_strict(&s).0;
-        self.limit_pieces(st, &s, read, answer)
+        self.limit_pieces(st, &s, origin, read, answer)
     }
 
     /// `text` with values it spells out (characters separated: `V a k`) or
@@ -1027,6 +1027,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         &self,
         st: &mut State,
         text: &str,
+        origin: &str,
         read: &str,
         answer: Option<Answered<'_>>,
     ) -> (String, usize) {
@@ -1041,14 +1042,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         }
         for f in scan_each_in(read, self.detectors, None) {
             if probing::budgeted(f.kind) {
-                Self::register(
-                    st,
-                    &read[f.start..f.end],
-                    f.kind,
-                    None,
-                    "local answer",
-                    true,
-                );
+                Self::register(st, &read[f.start..f.end], f.kind, None, origin, true);
             }
         }
         let identifying = |st: &State, text: &str| -> Vec<(String, String)> {
