@@ -128,7 +128,7 @@ tests:
 | S (10–20 min) | S0 `public-refactor` (control, no sensitive content), S1 `config-from-env`, S2 `crash-from-logs` | — |
 | M (30–60 min) | M1 `billing-export`, M2 `data-subject-export` (TypeScript), M3 `hostile-logs` (prompt injection) | — |
 | L (1–3 h) | L1 `ledger-reconcile` | L2 `pricing-crown-jewel` (M4.5) |
-| XL (2–4 h) | — | X1/X2 real open-source repositories with injected sensitive assets (M6) |
+| XL (2–4 h) | X1 `sql-gateway` (sqlparser 0.47.0, Rust), X2 `partner-exports` (JSONata 2.0.6, JavaScript), built for M5 | real open-source repositories with injected sensitive assets |
 
 **M0.4 Pilot**
 - Run `pi-glm`, `claude-code`, `codex` on S0–M3 and L1, 5 runs each, through the leak proxy.
@@ -344,7 +344,9 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
 - Per-run disclosure report: what was withheld, by class (extends the M4 cost ledger) — done:
   `duet audit disclosure <run>` and `disclosure` in `summary.json`, from the audit log and ledger,
   counts and kinds only (SECURITY.md, Disclosure report).
-- Frontier provider data-retention terms documented in the threat model.
+- Frontier provider data-retention terms documented in the threat model — done: SECURITY.md, Trust
+  assumptions, "Frontier provider data handling" (Z.ai terms read 2026-09-25, with what they do not
+  guarantee).
 
 **SbD gate (before M5):** every SbD-1 item done with tests; red-team pass (SbD-2) with zero canary
 leaks; `SECURITY.md` complete. Any disclosure path found later is fixed at the class level, published as
@@ -427,7 +429,8 @@ OpenAI judge).
 - One live smoke test per local backend. *Built:* ignored tests in
   `crates/duet-boundary/tests/backend_smoke.rs`, gated by `DUET_LIVE_<BACKEND>_URL`; not yet run live.
 - Large repositories: dogfood tasks X1 and X2 (real open-source repositories with injected
-  sensitive assets), repository map, search scaling.
+  sensitive assets), repository map, search scaling. *Built:* X1 and X2 (docs/DOGFOOD_SUITE.md §3),
+  sealed and checked; they feed the M5 benchmark; not yet run live.
 
 ## 6. v1 defects fixed while porting
 
