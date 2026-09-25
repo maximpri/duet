@@ -144,6 +144,8 @@ turn    reset the stop flag; roll back pending writes; drop a partly answered fr
         operator item = notes (interrupted turn, undone writes) + message
           first message: Presenter.sanitize_objective (sensitive-path note, brief)
           later ones:    Presenter.sanitize_message (same sanitizer, no notes)
+          each placeholder a message introduces maps to a handle holding the message
+          (`operator.json`), so ask_local accepts it; the first such message says so once
         audit operator_message{exchange, placeholders}, then the item (the request that
         carries it is audited by the gate as always)
         work() until the turn ends:
@@ -189,8 +191,8 @@ Layers run independently; the result is the most restrictive class any layer ass
 | Path | `Source::File` path | `sensitivity.globs`, `sensitivity.protected_paths`; `.env`-style files are secret-bearing |
 | Source | command argv | command output sensitive unless on `sensitivity.raw_ok_commands`; `sensitive_data` output always sensitive |
 | Secret detector | any text | provider key formats, JWT, private keys, URL passwords, credential assignments, entropy near key-like names |
-| PII detector | any text | email (reserved example domains skipped), phone, card (Luhn), national IDs, IBAN, IP |
-| Sensitive-text detector | sensitive text only | title-case name runs (split on stop words), person/address field values of any shape, long numbers |
+| PII detector | any text | email (reserved example domains skipped), phone, card (Luhn), national IDs, IBAN, IP; 12–19 digit numbers labelled within three words (card, account, IBAN, SSN, passport, licence, tax ID, ...) as card, account or ID whatever their checksum |
+| Sensitive-text detector | sensitive text only | title-case name runs (split on stop words and sentence-initial function words), person/address field values of any shape, long numbers; in local-model output a name counts only if a word of it occurs in the content the model read; digit runs sharing 4+ consecutive digits with a vaulted card, account, ID, IBAN or phone number are replaced |
 | Taint | files | files a `sensitive_data` command created or changed (`derived.json`, kept across resume) |
 | IP | path | `ip.interface_only` / `ip.sealed` |
 
@@ -229,7 +231,7 @@ The local model is called only by the boundary, never by the loop directly, and 
 |---|---|---|
 | Brief | run start, sensitive files other than secret-bearing ones (≤20K chars each, ≤3 calls) | `summary`, `facts[]` |
 | Digest | new HandleSummary, or BulkyHandle of command output | `summary` (≤800 chars per chunk), `facts[]` |
-| Answer | `ask_local(handle, questions[≤6])`, one call per question on the most relevant chunk | `answer` (≤1,200 chars), `evidence_lines[]`, `unanswerable` |
+| Answer | `ask_local(handle, questions[≤6])`, one call per question on the most relevant chunk; `handle` may be a placeholder from an operator message (the handle is that message) | `answer` (≤1,200 chars), `evidence_lines[]`, `unanswerable` |
 | Implement | `edit_protected(path, spec, tests?, command?)` | `code`: the whole new protected file, written by the host and validated by host-run checks |
 
 All roles send one shared JSON schema (servers such as oMLX key their prompt cache by schema) and
@@ -373,10 +375,11 @@ git; reset behaviour defined per entry).
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
+    operator.json             placeholders of operator-typed values → the handle of their message
     spill-<uuid>.txt          long command outputs
     writes.jsonl              pending/applied records for crash recovery
     git-base                  HEAD before the run's first git_commit (what `diff` compares with)
-    summary.json              terminal state, usage, cost ledger
+    summary.json              terminal state (placeholders restored for the operator), usage, cost ledger
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
   lock, tmp/                  workspace lock; sandbox scratch space
 ~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
@@ -391,9 +394,11 @@ git; reset behaviour defined per entry).
   `renameat`, `fsync`); writes are atomic with digest preconditions and rollback; `.git` and
   `.duet` are never writable by tools.
 - **Commands:** Seatbelt (macOS) or bwrap (Linux) with absolute binary paths; workspace-write with
-  `.git`/`.duet` unwritable, and unreadable to ordinary commands and checks (committed copies, the
-  vault); command `TMPDIR` outside the workspace; sensitive and protected paths unreadable (deny-read) except for
-  `sensitive_data` commands, and protected source readable by the host's checks; network off
+  `.git`/`.duet` unwritable; `.duet` (the vault, handles, transcripts, audit log) unreadable to
+  every command by the sandbox itself, `.git` (committed copies) to ordinary commands and checks;
+  command `TMPDIR` outside the workspace, a separate one for `sensitive_data` commands that other
+  commands cannot read; sensitive and protected paths unreadable (deny-read) except for
+  `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; network off
   unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
   On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against
   Unix sockets while the network is off, and `.git`/`.duet` entries a command created removed when
@@ -503,6 +508,7 @@ Each is backed by a test, except where noted.
 6. A tool call is never persisted or sent without its result.
 7. Every run ends in a `Terminal` state, with a summary and an audit end event, also on a panic;
    no run exits with pending writes unrecorded.
-8. `.git` and `.duet` are not writable by tools or sandboxed commands.
+8. `.git` and `.duet` are not writable by tools or sandboxed commands, and `.duet` is not
+   readable by any sandboxed command.
 9. No file under `crates/` contains another coding agent's code, format or name (outside eval lane
    adapters).

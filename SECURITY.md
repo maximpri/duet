@@ -10,7 +10,7 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Asset | Default classification | What the frontier receives instead |
 |---|---|---|
 | Secrets and credentials (`.env*`, keys, tokens, connection strings, secrets detected in any file) | Sensitive | Placeholders such as `⟨secret:DB_URL#1⟩` |
-| Personal data (email, phone, card, national IDs, IBAN, IP, names in data files) | Sensitive | Placeholders, or a handle with a local summary |
+| Personal data (email, phone, card, national IDs, IBAN, IP, names in data files; account, card and ID numbers labelled as such, whatever their checksum) | Sensitive | Placeholders, or a handle with a local summary |
 | Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
 | Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
 | Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
@@ -84,11 +84,16 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    model's brief of them for the task (values withheld, cleaned like any local output).
    **Command access control**: sensitive paths are unreadable to commands, enforced by the OS
    sandbox (Seatbelt on macOS, bubblewrap on Linux; see [Command sandbox by
-   platform](#command-sandbox-by-platform)), so no program can print them in any encoding. Git history (`.git`, which holds committed
-   copies) and Duet's run state (`.duet/`: raw handles, the vault, transcripts) are unreadable to
-   commands too; commands get a scratch `TMPDIR` outside the workspace. A command that
-   must read them is run with `sensitive_data`; its output is then held locally like a data file, and
-   every file it creates or changes is treated as sensitive from then on.
+   platform](#command-sandbox-by-platform)), so no program can print them in any encoding. Git
+   history (`.git`, which holds committed copies) is unreadable to ordinary commands and checks;
+   commands get a scratch `TMPDIR` outside the workspace. A command that must read sensitive files
+   is run with `sensitive_data`; its output is then held locally like a data file, every file it
+   creates or changes is treated as sensitive from then on, it gets a `TMPDIR` of its own that no
+   other command may read, and placeholders in its text are resolved on this machine (in any other
+   command they stay as written). It may read `.git` (what it prints stays local, as for the
+   sensitive files themselves). **Duet's run state** (`.duet/` at any depth: raw handles, the
+   vault, transcripts, the audit log) is unreadable to every command in every mode, `sensitive_data`
+   and checks included, whatever the caller asks; `.git` and `.duet` are never writable.
    **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
 3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
    including the frontier's own text and tool-call arguments (known values and their other
@@ -220,13 +225,23 @@ steering messages sent while a turn runs) crosses the boundary exactly like task
   sensitive-path note and optional brief). Later messages and steering go through
   `sanitize_message`: the same sanitizer without the note, which is given once per session. Their
   words are not added to the public vocabulary, so a name the operator types stays identifying.
-  The outbound gate then sanitizes and checks the whole request again, as for every request.
+  A 12–19 digit number the message labels (card, credit, debit, account, acct, IBAN, routing,
+  bank, SSN, social security, passport, licence, tax ID, national ID, within three words) is a
+  placeholder even when its checksum fails. The outbound gate then sanitizes and checks the whole
+  request again, as for every request.
+- **Usable through the local model.** Each placeholder a message produced is also a handle: the
+  frontier passes it to `ask_local` (`card:card#1` or `⟨card:card#1⟩`), and the local model reads
+  the operator's message with the real value. The frontier is told this once, with the first
+  message that has such a value. Placeholders in a `sensitive_data` command are resolved locally
+  too. The frontier never needs to look for the value, and Duet's run state, where it is kept, is
+  unreadable to every command.
 - **Audited.** Each message is recorded as an `operator_message` event (turn number, number of
   values replaced; never the text) before the request that carries it, and that request is in the
   log as sent, placeholders included.
 - **Local display.** The operator sees real values: their own messages as typed, and duet's
   replies, questions and summaries with placeholders restored from the vault (in the terminal, the
-  TUI and the transcript's turn records). Nothing restored is ever sent: the conversation keeps the
+  TUI and the transcript's turn records). A run's end state (`duet run` output and `summary.json`)
+  is restored the same way; the transcript's end record keeps what the frontier wrote. Nothing restored is ever sent: the conversation keeps the
   sanitized items. Typing a placeholder shown elsewhere (for example in `duet audit show`) is
   allowed and passes as the placeholder; typing the real value is tokenized again.
 - **Local records.** The transcript keeps the messages as typed and the restored replies, next to the
@@ -294,8 +309,9 @@ sensitive paths, `.git` or `.duet`, so no program can print their content in any
 
 Both sandboxes are exercised by the same behavioural tests (`crates/duet-sandbox`, and the
 end-to-end command tests in `crates/duet-agent`): denied files and directories unreadable by `cat`,
-`od`, `ls` and `cp`, through symlinks and through hard links made by the command; `.git` and
-`.duet` unreadable to ordinary commands and never writable, at any depth; writes only in the
+`od`, `ls` and `cp`, through symlinks and through hard links made by the command; `.git`
+unreadable to ordinary commands, `.duet` unreadable to every command even with no deny list, and
+both never writable, at any depth; writes only in the
 workspace and the scratch `TMPDIR`; no network, including Unix sockets; the environment cleared to
 the allowlist; the whole process tree killed on timeout and on interrupt.
 
@@ -307,7 +323,8 @@ the allowlist; the whole process tree killed on timeout and on interrupt.
   namespaces. The last run and its environment are recorded in
   [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) (P7, SD4). How it enforces the same rules: the root is
   mounted read-only with empty read-only `/tmp` and `/run`; the workspace and the scratch directory
-  are mounted writable and every existing `.git`/`.duet` read-only again; each denied path is
+  are mounted writable, every existing `.git` read-only again and every existing `.duet` covered
+  by the unreadable stand-in below; each denied path is
   covered by an empty mode-000 file or directory, so a refused read prints "Permission denied";
   commands hold no capabilities even when Duet runs as root; with the network off, a new network
   namespace cuts off IP and a seccomp filter refuses `AF_UNIX` sockets and `io_uring`.
@@ -432,6 +449,19 @@ used. The tool list is read once at start: a server that changes its tools later
   measure what gets through.
 - The copied-span filter works at roughly 24 tokens on outbound text in general and at 4 tokens on text the local model writes about sensitive content; fragments of up to three words can pass.
 - Summaries and answers written by the local model are derived from sensitive content by design.
+  A run of digits in them (and in sensitive lines shown, such as error lines) that shares four or
+  more consecutive digits with a withheld card, account, ID, IBAN or phone number is replaced; so
+  is such a run in text for a third party (web tools). Public content, the frontier's own text and
+  the operator's own messages are not filtered this way (line numbers and counts there would
+  collide), and a fragment of three digits, or one spelled out in words, passes.
+- A name in local-model output is replaced only if the model took it from the content it read (a
+  word of the name occurs there); a name the model wrote from the frontier's question is already
+  the frontier's.
+- Labelled numbers need their label within three words and 12–19 digits; a shorter number (a US
+  routing number, an unformatted SSN) or one described further away is caught only by the other
+  detectors. The labelled-number detector runs on every text, public content included: a test
+  fixture labelled as a card number becomes a placeholder (a false positive costs a placeholder,
+  a false negative a leak).
 - Values the frontier wrote itself (test data, examples) are shown as written, and addresses at
   reserved example domains (`example.com`, `*.test`, ...) are not treated as personal data. A value
   that also appears in sensitive content stays replaced wherever it appears.
@@ -459,7 +489,8 @@ deploying what a run produced.**
 
 **Still prevented.**
 - Reading sensitive paths or protected source in the working tree through commands (OS sandbox),
-  in any encoding, including committed copies in `.git` and Duet's own run state in `.duet/`.
+  in any encoding, including committed copies in `.git`; reading Duet's own run state in `.duet/`
+  from any command, `sensitive_data` included.
 - Network access from commands (sandbox; `sandbox.network` is off and a project cannot turn it on).
 - Writing `.git` or `.duet` (policy, audit log, vault, run state) from tools or commands.
 - Sending a known sensitive value, a detected secret or personal datum, or a copied span of
@@ -515,7 +546,14 @@ Duet's own canary measurements:
 | DUET-2026-008 | Value hidden inside a longer detection | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | Overlapping detections were merged and only the combined span entered the vault (e.g. a person field capturing an email and a phone), so the email alone passed later in the model's own text. Found by property test, not observed in a run | Each part of an overlapping detection is also recorded on its own (`0f6e1c5`) |
 | DUET-2026-009 | Local answer quoting sensitive lines | CWE-201 Insertion of Sensitive Information Into Sent Data | Asked through `ask_local` to "quote lines 12–29 exactly", the local model copied a hostile data file verbatim; the ~24-token copied-span filter removed the long runs, but a short tail split across continuation lines, with a 16-character token too short for the entropy detector, reached the frontier (Gate 2 re-run, M3 seed 3, injection canary). Observed in a live evaluation run | Local-model output (answers, summaries, briefs) is checked with a 4-token copy window against sensitive content; identifier-like strings (10+ letters and digits mixed, absent from public content) in sensitive content become placeholders everywhere |
 
-Related hardening, not an observed leak: values the frontier wrote itself (its own test data) are no longer rewritten in its history (`aeda66e`); the exemption never covers a value that is in the vault from sensitive content, and only reserved example domains are skipped by the email detector.
+| DUET-2026-010 | Run state readable to sensitive-data commands | CWE-552 Files or Directories Accessible to External Parties (consequence CWE-201) | A `sensitive_data` command had no deny list at all, so it could read `.duet/` (the vault, handles, transcripts, the audit log). In a live run the frontier, unable to use the placeholder of a card number the operator typed, listed `.duet`, read the vault and transcripts from such commands and located the value; what it learned came back through a local summary (DUET-2026-012). Writes stayed refused. Found in review of the run, the same class: a `sensitive_data` command's `TMPDIR` was shared with ordinary commands, which could read what it left there | `.duet` at any depth is unreadable to every command in every mode, enforced by the sandbox itself (Seatbelt rule; bubblewrap stand-in mount), whatever the caller denies; `sensitive_data` commands get a `TMPDIR` other commands cannot read; placeholders the operator typed are usable handles, so the value is never looked for (`6c83020`, `51af157`) |
+| DUET-2026-011 | Labelled number with a failing checksum | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | "is this credit card number valid 42977600076546677?": the card detector requires a valid Luhn checksum, so the number was sent as typed. Observed in a live run | A 12–19 digit number labelled nearby (card, account, IBAN, SSN, passport, licence, tax ID, ...) is a card, account or ID value whatever its checksum, in every text (`c54a78a`) |
+| DUET-2026-012 | Digits of a withheld number in local output | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | A local summary reported a card's first four digits as its "network prefix"; the 4-token copy window and the vault match only whole values. Observed in a live run | Digit runs sharing four consecutive digits with a vaulted card, account, ID, IBAN or phone number are replaced in local-model output and sensitive lines, and refuse a web request (`c54a78a`) |
+
+Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
+for `ask_local` (`51af157`); the end state of `duet run` shows the operator their own values
+(`6100805`); a name in local-model output is a person only if the model took it from what it read,
+after "No Luhn validation" in a summary made "Luhn" a vaulted name (`c54a78a`); values the frontier wrote itself (its own test data) are no longer rewritten in its history (`aeda66e`); the exemption never covers a value that is in the vault from sensitive content, and only reserved example domains are skipped by the email detector.
 
 ## Reporting a vulnerability
 
