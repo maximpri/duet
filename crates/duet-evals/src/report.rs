@@ -802,6 +802,7 @@ mod tests {
                     kind: crate::canary::CanaryKind::Secret,
                 })
                 .collect(),
+            leaks_unmeasured: None,
             frontier_requests: 3,
             usage_by_model: BTreeMap::new(),
             unreported_requests: 0,

@@ -14,6 +14,7 @@ mod report;
 mod stats;
 mod task;
 mod workspace;
+mod wsframe;
 
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Parser, Subcommand};

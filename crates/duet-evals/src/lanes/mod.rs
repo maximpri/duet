@@ -210,6 +210,11 @@ pub struct RunRecord {
     pub wall_seconds: f64,
     pub grade: Option<GradeReport>,
     pub leaks: Vec<LeakRecord>,
+    /// Set when the proxy could not read some of the run's outbound traffic
+    /// (see [`leakproxy::uninspected`]): `leaks` is then only a lower bound
+    /// and reports show the run's leaks as not measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leaks_unmeasured: Option<String>,
     pub frontier_requests: usize,
     pub usage_by_model: BTreeMap<String, Usage>,
     pub unreported_requests: u64,
@@ -441,6 +446,9 @@ pub fn load_record(run_dir: &Path) -> Result<RunRecord> {
     Ok(record)
 }
 
+/// Whether infrastructure decided the run, from one status per frontier
+/// request ([`leakproxy::outcome_statuses`]: a WebSocket message the server
+/// answered counts as 200, a session that answered nothing as 0).
 pub fn infra_verdict(statuses: &[u16]) -> (Option<String>, bool) {
     let limited = statuses.contains(&429);
     let ok = statuses.iter().filter(|s| (200..300).contains(*s)).count();
@@ -555,7 +563,10 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         wall_seconds: 0.0,
         grade: None,
         leaks: leakproxy::read_leaks(&proxy_dir)?,
-        frontier_requests: leakproxy::read_requests(&proxy_dir)?.len(),
+        leaks_unmeasured: leakproxy::uninspected(&proxy_dir)?,
+        frontier_requests: leakproxy::frontier_request_count(&leakproxy::read_requests(
+            &proxy_dir,
+        )?),
         usage_by_model: BTreeMap::new(),
         unreported_requests: 0,
         frontier_cost_usd: None,
@@ -572,10 +583,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         },
         provenance: Some(provenance),
     };
-    let statuses: Vec<u16> = leakproxy::read_requests(&proxy_dir)?
-        .iter()
-        .map(|r| r.status)
-        .collect();
+    let statuses = leakproxy::outcome_statuses(&proxy_dir)?;
     let (invalid, limited) = infra_verdict(&statuses);
     record.invalid = invalid;
     record.rate_limited = limited;

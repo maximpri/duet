@@ -1024,6 +1024,7 @@ mod tests {
                     kind: crate::canary::CanaryKind::Email,
                 })
                 .collect(),
+            leaks_unmeasured: None,
             frontier_requests: 3,
             usage_by_model: [(
                 "glm-5.3-flash".to_owned(),

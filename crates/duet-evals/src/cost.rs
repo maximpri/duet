@@ -142,11 +142,12 @@ pub struct ProxyUsage {
     pub unreported_requests: u64,
 }
 
-/// Sums usage over every request/response pair a proxy session captured.
+/// Sums usage over every request/response pair a proxy session captured
+/// (a WebSocket client message paired with the server messages after it).
 pub fn usage_from_proxy_log(log_dir: &Path) -> Result<ProxyUsage> {
     let mut out = ProxyUsage::default();
     let requests = crate::leakproxy::read_requests(log_dir)?;
-    for r in requests {
+    for r in requests.into_iter().filter(|r| !r.is_open_handshake()) {
         let req = fs::read_to_string(log_dir.join(format!("requests/{:05}.body", r.seq)))
             .unwrap_or_default();
         let resp = fs::read_to_string(log_dir.join(format!("responses/{:05}.body", r.seq)))
