@@ -798,3 +798,63 @@ fn duet_run_refuses_an_unusable_attachment_before_the_run_starts() {
         assert!(!w.ws.join(".duet/runs").exists(), "a run was created");
     }
 }
+
+/// A read sub-agent's `read_file` on images follows the same rules as the
+/// parent's: the public image joins its conversation (the same model drives
+/// it, so frontier.vision holds), the sensitive one is described, and
+/// neither the parent nor any request gets the sensitive image.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_read_sub_agent_reads_images_by_the_same_rules() {
+    let w = Ws::new();
+    let describe = json!({"summary": format!("A scanned form for {NAME} ({EMAIL})."),
+        "facts": ["A signature box at the bottom."]})
+    .to_string();
+    let e = engine(&w, policy(ToFrontier::Public, true), vec![describe]);
+    let mut cfg = config(&w, images(true, vec![]));
+    cfg.subagents = Some(duet_agent::subagents::Subagents {
+        max_parallel: 1,
+        max_usd: 1.0,
+        max_time: Duration::from_secs(60),
+        model: None,
+        price: Arc::new(|u| u.input as f64 / 1e6),
+    });
+    // One sub-agent: its requests come between the parent's first and second.
+    let frontier = Frontier::new(vec![
+        Step::Call(
+            "delegate",
+            json!({"task": "Compare docs/ui.png with data/scan.png.", "mode": "read"}),
+        ),
+        Step::Call("read_file", json!({"path": "docs/ui.png"})),
+        Step::Call("read_file", json!({"path": "data/scan.png"})),
+        Step::Call("finish", json!({"summary": "The screen matches the form."})),
+        Step::Call("finish", json!({"summary": "compared"})),
+    ]);
+    let terminal = run(&w, &cfg, e.as_ref(), Some(&e), &frontier, false).await;
+    assert!(
+        matches!(terminal, Terminal::Completed { .. }),
+        "{terminal:?}"
+    );
+    let bodies = frontier.bodies();
+    assert_eq!(bodies.len(), 5);
+    let ui = w.prepared("docs/ui.png");
+    // The sub-agent's last request carries the public image after its result.
+    assert!(
+        bodies[3].contains(&ui.data_url()),
+        "the child did not get the image"
+    );
+    // The parent's conversation never held an image.
+    assert!(!bodies[4].contains("data:image/"));
+    let scan = w.prepared("data/scan.png");
+    let scan_file = std::fs::read(w.path("data/scan.png")).unwrap();
+    assert!(!carries(&bodies.concat(), &scan, &scan_file));
+    let found = leaked_from(&bodies);
+    assert!(found.is_empty(), "{found:?} reached the frontier");
+    let destinations: Vec<String> = image_events(&w.log())
+        .into_iter()
+        .map(|e| match e {
+            AuditEvent::Image { destination, .. } => destination,
+            _ => unreachable!(),
+        })
+        .collect();
+    assert_eq!(destinations, vec!["frontier", "local"]);
+}

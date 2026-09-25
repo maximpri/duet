@@ -477,7 +477,9 @@ are text only); Anthropic puts `image` blocks (base64 source) before the text, a
 nothing. The gate's outbound filter drops images whose digest was not routed to the frontier, and
 the check refuses any that remains. Resume and session resume load each image back from the store
 by digest (one that is missing or altered is dropped). The engine does not index image bytes as
-text when primed.
+text when primed. A sub-agent runs the same `work` loop, so its `read_file` on an image takes the
+same path into its own conversation; its configuration keeps `frontier.vision` only when the
+parent's model drives it and never carries the operator's attachments.
 
 ## 6. Context management
 

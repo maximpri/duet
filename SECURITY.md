@@ -360,7 +360,9 @@ The boundary's own code is also tested against generated input, in the gate on e
   numbers the operator types (failing and passing the checksum, used through `ask_local`, restored
   for the operator), `sensitive_data` commands reading run state or writing derived files, ten
   narrow `ask_local` questions about one value, careless local answers, secrets in session and
-  steering messages. Scenarios marked `#[ignore]` reproduce open gaps (the reason names the gap;
+  steering messages, screenshots of the customer table read with `read_file` (public and
+  sensitive path) and attached to a session message, with a stand-in that transcribes them
+  (`Options::images`; no image data may reach the frontier either). Scenarios marked `#[ignore]` reproduce open gaps (the reason names the gap;
   see Known limits) and should pass once it is closed. To add one: build a `Fixture` (name, task,
   stand-in), `script` the frontier's tool calls (`Step::From` builds one from the request it
   answers, to use a placeholder or handle it was shown), `run` it or open a `session`, then
@@ -617,7 +619,10 @@ or do not attach them. An image the operator marks public, or a workspace image 
 `images.to_frontier = "public"`, goes to the frontier unscanned: whatever it shows is disclosed.
 Path rules classify an image by where it is, not by what it shows: a screenshot of customer data
 saved under `docs/` is public by path. Text in an image cannot be prompt-injection-filtered either;
-the frontier treats it as it treats any content it is shown. Images are recognized for `read_file`
+the frontier treats it as it treats any content it is shown. A sub-agent's `read_file` follows the
+same rules; when `subagents.model` names another model, sub-agents are treated as having no vision
+(their images are described or refused), since the setting describes the frontier model. Images
+are recognized for `read_file`
 by extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`); another binary file is read as text, as
 before. The ledger's image tokens are estimates (no provider reports them apart from other input).
 
