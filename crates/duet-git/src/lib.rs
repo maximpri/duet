@@ -9,6 +9,9 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+mod commit;
+pub use commit::{Committed, Identity, user_config_files};
+
 #[derive(Debug, thiserror::Error)]
 pub enum GitError {
     #[error("git is not installed")]
@@ -77,7 +80,7 @@ impl Git {
 
     /// [`Git::run`], treating each exit code in `ok` as success (`git diff
     /// --no-index` exits 1 when the files differ).
-    fn run_accepting(
+    pub fn run_accepting(
         &self,
         cwd: &Path,
         args: &[&str],
@@ -198,6 +201,16 @@ impl Git {
 
     /// Working-tree diff of exactly `paths` (callers pass only public paths).
     pub fn diff_paths(&self, workspace: &Path, paths: &[String]) -> Result<String, GitError> {
+        self.diff_paths_from(workspace, "HEAD", paths)
+    }
+
+    /// Working-tree diff of exactly `paths` against the commit `base`.
+    pub fn diff_paths_from(
+        &self,
+        workspace: &Path,
+        base: &str,
+        paths: &[String],
+    ) -> Result<String, GitError> {
         if paths.is_empty() {
             return Ok(String::new());
         }
@@ -206,7 +219,8 @@ impl Git {
             "--no-color",
             "--no-ext-diff",
             "--no-textconv",
-            "HEAD",
+            "--end-of-options",
+            base,
             "--",
         ];
         args.extend(paths.iter().map(String::as_str));
