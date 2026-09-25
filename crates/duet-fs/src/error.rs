@@ -43,6 +43,10 @@ const HOST_RESOURCE: &[rustix::io::Errno] = &[
     rustix::io::Errno::NOBUFS,
     rustix::io::Errno::NOMEM,
     rustix::io::Errno::AGAIN,
+    // A storage device that drops out and comes back (a USB disk): the same
+    // write succeeds once it is back.
+    rustix::io::Errno::IO,
+    rustix::io::Errno::NXIO,
 ];
 
 impl FsError {
@@ -94,6 +98,7 @@ impl FsError {
         Some(match self.host_errno()? {
             Errno::NOSPC | Errno::DQUOT => "disk full",
             Errno::NFILE | Errno::MFILE => "out of file handles",
+            Errno::IO | Errno::NXIO => "storage device unavailable",
             _ => "host out of memory or buffers",
         })
     }
@@ -116,6 +121,9 @@ mod tests {
         assert_eq!(quota.host_shortage(), Some("disk full"));
         let handles = FsError::io("open", "/x", rustix::io::Errno::MFILE);
         assert_eq!(handles.host_shortage(), Some("out of file handles"));
+        let dropped = FsError::io("append", "/x", rustix::io::Errno::NXIO);
+        assert_eq!(dropped.host_shortage(), Some("storage device unavailable"));
+        assert!(FsError::io("write", "/x", rustix::io::Errno::IO).is_host_resource());
         for other in [
             FsError::io(
                 "open",

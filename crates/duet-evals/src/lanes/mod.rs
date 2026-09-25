@@ -369,7 +369,17 @@ pub fn lane_program(lane: &Lane) -> Result<String> {
 /// Errors that come from the machine running the evaluation (a full disk), not
 /// from the agent under test.
 pub fn host_failure(error: &str) -> bool {
-    error.contains("No space left on device") || error.contains("os error 28")
+    [
+        "No space left on device",
+        "os error 28",
+        // A storage device that dropped out (a USB disk).
+        "Device not configured",
+        "os error 6",
+        "Input/output error",
+        "os error 5",
+    ]
+    .iter()
+    .any(|m| error.contains(m))
 }
 
 /// A Duet failure reason that says its own outbound gate refused a request.
