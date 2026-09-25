@@ -554,7 +554,12 @@ async fn drive(
 /// Fixed for the run (or session) and sorted, so the request prefix never changes.
 pub(crate) fn tool_specs(cfg: &RunConfig, presenter: &dyn Presenter) -> Vec<ToolSpec> {
     let mut extra = presenter.extra_tools();
-    extra.extend(cfg.web.as_deref().map(crate::web::specs).unwrap_or_default());
+    extra.extend(
+        cfg.web
+            .as_deref()
+            .map(crate::web::specs)
+            .unwrap_or_default(),
+    );
     tools::specs_with(extra)
 }
 
