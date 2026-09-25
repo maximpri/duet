@@ -52,6 +52,8 @@ pub struct RunView {
     derived_audit: Vec<String>,
     pub(crate) file: usize,
     pub(crate) diff_scroll: usize,
+    /// A run to select as soon as it is listed (one just started).
+    want: Option<String>,
 }
 
 impl Default for RunView {
@@ -70,6 +72,7 @@ impl Default for RunView {
             derived_audit: Vec::new(),
             file: 0,
             diff_scroll: 0,
+            want: None,
         }
     }
 }
@@ -104,6 +107,16 @@ impl RunView {
         self.selected = current
             .and_then(|c| self.runs.iter().position(|r| *r == c))
             .unwrap_or(0);
+        if let Some(i) = self
+            .want
+            .as_ref()
+            .and_then(|w| self.runs.iter().position(|r| r == w))
+        {
+            self.want = None;
+            self.selected = i;
+            self.scroll = 0;
+            self.follow = true;
+        }
         let Some(id) = self.runs.get(self.selected).cloned() else {
             self.feed.clear();
             self.withheld.clear();
@@ -174,6 +187,12 @@ impl RunView {
     pub fn forget(&mut self) {
         self.seen = None;
         self.files_of = None;
+    }
+
+    /// Selects `id` now, or as soon as it is listed.
+    pub fn show(&mut self, id: &str, ws: &Path, policy: &Policy) {
+        self.want = Some(id.to_owned());
+        self.refresh(ws, policy);
     }
 
     pub fn scroll_by(&mut self, d: isize) {

@@ -16,6 +16,7 @@ mod audit;
 mod changes;
 mod data;
 mod ip;
+mod launch;
 mod models;
 mod runs;
 mod settings;
@@ -44,6 +45,8 @@ pub struct Services {
     pub detect: Arc<dyn Fn() -> Vec<LocalServer> + Send + Sync>,
     /// The cache-reuse probe against the configured local model (two model calls).
     pub cache_probe: Arc<dyn Fn() -> Result<CacheReport, String> + Send + Sync>,
+    /// The `duet` executable runs are started with (`None`: starting runs is off).
+    pub duet: Option<std::path::PathBuf>,
 }
 
 /// The smallest terminal the screens are laid out for (columns, rows).

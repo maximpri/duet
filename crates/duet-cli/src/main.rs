@@ -889,6 +889,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 doctor,
                 detect,
                 cache_probe,
+                duet: std::env::current_exe().ok(),
             };
             tokio::task::block_in_place(|| {
                 duet_tui::run(duet_tui::Paths::for_workspace(ws), services)

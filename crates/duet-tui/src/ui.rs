@@ -83,6 +83,8 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) {
     match &app.mode {
         Mode::Confirm(p) => draw_confirm(f, app, p),
         Mode::ConfirmPurge(plan) => crate::data::draw_confirm(f, plan),
+        Mode::Launch { objective, mode } => crate::launch::draw_dialog(f, objective, *mode),
+        Mode::AckPassthrough { objective } => crate::launch::draw_ack(f, objective),
         _ => {}
     }
 }
@@ -94,6 +96,10 @@ fn key_help(app: &App) -> &'static str {
         (Mode::Tester, _) => "type a workspace path · Enter or Esc done",
         (Mode::Sample, _) => "type sample text · Enter or Esc done",
         (Mode::ConfirmPurge(_), _) => "y delete · n or Esc cancel",
+        (Mode::Launch { .. }, _) => "type the objective · ↑↓ mode · Enter start · Esc cancel",
+        (Mode::AckPassthrough { .. }, _) => {
+            "y start with the privacy boundary off · n or Esc cancel"
+        }
         (_, Tab::Models) => {
             "Enter edit · d doctor · o online checks · l detect local · [ ] u use · c cache probe · p owner/project · q quit"
         }
@@ -108,7 +114,7 @@ fn key_help(app: &App) -> &'static str {
         }
         (_, Tab::Audit) => "↑↓ select · Enter records · Esc runs · v verify · r reload · q quit",
         (_, Tab::Run) => {
-            "←→ panel · ↑↓ scroll or pick file · PgUp/PgDn J/K diff · [ ] run · f follow · q quit"
+            "n new run · ←→ panel · ↑↓ scroll/pick file · PgUp/PgDn J/K diff · [ ] run · f follow · q quit"
         }
         _ => "Enter edit · a add entry · p owner/project · Tab screens · q quit",
     }

@@ -6,6 +6,7 @@ use crate::Services;
 use crate::audit::AuditView;
 use crate::data::PurgePlan;
 use crate::ip::IpView;
+use crate::launch::{Launched, RunMode};
 use crate::models::{Job, ModelsView, Panel};
 use crate::runs::RunView;
 use crate::settings;
@@ -117,6 +118,15 @@ pub(crate) enum Mode {
     Sample,
     /// A purge waiting for an explicit yes.
     ConfirmPurge(PurgePlan),
+    /// Asking for a new run's objective and mode.
+    Launch {
+        objective: String,
+        mode: RunMode,
+    },
+    /// A passthrough run waiting for the no-privacy acknowledgement.
+    AckPassthrough {
+        objective: String,
+    },
 }
 
 pub struct App {
@@ -143,6 +153,8 @@ pub struct App {
     pub(crate) ip: IpView,
     pub(crate) audit: AuditView,
     pub(crate) runs: RunView,
+    /// The run started from this TUI, if any.
+    pub(crate) launched: Option<Launched>,
     pub quit: bool,
 }
 
@@ -167,6 +179,7 @@ impl App {
             ip: IpView::default(),
             audit: AuditView::default(),
             runs: RunView::default(),
+            launched: None,
             quit: false,
         };
         app.enter_tab(Tab::Models);
@@ -216,9 +229,77 @@ impl App {
         self.models.busy()
     }
 
+    /// Whether the run started from this TUI is still running.
+    pub fn launched_running(&self) -> bool {
+        self.launched.as_ref().is_some_and(Launched::running)
+    }
+
     pub(crate) fn poll_jobs(&mut self) {
         for line in self.models.poll() {
             self.status = line;
+        }
+        let Some(l) = self.launched.as_mut() else {
+            return;
+        };
+        let had_id = l.run_id.is_some();
+        if !l.poll() {
+            return;
+        }
+        let (id, exit, last) = (l.run_id.clone(), l.exit, l.last_line());
+        if let (Some(id), false) = (&id, had_id) {
+            let policy = self.policy();
+            self.tab = Tab::Run;
+            self.runs.show(id, &self.paths.workspace, &policy);
+            self.status = format!("run {id} started; following it");
+        }
+        if let Some(code) = exit {
+            self.status = match &id {
+                Some(id) => format!(
+                    "run {id} {} (exit code {code})",
+                    crate::launch::outcome(code)
+                ),
+                None => format!("duet run exited with code {code} before a run started: {last}"),
+            };
+        }
+    }
+
+    fn start_launch(&mut self) {
+        if self.launched_running() {
+            self.status = "a run started here is still running; one run per workspace".into();
+            return;
+        }
+        if self.services.duet.is_none() {
+            self.status = "starting runs is not available here".into();
+            return;
+        }
+        let approve = self.cfg.str("oversight.approve").unwrap_or_default();
+        if approve != "off" {
+            self.status = format!(
+                "oversight.approve is {approve}: approvals need a terminal, so start this run with `duet run`"
+            );
+            return;
+        }
+        self.mode = Mode::Launch {
+            objective: String::new(),
+            mode: RunMode::Hybrid,
+        };
+    }
+
+    fn launch(&mut self, objective: &str, mode: RunMode, acknowledged: bool) {
+        let Some(duet) = self.services.duet.clone() else {
+            return;
+        };
+        match crate::launch::spawn(&duet, &self.paths.workspace, objective, mode, acknowledged) {
+            Ok(l) => {
+                self.status = format!(
+                    "starting duet run ({}); output in {}",
+                    mode.arg(),
+                    l.log.display()
+                );
+                self.launched = Some(l);
+                self.enter_tab(Tab::Run);
+            }
+            Err(e) => self.status = format!("could not start duet run: {e}"),
         }
     }
 
@@ -308,6 +389,46 @@ impl App {
                     self.status = "purge cancelled; nothing deleted".into();
                 }
                 _ => self.mode = Mode::ConfirmPurge(plan),
+            },
+            Mode::Launch {
+                mut objective,
+                mode,
+            } => match code {
+                KeyCode::Esc => self.status = "no run started".into(),
+                KeyCode::Enter if objective.trim().is_empty() => {
+                    self.status = "type the objective first".into();
+                    self.mode = Mode::Launch { objective, mode };
+                }
+                KeyCode::Enter if mode == RunMode::Passthrough => {
+                    self.mode = Mode::AckPassthrough { objective }
+                }
+                KeyCode::Enter => self.launch(objective.trim(), mode, false),
+                KeyCode::Up | KeyCode::Down => {
+                    let d = if code == KeyCode::Up { -1 } else { 1 };
+                    self.mode = Mode::Launch {
+                        objective,
+                        mode: mode.step(d),
+                    };
+                }
+                KeyCode::Backspace | KeyCode::Char(_) => {
+                    match code {
+                        KeyCode::Char(c) => objective.push(c),
+                        _ => {
+                            objective.pop();
+                        }
+                    }
+                    self.mode = Mode::Launch { objective, mode };
+                }
+                _ => self.mode = Mode::Launch { objective, mode },
+            },
+            Mode::AckPassthrough { objective } => match code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    self.launch(objective.trim(), RunMode::Passthrough, true)
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    self.status = "no run started; the privacy boundary stays on".into();
+                }
+                _ => self.mode = Mode::AckPassthrough { objective },
             },
             Mode::Sample => match code {
                 KeyCode::Esc | KeyCode::Enter => {}
@@ -433,6 +554,7 @@ impl App {
             (Tab::Run, KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l')) => {
                 self.runs.toggle_focus()
             }
+            (Tab::Run, KeyCode::Char('n')) => self.start_launch(),
             (Tab::Run, KeyCode::Char('J')) => self.runs.diff_by(1),
             (Tab::Run, KeyCode::Char('K')) => self.runs.diff_by(-1),
             _ => {}

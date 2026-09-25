@@ -54,6 +54,7 @@ fn services() -> crate::Services {
                 unreported: false,
             })
         }),
+        duet: None,
     }
 }
 
@@ -1022,4 +1023,170 @@ fn run_view_follows_edits_as_they_happen_and_reads_finished_runs() {
         !String::from_utf8_lossy(&status).contains("A "),
         "the viewer staged nothing"
     );
+}
+
+/// A stand-in for the `duet` binary: records its arguments, announces a run
+/// the way `duet run` does, creates the run's transcript and exits with `code`.
+fn fake_duet(dir: &Path, code: i32, announce: bool) -> std::path::PathBuf {
+    let script = dir.join("fake-duet");
+    let run = if announce {
+        r#"echo "run 20260925-120000-c0ffee (Hybrid)" >&2
+mkdir -p "$2/.duet/runs/20260925-120000-c0ffee"
+printf '%s\n' '{"kind":"start","objective":"from the tui","mode":"hybrid","frontier_model":"glm"}' > "$2/.duet/runs/20260925-120000-c0ffee/transcript.jsonl"
+"#
+    } else {
+        "echo \"no local model server answered\" >&2\n"
+    };
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > \"{}\"\n{run}exit {code}\n",
+            dir.join("args").display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    script
+}
+
+fn wait_for_launch(app: &mut App) {
+    for _ in 0..500 {
+        app.tick();
+        if app.launched.as_ref().is_some_and(|l| l.exit.is_some()) {
+            app.tick();
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("the launched process did not finish");
+}
+
+#[test]
+fn starting_a_run_launches_duet_run_and_opens_the_run_view() {
+    let (d, mut app) = fixture("", "");
+    app.services_mut().duet = Some(fake_duet(d.path(), 0, true));
+    key(&mut app, KeyCode::Char('7'));
+    key(&mut app, KeyCode::Char('n'));
+    let out = render(&mut app);
+    assert!(out.contains("start a run (duet run)"), "{out}");
+    assert!(out.contains("> hybrid"), "hybrid is the default:\n{out}");
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status().contains("objective first"));
+    typed(&mut app, "fix the flaky test");
+    key(&mut app, KeyCode::Down);
+    key(&mut app, KeyCode::Up);
+    key(&mut app, KeyCode::Enter);
+    assert!(matches!(app.mode, Mode::Normal));
+    wait_for_launch(&mut app);
+    let args = std::fs::read_to_string(d.path().join("args")).unwrap();
+    let ws = app.paths.workspace.display().to_string();
+    assert_eq!(
+        args.lines().collect::<Vec<_>>(),
+        vec![
+            "--workspace",
+            &ws,
+            "run",
+            "--mode",
+            "hybrid",
+            "--",
+            "fix the flaky test"
+        ]
+    );
+    assert_eq!(app.tab(), Tab::Run);
+    assert_eq!(app.runs.runs[app.runs.selected], "20260925-120000-c0ffee");
+    let out = render(&mut app);
+    assert!(out.contains("run 20260925-120000-c0ffee"), "{out}");
+    assert!(out.contains("start (hybrid, glm): from the tui"), "{out}");
+    assert!(
+        app.status().contains("completed (exit code 0)"),
+        "{}",
+        app.status()
+    );
+    // The child's output went to a private log, not the terminal.
+    let log = &app.launched.as_ref().unwrap().log;
+    assert!(log.starts_with(app.paths.workspace.join(".duet/tmp")));
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        std::fs::metadata(log).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[test]
+fn passthrough_needs_the_no_privacy_acknowledgement() {
+    let (d, mut app) = fixture("", "");
+    app.services_mut().duet = Some(fake_duet(d.path(), 0, true));
+    app.enter_tab(Tab::Run);
+    key(&mut app, KeyCode::Char('n'));
+    typed(&mut app, "baseline");
+    key(&mut app, KeyCode::Up);
+    assert!(render(&mut app).contains("> passthrough"));
+    key(&mut app, KeyCode::Enter);
+    let out = render(&mut app);
+    assert!(out.contains("acknowledge: no privacy"), "{out}");
+    assert!(out.contains("PRIVACY BOUNDARY OFF"), "{out}");
+    key(&mut app, KeyCode::Char('x'));
+    assert!(
+        matches!(app.mode, Mode::AckPassthrough { .. }),
+        "only y confirms"
+    );
+    key(&mut app, KeyCode::Char('n'));
+    assert!(app.status().contains("boundary stays on"));
+    assert!(app.launched.is_none());
+    assert!(!d.path().join("args").exists(), "nothing was started");
+    key(&mut app, KeyCode::Char('n'));
+    typed(&mut app, "baseline");
+    key(&mut app, KeyCode::Up);
+    key(&mut app, KeyCode::Enter);
+    key(&mut app, KeyCode::Char('y'));
+    wait_for_launch(&mut app);
+    let args = std::fs::read_to_string(d.path().join("args")).unwrap();
+    assert!(
+        args.contains("--mode\npassthrough\n--no-privacy\n--\nbaseline"),
+        "{args}"
+    );
+    // The launcher itself refuses passthrough without the acknowledgement.
+    assert!(
+        crate::launch::spawn(
+            &d.path().join("fake-duet"),
+            &app.paths.workspace,
+            "x",
+            crate::launch::RunMode::Passthrough,
+            false
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn a_run_that_cannot_start_reports_why_and_approval_refuses_launching() {
+    let (d, mut app) = fixture("", "");
+    app.services_mut().duet = Some(fake_duet(d.path(), 2, false));
+    app.enter_tab(Tab::Run);
+    key(&mut app, KeyCode::Char('n'));
+    typed(&mut app, "anything");
+    key(&mut app, KeyCode::Enter);
+    wait_for_launch(&mut app);
+    assert!(
+        app.status()
+            .contains("exited with code 2 before a run started: no local model server answered"),
+        "{}",
+        app.status()
+    );
+    // With operator approval on, runs need a terminal: the TUI refuses.
+    let (d2, mut app) = fixture("[oversight]\napprove = \"risky\"\n", "");
+    app.services_mut().duet = Some(fake_duet(d2.path(), 0, true));
+    app.enter_tab(Tab::Run);
+    key(&mut app, KeyCode::Char('n'));
+    assert!(matches!(app.mode, Mode::Normal));
+    assert!(
+        app.status().contains("oversight.approve is risky"),
+        "{}",
+        app.status()
+    );
+    // Without a duet executable there is nothing to start.
+    let (_d3, mut app) = fixture("", "");
+    app.enter_tab(Tab::Run);
+    key(&mut app, KeyCode::Char('n'));
+    assert!(app.status().contains("not available"), "{}", app.status());
 }
