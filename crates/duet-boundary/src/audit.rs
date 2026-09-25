@@ -87,6 +87,23 @@ pub enum AuditEvent {
     /// message itself is in the next request record, sanitized; this holds
     /// only the turn number and how many values in it became placeholders.
     OperatorMessage { exchange: u64, placeholders: usize },
+    /// A host-side web request made for the frontier (`web_fetch`,
+    /// `web_search`): the host, never the URL's path or the query.
+    WebRequest {
+        tool: String,
+        host: String,
+        bytes: u64,
+        /// `ok`, `truncated`, or why it failed (`refused`, `timeout`, ...).
+        outcome: String,
+    },
+    /// Text for a third party was refused by the outbound check (a
+    /// placeholder or a known sensitive value in it). Never holds the text.
+    OutboundRefused {
+        /// The tool or client that wanted to send it.
+        channel: String,
+        destination: String,
+        reason: String,
+    },
     /// An owner or project setting changed (`duet config set`).
     ConfigChange {
         key: String,
@@ -112,6 +129,8 @@ impl AuditEvent {
             AuditEvent::Approval { .. } => "approval",
             AuditEvent::ConfigChange { .. } => "config_change",
             AuditEvent::OperatorMessage { .. } => "operator_message",
+            AuditEvent::WebRequest { .. } => "web_request",
+            AuditEvent::OutboundRefused { .. } => "outbound_refused",
         }
     }
 }

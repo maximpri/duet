@@ -32,6 +32,12 @@ pub enum Source {
     },
     Diff,
     Checks,
+    /// Content fetched from the web (a page, search results): public but
+    /// untrusted. Scanned like public content, offloaded when bulky, and never
+    /// instructions to the model.
+    Web {
+        url: String,
+    },
     Other {
         label: String,
     },
@@ -160,6 +166,13 @@ pub trait Presenter: Send + Sync {
     /// sensitive-path note and brief are given once per session).
     fn sanitize_message(&self, text: &str) -> String {
         text.to_owned()
+    }
+    /// Text the frontier wants sent to a third party (`destination`: a host
+    /// or server name), such as a URL, a search query or tool arguments.
+    /// `Ok` holds the text to send; `Err` says why nothing may be sent.
+    /// Placeholders are never resolved here: the third party is not local.
+    fn check_outbound(&self, _destination: &str, text: &str) -> Result<String, String> {
+        Ok(text.to_owned())
     }
 }
 

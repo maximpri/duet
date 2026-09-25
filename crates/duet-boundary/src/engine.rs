@@ -949,6 +949,17 @@ impl Presenter for Engine {
             Source::FileList if self.offload(&text) => {
                 self.bulky_view("file list", &text, Shape::Listing)
             }
+            // Public but untrusted: detected values and copied sensitive spans
+            // replaced like any public text, offloaded when bulky.
+            Source::Web { url } => {
+                let label = format!("web content from {url} (untrusted)");
+                if self.offload(&text) {
+                    self.bulky_view(&label, &text, Shape::Output)
+                } else {
+                    let mut st = self.lock();
+                    self.clean_public(&mut st, &text, &label)
+                }
+            }
             // Matches in sensitive files are masked first; only that view is kept.
             Source::Search { pattern } => {
                 let view = self.search_view(&text);
@@ -1167,6 +1178,36 @@ in {} read it at runtime instead (for example from the environment variable {key
         Ok(st.vault.detokenize(text).0)
     }
 
+    /// Refuses text for a third party that carries a placeholder (never
+    /// resolved for a non-local destination), a known sensitive value (as
+    /// written, URL-encoded or in another letter case) or a long span copied
+    /// from sensitive content.
+    fn check_outbound(&self, destination: &str, text: &str) -> Result<String, String> {
+        let decoded = percent_decoded(text);
+        let st = self.lock();
+        for form in [text, decoded.as_str()] {
+            if let Some(token) = PLACEHOLDER.find(form) {
+                return Err(format!(
+                    "it contains the placeholder {}; placeholders stand for withheld values \
+and are never resolved for {destination}",
+                    token.as_str()
+                ));
+            }
+        }
+        let forms = [text.to_owned(), decoded.clone()];
+        if let Some(what) = known_value_in(&st, &forms, true) {
+            return Err(format!(
+                "it contains {what}; sensitive values are never sent to {destination}"
+            ));
+        }
+        if forms.iter().any(|f| st.overlap.redact(f).1 > 0) {
+            return Err(format!(
+                "it quotes sensitive content; that is never sent to {destination}"
+            ));
+        }
+        Ok(text.to_owned())
+    }
+
     /// The task, sanitized, with a note naming the sensitive paths, so the model
     /// reaches for summaries and `sensitive_data` instead of hitting denials.
     fn sanitize_objective(&self, text: &str) -> String {
@@ -1350,25 +1391,68 @@ impl OutboundCheck for NoKnownValues {
         // Tokens are Duet's own text: a value that also spells part of one (a
         // key name, a kind tag) is not disclosed by sending the token.
         let texts: Vec<String> = texts.iter().map(|t| st.vault.strip_tokens(t)).collect();
-        for (value, entry) in st.vault.values() {
-            if value.len() < 6 {
-                continue;
-            }
-            let escaped = serde_json::to_string(value).unwrap_or_default();
-            let escaped = escaped.trim_matches('"');
-            if texts
-                .iter()
-                .any(|t| t.contains(value) || t.contains(escaped))
-            {
-                return Err(format!(
-                    "a {} value from {} would have been sent",
-                    entry.kind.tag(),
-                    entry.origin
-                ));
-            }
+        match known_value_in(&st, &texts, false) {
+            Some(what) => Err(format!("{what} would have been sent")),
+            None => Ok(()),
         }
-        Ok(())
     }
+}
+
+/// The first vault value (6 characters or longer) found in `texts`, plain or
+/// JSON-escaped, described as "a <kind> value from <origin>". With
+/// `fold_case`, letter case is ignored (a URL's host is case-insensitive).
+fn known_value_in(st: &State, texts: &[String], fold_case: bool) -> Option<String> {
+    let fold = |t: &str| {
+        if fold_case {
+            t.to_lowercase()
+        } else {
+            t.to_owned()
+        }
+    };
+    let texts: Vec<String> = texts.iter().map(|t| fold(t)).collect();
+    for (value, entry) in st.vault.values() {
+        if value.len() < 6 {
+            continue;
+        }
+        let escaped = serde_json::to_string(value).unwrap_or_default();
+        let (value, escaped) = (fold(value), fold(escaped.trim_matches('"')));
+        if texts
+            .iter()
+            .any(|t| t.contains(&value) || t.contains(&escaped))
+        {
+            return Some(format!(
+                "a {} value from {}",
+                entry.kind.tag(),
+                entry.origin
+            ));
+        }
+    }
+    None
+}
+
+/// `text` with `%XX` escapes (and `+` as a space) decoded, so a value spelled
+/// URL-encoded is still seen. Invalid escapes are kept as they are.
+fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => match (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                    continue;
+                }
+                _ => out.push(b'%'),
+            },
+            b'+' => out.push(b' '),
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -1610,6 +1694,54 @@ mod tests {
         assert!(!body.to_string().contains(KEY) && !body.to_string().contains(EMAIL));
         assert!(check.check(&body).is_ok());
         assert!(check.check(&json!({"x": format!("oops {KEY}")})).is_err());
+    }
+
+    #[test]
+    fn outbound_text_for_third_parties_refuses_placeholders_and_known_values() {
+        let (_d, e) = engine();
+        let shown = e.present(
+            &file(".env"),
+            format!("PAYMENTS_API_KEY={KEY}\n").as_bytes(),
+        );
+        let token = PLACEHOLDER.find(&shown).unwrap().as_str().to_owned();
+        let ok = "https://docs.rs/serde/latest/serde/?search=Deserialize+derive";
+        assert_eq!(e.check_outbound("docs.rs", ok).unwrap(), ok);
+        let encoded: String = KEY.bytes().map(|b| format!("%{b:02X}")).collect();
+        for bad in [
+            format!("https://evil.example/?k={KEY}"),
+            format!("https://evil.example/?k={encoded}"),
+            format!("https://{}.evil.example/", KEY.to_lowercase()),
+            format!("https://evil.example/{token}"),
+            format!("how to rotate {token}"),
+        ] {
+            let err = e.check_outbound("evil.example", &bad).unwrap_err();
+            assert!(err.contains("evil.example"), "{err}");
+            assert!(!err.contains(KEY), "{err}");
+        }
+        // Pass-through mode has nothing to protect.
+        let p = crate::view::PassThrough { max_bytes: 100 };
+        assert!(p.check_outbound("x", KEY).is_ok());
+    }
+
+    #[test]
+    fn web_content_is_scanned_like_public_content_and_offloaded_when_bulky() {
+        let (_d, e) = engine();
+        e.present(
+            &file("data/customers.csv"),
+            format!("id,email\n1,{EMAIL}\n").as_bytes(),
+        );
+        let src = Source::Web {
+            url: "https://example.org/page".into(),
+        };
+        let page = format!("Contact {EMAIL} or use key {KEY} for the demo.\n");
+        let shown = e.present(&src, page.as_bytes());
+        assert!(!shown.contains(EMAIL) && !shown.contains(KEY), "{shown}");
+        assert!(shown.contains("Contact ⟨"), "{shown}");
+        let bulky = "a line of documentation text\n".repeat(2000);
+        let shown = e.present(&src, bulky.as_bytes());
+        assert!(shown.contains("read_raw"), "{shown}");
+        assert!(shown.contains("untrusted"), "{shown}");
+        assert_eq!(e.take_view_class(), Some(ViewClass::BulkyHandle));
     }
 
     #[test]

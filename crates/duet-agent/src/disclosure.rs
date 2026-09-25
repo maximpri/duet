@@ -148,9 +148,17 @@ impl Disclosure {
                             d.approvals.denied += 1;
                         }
                     }
+                    // Text for a third party refused by the outbound check
+                    // counts as a blocked send of that channel.
+                    AuditEvent::OutboundRefused { channel, .. } => {
+                        *d.blocked_sends
+                            .entry(format!("outbound:{channel}"))
+                            .or_default() += 1;
+                    }
                     AuditEvent::RunEnd { .. }
                     | AuditEvent::EndpointTrust { .. }
                     | AuditEvent::ConfigChange { .. }
+                    | AuditEvent::WebRequest { .. }
                     | AuditEvent::OperatorMessage { .. } => {}
                 },
             }

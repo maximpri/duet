@@ -424,6 +424,14 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
                     "#{} operator message (turn {exchange}): {placeholders} value(s) sent as placeholders",
                     e.seq
                 )),
+                AuditEvent::OutboundRefused {
+                    channel,
+                    destination,
+                    ..
+                } => withheld.push(format!(
+                    "#{} {channel} refused: sensitive text for {destination}",
+                    e.seq
+                )),
                 AuditEvent::ProtectedEdit { path, attempt, .. } => withheld.push(format!(
                     "#{} protected edit {path} (attempt {attempt})",
                     e.seq
