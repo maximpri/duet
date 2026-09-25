@@ -1623,6 +1623,7 @@ mod live {
             audit: None,
             interrupted: None,
             web: None,
+            git_tools: None,
             lsp: Some(&lsp),
         };
         let mut call = async |name: &str, args: Value| {

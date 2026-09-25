@@ -290,6 +290,35 @@ Settings are owner-only and changes that start programs or reach servers need `-
 `duet config set mcp.servers.fs.command '"my-mcp-server"' --confirm`. Details:
 [SECURITY.md](SECURITY.md) (MCP servers).
 
+**Language servers** (`lsp.*` settings; on by default when a server is installed): the frontier
+gets `code_nav` (`definition`, `references`, `hover`, `symbols`, `workspace_symbols`,
+`diagnostics`; answers are `path:line:col  text` lines, lines and character columns counted from 1
+as `read_file` shows them) and `rename` (applied to every file at once, or to none). After
+`edit_file`, `write_file` or `rename` on a file whose server is running, the result ends with a
+short `diagnostics:` section (errors first). Duet looks for `rust-analyzer`,
+`typescript-language-server`, `pyright-langserver` or `basedpyright-langserver`, `gopls` and
+`clangd` on `PATH` (`duet doctor` lists what it found); a server starts on first use, runs in the
+command sandbox without network, and is restarted once if it crashes (then the tools report it
+unavailable and the run goes on). Other servers, or other commands for these languages:
+
+```toml
+# ~/.config/duet/config.toml (owner only; `duet config set lsp.servers.zig.command '"zls"' --confirm` works too)
+[lsp.servers.zig]
+command = "zls"
+extensions = ["zig"]
+
+[lsp.servers.rust]                         # replaces the built-in rust-analyzer lookup
+command = "/opt/ra/bin/rust-analyzer"
+env = ["RA_LOG"]                           # variables passed through by name
+```
+
+`duet config set --project lsp.enabled false` turns the tools off for one repository.
+
+Servers read the workspace like checks do: protected source yes, sensitive files, `.git` and
+`.duet` never. In hybrid mode an answer that points into a sensitive or sealed file shows only its
+location, an interface-only file shows declarations only, and `rename` refuses to touch any of
+them. Details: [SECURITY.md](SECURITY.md) (Language servers).
+
 **Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
 server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
 `DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on

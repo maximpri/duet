@@ -443,6 +443,35 @@ control; its results are scanned (public) or held locally (sensitive), nothing m
 requests to the client (sampling, roots, elicitation) are declined; resources and prompts are not
 used. The tool list is read once at start: a server that changes its tools later is not re-read.
 
+## Language servers
+
+`code_nav` and `rename` (`lsp.enabled`, on by default when a server is installed; a project may
+turn it off) run a language server, a program that reads the workspace, and show its answers to the
+frontier. The server is a process to confine, and its answers are a channel in.
+
+| Threat | What stops it |
+|---|---|
+| The server reads sensitive files, git history or duet's run state | It runs in the command sandbox with `hidden_from_checks` denied (sensitive and derived files) plus `.git` and `.duet`, no network and a cleared environment (the sandbox allowlist and the variables named in `lsp.servers.<language>.env`); a file that becomes sensitive during the run restarts the server without it. Duet never sends a sensitive file's text to a server (`didOpen` only for files the frontier may see) |
+| An answer quotes a sensitive or protected file (a reference into it, hover text of a symbol declared there, a symbol name) | Every text is presented as `Source::CodeNav` of the file it comes from: a sensitive or sealed file shows only its location (a sealed one not even the line), an interface-only file only declarations (hover, symbol names; lines of withheld bodies replaced); paths the frontier may not see are dropped. Hover text is classified by the file that declares the symbol. Positions inside protected source cannot be asked about at all. The outbound filter runs on the result as on every tool result |
+| `rename` writes into files the frontier may not change | The whole edit is refused if any file is outside the repository, hidden, sensitive, protected, not a source or test file, or would be created, renamed or deleted; writes go through the `edit_file` path (journal, precondition, `resolve_for_write`); `oversight.approve = all` asks first. Servers cannot apply edits themselves (`workspace/applyEdit` is answered "not applied") |
+| A configured server is a program chosen by the repository | `lsp.servers.<language>.*` is owner-only and needs confirmation; a project can only turn the tools off |
+| A crashing or hanging server stalls the run | Requests time out (`lsp.request_timeout_seconds`, then `$/cancelRequest`); a server that stops is restarted once, then reported unavailable for the rest of the run; frames over 64 MB or malformed are treated as a crash; the server's standard error is drained and discarded |
+
+Audit: each call is a `language_server` event (op, file, outcome, results shown and withheld) and
+so is each server start, crash, restart or refresh; never a query, hover text, snippet or new name.
+
+**Known limits.** Protected source is readable to the server (it must be, to compile), so its
+answers about public code can reflect protected code: hover text of a symbol declared in an
+interface-only file is shown as a declaration (for a Rust constant that includes its value), and a
+diagnostic in a public file can name protected types; lines of withheld bodies are still replaced
+wherever they appear. A symbol whose declaration the server does not report is classified by the
+file asked about. rust-analyzer runs build scripts and procedural macros of the project inside the
+sandbox. Only full-document sync is used (each change re-sends the file). Files changed by commands
+(not by duet's own write tools) reach the server only when it notices them itself; a `rename` whose
+edits no longer match the file is refused rather than applied. Diagnostics after an edit are what
+the server published within the wait; a slower check shows up in a later edit or with
+`code_nav diagnostics`.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to

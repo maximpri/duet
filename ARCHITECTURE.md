@@ -44,7 +44,8 @@ duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
 duet-web                     (leaf: host-side HTTP for the web tools; reqwest, url, ipnet)
 duet-mcp                     (leaf: MCP client, JSON-RPC 2.0 over stdio and streamable HTTP; reqwest)
-duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp   (not duet-provider)
+duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
+duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
@@ -61,6 +62,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers | Inherit the user's git config, hooks or fsmonitor |
 | `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
+| `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo) | Construct a frontier provider (it receives `GatedFrontier`) |
@@ -342,6 +344,32 @@ sensitive: handle and local summary), framed between random-tag markers as data 
 audit event (server, tool, trust, outcome, whether placeholders were resolved). A closed transport
 marks the server stopped (its process tree killed); later calls to it are tool errors. The hub is
 shut down after the run or session (input closed or HTTP `DELETE`, then the tree killed).
+
+### 5.9 Language servers
+
+`crates/duet-agent/src/code_nav.rs` over `duet-lsp`. The CLI builds the run's servers from
+`lsp.*` (`RunConfig.lsp`: the installed servers; `None` when `lsp.enabled` is off or none is
+found), so `code_nav` and `rename` are in the tool set from the start or not at all. Nothing is
+started until a tool needs it; one server per language then serves the rest of the run (or
+session) and is shut down at its end.
+
+Flow of `code_nav`: check the path (visible, not sensitive; positions not in protected source,
+which is `hidden_from_commands` minus `hidden_from_checks`) → read the file and send it as the
+current document (`didOpen`/`didChange`) → the request, to a server started with
+`hidden_from_checks` plus `.git` and `.duet` denied (a server whose hidden set has since grown is
+restarted) → each location: dropped if the path is not visible, else `path:line:col` (UTF-16
+converted back to characters) next to the snippet or declaration text presented as
+`Source::CodeNav { path, signature }` of the file it comes from (§5.1: nothing of a sensitive or
+sealed file, declarations only of an interface-only file) → a `language_server` audit event (op,
+file, outcome, shown and withheld counts) plus one per server start, crash or restart.
+
+`rename` asks for the `WorkspaceEdit`, refuses it whole on any resource operation, file outside the
+repository, hidden, sensitive, protected or non-source file, or text that no longer matches the
+renamed name, then writes every file through the journal with a SHA-256 precondition (rolling back
+the ones written if a later write fails), after `note_authored` and `resolve_for_write`, as
+`edit_file` does. After `edit_file`, `write_file` and `rename`, a running server gets the new text
+and `didSave`, and its diagnostics are appended once they settle (quiet for 250 ms with no
+work-done progress open) within `lsp.diagnostics_wait_ms`.
 
 ## 6. Context management
 

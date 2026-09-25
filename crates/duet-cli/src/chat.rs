@@ -665,6 +665,10 @@ async fn converse(
     };
     let (terminal, mut stats) = session.end(closed);
     crate::mcp::stop(&run_cfg).await;
+    // The session's language servers lived across its turns; stop them now.
+    if let Some(lsp) = &run_cfg.lsp {
+        lsp.shutdown().await;
+    }
     stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
     Ok((terminal, stats))
 }
