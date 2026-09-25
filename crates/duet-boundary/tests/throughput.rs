@@ -147,6 +147,16 @@ fn measure(text: &str, piece: usize) -> (f64, f64, usize) {
     (whole, pieces, found)
 }
 
+/// The imported rules alone: megabytes per second, and how many of them got
+/// past the keyword prefilter.
+fn measure_imported(text: &str) -> (f64, usize, usize) {
+    let rules = duet_boundary::rules::imported();
+    let started = Instant::now();
+    let (_, ran) = rules.find_counted(text, None);
+    let mbps = text.len() as f64 / 1e6 / started.elapsed().as_secs_f64();
+    (mbps, ran, rules.rules().len())
+}
+
 #[test]
 fn quick_throughput_report() {
     let text = corpus(1_000_000);
@@ -164,5 +174,9 @@ fn throughput_10mb() {
     let (whole, pieces, found) = measure(&text, 8 * 1024);
     println!(
         "detector throughput (10 MB mixed log/code): {whole:.1} MB/s whole, {pieces:.1} MB/s in 8 KB pieces, {found} findings"
+    );
+    let (mbps, ran, total) = measure_imported(&text);
+    println!(
+        "imported rules alone: {mbps:.1} MB/s; {ran} of {total} rules past the keyword prefilter"
     );
 }
