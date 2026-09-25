@@ -23,7 +23,7 @@
 //!
 //! Numbers that count or point (`16-digit`, `3 lines`, `line 3`, `digit 5`)
 //! are not pieces of a value. Only identifying kinds (secrets, cards, IDs,
-//! accounts, IBANs, phone numbers, emails, names) are budgeted: amounts and
+//! accounts, IBANs, phone numbers, emails, names, addresses) are budgeted: amounts and
 //! other data values are too common to attribute a digit to.
 
 use crate::detect::Kind;
@@ -125,6 +125,7 @@ pub fn budgeted(kind: Kind) -> bool {
             | Kind::Account
             | Kind::Email
             | Kind::Name
+            | Kind::Address
     )
 }
 
