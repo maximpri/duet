@@ -127,10 +127,13 @@ Dependency direction: `provider`, `fs` ← `boundary` ← `agent` (with `fs`, `s
 - **Loop rules.** Tool errors return as results. A length-truncated response never executes tool
   calls. A tool call is never separated from its result. Command output beyond an in-memory cap
   spills to a file in the run directory.
-- **Termination.** `Completed{summary}`, `Failed{reason}`, `BudgetStopped{which}`. Provider and
-  local-server failures retry in place with backoff. Ctrl-C finishes the current write and ends in
-  a resumable `Failed{interrupted}`; `duet resume <run>` reapplies or rolls back pending writes and
-  continues.
+- **Termination.** `Completed{summary}`, `Failed{reason}`, `BudgetStopped{which}`, always with a
+  summary and an audit end event; a panic ends the run as `Failed{internal error: …}`. Provider and
+  local-server failures (connect, timeout, stream cut, 429, 5xx) retry in place with backoff capped
+  at 60 s and no attempt cap; the run's dollar and wall-clock budgets are the only stop, and end it
+  as `BudgetStopped`. Errors a retry cannot fix (credentials, an invalid request) end it as
+  `Failed`. Ctrl-C ends it in a resumable `Failed{interrupted}`; `duet resume <run>` reapplies or
+  rolls back pending writes and continues, and refuses a completed run.
 
 ## 5. Context management (virtual context)
 

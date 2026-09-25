@@ -114,7 +114,7 @@ enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which 
      c. execute (duet-fs / duet-sandbox with sensitive paths denied / duet-git)
      d. Presenter.present(source, bytes) → the text the frontier sees
      e. append call + result to Transcript (synced)
-5. Loop until finish passes the checks, a budget stops, or an unrecoverable failure.
+5. Loop until finish passes the checks, a budget stops, or a failure a retry cannot fix (§10).
 ```
 
 ## 5. Boundary internals
@@ -287,12 +287,32 @@ change that loosens privacy (a `confirm` setting, or a value against its directi
 
 ## 10. Termination and recovery
 
-- Provider and local-server failures retry in place with backoff and a wall-clock bound.
+Every run ends in exactly one `Terminal` state, with `summary.json` and the audit log's `run_end`
+event (which anchors the log's final head) written by `duet_agent::conclude`:
+
+- `Completed{summary}`: `finish` passed the checks.
+- `Failed{reason}`: the task cannot be completed as things stand: an error a retry cannot fix
+  (credentials, an invalid request, a context overflow), a send blocked by the outbound gate,
+  `content_filter`, repeated `length` stops or text-only turns, checks still failing after
+  `limits.max_finish_attempts`, an interrupt (`interrupted; resume with duet resume`), or a
+  panic anywhere in the run (`internal error: <message>`). `duet_agent::run` catches panics in the
+  loop, tools, engine and gate; the CLI also catches errors and panics in run setup, so once a
+  run directory exists it always gets a summary.
+- `BudgetStopped{which}`: `frontier_usd` (checked before each turn) or `wall_clock`.
+
+Infrastructure failures retry in place: frontier and local-model connect errors, timeouts, stream
+cuts, 429 and any 5xx retry with jittered exponential backoff (capped at 60 s) and no attempt cap.
+The run's wall clock is one deadline shared by the loop and both providers; an outage that outlasts
+it ends the run as `BudgetStopped{wall_clock}`, and an attempt in flight is cut off at it. A tool
+result produced after the deadline or an interrupt (for example a local summary that could not be
+made) is not recorded; the turn is re-decided on resume.
+
 - `length` / `content_filter` stops never execute tools.
-- Writes record `pending` before and `applied` after; `duet resume <run>` reconciles pending writes
-  and continues the transcript.
-- Ctrl-C completes the in-flight write and ends in resumable `Failed{interrupted}`.
-- Budgets (frontier dollars, wall clock) end in `BudgetStopped`.
+- Writes record `pending` before and `applied` after; `duet resume <run>` reconciles pending writes,
+  drops a partly answered turn and continues the transcript and the same audit chain. It refuses a
+  completed run and a malformed run id.
+- Ctrl-C stops a frontier wait or a retry at once, lets an in-flight tool finish (its result is not
+  recorded) and ends in resumable `Failed{interrupted}`.
 
 ## 11. Evaluation architecture
 
@@ -323,9 +343,8 @@ Each is backed by a test, except where noted.
 4. Project configuration cannot loosen privacy or set owner-only keys.
 5. The system prompt and tool list are byte-identical for every turn of a run.
 6. A tool call is never persisted or sent without its result.
-7. Every run ends in a `Terminal` state; no run exits with pending writes unrecorded.
-   *Not yet test-backed:* nothing turns a panic into `Failed`, and live runs have panicked before
-   reaching a terminal state (ACCEPTANCE.md T1).
+7. Every run ends in a `Terminal` state, with a summary and an audit end event, also on a panic;
+   no run exits with pending writes unrecorded.
 8. `.git` and `.duet` are not writable by tools or sandboxed commands.
 9. No file under `crates/` contains another coding agent's code, format or name (outside eval lane
    adapters).

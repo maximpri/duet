@@ -14,6 +14,10 @@ build, and the second judge has never run. Termination, resume, five of the six 
 the Linux sandbox and large repositories are either untested or unmet. Several documents claim
 more than the evidence shows. A release is **not** acceptable yet; the blockers are in §4.
 
+Update (branch `term`, 2026-09-24): the termination and retry rows T1–T5 and EV10 were fixed and
+re-verified by automated tests (blockers 2 and 3, defects D1, D2 and D4). Their rows, the counts
+in §4.1 and the notes in §4.2 and §4.4 say so; nothing else was re-audited.
+
 ## 1. How to read this
 
 | Verdict | Meaning |
@@ -152,11 +156,11 @@ Checks this audit added on the stored results (read-only scripts, in
 
 | ID | Requirement | Source | Verdict | Evidence | Gap / next action |
 |---|---|---|---|---|---|
-| T1 | Every run ends as `Completed`, `Failed{reason}` or `BudgetStopped` | TARGET §1; operator one-shot rule; ARCH §12 inv. 7 | **Partial** | `Terminal` enum and `run()` (`duet-agent/src/run.rs`); 141 live summaries: 137 completed, 4 failed | **4 live runs panicked** without a terminal state (§2). The panic class is fixed (`79fedc3`, `overlap_never_panics`), but nothing turns a future panic into `Failed` (no `catch_unwind` or panic hook), and no test backs invariant 7. Add a top-level guard that writes `Failed{panic}` and the summary, with a test |
-| T2 | Every infrastructure failure retries in place | Operator one-shot rule; TARGET §4 | **Partial** | `transport_error_mid_stream_retries`, `stalled_stream_times_out_and_retries`, `retry_after_seconds_and_dates`, `backoff_grows_and_caps`, `auth_errors_are_not_retried`, `context_overflow_is_classified_and_not_retried` | Retries stop after 6 attempts / 900 s (`gives_up_after_max_attempts`). A longer frontier outage ends the run as `Failed{frontier: …}`; the local model degrades to "[local summary unavailable]"; a full disk ended `l2l4/L4-duet-hybrid-s1` as `Failed`. That is weaker than "every infra failure retries in place". Decide the policy and test it |
-| T3 | Ctrl-C finishes the current write and ends in a resumable `Failed{interrupted}` | TARGET §4 | **Unverified** | Signal handler (`duet-cli/src/main.rs`); flag checked at the top of each turn (`run.rs`) | No test; never exercised. The flag is checked only between turns, so a long command runs to completion first |
-| T4 | `duet resume <run>` reapplies or rolls back pending writes and continues | TARGET §4 | **Partial** | `interrupted_write_is_rolled_back` (journal only) | No end-to-end resume test, and no live resume. Resume does not refuse a run that already ended, and does not validate the run id the way `audit` does (`checked_run_id`) (D4) |
-| T5 | Budgets (frontier dollars, wall clock) end in `BudgetStopped` | TARGET §4 | **Unverified** | `run.rs` checks both budgets before each turn | No test, never observed live. Add a scripted-frontier test for each budget |
+| T1 | Every run ends as `Completed`, `Failed{reason}` or `BudgetStopped` | TARGET §1; operator one-shot rule; ARCH §12 inv. 7 | **Verified** | `duet_agent::run` catches a panic anywhere in the run and ends it as `Failed{internal error: …}`; the CLI catches errors and panics in run setup; `duet_agent::conclude` writes `summary.json` and the audit `run_end` in every case. Tests (`duet-cli/tests/termination.rs`): `a_panic_in_the_presenter_ends_the_run_as_failed_with_its_records`, `a_panic_in_the_gate_ends_the_run_as_failed_before_anything_is_sent` (summary, audit end event, chain and anchor verify). 141 live summaries: 137 completed, 4 failed; the 4 panicked runs predate the guard | Never observed live since the guard (no batch has run on it) |
+| T2 | Every infrastructure failure retries in place | Operator one-shot rule; TARGET §4 | **Verified** | No attempt cap: connect, timeout, stream cut, 429 and any 5xx retry with jittered backoff capped at 60 s until the run's wall clock (one deadline shared by the loop and both providers), which ends the run as `BudgetStopped{wall_clock}`. Provider: `infrastructure_failures_retry_without_an_attempt_cap`, `a_persistent_outage_retries_until_the_deadline`, `an_attempt_in_flight_is_cut_off_at_the_deadline`, `an_interrupt_stops_retries`, `invalid_requests_are_not_retried`, `auth_errors_are_not_retried`, `backoff_grows_and_caps`. Run: `a_frontier_outage_is_retried_in_place_until_the_wall_clock_ends_the_run`, `a_local_model_outage_ends_at_the_wall_clock_without_a_degraded_result`, `errors_a_retry_cannot_fix_fail_the_run` | A full disk on the host still ends a run as `Failed` (the harness treats it as invalid, EV9). Estimated usage of failed attempts is not charged to the dollar budget |
+| T3 | Ctrl-C finishes the current write and ends in a resumable `Failed{interrupted}` | TARGET §4 | **Verified** | `ctrl_c_ends_a_run_resumably_and_resume_completes_it` (SIGINT to the `duet` binary against a loopback scripted frontier: exit 1, summary written); `an_interrupted_run_resumes_to_completion_with_one_intact_audit_chain`; `an_interrupt_stops_retries`. The flag now also stops a frontier wait and retry waits at once | Never exercised live. A running command still runs to completion (its result is then not recorded) |
+| T4 | `duet resume <run>` reapplies or rolls back pending writes and continues | TARGET §4 | **Verified** | `interrupted_write_is_rolled_back` (journal); `an_interrupted_run_resumes_to_completion_with_one_intact_audit_chain` (usage of both sessions, one anchored chain with two `run_end` events); `ctrl_c_ends_a_run_resumably_and_resume_completes_it` (through the binary; `audit verify` intact; a completed run and `../elsewhere` are refused, D4). A partly answered turn is dropped and re-decided | No live resume yet |
+| T5 | Budgets (frontier dollars, wall clock) end in `BudgetStopped` | TARGET §4 | **Verified** | `the_dollar_budget_stops_the_run`, `the_wall_clock_stops_the_run`, `the_dollar_budget_ends_a_run_as_budget_stopped` (binary, exit 3); outages that outlast the wall clock: see T2 | The binary's wall clock is at least 1 minute (`limits.wall_clock_minutes`), so its stop is tested through the library only. Never observed live |
 | T6 | The transcript is synced as it is written and repairs a torn tail | PLAN M2 | **Verified** | `private_modes_and_torn_tail_repair` | — |
 
 ### 3.7 Local backends
@@ -178,7 +182,7 @@ Checks this audit added on the stored results (read-only scripts, in
 |---|---|---|---|---|---|
 | CF1 | Launch with no config bootstraps: probe 127.0.0.1 preset ports; use a single unambiguous server for that run and record it; otherwise print the `duet config set` commands; never write config | Operator bootstrap requirement; TARGET §8 | **Partial** | `bootstrap_uses_a_single_server_for_this_run_only`, `bootstrap_asks_when_the_choice_is_ambiguous_or_empty`, `picks_only_unambiguous_choices` (mock servers) | Never exercised against a real local server. Combine with L2–L6 |
 | CF2 | Typed registry, owner/project scopes, `duet config get/set/list/preset` | TARGET §8 | **Verified** | `every_default_is_valid`, `owner_and_project_merge_with_origins`, `set_owner_validates_and_persists`, `unknown_keys_in_files_are_errors`, `a_preset_goes_through_the_audited_loosening_path` | — |
-| CF3 | Everything configurable; "a test fails on any setting read outside the registry" | TARGET §2.7, §8; PLAN §3 | **Partial** | Reading an unknown key is a runtime error (`ConfigError::Unknown`); `every_registry_key_is_on_exactly_one_screen` | No such source-scanning test exists. Several behaviour constants are hard-coded and not configurable: `MAX_TEXT_ONLY_TURNS`, `MAX_LENGTH_STOPS` (`run.rs`), provider `max_attempts` 6, retry budget 900 s and timeouts (`client.rs`), `ask_local` ≤ 6 questions, `read_raw` ≤ 500 lines |
+| CF3 | Everything configurable; "a test fails on any setting read outside the registry" | TARGET §2.7, §8; PLAN §3 | **Partial** | Reading an unknown key is a runtime error (`ConfigError::Unknown`); `every_registry_key_is_on_exactly_one_screen` | No such source-scanning test exists. Several behaviour constants are hard-coded and not configurable: `MAX_TEXT_ONLY_TURNS`, `MAX_LENGTH_STOPS` (`run.rs`), the provider backoff cap (60 s, `retry.rs`) and timeouts (`client.rs`), `ask_local` ≤ 6 questions, `read_raw` ≤ 500 lines |
 | CF4 | The TUI covers every setting and shows its origin; loosening shows a diff, needs `y` and is audited; the project scope refuses owner-only keys | TARGET §8; PLAN M6 | **Verified** | `every_registry_key_is_on_exactly_one_screen`, `settings_screens_show_every_value_and_its_origin`, `loosening_shows_the_diff_and_cancel_leaves_everything_unchanged`, `confirmed_loosening_applies_and_records_what_it_weakened`, `project_scope_refuses_owner_only_keys_and_loosening`, `tightening_applies_directly_and_is_audited`, `edits_are_validated_and_cancellable` | — |
 | CF5 | TUI Audit, Run, Sensitivity-tester and Models screens | TARGET §8 | **Verified** | `audit_screen_lists_records_and_verifies`, `run_screen_follows_the_transcript`, `sensitivity_tester_explains_matches`, `models_screen_runs_doctor_offline_and_online_on_request`, `empty_workspace_screens_render`; after the audit, `a_terminal_without_a_usable_size_is_refused_with_the_minimum` (no terminal, 0x0 or under 80x24: a message and exit 1, checked by hand in a pseudo-terminal too) | Tested with `TestBackend` only, never used in a real terminal beyond that size check |
 | CF6 | TUI extras: backend auto-detection, connection/cache/prefill tests, custom detector patterns, purge from Data, starting runs | TARGET §8; PLAN M6 "Open" | **Not implemented** | — | M6 |
@@ -240,7 +244,7 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 | EV7 | Lane `pi-glm` (external reference) | PLAN M0.4 | **Verified** | `pilot-pi-flash`, `gate1-flash` | — |
 | EV8 | Lane `duet-local-only` (floor reference) | PLAN M0.2 | **Unverified** | Lane defined; the CLI has `--mode local-only` | Never run |
 | EV9 | Runs decided by the host or infrastructure are invalid and retried | PLAN §10 M2; `24d921d` | **Verified** | `classifies_infrastructure_outcomes`; `l2l4` disk-full run set aside | — |
-| EV10 | The harness counts only real terminal states and separates product failures from infrastructure | Operator one-shot / orthogonal-outcomes rule | **Not met** | D1: runs that panicked (exit 101, no terminal) were graded and counted as valid, including 2 of Gate 2's 18 hybrid runs (both graded 100%). D2: `gate3c` S2 s2/s3 ended `Failed` because Duet's own gate blocked the first send, but were excluded as "invalid: the agent made no frontier request" | Read `summary.json` `terminal` into `run.json`. A missing terminal is a product failure. A gate block is a product outcome, not an invalid run |
+| EV10 | The harness counts only real terminal states and separates product failures from infrastructure | Operator one-shot / orthogonal-outcomes rule | **Verified** | `run.json` records Duet's `terminal`; a Duet run with no terminal state (crash, or killed at the time limit) or stopped by its own gate is a `product_failure`: valid, pass rate 0, no success, judge score 0. Host failures, a failed launch and provider refusals before any decision stay invalid. The rules also apply when a batch is loaded, so stored batches are reclassified without being rewritten. Tests: `a_duet_run_without_a_terminal_state_is_a_failure_of_the_lane`, `a_run_stopped_by_duets_own_gate_is_a_product_failure_not_infrastructure`, `genuine_infrastructure_stays_invalid`, `completed_and_external_runs_are_unchanged_and_the_rules_are_idempotent`, `reads_the_terminal_state`. Read-only scan of `results/`: 9 run directories change (§4.4 D1, D2) | Gate 2 (PLAN §10) counted `gate2/M1-duet-hybrid-s1` and `S1-duet-hybrid-s2` as passing; under these rules they are failures of the hybrid lane, and Gate 2 should be recomputed |
 
 ### 3.12 Novelty and provenance
 
@@ -272,15 +276,15 @@ The claims under SECURITY.md "Still prevented", mapped to the rows above:
 | Privacy (P) | 13 | 2 | 1 | 0 | 1 | 17 |
 | IP (IP) | 5 | 0 | 0 | 0 | 0 | 5 |
 | Cost (C) | 3 | 2 | 0 | 1 | 0 | 6 |
-| Termination / resume (T) | 1 | 3 | 2 | 0 | 0 | 6 |
+| Termination / resume (T) | 6 | 0 | 0 | 0 | 0 | 6 |
 | Local backends (L) | 2 | 1 | 5 | 0 | 0 | 8 |
 | Config / bootstrap / TUI (CF) | 4 | 2 | 0 | 0 | 3 | 9 |
 | Security defaults (SD) | 9 | 1 | 0 | 2 | 0 | 12 |
 | Supply chain (SC) | 4 | 1 | 0 | 0 | 2 | 7 |
-| Evaluation harness (EV) | 7 | 1 | 1 | 1 | 0 | 10 |
+| Evaluation harness (EV) | 8 | 1 | 1 | 0 | 0 | 10 |
 | Novelty / provenance (N) | 4 | 1 | 0 | 0 | 0 | 5 |
 | Large repositories (LR) | 1 | 1 | 0 | 1 | 1 | 4 |
-| **Total** | **59** | **23** | **9** | **6** | **7** | **104** |
+| **Total** | **65** | **20** | **7** | **5** | **7** | **104** |
 
 ### 4.2 Release blockers
 
@@ -296,10 +300,12 @@ release:
    state, and the harness counted them as valid. `BudgetStopped`, Ctrl-C → `Failed{interrupted}`
    and `duet resume` have no tests and were never exercised. The one-shot requirement is the
    operator's. Needed: a panic guard, tests for each terminal path, and a harness that records the
-   terminal state.
+   terminal state. *Resolved on branch `term`:* all three, with tests (T1–T5, EV10 Verified); still
+   to be observed in a live batch.
 3. **Retry-in-place policy (T2).** Bounded retries end a run as `Failed` after about 15 minutes of
    outage. That run can be resumed, but it contradicts "every infrastructure failure retries in
-   place". Decide, then test.
+   place". Decide, then test. *Resolved on branch `term`:* no attempt cap; the run's wall clock and
+   dollar budget are the only stop (`BudgetStopped`), tested with scripted transports (T2).
 4. **Local backends (L2–L6, CF1, L7).** The docs claim support for Ollama, LM Studio, llama.cpp,
    vLLM and mlx_lm.server. None has ever answered a real request. Run `backend_smoke` for each, and
    the no-config bootstrap against one real loopback server, or remove the claims.
@@ -335,12 +341,21 @@ release:
 
 | ID | Defect | Evidence | Suggested fix |
 |---|---|---|---|
-| D1 | The harness grades runs that crashed (exit 101, no terminal state) as normal runs | `gate2/M1-duet-hybrid-s1` and `gate2/S1-duet-hybrid-s2` (panic at `overlap.rs:105`) graded 100% and counted in Gate 2, which PLAN §10 records as "all runs valid". The privacy result is unaffected (the crash was fail-closed, before sending) | Record `summary.json` `terminal` in `run.json`; a run without one fails |
-| D2 | A product failure is excluded as infrastructure | `gate3c/S2-duet-hybrid-s2/-s3`: Duet's gate blocked the first send (a false-positive name), and the harness marked the runs invalid ("no frontier request") | Classify by the agent's terminal state before the proxy statuses |
+| D1 | The harness grades runs that crashed (exit 101, no terminal state) as normal runs | `gate2/M1-duet-hybrid-s1` and `gate2/S1-duet-hybrid-s2` (panic at `overlap.rs:105`) graded 100% and counted in Gate 2, which PLAN §10 records as "all runs valid". The privacy result is unaffected (the crash was fail-closed, before sending) | Record `summary.json` `terminal` in `run.json`; a run without one fails. **Fixed** after the audit (branch `term`): see EV10 |
+| D2 | A product failure is excluded as infrastructure | `gate3c/S2-duet-hybrid-s2/-s3`: Duet's gate blocked the first send (a false-positive name), and the harness marked the runs invalid ("no frontier request") | Classify by the agent's terminal state before the proxy statuses. **Fixed** after the audit (branch `term`): see EV10 |
 | D3 | The audit anchor is keyed by the workspace path, so moving the workspace makes `duet audit verify` fail with "no anchor" (exit 2) | `l2l4/L2-duet-hybrid-s1` after the move to EXT_DISK; the anchor sits under a different path hash | Key anchors by run id plus the chain's genesis, or search the anchors by run id. **Fixed** after the audit (branch `nits`): keyed by run id and first-record hash, earlier layout still read; see P16 |
-| D4 | `duet resume <run_id>` does not validate the id (the `audit` commands use `checked_run_id`) and does not refuse a run that already ended | `duet-cli/src/main.rs` `Cmd::Resume`; `run.rs` ignores `Entry::End` on resume | Validate the id; refuse or confirm when the transcript has an `End` entry |
+| D4 | `duet resume <run_id>` does not validate the id (the `audit` commands use `checked_run_id`) and does not refuse a run that already ended | `duet-cli/src/main.rs` `Cmd::Resume`; `run.rs` ignores `Entry::End` on resume | Validate the id; refuse or confirm when the transcript has an `End` entry. **Fixed** after the audit (branch `term`): the id is checked and a completed run is refused; see T4 |
 | D5 | Electricity is computed from wall seconds, not local busy seconds | `duet-evals/src/lanes/mod.rs` (`electricity(cfg.local_watts, record.wall_seconds)`) versus PLAN M0.2 | Use the ledger's local busy seconds |
 | D6 | Documentation claims ahead of the evidence | README "Goals" still lists **Cheaper**. README says the local model briefs the frontier at run start (default off). README, TARGET and PLAN state a "~1.4×" premium (batches: 1.5–2.4×). ARCH §12 says every invariant is test-backed (inv. 7 is not). TARGET §8 promises a registry-read test that does not exist. The PLAN header ("Gate 3 of M4; SbD-2 next") and TARGET header ("implemented through M4.5 and SbD-1") are stale | A docs-only pass. **Fixed** after the audit (branch `nits`): all listed items corrected, except the PLAN §3 decision row, which keeps its original text |
+
+Fixed on branch `term` (2026-09-24): D1 and D2 (the harness records Duet's terminal state and
+classifies by it, EV10) and D4 (`duet resume` checks the id and refuses a completed run, T4). A
+read-only scan of `results/` with the new rules changes nine run directories: no terminal state
+(exit 101), now product failures instead of valid runs: `gate2/M1-duet-hybrid-s1` and
+`gate2/S1-duet-hybrid-s2` (graded 100%; the same runs in `m3-hybrid-v2`), `gate3a/L3-duet-hybrid-s3`
+(20%) and `m3-hybrid/M3-duet-hybrid-s3` (20%); stopped by Duet's gate, now product failures:
+`gate3a/S1-duet-hybrid-s2` (was valid, graded 100%) and `gate3c/S2-duet-hybrid-s2`/`-s3` (were
+invalid). No other batch changes; no infrastructure-invalid run became valid.
 
 ## 5. What would move this to "accept"
 
