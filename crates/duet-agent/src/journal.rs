@@ -158,6 +158,43 @@ impl WriteJournal {
     }
 }
 
+/// A file the run wrote, as its journal records it (read-only view for the
+/// run viewer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Written {
+    /// Workspace-relative path.
+    pub path: PathBuf,
+    /// The content before the run's first write to it (`None`: the run
+    /// created it). This file holds that content when `existed`.
+    pub before: Option<PathBuf>,
+    /// Journal number of the latest write to it (orders files by recency).
+    pub last: u64,
+}
+
+/// The files `run_dir`'s journal records, in order of first write. Reads
+/// only; a missing journal is an empty list.
+pub fn written(run_dir: &Path) -> Vec<Written> {
+    let text = std::fs::read_to_string(run_dir.join("writes.jsonl")).unwrap_or_default();
+    let mut out: Vec<Written> = Vec::new();
+    for record in text
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Record>(l).ok())
+    {
+        let Record::Pending { n, path, existed } = record else {
+            continue;
+        };
+        match out.iter_mut().find(|w| w.path == path) {
+            Some(w) => w.last = n,
+            None => out.push(Written {
+                before: existed.then(|| run_dir.join(format!("writes/{n}.before"))),
+                path,
+                last: n,
+            }),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +227,34 @@ mod tests {
             WriteJournal::recover(&run, &ws).unwrap().is_empty(),
             "recovery is idempotent"
         );
+    }
+
+    #[test]
+    fn written_lists_each_file_once_with_its_first_content() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = d.path().join("run");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::write(ws.join("a.txt"), "original").unwrap();
+        assert!(written(&run).is_empty());
+        let mut j = WriteJournal::open(&run).unwrap();
+        j.write(&ws, Path::new("a.txt"), b"one", &Precondition::Any)
+            .unwrap();
+        j.write(&ws, Path::new("new.txt"), b"x", &Precondition::Any)
+            .unwrap();
+        j.write(&ws, Path::new("a.txt"), b"two", &Precondition::Any)
+            .unwrap();
+        let w = written(&run);
+        assert_eq!(w.len(), 2);
+        assert_eq!(w[0].path, PathBuf::from("a.txt"));
+        assert_eq!(
+            std::fs::read_to_string(w[0].before.as_ref().unwrap()).unwrap(),
+            "original"
+        );
+        assert_eq!(
+            (w[1].path.as_path(), w[1].before.as_ref()),
+            (Path::new("new.txt"), None)
+        );
+        assert!(w[0].last > w[1].last, "a.txt was written last");
     }
 }

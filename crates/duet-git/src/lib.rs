@@ -72,6 +72,19 @@ impl Git {
         env: &[(&str, &str)],
         stdin: Option<&[u8]>,
     ) -> Result<Vec<u8>, GitError> {
+        self.run_accepting(cwd, args, env, stdin, &[0])
+    }
+
+    /// [`Git::run`], treating each exit code in `ok` as success (`git diff
+    /// --no-index` exits 1 when the files differ).
+    fn run_accepting(
+        &self,
+        cwd: &Path,
+        args: &[&str],
+        env: &[(&str, &str)],
+        stdin: Option<&[u8]>,
+        ok: &[i32],
+    ) -> Result<Vec<u8>, GitError> {
         let mut cmd = Command::new(&self.binary);
         cmd.args(HARDENING)
             .args(args)
@@ -106,7 +119,7 @@ impl Git {
             args: args.join(" "),
             message: e.to_string(),
         })?;
-        if !out.status.success() {
+        if !out.status.code().is_some_and(|c| ok.contains(&c)) {
             return Err(GitError::Failed {
                 args: args.join(" "),
                 message: String::from_utf8_lossy(&out.stderr).trim().to_owned(),
@@ -198,6 +211,42 @@ impl Git {
         ];
         args.extend(paths.iter().map(String::as_str));
         let out = self.run(workspace, &args, &[], None)?;
+        Ok(String::from_utf8_lossy(&out).into_owned())
+    }
+
+    /// Unified diff between two files outside any repository's index: `before`
+    /// (`None`: absent) and `after` (a missing file counts as absent). Reads
+    /// only. Empty when they are equal; binary files give git's one-line note.
+    pub fn diff_files(
+        &self,
+        cwd: &Path,
+        before: Option<&Path>,
+        after: &Path,
+    ) -> Result<String, GitError> {
+        let null = Path::new("/dev/null");
+        let before = before.unwrap_or(null);
+        let after = if after.is_file() { after } else { null };
+        if before == null && after == null {
+            return Ok(String::new());
+        }
+        let (b, a) = (before.to_string_lossy(), after.to_string_lossy());
+        let out = self.run_accepting(
+            cwd,
+            &[
+                "diff",
+                "--no-index",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=3",
+                "--",
+                &b,
+                &a,
+            ],
+            &[],
+            None,
+            &[0, 1],
+        )?;
         Ok(String::from_utf8_lossy(&out).into_owned())
     }
 }
@@ -403,6 +452,38 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn diffs_two_files_read_only() {
+        let (_d, ws, git) = repo();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let before = elsewhere.path().join("before.txt");
+        std::fs::write(&before, "one\ntwo\n").unwrap();
+        std::fs::write(ws.join("a.txt"), "one\nthree\n").unwrap();
+        let out = git
+            .diff_files(&ws, Some(&before), &ws.join("a.txt"))
+            .unwrap();
+        assert!(out.contains("-two\n+three"), "{out}");
+        assert!(
+            git.diff_files(&ws, Some(&before), &before)
+                .unwrap()
+                .is_empty()
+        );
+        let created = git.diff_files(&ws, None, &ws.join("a.txt")).unwrap();
+        assert!(created.contains("+one\n+three"), "{created}");
+        let deleted = git
+            .diff_files(&ws, Some(&before), &ws.join("gone.txt"))
+            .unwrap();
+        assert!(deleted.contains("-one\n-two"), "{deleted}");
+        assert!(
+            git.diff_files(&ws, None, &ws.join("gone.txt"))
+                .unwrap()
+                .is_empty()
+        );
+        // Nothing was staged or written.
+        let status = git.run(&ws, &["status", "--porcelain"], &[], None).unwrap();
+        assert_eq!(String::from_utf8_lossy(&status).trim(), "M a.txt");
     }
 
     #[test]

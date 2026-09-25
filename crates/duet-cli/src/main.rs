@@ -587,25 +587,22 @@ fn verify_run(path: &Path, anchors: &RunAnchors) -> Result<i32> {
 }
 
 fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Result<()> {
-    let runs = ws.join(".duet/runs");
+    use duet_agent::purge::{Scope, candidates, purge_run};
     if let Some(id) = run_id {
-        ensure!(!id.contains('/') && !id.contains(".."), "invalid run id");
-        std::fs::remove_dir_all(runs.join(id)).with_context(|| format!("run {id}"))?;
+        purge_run(ws, id).with_context(|| format!("run {id}"))?;
         println!("purged {id}");
         return Ok(());
     }
-    let cutoff =
-        std::time::SystemTime::now() - Duration::from_secs(retention_days.max(0) as u64 * 86_400);
-    for entry in std::fs::read_dir(&runs).into_iter().flatten().flatten() {
-        let old = entry
-            .metadata()
-            .and_then(|m| m.modified())
-            .map(|t| t < cutoff)
-            .unwrap_or(false);
-        if all || old {
-            std::fs::remove_dir_all(entry.path())?;
-            println!("purged {}", entry.file_name().to_string_lossy());
+    let scope = if all {
+        Scope::All
+    } else {
+        Scope::OlderThan {
+            days: retention_days,
         }
+    };
+    for id in candidates(ws, scope) {
+        purge_run(ws, &id).with_context(|| format!("run {id}"))?;
+        println!("purged {id}");
     }
     Ok(())
 }

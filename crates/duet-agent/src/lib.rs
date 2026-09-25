@@ -9,6 +9,7 @@ pub mod ledger;
 pub mod oversight;
 pub mod prompt;
 pub mod protected;
+pub mod purge;
 pub mod run;
 pub mod tools;
 pub mod transcript;
