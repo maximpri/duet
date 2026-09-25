@@ -272,6 +272,7 @@ fn shipped_policy(owner: &Path) -> Policy {
         bulky_tokens: cfg.int("sensitivity.bulky_tokens").unwrap() as usize,
         bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens").unwrap() as usize,
         local_brief: flag("sensitivity.local_brief"),
+        local_pii_pass: flag("sensitivity.local_pii_pass"),
         interface_only: list("ip.interface_only"),
         sealed: list("ip.sealed"),
     }
