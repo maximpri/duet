@@ -118,14 +118,20 @@ pub(crate) enum Mode {
     Sample,
     /// A purge waiting for an explicit yes.
     ConfirmPurge(PurgePlan),
-    /// Asking for a new run's objective and mode.
+    /// Asking for a new run's objective (a session's first message) and mode.
     Launch {
         objective: String,
         mode: RunMode,
+        session: bool,
     },
-    /// A passthrough run waiting for the no-privacy acknowledgement.
+    /// A passthrough run or session waiting for the no-privacy acknowledgement.
     AckPassthrough {
         objective: String,
+        session: bool,
+    },
+    /// Typing a message to the live session.
+    Message {
+        buffer: String,
     },
 }
 
@@ -153,8 +159,10 @@ pub struct App {
     pub(crate) ip: IpView,
     pub(crate) audit: AuditView,
     pub(crate) runs: RunView,
-    /// The run started from this TUI, if any.
+    /// The run or session started from this TUI, if any.
     pub(crate) launched: Option<Launched>,
+    /// Whether `launched` is a session.
+    pub(crate) launched_session: bool,
     pub quit: bool,
 }
 
@@ -180,6 +188,7 @@ impl App {
             audit: AuditView::default(),
             runs: RunView::default(),
             launched: None,
+            launched_session: false,
             quit: false,
         };
         app.enter_tab(Tab::Models);
@@ -250,57 +259,203 @@ impl App {
             let policy = self.policy();
             self.tab = Tab::Run;
             self.runs.show(id, &self.paths.workspace, &policy);
-            self.status = format!("run {id} started; following it");
+        }
+        let (what, command) = if self.launched_session {
+            ("session", "duet chat")
+        } else {
+            ("run", "duet run")
+        };
+        if let (Some(id), false) = (&id, had_id) {
+            self.status = format!("{what} {id} started; following it");
         }
         if let Some(code) = exit {
+            if matches!(self.mode, Mode::Message { .. }) {
+                self.mode = Mode::Normal;
+            }
+            let outcome = if self.launched_session {
+                crate::launch::session_outcome(code)
+            } else {
+                crate::launch::outcome(code)
+            };
             self.status = match &id {
-                Some(id) => format!(
-                    "run {id} {} (exit code {code})",
-                    crate::launch::outcome(code)
-                ),
-                None => format!("duet run exited with code {code} before a run started: {last}"),
+                Some(id) => format!("{what} {id} {outcome} (exit code {code})"),
+                None => {
+                    format!("{command} exited with code {code} before a {what} started: {last}")
+                }
             };
         }
     }
 
-    fn start_launch(&mut self) {
+    /// Whether a run or session may be started here now; says why not.
+    fn may_start(&mut self, session: bool) -> bool {
         if self.launched_running() {
-            self.status = "a run started here is still running; one run per workspace".into();
-            return;
+            self.status =
+                "a run or session started here is still running; one per workspace".into();
+            return false;
         }
         if self.services.duet.is_none() {
             self.status = "starting runs is not available here".into();
-            return;
+            return false;
         }
         let approve = self.cfg.str("oversight.approve").unwrap_or_default();
         if approve != "off" {
-            self.status = format!(
-                "oversight.approve is {approve}: approvals need a terminal, so start this run with `duet run`"
-            );
-            return;
+            self.status = if session {
+                format!(
+                    "oversight.approve is {approve}: approvals need a terminal, so use `duet chat`"
+                )
+            } else {
+                format!(
+                    "oversight.approve is {approve}: approvals need a terminal, so start this run with `duet run`"
+                )
+            };
+            return false;
         }
-        self.mode = Mode::Launch {
-            objective: String::new(),
-            mode: RunMode::Hybrid,
-        };
+        true
     }
 
-    fn launch(&mut self, objective: &str, mode: RunMode, acknowledged: bool) {
+    fn start_launch(&mut self, session: bool) {
+        if self.may_start(session) {
+            self.mode = Mode::Launch {
+                objective: String::new(),
+                mode: RunMode::Hybrid,
+                session,
+            };
+        }
+    }
+
+    fn launch(&mut self, objective: &str, mode: RunMode, acknowledged: bool, session: bool) {
         let Some(duet) = self.services.duet.clone() else {
             return;
         };
-        match crate::launch::spawn(&duet, &self.paths.workspace, objective, mode, acknowledged) {
+        let ws = &self.paths.workspace;
+        let (started, command) = if session {
+            (
+                crate::launch::spawn_session(&duet, ws, objective, mode, acknowledged),
+                "duet chat",
+            )
+        } else {
+            (
+                crate::launch::spawn(&duet, ws, objective, mode, acknowledged),
+                "duet run",
+            )
+        };
+        match started {
             Ok(l) => {
                 self.status = format!(
-                    "starting duet run ({}); output in {}",
+                    "starting {command} ({}); output in {}",
                     mode.arg(),
                     l.log.display()
                 );
                 self.launched = Some(l);
+                self.launched_session = session;
                 self.enter_tab(Tab::Run);
             }
-            Err(e) => self.status = format!("could not start duet run: {e}"),
+            Err(e) => self.status = format!("could not start {command}: {e}"),
         }
+    }
+
+    /// The live session, when it is the run the Run view shows.
+    pub(crate) fn live_session(&self) -> Option<&Launched> {
+        let l = self.launched.as_ref()?;
+        (self.launched_session
+            && l.takes_messages()
+            && l.run_id.is_some()
+            && l.run_id.as_deref() == self.runs.selected_id())
+        .then_some(l)
+    }
+
+    /// `r`: continues the selected session (`duet chat --resume`).
+    fn resume_selected(&mut self) {
+        if self.live_session().is_some() {
+            self.mode = Mode::Message {
+                buffer: String::new(),
+            };
+            return;
+        }
+        let Some(id) = self.runs.selected_id().map(str::to_owned) else {
+            self.status = "no session to resume".into();
+            return;
+        };
+        match &self.runs.session {
+            None => {
+                self.status = format!("{id} is a one-shot run; only sessions take messages");
+                return;
+            }
+            Some(s) if s.closed => {
+                self.status = format!("session {id} was closed; n starts a new one");
+                return;
+            }
+            Some(_) => {}
+        }
+        if !self.may_start(true) {
+            return;
+        }
+        let Some(duet) = self.services.duet.clone() else {
+            return;
+        };
+        match crate::launch::resume_session(&duet, &self.paths.workspace, &id) {
+            Ok(mut l) => {
+                // The id is known: the view stays on it.
+                l.run_id = Some(id.clone());
+                self.launched = Some(l);
+                self.launched_session = true;
+                self.status = format!("session {id} resumed; type your message");
+                self.mode = Mode::Message {
+                    buffer: String::new(),
+                };
+            }
+            Err(e) => self.status = format!("could not resume session {id}: {e}"),
+        }
+    }
+
+    /// Sends the live session a message, or handles a command the TUI shows
+    /// itself (`/status`; `/diff` is the side panel).
+    fn send_message(&mut self, text: &str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        match text {
+            "/status" => {
+                self.status = match &self.runs.session {
+                    Some(s) => format!(
+                        "{} turn(s), {} frontier request(s), ${:.4}{}",
+                        s.turns,
+                        s.requests,
+                        s.cost_usd,
+                        if s.working { "; duet is working" } else { "" }
+                    ),
+                    None => "no session".into(),
+                };
+                return;
+            }
+            "/diff" => {
+                self.status = "the changed files and their diffs are in the side panel (→)".into();
+                return;
+            }
+            _ => {}
+        }
+        let live = self.launched_session;
+        let Some(l) = self.launched.as_mut().filter(|_| live) else {
+            self.status = "the session is not running here; r resumes it".into();
+            return;
+        };
+        self.status = match l.send(text) {
+            Ok(()) if text.starts_with('/') && !text.starts_with("//") => format!("sent {text}"),
+            Ok(()) => "sent; duet works on it (the reply appears here)".into(),
+            Err(e) => format!("could not send: {e}"),
+        };
+    }
+
+    fn interrupt_session(&mut self) {
+        let Some(l) = self.live_session() else {
+            self.status = "no live session here to interrupt".into();
+            return;
+        };
+        self.status = match l.interrupt() {
+            Ok(()) => "interrupt sent: duet stops this turn; the session stays open".into(),
+            Err(e) => format!("could not interrupt: {e}"),
+        };
     }
 
     fn run_doctor(&mut self, online: bool) {
@@ -338,7 +493,12 @@ impl App {
 
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) {
         if code == KeyCode::Char('c') && mods.contains(KeyModifiers::CONTROL) {
-            self.quit = true;
+            // While typing to a session, Ctrl-C stops its turn (as in `duet chat`).
+            if matches!(self.mode, Mode::Message { .. }) {
+                self.interrupt_session();
+            } else {
+                self.quit = true;
+            }
             return;
         }
         self.poll_jobs();
@@ -393,21 +553,37 @@ impl App {
             Mode::Launch {
                 mut objective,
                 mode,
+                session,
             } => match code {
-                KeyCode::Esc => self.status = "no run started".into(),
+                KeyCode::Esc => {
+                    self.status = if session {
+                        "no session started".into()
+                    } else {
+                        "no run started".into()
+                    }
+                }
                 KeyCode::Enter if objective.trim().is_empty() => {
-                    self.status = "type the objective first".into();
-                    self.mode = Mode::Launch { objective, mode };
+                    self.status = if session {
+                        "type the first message first".into()
+                    } else {
+                        "type the objective first".into()
+                    };
+                    self.mode = Mode::Launch {
+                        objective,
+                        mode,
+                        session,
+                    };
                 }
                 KeyCode::Enter if mode == RunMode::Passthrough => {
-                    self.mode = Mode::AckPassthrough { objective }
+                    self.mode = Mode::AckPassthrough { objective, session }
                 }
-                KeyCode::Enter => self.launch(objective.trim(), mode, false),
+                KeyCode::Enter => self.launch(objective.trim(), mode, false, session),
                 KeyCode::Up | KeyCode::Down => {
                     let d = if code == KeyCode::Up { -1 } else { 1 };
                     self.mode = Mode::Launch {
                         objective,
                         mode: mode.step(d),
+                        session,
                     };
                 }
                 KeyCode::Backspace | KeyCode::Char(_) => {
@@ -417,18 +593,58 @@ impl App {
                             objective.pop();
                         }
                     }
-                    self.mode = Mode::Launch { objective, mode };
+                    self.mode = Mode::Launch {
+                        objective,
+                        mode,
+                        session,
+                    };
                 }
-                _ => self.mode = Mode::Launch { objective, mode },
+                _ => {
+                    self.mode = Mode::Launch {
+                        objective,
+                        mode,
+                        session,
+                    }
+                }
             },
-            Mode::AckPassthrough { objective } => match code {
+            Mode::AckPassthrough { objective, session } => match code {
                 KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    self.launch(objective.trim(), RunMode::Passthrough, true)
+                    self.launch(objective.trim(), RunMode::Passthrough, true, session)
                 }
                 KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
-                    self.status = "no run started; the privacy boundary stays on".into();
+                    self.status = "nothing started; the privacy boundary stays on".into();
                 }
-                _ => self.mode = Mode::AckPassthrough { objective },
+                _ => self.mode = Mode::AckPassthrough { objective, session },
+            },
+            Mode::Message { mut buffer } => match code {
+                KeyCode::Esc => {}
+                KeyCode::Enter => {
+                    self.send_message(&buffer);
+                    if self.live_session().is_some() {
+                        self.mode = Mode::Message {
+                            buffer: String::new(),
+                        };
+                    }
+                }
+                KeyCode::Backspace | KeyCode::Char(_) => {
+                    match code {
+                        KeyCode::Char(c) => buffer.push(c),
+                        _ => {
+                            buffer.pop();
+                        }
+                    }
+                    self.mode = Mode::Message { buffer };
+                }
+                KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown => {
+                    self.runs.scroll_by(match code {
+                        KeyCode::Up => -1,
+                        KeyCode::Down => 1,
+                        KeyCode::PageUp => -10,
+                        _ => 10,
+                    });
+                    self.mode = Mode::Message { buffer };
+                }
+                _ => self.mode = Mode::Message { buffer },
             },
             Mode::Sample => match code {
                 KeyCode::Esc | KeyCode::Enter => {}
@@ -554,7 +770,26 @@ impl App {
             (Tab::Run, KeyCode::Left | KeyCode::Right | KeyCode::Char('h' | 'l')) => {
                 self.runs.toggle_focus()
             }
-            (Tab::Run, KeyCode::Char('n')) => self.start_launch(),
+            (Tab::Run, KeyCode::Char('n')) => self.start_launch(true),
+            (Tab::Run, KeyCode::Char('o')) => self.start_launch(false),
+            (Tab::Run, KeyCode::Char('r')) => self.resume_selected(),
+            (Tab::Run, KeyCode::Char('i') | KeyCode::Enter) => {
+                if self.live_session().is_some() {
+                    self.mode = Mode::Message {
+                        buffer: String::new(),
+                    };
+                } else if self.runs.session.is_some() {
+                    self.status = "this session is not running here; r resumes it".into();
+                }
+            }
+            (Tab::Run, KeyCode::Char('x')) => self.interrupt_session(),
+            (Tab::Run, KeyCode::Char('s')) => {
+                if self.live_session().is_some() {
+                    self.send_message("/stop");
+                } else {
+                    self.status = "no live session here to stop".into();
+                }
+            }
             (Tab::Run, KeyCode::Char('J')) => self.runs.diff_by(1),
             (Tab::Run, KeyCode::Char('K')) => self.runs.diff_by(-1),
             _ => {}

@@ -566,6 +566,7 @@ dependencies = [
  "duet-git",
  "ratatui",
  "regex",
+ "rustix 0.38.44",
  "serde_json",
  "tempfile",
  "toml",

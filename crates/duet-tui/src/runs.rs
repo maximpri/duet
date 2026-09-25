@@ -55,6 +55,58 @@ pub struct RunView {
     pub(crate) diff_scroll: usize,
     /// A run to select as soon as it is listed (one just started).
     want: Option<String>,
+    /// The selected run's session state, when it is a session.
+    pub(crate) session: Option<SessionState>,
+}
+
+/// Where a session stands, from its transcript.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SessionState {
+    /// Operator turns so far.
+    pub turns: u64,
+    /// A turn has started and not ended (duet is working, or the session
+    /// stopped during it).
+    pub working: bool,
+    /// The last turn ended with a question.
+    pub asked: bool,
+    /// Closed by the operator (it does not resume).
+    pub closed: bool,
+    pub requests: u64,
+    pub cost_usd: f64,
+}
+
+impl SessionState {
+    /// The state of the session in `entries`, `None` for a one-shot run.
+    pub fn of(entries: &[Entry]) -> Option<Self> {
+        let mut st = SessionState::default();
+        let mut session = false;
+        for e in entries {
+            match e {
+                Entry::TurnStart { exchange, .. } => {
+                    session = true;
+                    st.turns = st.turns.max(*exchange);
+                    st.working = true;
+                    st.asked = false;
+                    st.closed = false;
+                }
+                Entry::TurnEnd { end, .. } => {
+                    st.working = false;
+                    st.asked = matches!(end, TurnEnd::Asked { .. });
+                }
+                Entry::Usage { cost_usd, .. } => {
+                    st.cost_usd += cost_usd;
+                    st.requests += 1;
+                }
+                Entry::FailedAttempts { cost_usd, .. } => st.cost_usd += cost_usd,
+                Entry::End { terminal } => {
+                    st.working = false;
+                    st.closed = matches!(terminal, duet_agent::Terminal::Completed { .. });
+                }
+                _ => {}
+            }
+        }
+        session.then_some(st)
+    }
 }
 
 impl Default for RunView {
@@ -74,6 +126,7 @@ impl Default for RunView {
             file: 0,
             diff_scroll: 0,
             want: None,
+            session: None,
         }
     }
 }
@@ -123,6 +176,7 @@ impl RunView {
             self.withheld.clear();
             self.files.clear();
             self.files_of = None;
+            self.session = None;
             return;
         };
         let (run_dir, log) = Self::paths(ws, &id);
@@ -136,6 +190,7 @@ impl RunView {
             let entries = Transcript::read(&run_dir).unwrap_or_default();
             let records = audit::read(&log).unwrap_or_default();
             (self.feed, self.withheld) = feeds(&entries, &records);
+            self.session = SessionState::of(&entries);
             self.derived_audit = records
                 .iter()
                 .filter_map(|r| match r {
@@ -188,6 +243,11 @@ impl RunView {
     pub fn forget(&mut self) {
         self.seen = None;
         self.files_of = None;
+    }
+
+    /// The selected run's id.
+    pub fn selected_id(&self) -> Option<&str> {
+        self.runs.get(self.selected).map(String::as_str)
     }
 
     /// Selects `id` now, or as soon as it is listed.
@@ -302,19 +362,28 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
             Entry::Shown { .. } => {}
             Entry::TurnStart {
                 exchange, message, ..
-            } => feed.push(format!(
-                "operator, turn {exchange}: {}",
-                first_line(message)
-            )),
-            Entry::TurnEnd { exchange, end, .. } => {
-                feed.push(format!("turn {exchange} {}", describe_end(end)))
+            } => {
+                feed.push(String::new());
+                feed.push(format!("── turn {exchange} ──"));
+                push_lines(&mut feed, "you> ", message);
+            }
+            Entry::TurnEnd { end, .. } => {
+                let (head, text) = conversation_end(end);
+                push_lines(&mut feed, &head, &text);
             }
             Entry::Steered {
-                exchange, messages, ..
-            } => feed.push(format!(
-                "operator steered turn {exchange}: {}",
-                first_line(&messages.join(" / "))
-            )),
+                after_request,
+                messages,
+                ..
+            } => {
+                for m in messages {
+                    push_lines(
+                        &mut feed,
+                        &format!("you, delivered after request {after_request}> "),
+                        m,
+                    );
+                }
+            }
             Entry::Undone { exchange, paths } => feed.push(format!(
                 "operator undid turn {exchange} and later: {} file(s) restored",
                 paths.len()
@@ -367,16 +436,35 @@ pub(crate) fn feeds(entries: &[Entry], records: &[Record]) -> (Vec<String>, Vec<
     (feed, withheld)
 }
 
-/// A turn's end in one line (its message's first line).
-pub(crate) fn describe_end(end: &TurnEnd) -> String {
+/// How a turn's end reads in the conversation: a lead and the text.
+pub(crate) fn conversation_end(end: &TurnEnd) -> (String, String) {
     match end {
-        TurnEnd::Replied { message } => format!("replied: {}", first_line(message)),
-        TurnEnd::Asked { question } => format!("asks: {}", first_line(question)),
-        TurnEnd::Completed { summary } => format!("completed: {}", first_line(summary)),
-        TurnEnd::Failed { reason } => format!("failed: {}", first_line(reason)),
-        TurnEnd::BudgetStopped { which } => format!("stopped by {which}"),
-        TurnEnd::Interrupted => "interrupted".into(),
-        TurnEnd::Stopped => "stopped after a step".into(),
+        TurnEnd::Replied { message } => ("duet: ".into(), message.clone()),
+        TurnEnd::Asked { question } => ("duet asks: ".into(), question.clone()),
+        TurnEnd::Completed { summary } => ("duet finished: ".into(), summary.clone()),
+        TurnEnd::Failed { reason } => ("turn failed: ".into(), reason.clone()),
+        TurnEnd::BudgetStopped { which } => ("turn stopped: ".into(), format!("{which} reached")),
+        TurnEnd::Interrupted => ("turn interrupted".into(), String::new()),
+        TurnEnd::Stopped => ("turn stopped by you after a step".into(), String::new()),
+    }
+}
+
+/// Adds a message to the feed: its first line after `lead`, the others
+/// indented under it, each cut to the line width.
+fn push_lines(feed: &mut Vec<String>, lead: &str, text: &str) {
+    let pad = " ".repeat(lead.chars().count());
+    let mut lines = text.trim().lines();
+    feed.push(format!("{lead}{}", clip(lines.next().unwrap_or(""))));
+    for l in lines {
+        feed.push(format!("{pad}{}", clip(l)));
+    }
+}
+
+fn clip(line: &str) -> String {
+    if line.chars().count() > LINE_CHARS {
+        format!("{}…", line.chars().take(LINE_CHARS).collect::<String>())
+    } else {
+        line.to_owned()
     }
 }
 
@@ -388,11 +476,50 @@ fn focus_style(on: bool) -> Style {
     }
 }
 
-pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect) {
+/// The session input box under the conversation.
+pub(crate) struct Input {
+    pub text: String,
+    pub focused: bool,
+    pub hint: String,
+}
+
+pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect, input: Option<&Input>) {
     let [main, side] =
         Layout::horizontal([Constraint::Percentage(56), Constraint::Percentage(44)]).areas(area);
-    draw_main(f, view, main);
+    match input {
+        Some(input) => {
+            let [main, input_area] =
+                Layout::vertical([Constraint::Min(8), Constraint::Length(3)]).areas(main);
+            draw_main(f, view, main);
+            draw_input(f, input, input_area);
+        }
+        None => draw_main(f, view, main),
+    }
     draw_side(f, view, side);
+}
+
+fn draw_input(f: &mut Frame, input: &Input, area: Rect) {
+    let width = area.width.saturating_sub(4) as usize;
+    let shown: String = {
+        let n = input.text.chars().count();
+        input.text.chars().skip(n.saturating_sub(width)).collect()
+    };
+    let line = if input.focused {
+        Line::from(vec![
+            Span::raw(format!("> {shown}")),
+            Span::styled("_", Style::new().add_modifier(Modifier::SLOW_BLINK)),
+        ])
+    } else {
+        Line::styled("> ", Style::new().fg(Color::DarkGray))
+    };
+    f.render_widget(
+        Paragraph::new(line).block(
+            Block::bordered()
+                .title(input.hint.clone())
+                .border_style(focus_style(input.focused)),
+        ),
+        area,
+    );
 }
 
 fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
@@ -400,9 +527,17 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
     let [feed_area, withheld_area] =
         Layout::vertical([Constraint::Min(4), Constraint::Length(withheld_height)]).areas(area);
     let title = match view.runs.get(view.selected) {
-        None => " run: none yet (n starts one; runs appear under .duet/runs) ".to_owned(),
+        None => {
+            " run: none yet (n starts a session, o a one-shot run; they appear under .duet/runs) "
+                .to_owned()
+        }
         Some(id) => format!(
-            " run {id} ({}/{}, follow {}) ",
+            " {} {id} ({}/{}, follow {}) ",
+            if view.session.is_some() {
+                "session"
+            } else {
+                "run"
+            },
             view.selected + 1,
             view.runs.len(),
             if view.follow { "on" } else { "off" }

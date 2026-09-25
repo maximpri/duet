@@ -76,15 +76,24 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) {
     match app.tab {
         Tab::Ip => crate::ip::draw(f, app, body),
         Tab::Audit => crate::audit::draw(f, &mut app.audit, body),
-        Tab::Run => crate::runs::draw(f, &app.runs, body),
+        Tab::Run => {
+            let input = session_input(app);
+            crate::runs::draw(f, &app.runs, body, input.as_ref())
+        }
         _ => crate::settings::draw(f, app, body),
     }
     draw_keys(f, app, keys);
     match &app.mode {
         Mode::Confirm(p) => draw_confirm(f, app, p),
         Mode::ConfirmPurge(plan) => crate::data::draw_confirm(f, plan),
-        Mode::Launch { objective, mode } => crate::launch::draw_dialog(f, objective, *mode),
-        Mode::AckPassthrough { objective } => crate::launch::draw_ack(f, objective),
+        Mode::Launch {
+            objective,
+            mode,
+            session,
+        } => crate::launch::draw_dialog(f, objective, *mode, *session),
+        Mode::AckPassthrough { objective, session } => {
+            crate::launch::draw_ack(f, objective, *session)
+        }
         _ => {}
     }
 }
@@ -96,7 +105,13 @@ fn key_help(app: &App) -> &'static str {
         (Mode::Tester, _) => "type a workspace path · Enter or Esc done",
         (Mode::Sample, _) => "type sample text · Enter or Esc done",
         (Mode::ConfirmPurge(_), _) => "y delete · n or Esc cancel",
+        (Mode::Launch { session: true, .. }, _) => {
+            "type the first message · ↑↓ mode · Enter start · Esc cancel"
+        }
         (Mode::Launch { .. }, _) => "type the objective · ↑↓ mode · Enter start · Esc cancel",
+        (Mode::Message { .. }, _) => {
+            "Enter send (while duet works it steers the turn) · /stop after this step · Ctrl-C stop now · ↑↓ scroll · Esc done"
+        }
         (Mode::AckPassthrough { .. }, _) => {
             "y start with the privacy boundary off · n or Esc cancel"
         }
@@ -114,10 +129,36 @@ fn key_help(app: &App) -> &'static str {
         }
         (_, Tab::Audit) => "↑↓ select · Enter records · Esc runs · v verify · r reload · q quit",
         (_, Tab::Run) => {
-            "n new run · ←→ panel · ↑↓ scroll/pick file · PgUp/PgDn J/K diff · [ ] run · f follow · q quit"
+            "n new session · o one-shot run · r resume · i type · s stop after step · x stop now · ←→ panel · ↑↓ scroll/file · J/K diff · [ ] run · f follow · q quit"
         }
         _ => "Enter edit · a add entry · p owner/project · Tab screens · q quit",
     }
+}
+
+/// The Run view's input box, when the selected run is a session.
+fn session_input(app: &App) -> Option<crate::runs::Input> {
+    let state = app.runs.session.as_ref()?;
+    let live = app.live_session().is_some();
+    let (text, focused) = match &app.mode {
+        Mode::Message { buffer } if live => (buffer.clone(), true),
+        _ => (String::new(), false),
+    };
+    let hint = match (live, focused, state.working) {
+        (true, true, true) => " duet is working: your message steers it after the current step ",
+        (true, true, false) if state.asked => " duet asked you a question: type the answer ",
+        (true, true, false) => " your message ",
+        (true, false, true) => {
+            " duet is working · i type to steer · s stop after step · x stop now "
+        }
+        (true, false, false) => " i type a message ",
+        (false, _, _) if state.closed => " this session is closed · n starts a new one ",
+        (false, _, _) => " not running here · r resumes this session ",
+    };
+    Some(crate::runs::Input {
+        text,
+        focused,
+        hint: hint.into(),
+    })
 }
 
 fn draw_keys(f: &mut Frame, app: &App, area: Rect) {

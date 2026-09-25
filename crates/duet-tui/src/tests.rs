@@ -1067,9 +1067,9 @@ fn starting_a_run_launches_duet_run_and_opens_the_run_view() {
     let (d, mut app) = fixture("", "");
     app.services_mut().duet = Some(fake_duet(d.path(), 0, true));
     key(&mut app, KeyCode::Char('7'));
-    key(&mut app, KeyCode::Char('n'));
+    key(&mut app, KeyCode::Char('o'));
     let out = render(&mut app);
-    assert!(out.contains("start a run (duet run)"), "{out}");
+    assert!(out.contains("start a one-shot run (duet run)"), "{out}");
     assert!(out.contains("> hybrid"), "hybrid is the default:\n{out}");
     key(&mut app, KeyCode::Enter);
     assert!(app.status().contains("objective first"));
@@ -1118,7 +1118,7 @@ fn passthrough_needs_the_no_privacy_acknowledgement() {
     let (d, mut app) = fixture("", "");
     app.services_mut().duet = Some(fake_duet(d.path(), 0, true));
     app.enter_tab(Tab::Run);
-    key(&mut app, KeyCode::Char('n'));
+    key(&mut app, KeyCode::Char('o'));
     typed(&mut app, "baseline");
     key(&mut app, KeyCode::Up);
     assert!(render(&mut app).contains("> passthrough"));
@@ -1135,7 +1135,7 @@ fn passthrough_needs_the_no_privacy_acknowledgement() {
     assert!(app.status().contains("boundary stays on"));
     assert!(app.launched.is_none());
     assert!(!d.path().join("args").exists(), "nothing was started");
-    key(&mut app, KeyCode::Char('n'));
+    key(&mut app, KeyCode::Char('o'));
     typed(&mut app, "baseline");
     key(&mut app, KeyCode::Up);
     key(&mut app, KeyCode::Enter);
@@ -1164,7 +1164,7 @@ fn a_run_that_cannot_start_reports_why_and_approval_refuses_launching() {
     let (d, mut app) = fixture("", "");
     app.services_mut().duet = Some(fake_duet(d.path(), 2, false));
     app.enter_tab(Tab::Run);
-    key(&mut app, KeyCode::Char('n'));
+    key(&mut app, KeyCode::Char('o'));
     typed(&mut app, "anything");
     key(&mut app, KeyCode::Enter);
     wait_for_launch(&mut app);
@@ -1190,4 +1190,227 @@ fn a_run_that_cannot_start_reports_why_and_approval_refuses_launching() {
     app.enter_tab(Tab::Run);
     key(&mut app, KeyCode::Char('n'));
     assert!(app.status().contains("not available"), "{}", app.status());
+}
+
+/// A stand-in for `duet chat`: records its arguments, announces a session
+/// (unless resuming), writes a transcript with one answered turn, and then
+/// appends every line it reads from its input to `received` until the input
+/// ends. It ignores SIGINT but records it.
+fn fake_chat(dir: &Path) -> std::path::PathBuf {
+    let script = dir.join("fake-chat");
+    let transcript = r#"{"kind":"start","objective":"hello","mode":"hybrid","frontier_model":"glm"}
+{"kind":"turn_start","exchange":1,"message":"hello","journal_next":1}
+{"kind":"turn_end","exchange":1,"seconds":1.0,"end":{"state":"replied","message":"hi there"}}"#;
+    std::fs::write(
+        &script,
+        format!(
+            r#"#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a"; done > "{args}"
+trap 'echo SIGINT >> "{received}"' INT
+case "$*" in
+*--resume*) ;;
+*)
+echo "session 20260925-130000-5e5510 (Hybrid)" >&2
+mkdir -p "$2/.duet/runs/20260925-130000-5e5510"
+cat > "$2/.duet/runs/20260925-130000-5e5510/transcript.jsonl" <<'EOF2'
+{transcript}
+EOF2
+;;
+esac
+while IFS= read -r line; do printf '%s\n' "$line" >> "{received}"; done
+"#,
+            args = dir.join("args").display(),
+            received = dir.join("received").display(),
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    script
+}
+
+fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
+    for _ in 0..500 {
+        if ok() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("timed out waiting for {what}");
+}
+
+fn received(d: &Path) -> String {
+    std::fs::read_to_string(d.join("received")).unwrap_or_default()
+}
+
+#[test]
+fn n_starts_a_session_and_its_input_box_sends_steers_and_stops() {
+    let (d, mut app) = fixture("", "");
+    app.services_mut().duet = Some(fake_chat(d.path()));
+    app.enter_tab(Tab::Run);
+    key(&mut app, KeyCode::Char('n'));
+    let out = render(&mut app);
+    assert!(out.contains("start a session (duet chat)"), "{out}");
+    assert!(out.contains("first message:"), "{out}");
+    typed(&mut app, "hello");
+    key(&mut app, KeyCode::Enter);
+    wait_until("the session id", || {
+        app.tick();
+        app.launched.as_ref().is_some_and(|l| l.run_id.is_some())
+    });
+    let args = std::fs::read_to_string(d.path().join("args")).unwrap();
+    let ws = app.paths.workspace.display().to_string();
+    assert_eq!(
+        args.lines().collect::<Vec<_>>(),
+        vec![
+            "--workspace",
+            &ws,
+            "chat",
+            "--mode",
+            "hybrid",
+            "--",
+            "hello"
+        ]
+    );
+    wait_until("the conversation", || {
+        app.tick();
+        render(&mut app).contains("duet: hi there")
+    });
+    let out = render(&mut app);
+    for want in [
+        "session 20260925-130000-5e5510",
+        "── turn 1 ──",
+        "you> hello",
+        "duet: hi there",
+        "i type a message",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    // Type and send; the box stays open for the next message.
+    key(&mut app, KeyCode::Char('i'));
+    typed(&mut app, "fix the flaky test");
+    assert!(render(&mut app).contains("> fix the flaky test"));
+    key(&mut app, KeyCode::Enter);
+    assert!(matches!(app.mode, Mode::Message { .. }));
+    wait_until("the message", || {
+        received(d.path()).contains("fix the flaky test")
+    });
+    // /status is answered here, from the transcript; nothing is sent.
+    typed(&mut app, "/status");
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status().contains("1 turn(s)"), "{}", app.status());
+    // Ctrl-C while typing stops the turn now (SIGINT), not the TUI.
+    app.key(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert!(!app.quit);
+    assert!(app.status().contains("interrupt sent"), "{}", app.status());
+    wait_until("the interrupt", || received(d.path()).contains("SIGINT"));
+    // Esc leaves the box; s asks for a stop after the current step.
+    key(&mut app, KeyCode::Esc);
+    key(&mut app, KeyCode::Char('s'));
+    wait_until("the stop", || received(d.path()).contains("/stop"));
+    assert!(!received(d.path()).contains("/status"));
+    // Closing the input ends the stand-in, as quitting the TUI would.
+    app.launched.as_mut().unwrap().close_input();
+    wait_until("the session to end", || {
+        app.tick();
+        app.launched.as_ref().is_some_and(|l| l.exit.is_some())
+    });
+}
+
+#[test]
+fn r_resumes_the_selected_session_and_refuses_runs_and_closed_sessions() {
+    let (d, mut app) = fixture("", "");
+    app.services_mut().duet = Some(fake_chat(d.path()));
+    let runs = app.paths.workspace.join(".duet/runs");
+    let t = |id: &str, entries: &[Entry]| {
+        let tr = Transcript::open(&runs.join(id)).unwrap();
+        for e in entries {
+            tr.append(e).unwrap();
+        }
+    };
+    let start = Entry::Start {
+        objective: "o".into(),
+        mode: "hybrid".into(),
+        frontier_model: "glm".into(),
+    };
+    let turn = Entry::TurnStart {
+        exchange: 1,
+        message: "first".into(),
+        journal_next: 1,
+    };
+    t("20260901-000000-aaaaaa", std::slice::from_ref(&start));
+    t(
+        "20260902-000000-bbbbbb",
+        &[
+            start.clone(),
+            turn.clone(),
+            Entry::Steered {
+                exchange: 1,
+                after_request: 2,
+                messages: vec!["and the docs".into()],
+            },
+            Entry::TurnEnd {
+                exchange: 1,
+                seconds: 1.0,
+                end: duet_agent::TurnEnd::Completed {
+                    summary: "all done".into(),
+                },
+            },
+            Entry::End {
+                terminal: duet_agent::Terminal::Completed {
+                    summary: "closed".into(),
+                },
+            },
+        ],
+    );
+    t("20260903-000000-cccccc", &[start, turn]);
+    app.enter_tab(Tab::Run);
+    let select = |app: &mut App, id: &str| {
+        let policy = app.policy();
+        let ws = app.paths.workspace.clone();
+        app.runs.show(id, &ws, &policy);
+    };
+    select(&mut app, "20260901-000000-aaaaaa");
+    key(&mut app, KeyCode::Char('r'));
+    assert!(app.status().contains("one-shot run"), "{}", app.status());
+    select(&mut app, "20260902-000000-bbbbbb");
+    let out = render(&mut app);
+    for want in [
+        "you> first",
+        "you, delivered after request 2> and the docs",
+        "duet finished: all done",
+        "this session is closed",
+    ] {
+        assert!(out.contains(want), "missing {want:?}:\n{out}");
+    }
+    key(&mut app, KeyCode::Char('r'));
+    assert!(app.status().contains("was closed"), "{}", app.status());
+    assert!(app.launched.is_none());
+    select(&mut app, "20260903-000000-cccccc");
+    assert!(render(&mut app).contains("r resumes this session"));
+    key(&mut app, KeyCode::Char('r'));
+    assert!(matches!(app.mode, Mode::Message { .. }));
+    wait_until("the arguments", || d.path().join("args").exists());
+    wait_until("all arguments", || {
+        std::fs::read_to_string(d.path().join("args"))
+            .unwrap()
+            .lines()
+            .count()
+            == 5
+    });
+    let args = std::fs::read_to_string(d.path().join("args")).unwrap();
+    let ws = app.paths.workspace.display().to_string();
+    assert_eq!(
+        args.lines().collect::<Vec<_>>(),
+        vec![
+            "--workspace",
+            &ws,
+            "chat",
+            "--resume",
+            "20260903-000000-cccccc"
+        ]
+    );
+    typed(&mut app, "carry on");
+    key(&mut app, KeyCode::Enter);
+    wait_until("the message", || received(d.path()).contains("carry on"));
+    app.launched.as_mut().unwrap().close_input();
 }
