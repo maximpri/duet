@@ -1052,7 +1052,7 @@ mod tests {
     #[test]
     fn a_trailing_backslash_continues_the_message() {
         let inbox = Inbox::default();
-        inbox.read_from(std::io::Cursor::new("one\\\ntwo\nthree\n"));
+        inbox.read_from("one\\\ntwo\nthree\n".as_bytes());
         assert_eq!(inbox.pop().as_deref(), Some("one\ntwo"));
         assert_eq!(inbox.pop().as_deref(), Some("three"));
         assert!(inbox.drained());
