@@ -321,6 +321,20 @@ release:
    *Resolved after the audit (branch `nits`), for the items listed in D6.*
 9. **Large repositories (LR1).** An operator requirement with no evidence beyond 8.4K lines.
 
+**Status update 2026-09-25** (after the audit; evidence in PLAN §10):
+
+| # | Blocker | Status |
+|---|---|---|
+| 1 | Quality on the release build | **Verified on `d55d2cc`** (Gate 2 re-established, `results/gate2d`): both judges, hybrid 20.8 vs 20.2 /30 (Δ +0.6, lower bound +0.0), hidden 97.2% vs 95.9%, 0 leaks in 18/18. Two defects found on the way were fixed: DUET-2026-009 (local answer quoting data, `aa6226c`) and a false-positive block on placeholder values (`d55d2cc`). Still open: M5-scale run including L2–L5 and the `claude-code`/`codex` smoke runs (Claude token pending). |
+| 2 | Termination guarantee | **Verified**: merged (`359930e`) with tests; observed live — every run in `gate2b`/`gate2c`/`gate2d` ended in a terminal state; hands-on Ctrl-C → `duet resume` → Completed on a fresh project. |
+| 3 | Retry in place | **Verified by tests** (`359930e`); not yet observed during a real outage. |
+| 4 | Local backends | **Re-scoped by operator decision (2026-09-24):** live acceptance is the configured remote oMLX server (verified live throughout); other backends are verified against mock servers only and documented as such. |
+| 5 | Linux sandbox | Open (operator decision pending). |
+| 6 | Red-team pass and fuzzing | Fuzzing ran (SbD-2: 60 s per target, 7.5M executions, 0 failures) and property tests are in the gate. Red-team pass parked until last by operator decision. |
+| 7 | Disclosure policy | Contact placeholder kept by operator decision; provider data-retention terms still to document. |
+| 8 | Honest documentation | Resolved (`faf3098`). |
+| 9 | Large repositories | Open (operator decision pending on X1/X2). |
+
 ### 4.3 Known limits (documented; acceptable for a first release if stated)
 
 - Cost is a privacy premium, not a saving (C1 superseded by decision). Report the ratio with its
