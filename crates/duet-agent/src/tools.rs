@@ -192,10 +192,16 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
             }
         }
         git if crate::git_tools::NAMES.contains(&git) => crate::git_tools::dispatch(ctx, git, args),
-        other => match ctx.presenter.call_tool(other, args) {
-            Some(r) => r,
-            None => Err(format!("unknown tool `{other}`")),
-        },
+        other => {
+            let result = ctx.presenter.call_tool(other, args);
+            for event in ctx.presenter.take_events() {
+                ctx.record(event);
+            }
+            match result {
+                Some(r) => r,
+                None => Err(format!("unknown tool `{other}`")),
+            }
+        }
     };
     match result {
         Ok(text) => Outcome::Result(text),
@@ -577,10 +583,25 @@ pub(crate) async fn sandboxed(
             ctx.run_dir
                 .join(format!("spill-{}.txt", uuid::Uuid::new_v4())),
         ),
-        extra_env: vec![
-            ("CARGO_TERM_COLOR".into(), "never".into()),
-            ("NO_COLOR".into(), "1".into()),
-        ],
+        extra_env: {
+            let mut env = vec![
+                ("CARGO_TERM_COLOR".into(), "never".into()),
+                ("NO_COLOR".into(), "1".into()),
+            ];
+            // What a sensitive command builds may embed sensitive data (a
+            // build script reading it): cargo builds into the command's private
+            // scratch, not the shared `target/` other commands read and write.
+            if access == Access::SensitiveData {
+                env.push((
+                    "CARGO_TARGET_DIR".into(),
+                    sensitive_scratch(ctx.run_dir)
+                        .join("cargo-target")
+                        .display()
+                        .to_string(),
+                ));
+            }
+            env
+        },
         deny_read,
         read_only: access == Access::ReadOnly,
     };
@@ -651,6 +672,7 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let before = sensitive_data.then(|| snapshot(ctx.workspace));
+    let started = std::time::SystemTime::now();
     let access = if sensitive_data {
         Access::SensitiveData
     } else {
@@ -659,11 +681,12 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
     let o = sandboxed(ctx, command, timeout, access).await?;
     let source = if let Some(before) = before {
         let after = snapshot(ctx.workspace);
-        let changed: Vec<PathBuf> = after
+        let mut changed: Vec<PathBuf> = after
             .iter()
             .filter(|(p, stamp)| before.get(*p) != Some(stamp))
             .map(|(p, _)| p.clone())
             .collect();
+        changed.extend(build_output_changed(ctx.workspace, started));
         ctx.presenter.mark_sensitive(ctx.workspace, &changed);
         ctx.record(AuditEvent::SensitiveCommand {
             command: command.to_owned(),
@@ -697,6 +720,48 @@ static GIT_WORD: std::sync::LazyLock<Regex> =
 
 /// Directories whose files are build output or dependencies, not data.
 const SNAPSHOT_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
+/// Directories [`snapshot`] skips that a command may still write data into.
+const BUILD_OUTPUT: &[&str] = &["target", "node_modules"];
+/// How far before a command's start a file's modification time may lie and
+/// still count as written by it (file systems stamp times coarsely).
+const MTIME_SLACK: Duration = Duration::from_secs(1);
+
+/// Files under build output and dependency directories (`target/`,
+/// `node_modules/`, at any depth) modified since `since`: what a command
+/// wrote there. [`snapshot`] skips these directories (they are large and
+/// hold no data of their own), so a sensitive command's writes into them are
+/// found by modification time alone: one pass over them, no copy of their
+/// state before the command.
+fn build_output_changed(workspace: &Path, since: std::time::SystemTime) -> Vec<PathBuf> {
+    let since = since.checked_sub(MTIME_SLACK).unwrap_or(since);
+    let mut out = Vec::new();
+    // (directory, inside build output)
+    let mut stack = vec![(PathBuf::new(), false)];
+    while let Some((rel, inside)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let child = rel.join(name.as_ref());
+            match entry.metadata() {
+                Ok(m) if m.is_dir() => {
+                    if name == ".git" || name == ".duet" {
+                        continue;
+                    }
+                    stack.push((child, inside || BUILD_OUTPUT.contains(&name.as_ref())));
+                }
+                Ok(m) if m.is_file() && inside && m.modified().is_ok_and(|t| t >= since) => {
+                    out.push(child);
+                }
+                _ => {}
+            }
+        }
+    }
+    out.sort();
+    out
+}
 
 /// Modification time and size of every workspace file outside build output.
 fn snapshot(workspace: &Path) -> std::collections::BTreeMap<PathBuf, (std::time::SystemTime, u64)> {
@@ -1017,6 +1082,110 @@ mod sensitive_command_tests {
             ["sandbox_denial", "sensitive_command", "sandbox_denial"]
         );
         assert!(log.contains("\"derived_files\":[\"totals.txt\"]"), "{log}");
+    }
+
+    #[tokio::test]
+    async fn what_a_sensitive_command_writes_into_build_output_stays_sensitive() {
+        // Found by the privacy scenarios: the snapshot skips `target/` and
+        // `node_modules/`, so a transformed copy written there was public.
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = d
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(format!("t{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(ws.join("target/debug")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(
+            ws.join("data/orders.csv"),
+            format!("id,total\n1,{BALANCE}\n"),
+        )
+        .unwrap();
+        // Build output from before the command is not its doing.
+        let old = ws.join("target/debug/old.txt");
+        std::fs::write(&old, "built earlier\n").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(3600))
+            .unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        let git = Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let audit_path = run.join("audit.jsonl");
+        let audit = AuditHandle::new(duet_boundary::audit::AuditLog::open(&audit_path).unwrap());
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(30),
+            network: false,
+            checks: &[],
+            audit: Some(&audit),
+            interrupted: None,
+            web: None,
+            git_tools: None,
+            lsp: None,
+        };
+        let held = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "rev data/orders.csv > target/export.txt; \
+                mkdir -p web/node_modules/.cache && cp data/orders.csv web/node_modules/.cache/rows; \
+                echo \"cargo builds in $CARGO_TARGET_DIR\"", "sensitive_data": true}),
+        )
+        .await;
+        // Cargo builds privately: in the command's own scratch directory.
+        let handle = held.split_whitespace().next().unwrap();
+        let raw = std::fs::read_to_string(run.join("handles").join(handle)).unwrap();
+        let private = sensitive_scratch(&run).join("cargo-target");
+        assert!(
+            raw.contains(&format!("cargo builds in {}", private.display())),
+            "{raw}"
+        );
+        let log = std::fs::read_to_string(&audit_path).unwrap();
+        assert!(
+            log.contains(
+                "\"derived_files\":[\"target/export.txt\",\"web/node_modules/.cache/rows\"]"
+            ),
+            "{log}"
+        );
+        let reversed: String = BALANCE.chars().rev().collect();
+        for path in ["target/export.txt", "web/node_modules/.cache/rows"] {
+            let read = call(&mut ctx, "read_file", json!({"path": path})).await;
+            assert!(
+                !read.contains(&reversed) && !read.contains(BALANCE),
+                "{read}"
+            );
+            assert!(read.contains("ask_local"), "{read}");
+            let cat = call(
+                &mut ctx,
+                "run_command",
+                json!({"command": format!("cat {path}")}),
+            )
+            .await;
+            assert!(cat.contains(duet_sandbox::DENIAL_MESSAGE), "{cat}");
+        }
+        let earlier = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": "cat target/debug/old.txt"}),
+        )
+        .await;
+        assert!(earlier.contains("built earlier"), "{earlier}");
+        let _ = std::fs::remove_dir_all(sensitive_scratch(&run));
     }
 
     #[tokio::test]
