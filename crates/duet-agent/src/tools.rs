@@ -970,8 +970,9 @@ mod sensitive_command_tests {
         };
         let engine = Engine::open(&run, policy, None).unwrap();
         engine.prime(&ws, &["data/cards.csv".to_string()], "");
-        let token = engine.sanitize_message(CARD);
-        assert!(token.starts_with('⟨') && !token.contains(CARD), "{token}");
+        let typed = engine.sanitize_message(CARD);
+        assert!(!typed.contains(CARD), "{typed}");
+        let token = duet_boundary::vault::Vault::tokens_in(&typed)[0].clone();
         let audit_path = ws.join(".duet/audit").join(format!("{id}.jsonl"));
         let audit = AuditHandle::new(duet_boundary::audit::AuditLog::open(&audit_path).unwrap());
         audit.record(AuditEvent::RunStart {

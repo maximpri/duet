@@ -164,6 +164,19 @@ struct State {
     authored: std::collections::HashSet<String>,
     /// The local model's task-focused brief of the sensitive files, if written.
     brief: Option<String>,
+    /// Placeholders for values the operator typed, and the handle holding
+    /// the message each came from (persisted, so a resumed run keeps them).
+    operator: OperatorValues,
+}
+
+/// Values the operator typed: each placeholder is also a handle for
+/// `ask_local`, whose content is the operator's message.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct OperatorValues {
+    /// Placeholder (with its brackets) to handle id.
+    handles: std::collections::BTreeMap<String, String>,
+    /// Whether the frontier has been told how to use them.
+    noted: bool,
 }
 
 pub struct Engine {
@@ -177,6 +190,8 @@ pub struct Engine {
     derived: Mutex<std::collections::HashSet<std::path::PathBuf>>,
     /// Where `derived` is persisted, so a resumed run keeps it.
     derived_file: std::path::PathBuf,
+    /// Where the operator's placeholders are persisted.
+    operator_file: std::path::PathBuf,
     /// How the latest result was shown (for the cost ledger).
     last_class: Mutex<Option<ViewClass>>,
 }
@@ -237,6 +252,7 @@ impl Engine {
                     .unwrap_or_default(),
             ),
             derived_file: run_dir.join("derived.json"),
+            operator_file: run_dir.join("operator.json"),
             last_class: Mutex::new(None),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
@@ -247,6 +263,10 @@ impl Engine {
                 ip: protected::IpState::open(run_dir),
                 authored: Default::default(),
                 brief: None,
+                operator: std::fs::read(run_dir.join("operator.json"))
+                    .ok()
+                    .and_then(|b| serde_json::from_slice(&b).ok())
+                    .unwrap_or_default(),
             }),
         }))
     }
@@ -825,11 +845,12 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
         if questions.is_empty() {
             return Err("give `questions` (a list) or `question`".into());
         }
-        let (info, bytes) = self
-            .lock()
-            .handles
-            .get(id)
-            .ok_or_else(|| format!("unknown handle {id}"))?;
+        let (info, bytes) = {
+            let st = self.lock();
+            let found = Self::operator_handle(&st, id)
+                .map_or_else(|| st.handles.get(id), |h| st.handles.get(h));
+            found.ok_or_else(|| Self::unknown_handle(&st, id))?
+        };
         let local = self.local.as_ref().ok_or("no local model is configured")?;
         let text = String::from_utf8_lossy(&bytes);
         let mut out = Vec::new();
@@ -856,6 +877,63 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
             ));
         }
         Ok(out.join("\n\n"))
+    }
+
+    /// The handle behind a placeholder the operator's message produced, given
+    /// with or without its brackets (`card:card#1`, `⟨card:card#1⟩`).
+    fn operator_handle<'a>(st: &'a State, id: &str) -> Option<&'a String> {
+        let inner = id.trim().trim_start_matches('⟨').trim_end_matches('⟩');
+        st.operator.handles.get(&format!("⟨{inner}⟩"))
+    }
+
+    /// Why `id` names no handle, and what to use instead.
+    fn unknown_handle(st: &State, id: &str) -> String {
+        let inner = id.trim().trim_start_matches('⟨').trim_end_matches('⟩');
+        match st.vault.value_of(&format!("⟨{inner}⟩")) {
+            Some((_, entry)) => format!(
+                "unknown handle {id}: that placeholder stands for a value from {}; ask about the \
+handle of that content instead",
+                entry.origin
+            ),
+            None => format!("unknown handle {id}"),
+        }
+    }
+
+    /// Makes each placeholder that sanitizing an operator message introduced
+    /// a handle whose content is the message, so the frontier can have the
+    /// local model work with the value. Returns the note that says so, the
+    /// first time there is something to say.
+    fn operator_values(&self, st: &mut State, raw: &str, sanitized: &str) -> String {
+        let typed = Vault::tokens_in(raw);
+        let new: Vec<String> = Vault::tokens_in(sanitized)
+            .into_iter()
+            .filter(|t| !typed.contains(t) && st.vault.value_of(t).is_some())
+            .collect();
+        let Some(first) = new.first().cloned() else {
+            return String::new();
+        };
+        let Ok(handle) = st.handles.put(raw.as_bytes(), "the operator's message") else {
+            return String::new();
+        };
+        for token in new {
+            st.operator.handles.insert(token, handle.id.clone());
+        }
+        let note = if st.operator.noted {
+            String::new()
+        } else {
+            st.operator.noted = true;
+            let example = first.trim_start_matches('⟨').trim_end_matches('⟩');
+            format!(
+                "\n\nValues typed by the operator are shown as placeholders. Each is also a handle: \
+ask_local(handle=\"{example}\", ...) has the local model read the operator's message with the real \
+value; run_command with sensitive_data resolves placeholders in the command on this machine."
+            )
+        };
+        let _ = duet_fs::private::write_private(
+            &self.operator_file,
+            &serde_json::to_vec(&st.operator).unwrap_or_default(),
+        );
+        note
     }
 
     fn read_raw(&self, args: &Map<String, Value>) -> Result<String, String> {
@@ -1146,7 +1224,8 @@ impl Presenter for Engine {
                 description: "Run a shell command in the repository root (sandboxed: no network, writes limited to the \
 repository). Sensitive files (data, logs, secrets) are unreadable to commands. To run something that must read them \
 (e.g. the program on the real data), set sensitive_data: the output then stays on this machine and you get a summary \
-and a handle for ask_local, and files the command writes become sensitive too. Prefer synthetic fixtures for tests."
+and a handle for ask_local, and files the command writes become sensitive too; placeholders (⟨…⟩) in such a command \
+are replaced by their values on this machine. Prefer synthetic fixtures for tests."
                     .into(),
                 parameters: json!({"type": "object", "properties": {
                     "command": {"type": "string"},
@@ -1161,7 +1240,7 @@ command output). It reads the raw content on this machine and answers without re
 Put everything you need to know about one handle in a single call."
                     .into(),
                 parameters: json!({"type": "object", "properties": {
-                    "handle": {"type": "string", "description": "A handle such as h3."},
+                    "handle": {"type": "string", "description": "A handle such as h3, or a placeholder from an operator message such as card:card#1."},
                     "questions": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_QUESTIONS,
                         "description": "One or more questions, answered in order."},
                     "question": {"type": "string", "description": "A single question (alternative to questions)."}
@@ -1292,6 +1371,8 @@ and are never resolved for {destination}",
     fn sanitize_objective(&self, text: &str) -> String {
         let mut st = self.lock();
         let mut out = self.sanitize(&mut st, text, "task", false);
+        let note = self.operator_values(&mut st, text, &out);
+        out.push_str(&note);
         if !st.sensitive_files.is_empty() {
             let mut paths = st.sensitive_files.clone();
             if paths.len() > LISTED_PATHS {
@@ -1326,7 +1407,10 @@ ask_local for details):\n{brief}"
     /// the public vocabulary (a name the operator types stays identifying).
     fn sanitize_message(&self, text: &str) -> String {
         let mut st = self.lock();
-        self.sanitize(&mut st, text, "operator", false)
+        let mut out = self.sanitize(&mut st, text, "operator", false);
+        let note = self.operator_values(&mut st, text, &out);
+        out.push_str(&note);
+        out
     }
 }
 
@@ -1584,7 +1668,7 @@ mod tests {
     const PASSWORD: &str = "Ab3Xy9Qw!p42Lm";
     const EMAIL: &str = "amelia.velanwick42@mailbox-311.net";
 
-    fn policy() -> Policy {
+    pub(super) fn policy() -> Policy {
         Policy {
             sensitive_globs: vec![
                 ".env*".into(),
@@ -2530,5 +2614,57 @@ mod prime_tests {
         // Nor may they go to a third party.
         assert!(e.check_outbound("search", "visa bin 4539 issuer").is_err());
         assert!(e.check_outbound("search", "rust 2026 edition").is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn placeholders_from_operator_messages_are_handles_for_ask_local() {
+        let answer = |a: &str| {
+            json!({"answer": a, "evidence_lines": [1], "unanswerable": false}).to_string()
+        };
+        let (local, received) = crate::testing::scripted_local(vec![
+            answer("It is a debit card."),
+            answer("Expires in 2027."),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::write(ws.join("data/a.csv"), "id,card\n1,4111 1111 1111 1111\n").unwrap();
+        let run = d.path().join("run");
+        let e = Engine::open(&run, super::tests::policy(), Some(local)).unwrap();
+        e.prime(&ws, &["data/a.csv".to_string()], "");
+        // A later message in a session (or a steering message): the note comes once.
+        let first = e.sanitize_message("my debit card is 5500 0000 0000 0004, is it valid?");
+        assert!(
+            !first.contains("5500") && first.contains("ask_local(handle="),
+            "{first}"
+        );
+        let token = Vault::tokens_in(&first)[0].clone();
+        let again = e.sanitize_message("and 5555 5555 5555 4444 expires 2027?");
+        assert!(
+            !again.contains("5555") && !again.contains("ask_local(handle="),
+            "{again}"
+        );
+        let ask = |e: &Engine, handle: &str| {
+            let mut args = Map::new();
+            args.insert("handle".into(), json!(handle));
+            args.insert("question".into(), json!("What is it?"));
+            e.call_tool("ask_local", &args).unwrap()
+        };
+        let inner = token.trim_matches(|c| c == '⟨' || c == '⟩');
+        assert_eq!(
+            ask(&e, inner).unwrap(),
+            "It is a debit card.\n(evidence lines: [1])"
+        );
+        assert!(received.prompt(0).contains("5500 0000 0000 0004"));
+        // With its brackets, and after the run is reopened (resume).
+        drop(e);
+        let (local, received) = crate::testing::scripted_local(vec![answer("Same card.")]);
+        let e = Engine::open(&run, super::tests::policy(), Some(local)).unwrap();
+        assert!(ask(&e, &token).unwrap().starts_with("Same card."));
+        assert!(received.prompt(0).contains("5500 0000 0000 0004"));
+        // A placeholder from a file is not the operator's: the error says where to look.
+        let file_token = e.lock().vault.tokenize("4111 1111 1111 1111").0;
+        let err = ask(&e, &file_token).unwrap_err();
+        assert!(err.contains("data/a.csv") && !err.contains("4111"), "{err}");
     }
 }
