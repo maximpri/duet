@@ -65,6 +65,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Releases and SSH signing wait until the application is verified to work and meet its requirements (operator): acceptance first, then SbD-3 release signing is used |
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
+| 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -351,6 +352,18 @@ proxy; a public threat model (`SECURITY.md`); cargo-deny (advisories, licenses, 
 **SbD gate (before M5):** every SbD-1 item done with tests; red-team pass (SbD-2) with zero canary
 leaks; `SECURITY.md` complete. Any disclosure path found later is fixed at the class level, published as
 an advisory, and covered by a regression test before the next release.
+
+### M5.0 — Interactive sessions (before the benchmark)
+
+- `duet chat` (terminal) and a conversation input in the TUI Run view (beside the changed-files/diff
+  panel): the operator gives a task, duet works, the operator replies with corrections or the next
+  task in the same session; the conversation and its context persist (append-only transcript), and a
+  session resumes after exit or interrupt.
+- duet may ask the operator a clarifying question (a tool that ends the turn and waits for input);
+  the operator can stop, redirect or accept between steps.
+- Every operator message passes the same boundary as task text (sanitized, audited); sandbox,
+  approval mode, budgets and terminal states apply per session and per turn.
+- Tests with a scripted frontier; a live hands-on acceptance on a fresh project.
 
 ### M5 — Public benchmark (days 32–35)
 
