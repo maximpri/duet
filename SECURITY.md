@@ -286,6 +286,24 @@ The boundary's own code is also tested against generated input, in the gate on e
   reasoning and tool-call arguments. After the outbound filter the final check must pass and no
   covered spelling may remain in the body, raw or JSON-decoded; a body that still holds one (6+
   bytes) must be refused by the check alone.
+- **End-to-end privacy scenarios** (`crates/duet-cli/tests/privacy_scenarios.rs`, harness in
+  `tests/privacy/`). Whole hybrid runs and sessions through the real frontier loop, composed as
+  `duet run` composes them (shipped default policy, engine primed on the files git lists, outbound
+  filter and check in the gate), in a temporary git repository holding synthetic values (a
+  gitignored `.env`, `data/customers.csv` with made-up names, emails and card numbers). A scripted
+  frontier records every request byte for byte; the local model is a stand-in that describes
+  structure, or answers carelessly (narrow questions literally; repeating a line, digit runs, a
+  value spelled out or in base64). Every request is searched with `testing::canary` (exact, other
+  case, escaped, encoded, reversed, split, digit fragments); a finding names the request, the
+  channel (system, user, tool result of which tool, call arguments) and the form. Covered: card
+  numbers the operator types (failing and passing the checksum, used through `ask_local`, restored
+  for the operator), `sensitive_data` commands reading run state or writing derived files, ten
+  narrow `ask_local` questions about one value, careless local answers, secrets in session and
+  steering messages. Scenarios marked `#[ignore]` reproduce open gaps (the reason names the gap;
+  see Known limits) and should pass once it is closed. To add one: build a `Fixture` (name, task,
+  stand-in), `script` the frontier's tool calls (`Step::From` builds one from the request it
+  answers, to use a placeholder or handle it was shown), `run` it or open a `session`, then
+  `assert_no_leak(&f.canaries([extra values]))`.
 - **Building blocks**: vault round trip, idempotence, no value left outside tokens, aliases never
   restored; copied-span redaction leaves no copied run; detector spans in bounds and disjoint; the
   stream parser, chunk assembler and tool-call recovery never panic on model output.
@@ -499,6 +517,14 @@ the server published within the wait; a slower check shows up in a later edit or
 - In a session, what the operator types is sanitized by detectors and the vault; a sensitive value
   in a form no detector recognizes (a customer's name in free text, an internal code with no custom
   pattern) reaches the frontier as typed, as it would in a run's task text.
+- Only files git lists are indexed at run start. A gitignored sensitive file (`.env`, logs and
+  databases usually are) enters the vault only once it is read, so until then a value from it that
+  no detector recognizes is not replaced elsewhere, for example when the operator types it.
+- Local-model output is matched against known values as written, and its 4-word copy window runs
+  after those values became placeholders. A value the local model spells out with spaces or
+  encodes (base64 of a short value such as a surname), a short field between replaced values of a
+  copied line (a date of birth), and single digits given one narrow question at a time, which add
+  up across calls, pass.
 
 ## Prompt injection: residual risk
 
