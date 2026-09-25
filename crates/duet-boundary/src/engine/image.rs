@@ -115,6 +115,7 @@ mod tests {
     use crate::images::ToFrontier;
     use crate::model::{Item, Request, prepare_image};
     use crate::policy::Policy;
+    use crate::testing::canary::Canaries;
     use crate::view::{Presenter, Source};
     use duet_provider::image::solid_png;
     use serde_json::{Map, json};
@@ -214,7 +215,11 @@ mod tests {
             panic!()
         };
         assert_eq!(images, &vec![public.clone()]);
-        assert!(check.check_images(&[public.sha256.clone()]).is_ok());
+        assert!(
+            check
+                .check_images(std::slice::from_ref(&public.sha256))
+                .is_ok()
+        );
         let refused = check
             .check_images(&[public.sha256.clone(), sensitive.sha256.clone()])
             .unwrap_err();
@@ -223,8 +228,16 @@ mod tests {
         drop((filter, check, e));
         let e = Engine::open(d.path(), policy(ToFrontier::Public, true), None).unwrap();
         let (_, check) = e.outbound();
-        assert!(check.check_images(&[public.sha256.clone()]).is_ok());
-        assert!(check.check_images(&[sensitive.sha256.clone()]).is_err());
+        assert!(
+            check
+                .check_images(std::slice::from_ref(&public.sha256))
+                .is_ok()
+        );
+        assert!(
+            check
+                .check_images(std::slice::from_ref(&sensitive.sha256))
+                .is_err()
+        );
     }
 
     #[test]
@@ -246,7 +259,11 @@ mod tests {
         assert!(shown.contains("withheld") && shown.contains("local.vision"));
         assert!(received.bodies().is_empty());
         let (_, check) = e.outbound();
-        assert!(check.check_images(&[img.sha256.clone()]).is_err());
+        assert!(
+            check
+                .check_images(std::slice::from_ref(&img.sha256))
+                .is_err()
+        );
     }
 
     fn describes(summary: &str, facts: &[&str]) -> String {
@@ -278,9 +295,9 @@ mod tests {
             img.data(),
         );
         assert_eq!(e.take_view_class(), Some(ViewClass::HandleSummary));
-        for planted in [KEY, EMAIL, NAME, CARD, "Velanwick", "4539148803436467"] {
-            assert!(!shown.contains(planted), "{planted} crossed: {shown}");
-        }
+        let planted = Canaries::new([KEY, EMAIL, NAME, "Velanwick", CARD]);
+        let found = planted.find(&shown);
+        assert!(found.is_empty(), "{found:?} crossed: {shown}");
         assert!(shown.contains("red Save button"), "{shown}");
         assert!(
             shown.starts_with("h1 (image data/billing.png, 8x8 png"),
@@ -301,7 +318,7 @@ mod tests {
         args.insert("handle".into(), json!("h1"));
         args.insert("question".into(), json!("Which key is shown?"));
         let answer = e.call_tool("ask_local", &args).unwrap().unwrap();
-        assert!(!answer.contains(KEY), "{answer}");
+        assert!(planted.find(&answer).is_empty(), "{answer}");
         let again = &received.bodies()[1]["messages"][1]["content"][0];
         assert_eq!(again["image_url"]["url"], img.data_url());
         // The values the description revealed are known from now on: the

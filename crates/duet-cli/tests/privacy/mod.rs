@@ -275,6 +275,11 @@ fn shipped_policy(owner: &Path) -> Policy {
         local_pii_pass: flag("sensitivity.local_pii_pass"),
         interface_only: list("ip.interface_only"),
         sealed: list("ip.sealed"),
+        local_vision: flag("local.vision"),
+        images_to_frontier: duet_boundary::images::ToFrontier::parse(
+            &cfg.str("images.to_frontier").unwrap(),
+        )
+        .unwrap(),
     }
 }
 

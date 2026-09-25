@@ -19,9 +19,10 @@ use duet_boundary::engine::Engine;
 use duet_boundary::images::ToFrontier;
 use duet_boundary::local::LocalReader;
 use duet_boundary::policy::Policy;
+use duet_boundary::testing::canary::{Canaries, Finding, Options};
 use duet_boundary::view::{PassThrough, Presenter};
 use duet_provider::client::{HttpReply, Transport};
-use duet_provider::image::{Image, pattern_png, prepare};
+use duet_provider::image::{Image, pattern_png, prepare, redact};
 use duet_provider::{ChatProvider, ProviderConfig, ProviderError, Role};
 use futures_util::StreamExt;
 use futures_util::future::BoxFuture;
@@ -312,15 +313,30 @@ fn carries(text: &str, image: &Image, file: &[u8]) -> bool {
     })
 }
 
-/// Planted values in `text`: as written, JSON-escaped, or without spaces.
-fn leaked(text: &str) -> Vec<&'static str> {
-    [SECRET, EMAIL, NAME, CARD, "Bakkeveen", "4539148803436467"]
-        .into_iter()
-        .filter(|v| {
-            let escaped = serde_json::to_string(v).unwrap();
-            text.contains(v) || text.contains(escaped.trim_matches('"'))
-        })
-        .collect()
+/// Planted values found in `text` in any spelling the shared canary matcher
+/// knows (exact, other case, escaped, encoded, split, digit runs of the
+/// card). Image data is replaced by its digest first: it is not text, and
+/// digests are not digit runs of anything.
+fn leaked(text: &str) -> Vec<Finding> {
+    let (redacted, digests) = match serde_json::from_str::<Value>(text) {
+        Ok(v) => {
+            let (r, d) = redact(&v);
+            (r.to_string(), d)
+        }
+        Err(_) => (text.to_owned(), Vec::new()),
+    };
+    Canaries::with_options(
+        [SECRET, EMAIL, NAME, "Bakkeveen", CARD],
+        Options {
+            ignore_fragments: digests,
+            ..Options::default()
+        },
+    )
+    .find(redacted)
+}
+
+fn leaked_from(bodies: &[String]) -> Vec<Finding> {
+    bodies.iter().flat_map(|b| leaked(b)).collect()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -597,7 +613,8 @@ async fn attachments_are_sent_or_described_by_the_rules() {
     assert!(text.starts_with("Fix the layout."), "{text}");
     assert!(text.contains("[image attached by the operator: photo.png (image, 50x50 png"));
     assert!(text.contains("Three boxes joined by arrows"), "{text}");
-    assert!(!text.contains(EMAIL), "{text}");
+    let found = leaked_from(&frontier.bodies());
+    assert!(found.is_empty(), "{found:?} reached the frontier");
     let all = frontier.bodies().concat();
     let scan = w.prepared("data/scan.png");
     let scan_file = std::fs::read(w.path("data/scan.png")).unwrap();
