@@ -524,6 +524,7 @@ async fn approval_follows_the_servers_setting_under_oversight() {
     let oversight = Oversight {
         mode: ApproveMode::Risky,
         approver: Some(deny.clone()),
+        ..Oversight::default()
     };
     let a = args(json!({"text": "drop table"}));
     let refused = decide(

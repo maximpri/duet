@@ -203,8 +203,10 @@ async fn mcp_tools_in_a_hybrid_run_leak_nothing_and_writes_need_approval() {
         oversight: Oversight {
             mode: ApproveMode::Risky,
             approver: Some(deny.clone()),
+            ..Oversight::default()
         },
         web: None,
+        git_author: None,
         mcp: Some(hub.clone()),
     };
     let git = duet_git::Git::locate().unwrap();
