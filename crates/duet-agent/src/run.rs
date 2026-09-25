@@ -61,6 +61,23 @@ impl Terminal {
         }
     }
 
+    /// The same state with placeholders in its text restored: what the
+    /// operator is shown (they may see their own values). The transcript and
+    /// the audit log keep what the frontier saw.
+    pub fn for_operator(&self, presenter: &dyn Presenter) -> Self {
+        match self {
+            Terminal::Completed { summary } => Terminal::Completed {
+                summary: presenter.detokenize(summary),
+            },
+            Terminal::Failed { reason } => Terminal::Failed {
+                reason: presenter.detokenize(reason),
+            },
+            Terminal::BudgetStopped { which } => Terminal::BudgetStopped {
+                which: which.clone(),
+            },
+        }
+    }
+
     /// `Failed` with the message of a caught panic.
     pub fn internal_error(panic: &(dyn std::any::Any + Send)) -> Self {
         let message = panic
@@ -156,6 +173,9 @@ fn add(a: &mut Usage, b: &Usage) {
 /// A full disk pauses the run: its state writes (transcript, write journal,
 /// audit log, workspace writes) are retried in place until they succeed, the
 /// run is interrupted or the deadline ends it (see `crate::host`).
+///
+/// The terminal state is returned in the operator's form
+/// ([`Terminal::for_operator`]); the transcript records the frontier's.
 pub async fn run(
     cfg: &RunConfig,
     frontier: &GatedFrontier,
@@ -201,7 +221,7 @@ pub async fn run(
             terminal: terminal.clone(),
         });
     }
-    (terminal, stats)
+    (terminal.for_operator(presenter), stats)
 }
 
 /// Whether a run can be resumed: it has a transcript and did not complete.
