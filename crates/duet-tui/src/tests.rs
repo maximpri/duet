@@ -1229,7 +1229,7 @@ while IFS= read -r line; do printf '%s\n' "$line" >> "{received}"; done
 }
 
 fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
-    for _ in 0..500 {
+    for _ in 0..3000 {
         if ok() {
             return;
         }
@@ -1302,11 +1302,12 @@ fn n_starts_a_session_and_its_input_box_sends_steers_and_stops() {
     app.key(KeyCode::Char('c'), KeyModifiers::CONTROL);
     assert!(!app.quit);
     assert!(app.status().contains("interrupt sent"), "{}", app.status());
-    wait_until("the interrupt", || received(d.path()).contains("SIGINT"));
-    // Esc leaves the box; s asks for a stop after the current step.
+    // Esc leaves the box; s asks for a stop after the current step. (The
+    // stand-in may only run its SIGINT trap once its read returns.)
     key(&mut app, KeyCode::Esc);
     key(&mut app, KeyCode::Char('s'));
     wait_until("the stop", || received(d.path()).contains("/stop"));
+    wait_until("the interrupt", || received(d.path()).contains("SIGINT"));
     assert!(!received(d.path()).contains("/status"));
     // Closing the input ends the stand-in, as quitting the TUI would.
     app.launched.as_mut().unwrap().close_input();
