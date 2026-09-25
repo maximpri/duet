@@ -39,6 +39,8 @@ pub struct Ctx<'a> {
     pub web: Option<&'a duet_web::Web>,
     /// The run's git tools (`None`: not a git repository, none offered).
     pub git_tools: Option<&'a crate::git_tools::GitTools>,
+    /// The run's language servers (`code_nav`, `rename`); `None` when off.
+    pub lsp: Option<&'a duet_lsp::Lsp>,
 }
 
 impl Ctx<'_> {
@@ -165,11 +167,22 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
         "list_files" => list_files(ctx, args),
         "search" => search(ctx, args),
         "diff" => diff(ctx),
-        "edit_file" => edit_file(ctx, args),
-        "write_file" => write_file(ctx, args),
+        "edit_file" | "write_file" => {
+            let written = if name == "edit_file" {
+                edit_file(ctx, args)
+            } else {
+                write_file(ctx, args)
+            };
+            match written {
+                Ok(text) => Ok(crate::code_nav::with_diagnostics(ctx, args, text).await),
+                Err(e) => Err(e),
+            }
+        }
         "run_command" => run_command(ctx, args).await,
         "finish" => return finish(ctx, args).await,
         "edit_protected" => crate::protected::edit_protected(ctx, args).await,
+        "code_nav" if ctx.lsp.is_some() => crate::code_nav::code_nav(ctx, args).await,
+        "rename" if ctx.lsp.is_some() => crate::code_nav::rename(ctx, args).await,
         crate::web::FETCH | crate::web::SEARCH if ctx.web.is_some() => {
             match crate::web::call(ctx, name, args).await {
                 Some(r) => r,
@@ -885,6 +898,7 @@ mod sensitive_command_tests {
             interrupted: None,
             web: None,
             git_tools: None,
+            lsp: None,
         };
         let out = call(
             &mut ctx,
@@ -941,6 +955,7 @@ mod sensitive_command_tests {
             interrupted: None,
             web: None,
             git_tools: None,
+            lsp: None,
         };
 
         // Any encoding of the data is out of reach of an ordinary command.

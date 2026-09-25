@@ -2,28 +2,54 @@
 //! Which server handles which files: a built-in table of common servers found
 //! on `PATH`, overridden or extended by the owner's `[lsp.servers.<language>]`.
 
-use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// A server as configured: the program and how to reach it.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// A server as configured (`[lsp.servers.<language>]`).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ServerConfig {
     /// A program name looked up on `PATH`, or an absolute path.
     pub command: String,
-    #[serde(default)]
     pub args: Vec<String>,
     /// File extensions (without the dot) this server handles. Optional when
     /// overriding a built-in language, which keeps its extensions.
-    #[serde(default)]
     pub extensions: Vec<String>,
     /// Names of environment variables passed through to the server (the
     /// sandbox clears everything else outside its own allowlist).
-    #[serde(default)]
     pub env: Vec<String>,
+}
+
+impl ServerConfig {
+    /// Why this entry for `language` cannot be used, if it cannot.
+    pub fn check(&self, language: &str) -> Result<(), String> {
+        let at = format!("lsp.servers.{language}");
+        if self.command.trim().is_empty() {
+            return Err(format!("{at}.command is not set"));
+        }
+        if self.command.contains('/') && !Path::new(&self.command).is_absolute() {
+            return Err(format!(
+                "{at}.command must be a program name or an absolute path"
+            ));
+        }
+        if self.extensions.is_empty() && builtin(language).is_none() {
+            return Err(format!(
+                "{at}.extensions is required for a language without a built-in server"
+            ));
+        }
+        let env_name = |n: &String| {
+            !n.is_empty()
+                && !n.starts_with(|c: char| c.is_ascii_digit())
+                && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        };
+        if let Some(bad) = self.env.iter().find(|n| !env_name(n)) {
+            return Err(format!(
+                "{at}.env: {bad:?} is not an environment variable name"
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The language-server settings of a run.
@@ -45,30 +71,6 @@ impl Default for Settings {
             request_timeout: Duration::from_secs(30),
             diagnostics_wait: Duration::from_secs(2),
         }
-    }
-}
-
-impl Settings {
-    /// Parses the `lsp.servers` table (`{ <language> = { command, args, extensions, env } }`).
-    pub fn parse_servers(table: &Value) -> Result<BTreeMap<String, ServerConfig>, String> {
-        let Some(map) = table.as_object() else {
-            return Err("lsp.servers must be a table of languages".into());
-        };
-        let mut out = BTreeMap::new();
-        for (lang, v) in map {
-            let cfg: ServerConfig = serde_json::from_value(v.clone())
-                .map_err(|e| format!("lsp.servers.{lang}: {e}"))?;
-            if cfg.command.trim().is_empty() {
-                return Err(format!("lsp.servers.{lang}: command is empty"));
-            }
-            if cfg.extensions.is_empty() && builtin(lang).is_none() {
-                return Err(format!(
-                    "lsp.servers.{lang}: extensions are required for a language without a built-in server"
-                ));
-            }
-            out.insert(lang.clone(), cfg);
-        }
-        Ok(out)
     }
 }
 
@@ -255,13 +257,26 @@ mod tests {
 
     #[test]
     fn owner_entries_override_or_add_languages() {
-        let table_value = json!({
-            "rust": {"command": "/opt/ra/bin/rust-analyzer"},
-            "zig": {"command": "zls", "extensions": [".zig"], "env": ["ZIG_LIB_DIR"]}
-        });
+        let entry = |command: &str, extensions: &[&str], env: &[&str]| ServerConfig {
+            command: command.into(),
+            args: Vec::new(),
+            extensions: extensions.iter().map(|e| (*e).into()).collect(),
+            env: env.iter().map(|e| (*e).into()).collect(),
+        };
+        let servers: BTreeMap<String, ServerConfig> = [
+            (
+                "rust".to_owned(),
+                entry("/opt/ra/bin/rust-analyzer", &[], &[]),
+            ),
+            ("zig".to_owned(), entry("zls", &[".zig"], &["ZIG_LIB_DIR"])),
+        ]
+        .into();
+        for (lang, cfg) in &servers {
+            cfg.check(lang).unwrap();
+        }
         let settings = Settings {
             enabled: true,
-            servers: Settings::parse_servers(&table_value).unwrap(),
+            servers,
             ..Settings::default()
         };
         let t = table(&settings);
@@ -275,13 +290,13 @@ mod tests {
         let zig = t.iter().find(|s| s.language == "zig").unwrap();
         assert_eq!(zig.extensions, vec!["zig"]);
         assert_eq!(zig.env, vec!["ZIG_LIB_DIR"]);
-        for bad in [
-            json!({"zig": {"command": "zls"}}),
-            json!({"rust": {"command": ""}}),
-            json!({"rust": {"command": "ra", "shell": true}}),
-            json!(["rust"]),
+        for (lang, bad) in [
+            ("zig", entry("zls", &[], &[])),
+            ("rust", entry("", &[], &[])),
+            ("rust", entry("bin/ra", &[], &[])),
+            ("rust", entry("ra", &[], &["A-B"])),
         ] {
-            assert!(Settings::parse_servers(&bad).is_err(), "{bad}");
+            assert!(bad.check(lang).is_err(), "{bad:?}");
         }
     }
 

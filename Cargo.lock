@@ -398,6 +398,7 @@ dependencies = [
  "duet-boundary",
  "duet-fs",
  "duet-git",
+ "duet-lsp",
  "duet-mcp",
  "duet-sandbox",
  "duet-web",
@@ -407,6 +408,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "url",
  "uuid",
 ]
 
@@ -448,6 +450,7 @@ dependencies = [
  "duet-config",
  "duet-fs",
  "duet-git",
+ "duet-lsp",
  "duet-mcp",
  "duet-provider",
  "duet-sandbox",

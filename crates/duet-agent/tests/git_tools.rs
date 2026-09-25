@@ -151,6 +151,7 @@ fn ctx<'a>(
         interrupted: None,
         web: None,
         git_tools: Some(tools),
+        lsp: None,
     }
 }
 

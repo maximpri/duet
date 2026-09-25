@@ -232,6 +232,7 @@ fn fixture(hybrid: bool, turn_usd: f64) -> Fixture {
         web: None,
         git_author: None,
         mcp: None,
+        lsp: None,
     };
     Fixture {
         _dir: dir,

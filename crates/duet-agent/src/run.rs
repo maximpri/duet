@@ -119,6 +119,10 @@ pub struct RunConfig {
     pub git_author: Option<duet_git::Identity>,
     /// MCP servers started for the run, with their tools; `None` when none are configured.
     pub mcp: Option<Arc<crate::mcp::Hub>>,
+    /// The run's language servers (`code_nav`, `rename`); `None` when
+    /// `lsp.enabled` is off or none is installed. See
+    /// [`crate::code_nav::language_servers`].
+    pub lsp: Option<Arc<duet_lsp::Lsp>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -220,6 +224,9 @@ pub async fn run(
         let _ = t.append(&Entry::End {
             terminal: terminal.clone(),
         });
+    }
+    if let Some(lsp) = &cfg.lsp {
+        lsp.shutdown().await;
     }
     (terminal.for_operator(presenter), stats)
 }
@@ -580,8 +587,8 @@ async fn drive(
 }
 
 /// The run's tools: built-in, the presenter's, the configured web tools, the
-/// git tools and the MCP servers' tools. Fixed for the run (or session) and sorted, so the request
-/// prefix never changes.
+/// git tools, the MCP servers' tools and the language-server tools. Fixed
+/// for the run (or session) and sorted, so the request prefix never changes.
 pub(crate) fn tool_specs(
     cfg: &RunConfig,
     presenter: &dyn Presenter,
@@ -601,6 +608,9 @@ pub(crate) fn tool_specs(
             .map(crate::mcp::Hub::specs)
             .unwrap_or_default(),
     );
+    if cfg.lsp.is_some() {
+        extra.extend(crate::code_nav::specs());
+    }
     tools::specs_with(extra)
 }
 
@@ -844,6 +854,7 @@ pub(crate) async fn work(
                 interrupted: Some(interrupted),
                 web: cfg.web.as_deref(),
                 git_tools: conv.git_tools.as_ref(),
+                lsp: cfg.lsp.as_deref(),
             };
             // Only what this call shows counts for it.
             let _ = presenter.take_view_class();

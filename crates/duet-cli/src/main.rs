@@ -26,6 +26,7 @@ use std::time::Duration;
 mod approve;
 mod chat;
 mod doctor;
+mod lsp;
 mod mcp;
 mod setup;
 mod web;
@@ -637,6 +638,7 @@ async fn prepare(
             frontier.audit(),
         )
         .await?,
+        lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
     };
     Ok(Prepared {
         git,

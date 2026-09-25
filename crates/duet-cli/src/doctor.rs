@@ -157,6 +157,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
         Some(c) => {
             out.push(posture(c));
             out.push(approval(c));
+            out.push(language_servers(c));
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
             out.extend(mcp_servers(c, ws, online).await);
@@ -900,6 +901,57 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
         },
     );
     out
+}
+
+/// Which language servers `code_nav` and `rename` would use (found on
+/// `PATH` or configured); none is started.
+fn language_servers(c: &Config) -> Check {
+    const NAME: &str = "language servers";
+    let s = match crate::lsp::settings(c) {
+        Ok(s) => s,
+        Err(e) => {
+            return check(NAME, Status::Fail, format!("{e:#}")).fix(
+                "correct lsp.servers in the owner config: [lsp.servers.<language>] with command, and args, \
+                 extensions and env as needed",
+            );
+        }
+    };
+    if !s.enabled {
+        return check(
+            NAME,
+            Status::Skip,
+            "lsp.enabled is off: code_nav and rename are not offered",
+        );
+    }
+    let path = std::env::var_os("PATH");
+    let found = duet_lsp::servers::detect(&s, path.as_deref());
+    let mut have = Vec::new();
+    let mut missing = Vec::new();
+    for spec in duet_lsp::servers::table(&s) {
+        match found.iter().find(|d| d.spec.language == spec.language) {
+            Some(d) => have.push(format!("{} ({})", spec.language, d.program.display())),
+            None => {
+                let names: Vec<&str> = spec.candidates.iter().map(|(c, _)| c.as_str()).collect();
+                missing.push(format!("{} ({})", spec.language, names.join(" or ")));
+            }
+        }
+    }
+    if have.is_empty() {
+        return check(
+            NAME,
+            Status::Skip,
+            format!("none installed, so code_nav and rename are not offered; looked for {}", missing.join(", ")),
+        )
+        .fix("install a server for the project's language (for example rust-analyzer), or configure [lsp.servers.<language>]");
+    }
+    let mut detail = format!(
+        "{}; started on first use, sandboxed without network",
+        have.join(", ")
+    );
+    if !missing.is_empty() {
+        detail.push_str(&format!("; not found: {}", missing.join(", ")));
+    }
+    check(NAME, Status::Pass, detail)
 }
 
 fn sandbox() -> Check {

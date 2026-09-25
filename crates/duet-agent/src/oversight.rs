@@ -250,6 +250,17 @@ pub fn classify(
                 None,
             ))
         }
+        // Only source and test files, checked by the tool itself; `all`
+        // asks before any of them change.
+        "rename" if all => {
+            let rel = duet_fs::writable_relative(string_arg(args, "path").ok()?).ok()?;
+            Some(action(
+                Risk::Write,
+                Some(rel.display().to_string()),
+                None,
+                None,
+            ))
+        }
         "edit_file" | "write_file" => {
             // A path the write path refuses is never written: nothing to approve.
             let rel = duet_fs::writable_relative(string_arg(args, "path").ok()?).ok()?;
