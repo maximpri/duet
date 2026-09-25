@@ -310,7 +310,9 @@ impl Engine {
                 if self.is_sensitive(path) {
                     continue;
                 }
-                if let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) {
+                if let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64)
+                    && sniff(&bytes).is_none()
+                {
                     st.public_words
                         .extend(words(&String::from_utf8_lossy(&bytes)));
                 }
@@ -326,6 +328,12 @@ impl Engine {
             let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64) else {
                 continue;
             };
+            if sniff(&bytes).is_some() {
+                // An image has no text to index; it is named in the task
+                // note and never shown (see `engine/image.rs`).
+                self.lock().sensitive_files.push(f.clone());
+                continue;
+            }
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let mut st = self.lock();
             st.sensitive_files.push(f.clone());

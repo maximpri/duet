@@ -32,6 +32,7 @@ pub use gate::{GateError, GatedFrontier, OutboundCheck, OutboundFilter, Outbound
 pub mod model {
     pub use duet_provider::image::{
         DEFAULT_MAX_SIDE, MAX_INPUT_BYTES, has_image_extension, prepare as prepare_image, sniff,
+        solid_png,
     };
     pub use duet_provider::types::{
         Image, Item, Request, Response, StopReason, ToolCall, ToolSpec, Usage,

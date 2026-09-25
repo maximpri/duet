@@ -134,6 +134,15 @@ pub const REGISTRY: &[Setting] = &[
         "API the frontier endpoint speaks: `chat` (OpenAI-compatible Chat Completions), `anthropic` (Anthropic Messages) or `responses` (OpenAI Responses)."
     ),
     s!(
+        "frontier.vision",
+        Bool,
+        "false",
+        Project,
+        OnlyFalse,
+        true,
+        "The frontier model accepts images. Pass-through: images are sent when true and refused when false. Hybrid: the frontier gets an image itself only when it is public (images.to_frontier, or attached with --image-public), never from a sensitive path. The anthropic and openai presets turn it on; `duet doctor --online` tests it."
+    ),
+    s!(
         "local.base_url",
         Str,
         r#""http://127.0.0.1:8080/v1""#,
@@ -150,6 +159,15 @@ pub const REGISTRY: &[Setting] = &[
         Any,
         false,
         "Local model id."
+    ),
+    s!(
+        "local.vision",
+        Bool,
+        "false",
+        Project,
+        OnlyFalse,
+        true,
+        "The local model reads images (a vision-language model). Hybrid: an image the frontier may not see is described by it and the frontier gets the description, cleaned like any local output; text in an image is only as safe as that description, since the detectors cannot read images. Without it such images are refused. `duet doctor --online` tests it with a generated image."
     ),
     s!(
         "local.api_key_env",
@@ -312,6 +330,27 @@ pub const REGISTRY: &[Setting] = &[
         Any,
         false,
         "A public file the model asked to read is shown whole up to this size; larger files become a handle with an outline."
+    ),
+    s!(
+        "images.to_frontier",
+        Choice(&["public", "never"]),
+        r#""never""#,
+        Project,
+        OnlyLaterChoice,
+        true,
+        "Hybrid: which images the frontier may receive itself (not a description). `never`: only images the operator attaches with --image-public (or /image --public). `public`: also workspace images read with read_file or attached from paths that are neither sensitive nor protected. Images cannot be scanned for secrets or personal data, hence `never`; sensitive-path images never go to the frontier."
+    ),
+    s!(
+        "images.max_side",
+        Int {
+            min: 256,
+            max: 8192
+        },
+        "1568",
+        Project,
+        Any,
+        false,
+        "Longest side, in pixels, an image is scaled to before a model sees it (every image is also re-encoded, which drops its metadata). Larger images cost more tokens; providers scale beyond about 1568 anyway."
     ),
     s!(
         "ip.interface_only",

@@ -57,6 +57,33 @@ pub struct Ledger {
     /// What the local model did (hybrid runs), including its busy seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<CallStats>,
+    /// Images: where they went, and what the ones the frontier saw cost.
+    #[serde(default, skip_serializing_if = "Images::is_empty")]
+    pub images: Images,
+}
+
+/// Images in a run. The provider's reported input tokens include what it
+/// charged for images (no provider reports them apart); `carried_tokens`
+/// estimates that share (about one token per 750 pixels, per request that
+/// carried the image), and `input_usd` is that share of the input dollars.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Images {
+    /// Images the frontier received itself.
+    pub to_frontier: u64,
+    pub to_frontier_bytes: u64,
+    /// Images the local model described instead (the frontier got the description).
+    pub described: u64,
+    /// Images refused (no model could be shown them under the rules).
+    pub refused: u64,
+    /// Estimated image tokens, summed over every request that carried them.
+    pub carried_tokens: u64,
+    pub input_usd: f64,
+}
+
+impl Images {
+    pub fn is_empty(&self) -> bool {
+        self.to_frontier + self.described + self.refused == 0
+    }
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -78,10 +105,33 @@ impl Ledger {
     ) {
         self.request_tokens += estimate(items, system);
         for item in items {
-            if let Item::ToolResult { call_id, content } = item {
-                let class = classes.get(call_id).copied().unwrap_or(ViewClass::Raw);
-                self.by_class.entry(class).or_default().carried_tokens += tokens_of(content);
+            match item {
+                Item::ToolResult { call_id, content } => {
+                    let class = classes.get(call_id).copied().unwrap_or(ViewClass::Raw);
+                    self.by_class.entry(class).or_default().carried_tokens += tokens_of(content);
+                }
+                Item::Images { images, .. } => {
+                    self.images.carried_tokens += images
+                        .iter()
+                        .map(duet_boundary::model::Image::estimated_tokens)
+                        .sum::<u64>();
+                }
+                _ => {}
             }
+        }
+    }
+
+    /// An image routed to `destination` (`frontier`, `local`, `none`; `None`
+    /// when the file could not be used as an image).
+    pub fn on_image(&mut self, destination: Option<&str>, bytes: u64) {
+        match destination {
+            Some("frontier") => {
+                self.images.to_frontier += 1;
+                self.images.to_frontier_bytes += bytes;
+            }
+            Some("local") => self.images.described += 1,
+            Some(_) => self.images.refused += 1,
+            None => {}
         }
     }
 
@@ -160,6 +210,7 @@ impl Ledger {
         for c in self.by_class.values_mut() {
             c.input_usd = self.input_usd * c.carried_tokens as f64 / total;
         }
+        self.images.input_usd = self.input_usd * self.images.carried_tokens as f64 / total;
     }
 }
 
@@ -267,6 +318,47 @@ mod tests {
         assert_eq!(l.sandbox_denials, 1);
         assert_eq!(l.by_class[&ViewClass::LocalAnswer].results, 2);
         assert_eq!(l.by_class[&ViewClass::Raw].results, 2);
+    }
+
+    #[test]
+    fn images_are_counted_by_destination_and_charged_per_request() {
+        let png = duet_boundary::model::solid_png(750, 100, [1, 2, 3]);
+        let img = duet_boundary::model::prepare_image(&png, 1568).unwrap();
+        let mut l = Ledger::default();
+        l.on_image(Some("frontier"), img.bytes);
+        l.on_image(Some("local"), 10);
+        l.on_image(Some("none"), 10);
+        l.on_image(None, 0);
+        let items = vec![
+            Item::User { text: "see".into() },
+            Item::Images {
+                call_id: None,
+                images: vec![img.clone()],
+            },
+        ];
+        for _ in 0..2 {
+            l.on_request(&items, "s", &HashMap::new());
+        }
+        assert_eq!(
+            (l.images.to_frontier, l.images.described, l.images.refused),
+            (1, 1, 1)
+        );
+        assert_eq!(l.images.to_frontier_bytes, img.bytes);
+        assert_eq!(l.images.carried_tokens, 2 * img.estimated_tokens());
+        l.on_usage(
+            &Usage {
+                input: 1000,
+                ..Usage::default()
+            },
+            &|u: &Usage| u.input as f64 / 1e6,
+        );
+        l.finish();
+        assert!(l.images.input_usd > 0.0 && l.images.input_usd <= l.input_usd);
+        let v = serde_json::to_value(&l).unwrap();
+        assert_eq!(v["images"]["to_frontier"], 1);
+        // A run without images keeps its summary as it was.
+        let none = serde_json::to_value(Ledger::default()).unwrap();
+        assert!(none.get("images").is_none());
     }
 
     #[test]

@@ -18,14 +18,25 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-/// Rough token estimate (about 3.5 bytes per token).
+/// Rough token estimate (about 3.5 bytes per token, plus each image's own
+/// estimate: an image item serializes to its digest only).
 pub fn estimate(items: &[Item], system: &str) -> u64 {
     let bytes: usize = system.len()
         + items
             .iter()
             .map(|i| serde_json::to_string(i).map_or(0, |s| s.len()))
             .sum::<usize>();
-    tokens_of_bytes(bytes)
+    tokens_of_bytes(bytes) + items.iter().map(image_tokens).sum::<u64>()
+}
+
+fn image_tokens(item: &Item) -> u64 {
+    match item {
+        Item::Images { images, .. } => images
+            .iter()
+            .map(duet_boundary::model::Image::estimated_tokens)
+            .sum(),
+        _ => 0,
+    }
 }
 
 fn tokens_of_bytes(bytes: usize) -> u64 {
@@ -130,13 +141,27 @@ pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f6
                 }
                 turns.push(Vec::new());
             }
-            Item::ToolResult { .. } => match turns.last_mut() {
+            Item::ToolResult { .. }
+            | Item::Images {
+                call_id: Some(_), ..
+            } => match turns.last_mut() {
                 Some(t) => t.push(n),
                 None => turns.push(vec![n]),
             },
             _ => {}
         }
     }
+    // Results with an image are masked whatever their length: the image goes too.
+    let with_images: std::collections::HashSet<String> = items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Images {
+                call_id: Some(c),
+                images,
+            } if !images.is_empty() => Some(c.clone()),
+            _ => None,
+        })
+        .collect();
     turns.retain(|t| !t.is_empty());
     let maskable = turns.len().saturating_sub(KEEP_RECENT_TURNS);
     let mut masked = 0;
@@ -145,14 +170,23 @@ pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f6
             break;
         }
         for &pos in turn {
-            if let Item::ToolResult { call_id, content } = &mut items[pos]
-                && !is_masked(content)
-                && content.len() >= MIN_MASKED_CHARS
-            {
-                let replacement = stub(calls.get(call_id.as_str()), content);
-                current = current.saturating_sub(tokens_of(content)) + tokens_of(&replacement);
-                *content = replacement;
-                masked += 1;
+            let tokens = image_tokens(&items[pos]);
+            match &mut items[pos] {
+                Item::ToolResult { call_id, content }
+                    if !is_masked(content)
+                        && (content.len() >= MIN_MASKED_CHARS
+                            || with_images.contains(call_id.as_str())) =>
+                {
+                    let replacement = stub(calls.get(call_id.as_str()), content);
+                    current = current.saturating_sub(tokens_of(content)) + tokens_of(&replacement);
+                    *content = replacement;
+                    masked += 1;
+                }
+                Item::Images { images, .. } if !images.is_empty() => {
+                    current = current.saturating_sub(tokens);
+                    images.clear();
+                }
+                _ => {}
             }
         }
     }
@@ -259,6 +293,35 @@ mod tests {
                 "turn {t} split: {states:?}"
             );
         }
+    }
+
+    #[test]
+    fn images_count_in_the_estimate_and_old_ones_are_masked_with_their_result() {
+        let png = duet_boundary::model::solid_png(1000, 800, [9, 9, 9]);
+        let img = duet_boundary::model::prepare_image(&png, 1568).unwrap();
+        let mut v = items(20, 1, 7000);
+        // The first turn's result is a short line with an image after it.
+        if let Item::ToolResult { content, .. } = &mut v[2] {
+            *content = "docs/ui.png (image, 1000x800 png, 2 KB); attached.".into();
+        }
+        v.insert(
+            3,
+            Item::Images {
+                call_id: Some("c0-0".into()),
+                images: vec![img.clone()],
+            },
+        );
+        let with = estimate(&v, "s");
+        let mut without = v.clone();
+        without.remove(3);
+        assert!(with >= estimate(&without, "s") + img.estimated_tokens());
+        let window = with + 1000;
+        assert!(mask_if_needed(&mut v, "s", window, 0.7) > 0);
+        assert!(
+            masked_at(&v, 2),
+            "the image's short result is masked with it"
+        );
+        assert!(matches!(&v[3], Item::Images { images, .. } if images.is_empty()));
     }
 
     #[test]

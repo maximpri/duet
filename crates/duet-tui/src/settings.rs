@@ -18,7 +18,7 @@ use std::path::Path;
 pub fn screen_of(key: &str) -> Option<Tab> {
     match key.split('.').next()? {
         "frontier" | "local" => Some(Tab::Models),
-        "sensitivity" => Some(Tab::Sensitivity),
+        "sensitivity" | "images" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
         "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git"
         | "mcp" | "lsp" | "subagents" => Some(Tab::Limits),

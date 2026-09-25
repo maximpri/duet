@@ -93,7 +93,9 @@ pub fn specs() -> Vec<ToolSpec> {
     let mut specs = vec![
         t(
             "read_file",
-            "Read a text file. Lines are numbered. Use start_line/end_line (1-based, inclusive) for large files.",
+            "Read a text file. Lines are numbered. Use start_line/end_line (1-based, inclusive) for large files. \
+An image (.png, .jpg, .jpeg, .gif, .webp) is returned as the image itself or, where images may not leave \
+this machine, as a description by the local model.",
             json!({"type": "object", "properties": {
                 "path": {"type": "string", "description": "Path relative to the repository root."},
                 "start_line": {"type": "integer", "minimum": 1},

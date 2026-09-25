@@ -339,6 +339,8 @@ pub struct Session<'a> {
     notes: Vec<String>,
     history: Vec<Exchange>,
     steering: Arc<Steering>,
+    /// Images the operator attached for their next message.
+    images: Vec<crate::images::Attachment>,
 }
 
 impl<'a> Session<'a> {
@@ -390,6 +392,11 @@ impl<'a> Session<'a> {
             notes: Vec::new(),
             history: Vec::new(),
             steering,
+            images: if resume {
+                Vec::new()
+            } else {
+                cfg.images.attached.clone()
+            },
         };
         let wait: Arc<dyn duet_fs::host::HostWait> = Arc::new(HostPolicy::finishing());
         let transcript = Transcript::open_waiting(&cfg.run_dir, Some(wait.clone()))
@@ -496,6 +503,21 @@ impl<'a> Session<'a> {
         } else {
             None
         }
+    }
+
+    /// Attaches an image to the operator's next message (`/image`), marked
+    /// public or not. It is checked now (a readable image, and where it may
+    /// go); the answer says where it will go, or why it cannot be attached.
+    pub fn attach(&mut self, path: PathBuf, public: bool) -> Result<String, String> {
+        let a = crate::images::Attachment { path, public };
+        let said = crate::images::check_attachment(self.cfg, self.presenter, &a)?;
+        self.images.push(a);
+        Ok(said)
+    }
+
+    /// Images waiting for the operator's next message.
+    pub fn attached(&self) -> &[crate::images::Attachment] {
+        &self.images
     }
 
     /// Restores placeholders in a frontier text for the operator.
@@ -669,11 +691,33 @@ impl<'a> Session<'a> {
             exchange,
             placeholders,
         });
+        // Attached images: described ones become notes in the message, the
+        // others follow it. One that cannot be attached fails the turn.
+        let mut sanitized = sanitized;
+        let attachments = std::mem::take(&mut self.images);
+        let images = crate::images::attach_all(
+            self.cfg,
+            self.presenter,
+            Some(self.frontier.audit()),
+            &attachments,
+            &mut self.stats.ledger,
+            &mut sanitized,
+        )?;
         let item = Item::User { text: sanitized };
         transcript
             .append(&Entry::Item { item: item.clone() })
             .map_err(|e| e.to_string())?;
         self.conv.items.push(item);
+        if !images.is_empty() {
+            let item = Item::Images {
+                call_id: None,
+                images,
+            };
+            transcript
+                .append(&Entry::Item { item: item.clone() })
+                .map_err(|e| e.to_string())?;
+            self.conv.items.push(item);
+        }
         Ok(())
     }
 

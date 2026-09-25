@@ -127,6 +127,9 @@ pub struct RunConfig {
     /// Sub-agents (`delegate`); `None` when `subagents.enabled` is off, and
     /// always in a sub-agent's own configuration (they cannot delegate).
     pub subagents: Option<crate::subagents::Subagents>,
+    /// Image settings and the operator's attachments (`frontier.vision`,
+    /// `images.max_side`, `duet run --image`).
+    pub images: crate::images::ImageConfig,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -455,6 +458,8 @@ pub(crate) fn replay(
     // Sub-agents' spend counts for the run, whether they ended or not.
     crate::subagents::replay(&entries, cfg, stats);
     replay_priced(entries, &*cfg.price, conv, stats);
+    // The transcript holds images by digest; their bytes are in the run's store.
+    crate::images::load(&cfg.run_dir, &mut conv.items);
 }
 
 /// [`replay`] of one conversation, its usage priced by `price`.
@@ -489,7 +494,7 @@ pub(crate) fn replay_priced(
                                 .on_result(c, content, class.unwrap_or(ViewClass::Raw));
                         }
                     }
-                    Item::User { .. } => {}
+                    Item::User { .. } | Item::Images { .. } => {}
                 }
                 conv.items.push(item);
             }
@@ -583,9 +588,18 @@ async fn drive(
                 frontier_model: frontier.model().to_owned(),
             })
         );
-        let first = Item::User {
-            text: presenter.sanitize_objective(&cfg.objective),
-        };
+        let mut text = presenter.sanitize_objective(&cfg.objective);
+        // The operator's images: described ones become notes in the text,
+        // the others follow it as an image item.
+        let images = crate::images::attach_all(
+            cfg,
+            presenter,
+            Some(frontier.audit()),
+            &cfg.images.attached,
+            &mut stats.ledger,
+            &mut text,
+        )?;
+        let first = Item::User { text };
         stored!(
             host,
             transcript.append(&Entry::Item {
@@ -593,6 +607,14 @@ async fn drive(
             })
         );
         conv.items.push(first);
+        if !images.is_empty() {
+            let item = Item::Images {
+                call_id: None,
+                images,
+            };
+            stored!(host, transcript.append(&Entry::Item { item: item.clone() }));
+            conv.items.push(item);
+        }
     }
     let limits = Limits {
         deadline,
@@ -888,6 +910,8 @@ pub(crate) async fn work(
         delegated.clear();
         for (i, call) in response.tool_calls.iter().enumerate() {
             stats.tool_calls += 1;
+            // The image a `read_file` call returns for the frontier itself.
+            let mut attached = Vec::new();
             let mut ctx = Ctx {
                 workspace: &cfg.workspace,
                 run_dir: &cfg.run_dir,
@@ -997,6 +1021,19 @@ pub(crate) async fn work(
                     outcome
                 } else if conv.child.is_some() && call.name == "run_command" {
                     crate::subagents::read_only_command(&ctx, &call.arguments).await
+                } else if call.name == "read_file" && crate::images::wants(&call.arguments) {
+                    let placed = crate::images::read(
+                        cfg,
+                        presenter,
+                        Some(frontier.audit()),
+                        &call.arguments,
+                    );
+                    stats.ledger.on_image(placed.destination, placed.bytes);
+                    attached = placed.images;
+                    match placed.text {
+                        Ok(text) => Outcome::Result(text),
+                        Err(e) => Outcome::Error(e),
+                    }
                 } else {
                     tools::dispatch(&mut ctx, &call.name, &call.arguments).await
                 };
@@ -1068,6 +1105,19 @@ pub(crate) async fn work(
                 })
             );
             items.push(result);
+            if !attached.is_empty() {
+                let images = Item::Images {
+                    call_id: Some(call.id.clone()),
+                    images: attached,
+                };
+                stored!(
+                    host,
+                    transcript.append(&Entry::Item {
+                        item: images.clone(),
+                    })
+                );
+                items.push(images);
+            }
         }
         if let Some(summary) = finished {
             return Ok(Terminal::Completed { summary }.into());

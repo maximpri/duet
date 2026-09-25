@@ -59,6 +59,23 @@ pub struct Approvals {
     pub denied: u64,
 }
 
+/// Images a run met: the frontier saw the image itself (`to_frontier`; of
+/// those, `operator_public` because the operator marked them public), saw a
+/// local description (`described`), or nothing (`refused`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ImageCounts {
+    pub to_frontier: u64,
+    pub operator_public: u64,
+    pub described: u64,
+    pub refused: u64,
+}
+
+impl ImageCounts {
+    pub fn is_empty(&self) -> bool {
+        self.to_frontier + self.described + self.refused == 0
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Disclosure {
     /// False when any part of the run had the boundary off (passthrough).
@@ -88,6 +105,9 @@ pub struct Disclosure {
     pub approvals: Approvals,
     /// `ask_local` calls (questions about withheld content).
     pub ask_local_calls: u64,
+    /// Images, by where they went (from the audit log's image events).
+    #[serde(default, skip_serializing_if = "ImageCounts::is_empty")]
+    pub images: ImageCounts,
     /// How tool results were shown; `None` when the run's ledger is unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub views: Option<Views>,
@@ -161,6 +181,18 @@ impl Disclosure {
                             .entry(format!("outbound:{channel}"))
                             .or_default() += 1;
                     }
+                    AuditEvent::Image {
+                        destination,
+                        operator_public,
+                        ..
+                    } => match destination.as_str() {
+                        "frontier" => {
+                            d.images.to_frontier += 1;
+                            d.images.operator_public += u64::from(*operator_public);
+                        }
+                        "local" => d.images.described += 1,
+                        _ => d.images.refused += 1,
+                    },
                     AuditEvent::RunEnd { .. }
                     | AuditEvent::EndpointTrust { .. }
                     | AuditEvent::ConfigChange { .. }
@@ -258,6 +290,20 @@ everything the model read was sent to the frontier unfiltered. Nothing below was
             None => out.push_str(
                 "  (per-result views unavailable: the run has no summary.json, e.g. interrupted or purged)\n",
             ),
+        }
+        if !self.images.is_empty() {
+            row(
+                &mut out,
+                "images described locally (image withheld)",
+                self.images.described,
+            );
+            row(&mut out, "images refused", self.images.refused);
+            out.push_str(&format!(
+                "  {:<44} {} ({} marked public by the operator)\n",
+                "images sent to the frontier (not scanned)",
+                self.images.to_frontier,
+                self.images.operator_public
+            ));
         }
         out.push_str("\nenforcement:\n");
         let blocked: u64 = self.blocked_sends.values().sum();
@@ -480,5 +526,52 @@ mod tests {
             text.contains("boundary was OFF") && text.contains("unavailable"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn images_are_counted_by_where_they_went() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("a.jsonl");
+        let mut log = AuditLog::open(&path).unwrap();
+        log.event(AuditEvent::RunStart {
+            mode: "hybrid".into(),
+            boundary: true,
+        })
+        .unwrap();
+        for (destination, public) in [
+            ("frontier", true),
+            ("frontier", false),
+            ("local", false),
+            ("none", false),
+        ] {
+            log.event(AuditEvent::Image {
+                origin: "workspace:docs/a.png".into(),
+                bytes: 10,
+                sha256: "ab".into(),
+                destination: destination.into(),
+                decision: "x".into(),
+                operator_public: public,
+            })
+            .unwrap();
+        }
+        let r = Disclosure::build(&read(&path).unwrap(), None);
+        assert_eq!(
+            r.images,
+            ImageCounts {
+                to_frontier: 2,
+                operator_public: 1,
+                described: 1,
+                refused: 1
+            }
+        );
+        let text = r.render("r");
+        assert!(
+            text.contains("images sent to the frontier (not scanned)"),
+            "{text}"
+        );
+        assert!(text.contains("(1 marked public by the operator)"), "{text}");
+        // Without images the report has no image lines.
+        let quiet = Disclosure::default().render("r");
+        assert!(!quiet.contains("image"), "{quiet}");
     }
 }

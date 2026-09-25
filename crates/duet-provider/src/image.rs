@@ -308,6 +308,23 @@ pub fn solid_png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
     encode(&img, false).unwrap_or_default()
 }
 
+/// A PNG of pseudo-random pixels from `seed` (a distinct, poorly
+/// compressible image), for tests.
+#[cfg(any(test, feature = "test-support"))]
+pub fn pattern_png(width: u32, height: u32, seed: u32) -> Vec<u8> {
+    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
+    let img = RgbImage::from_fn(width, height, |_, _| {
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state & 0xFF) as u8
+        };
+        image::Rgb([next(), next(), next()])
+    });
+    encode(&DynamicImage::ImageRgb8(img), false).unwrap_or_default()
+}
+
 /// The marker that stands for an image's data in audit records.
 pub fn marker(sha256: &str, bytes: usize) -> String {
     format!("[image sha256:{sha256}, {bytes} bytes]")

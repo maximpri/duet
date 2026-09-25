@@ -7,6 +7,7 @@ pub mod disclosure;
 pub mod driver;
 pub mod git_tools;
 pub mod host;
+pub mod images;
 pub mod journal;
 pub mod ledger;
 pub mod mcp;

@@ -348,6 +348,15 @@ fn feeds_from(
                     first_line(content),
                     content.lines().count()
                 )),
+                Item::Images { images, .. } => feed.push(format!(
+                    "  [{} image(s) sent to the frontier: {}]",
+                    images.len(),
+                    images
+                        .iter()
+                        .map(|i| i.describe())
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                )),
             },
             Entry::Usage {
                 turn: t,
