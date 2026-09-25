@@ -1270,8 +1270,8 @@ fn a_run_that_cannot_start_reports_why_and_approval_refuses_launching() {
 
 /// A stand-in for `duet chat`: records its arguments, announces a session
 /// (unless resuming), writes a transcript with one answered turn, and then
-/// appends every line it reads from its input to `received` until the input
-/// ends. It ignores SIGINT but records it.
+/// appends its input to `received` until the input ends. It ignores SIGINT
+/// but records it, after its input: deterministically, whenever it arrives.
 fn fake_chat(dir: &Path) -> std::path::PathBuf {
     let script = dir.join("fake-chat");
     let transcript = r#"{"kind":"start","objective":"hello","mode":"hybrid","frontier_model":"glm"}
@@ -1282,6 +1282,8 @@ fn fake_chat(dir: &Path) -> std::path::PathBuf {
         format!(
             r#"#!/bin/sh
 for a in "$@"; do printf '%s\n' "$a"; done > "{args}"
+# The trap runs once the foreground `cat` exits (when the input is closed),
+# never inside a builtin: a trap that interrupts `read` can wedge the shell.
 trap 'echo SIGINT >> "{received}"' INT
 case "$*" in
 *--resume*) ;;
@@ -1293,7 +1295,7 @@ cat > "$2/.duet/runs/20260925-130000-5e5510/transcript.jsonl" <<'EOF2'
 EOF2
 ;;
 esac
-while IFS= read -r line; do printf '%s\n' "$line" >> "{received}"; done
+cat >> "{received}"
 "#,
             args = dir.join("args").display(),
             received = dir.join("received").display(),
@@ -1395,20 +1397,22 @@ fn n_starts_a_session_and_its_input_box_sends_steers_and_stops() {
     app.key(KeyCode::Char('c'), KeyModifiers::CONTROL);
     assert!(!app.quit);
     assert!(app.status().contains("interrupt sent"), "{}", app.status());
-    // Esc leaves the box; s asks for a stop after the current step. (The
-    // stand-in may only run its SIGINT trap once its read returns.)
+    // Esc leaves the box; s asks for a stop after the current step.
     key(&mut app, KeyCode::Esc);
     key(&mut app, KeyCode::Char('s'));
     wait_until("the stop", || received(d.path()).contains("/stop"));
-    wait_until("the interrupt", || received(d.path()).contains("SIGINT"));
-    assert!(!received(d.path()).contains("/status"));
-    assert!(!received(d.path()).contains("/image"));
-    // Closing the input ends the stand-in, as quitting the TUI would.
+    // Closing the input ends the stand-in, as quitting the TUI would; it
+    // records the interrupt it received before it exits.
     app.launched.as_mut().unwrap().close_input();
     wait_until("the session to end", || {
         app.tick();
         app.launched.as_ref().is_some_and(|l| l.exit.is_some())
     });
+    assert_eq!(
+        received(d.path()),
+        "fix the flaky test\n/stop\nSIGINT\n",
+        "every message, the stop, then the interrupt; /status and refused images stay local"
+    );
 }
 
 #[test]
