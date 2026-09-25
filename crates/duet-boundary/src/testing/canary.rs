@@ -67,6 +67,10 @@ pub struct Finding {
     pub len: usize,
 }
 
+/// Digits of a canary found inside a longer number count only from this
+/// length on (8 digits by chance are about one in a hundred million).
+const LONG_FRAGMENT: usize = 8;
+
 /// Tuning for [`Canaries::with_options`].
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -291,8 +295,21 @@ impl Canaries {
         }
         if !self.digits.is_empty() {
             for (start, run) in runs(hay, |b| b.is_ascii_digit(), 1) {
+                // A short run glued to letters is part of an identifier or a
+                // hash, not a number someone wrote.
+                let glued = start
+                    .checked_sub(1)
+                    .is_some_and(|i| hay[i].is_ascii_alphabetic())
+                    || hay
+                        .get(start + run.len())
+                        .is_some_and(u8::is_ascii_alphabetic);
                 for (c, j, m) in self.digits.matches(run) {
-                    if !self.ignored(&run[j..j + m]) {
+                    // A fragment counts when it is the whole number written, or
+                    // long enough that a coincidence is implausible: a short
+                    // fragment inside a longer unrelated number (a timestamp,
+                    // a sequence number) is not a leak.
+                    let whole = j == 0 && m == run.len() && !glued;
+                    if (whole || m >= LONG_FRAGMENT) && !self.ignored(&run[j..j + m]) {
                         push(c, Form::DigitFragment, start + j, m);
                     }
                 }
@@ -883,6 +900,11 @@ mod tests {
         assert!(constants.find("\"max_tokens\":32000").is_empty());
         assert_eq!(forms(&constants, "x 2000000 y"), [Form::DigitFragment]);
         assert_eq!(forms(&years, "id 20245566"), [Form::DigitFragment]);
+        // Short fragments inside unrelated numbers, hashes or identifiers are
+        // coincidences; a long fragment inside a longer number is not.
+        assert!(c.find("\"unix_ms\":1790372138308,\"seq\":64670").is_empty());
+        assert!(c.find("prev 6bbba6467d62606 x4539").is_empty());
+        assert_eq!(forms(&c, "order 00045391488000"), [Form::DigitFragment]);
         // Values that are not mostly digits have no digit fragments.
         assert!(Canaries::new(["user1234@mail.io"]).find("1234").is_empty());
     }

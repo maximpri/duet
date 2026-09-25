@@ -651,7 +651,16 @@ async fn a_hybrid_sub_agent_sees_only_what_the_boundary_presents_and_leaks_nothi
     }
     // Nor in the audit log (its request records hold what was sent).
     let log = std::fs::read_to_string(&f.log).unwrap();
-    assert!(canaries.find(&log).is_empty());
+    let found = canaries.find(&log);
+    assert!(
+        found.is_empty(),
+        "audit log: {found:?}\n{}",
+        found
+            .iter()
+            .map(|x| &log[x.offset.saturating_sub(120)..(x.offset + x.len + 40).min(log.len())])
+            .collect::<Vec<_>>()
+            .join("\n---\n")
+    );
     // The values were there to leak: the local transcript holds the
     // sub-agent's report as it wrote it.
     let transcript = std::fs::read_to_string(f.run_dir.join("transcript.jsonl")).unwrap();
