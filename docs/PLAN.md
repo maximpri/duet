@@ -405,9 +405,25 @@ OpenAI judge).
   vLLM, oMLX, mlx_lm.server; audited, `--confirm` for the endpoint change); the loopback-only
   bootstrap in `duet run` (single unambiguous server for one run, else the exact config commands;
   never writes config); `duet doctor` (offline by default, `--online` for listings and the local
-  context window, `--json`, exit code = worst result). *Open:* frontier presets (z.ai, Anthropic,
-  OpenAI — the latter two need their dialects), the cache-reuse check (needs model calls; `duet
-  local-eval` measures it today), an update check (needs a release channel, SbD-3).
+  context window, `--json`, exit code = worst result).
+  *Built (branch `dialects`):* frontier presets `zai`, `anthropic`, `openai` (endpoint, model, key
+  variable and `frontier.dialect` through the audited owner-config path); the `--online` cache-reuse
+  check (the same built-in prompt twice to the frontier and the local model; cached tokens of the
+  repeat, warn when none). *Open:* an update check (needs a release channel, SbD-3).
+- Anthropic Messages and OpenAI Responses dialects (moved here from M1), selected by the owner-only
+  `frontier.dialect` (`chat` default). *Built (branch `dialects`):* both build their body from Duet's
+  `Request`, so the gate filters, checks and audits the exact body of any dialect in passthrough and
+  hybrid (no-canary property over all three shapes). Anthropic: sorted tools, a breakpoint on the
+  stable prefix and a rolling one on the last block, `tool_use`/`tool_result` blocks, effort as
+  adaptive thinking + `output_config.effort`, `input_json_delta` assembly, `max_tokens` and
+  context-window stops terminal, cache read/creation usage, 429/5xx/529 and stream `error` events
+  retried in place, other 4xx terminal. Responses: stateless (`store: false`), function calls,
+  `reasoning.effort` with encrypted reasoning carried forward, `prompt_cache_key` from the stable
+  prefix, cached-token usage, `incomplete` terminal. Signed thinking and encrypted reasoning are
+  replayed unchanged in their original position; a turn the outbound filter edits drops them, and a
+  provider refusing them after a history edit (context masking) gets one audited resend without
+  them. Scripted-transport tests only; *open:* a live run on each (needs `ANTHROPIC_API_KEY` /
+  `OPENAI_API_KEY`), and `xhigh`/`max` effort, which `frontier.reasoning_effort` does not offer.
 - One live smoke test per local backend. *Built:* ignored tests in
   `crates/duet-boundary/tests/backend_smoke.rs`, gated by `DUET_LIVE_<BACKEND>_URL`; not yet run live.
 - Large repositories: dogfood tasks X1 and X2 (real open-source repositories with injected

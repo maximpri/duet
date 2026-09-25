@@ -92,8 +92,9 @@ duet audit disclosure <run>     # what was withheld from the frontier, by class 
 duet resume <run>               # continue an interrupted run
 duet config list                # every setting, its value and where it came from
 duet config set --project ip.interface_only '["src/pricing/**"]'
-duet config preset              # local backends: default ports, where they report models and context
+duet config preset              # local backends and frontier providers (zai, anthropic, openai)
 duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
+duet config preset anthropic --confirm                 # frontier endpoint, model, key variable, dialect
 duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
 duet tui                        # settings, IP levels, audit viewer, run view; start runs
 duet local-eval                 # measure the configured local model in its reading roles
@@ -156,7 +157,9 @@ space, the audit chains and anchors of the latest runs, run data past retention,
 mode, and whether release signing keys are present (a warning in a build made by
 `tools/release.sh`; a note in a development build, since no release has been published). It uses no
 network by default. `--online` adds one model listing per configured server (and the local model's
-context window); it never calls a model. Exit code: 0 pass, 1 warn, 2 fail.
+context window), and a cache-reuse check that sends the frontier and the local model the same short
+built-in prompt twice (nothing from the workspace) and reports the cached input tokens of the
+repeat, warning when there are none. Exit code: 0 pass, 1 warn, 2 fail.
 
 Live smoke tests, one per local backend, run with
 `DUET_LIVE_OLLAMA_URL=http://127.0.0.1:11434/v1 cargo test -p duet-boundary --test backend_smoke -- --ignored`
@@ -164,8 +167,13 @@ Live smoke tests, one per local backend, run with
 
 ### Models
 
-- **Frontier:** z.ai `glm-5.3-flash` by default; any OpenAI-compatible Chat Completions endpoint.
-  Responses and Anthropic Messages endpoints are planned (M6).
+- **Frontier:** z.ai `glm-5.3-flash` by default. `frontier.dialect` selects the API the endpoint
+  speaks: `chat` (any OpenAI-compatible Chat Completions endpoint, the default), `anthropic`
+  (Anthropic Messages, with prompt-cache breakpoints on the stable prefix and a rolling one on the
+  conversation) or `responses` (OpenAI Responses, stateless). Presets: `zai` (`glm-5.3-flash`),
+  `anthropic` (`claude-opus-5-5`), `openai` (`gpt-5.5`). The outbound gate filters, checks and
+  audits the exact body of whichever dialect is used. The Anthropic and Responses dialects are
+  tested against scripted streams only; no live run has used them yet.
 - **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
   Ollama) on loopback, or on a host the owner allowlists; plain HTTP to a non-loopback host needs
   `local.allow_plaintext`. The default, `omlx-coding` (Qwen 3.8 27B on oMLX), was chosen with

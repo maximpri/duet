@@ -78,7 +78,7 @@ local-only agent with lower quality. Duet removes that choice for the sensitive 
 
 | Crate | Responsibility |
 |---|---|
-| `duet-provider` | Model APIs: OpenAI-compatible Chat Completions (z.ai, oMLX, LM Studio, llama.cpp, vLLM, Ollama); Responses and Anthropic Messages *(M6)*; streaming, retry, credentials, local-endpoint trust, usage with cache read/write, pricing |
+| `duet-provider` | Model APIs: OpenAI-compatible Chat Completions (z.ai, oMLX, LM Studio, llama.cpp, vLLM, Ollama), Anthropic Messages and OpenAI Responses (`frontier.dialect`); streaming, retry, credentials, local-endpoint trust, usage with cache read/write, pricing |
 | `duet-fs` | Handle-relative file access (`O_NOFOLLOW`, `openat`, `renameat`), durable atomic writes, private files, workspace lock, `.duet` path registry |
 | `duet-sandbox` | macOS Seatbelt / Linux bwrap command sandbox (sensitive paths unreadable), environment allowlist, output spill, process-tree capture and kill |
 | `duet-git` | Private checkpoint store and the single hygienic git helper |
@@ -255,15 +255,17 @@ reported separately. IP canaries (unique function bodies) must never cross.
 - **Files.** Owner: `~/.config/duet/config.toml`. Project: `.duet/config.toml`.
 - **CLI.** `duet config get|set|list|preset`, usable without the TUI. A loosening `set` or `preset`
   needs `--confirm` and is recorded in the owner's hash-chained config audit log. Presets cover
-  Ollama, LM Studio, llama.cpp, vLLM, oMLX and mlx_lm.server on loopback.
+  Ollama, LM Studio, llama.cpp, vLLM, oMLX and mlx_lm.server on loopback, and the frontier
+  providers z.ai, Anthropic and OpenAI (endpoint, model, key variable and dialect).
 - **Bootstrap.** With no owner `local.base_url`, `duet run` probes 127.0.0.1 on the preset ports
   only, uses a single unambiguous server for that run (recorded in `run.json`), and otherwise prints
   the `duet config set` commands; it never writes configuration.
 - **Doctor.** `duet doctor` reports pass/warn/fail with a fix per check (configuration and origins,
   config audit, loosened settings, frontier endpoint and key presence, local-endpoint trust, sandbox,
   git, disk, run audit chains and anchors, retention); offline by default, `--online` adds model
-  listings and the local context window, never a model call; `--json`; exit code is the worst result.
-  Frontier presets (z.ai, Anthropic, OpenAI), a cache-reuse check and an update check *(M6)*.
+  listings, the local context window and a cache-reuse check (the same built-in prompt sent twice to
+  the frontier and to the local model; cached input tokens of the repeat, warn when none); `--json`;
+  exit code is the worst result. An update check *(M6)*.
 - **TUI screens** (`duet tui`; settings screens generated from the registry):
 
 | Screen | Contents |
@@ -289,8 +291,12 @@ deletion on both periods is *(M6)*.
 ## 10. Supported models
 
 - **Frontier:** z.ai `glm-5.3-flash` by default (coding endpoint, `frontier.reasoning_effort`
-  medium); any OpenAI-compatible Chat Completions endpoint configurable by the owner; Responses and
-  Anthropic endpoints *(M6)*.
+  medium). The owner picks the endpoint's API with `frontier.dialect`: any OpenAI-compatible Chat
+  Completions endpoint (`chat`), Anthropic Messages (`anthropic`: effort as adaptive thinking with
+  `output_config.effort`, signed thinking replayed unchanged, cache breakpoints on system + tools
+  and on the latest block) or OpenAI Responses (`responses`: stateless, encrypted reasoning carried
+  forward, cached-token usage). Presets: z.ai `glm-5.3-flash`, Anthropic `claude-opus-5-5`, OpenAI
+  `gpt-5.5`, all with verified list prices.
 - **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
   Ollama) — loopback, or a host the owner explicitly allowlists; non-loopback plain HTTP is refused
   unless the owner sets `local.allow_plaintext = true`. The model is chosen with `duet local-eval`
