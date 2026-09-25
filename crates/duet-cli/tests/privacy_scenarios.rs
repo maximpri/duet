@@ -543,9 +543,6 @@ async fn image_the_operator_attaches_from_a_sensitive_path_is_described_never_se
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "gap: text in an image that is in no indexed file and that no detector recognizes (a \
-            password from a gitignored .env in a screenshot of a terminal) passes when the local \
-            model copies it into its description"]
 async fn image_a_screenshot_of_an_unindexed_password_is_described_without_it() {
     let f = Fixture::with(
         "image-password",
