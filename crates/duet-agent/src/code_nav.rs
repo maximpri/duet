@@ -159,11 +159,12 @@ struct Answer {
 }
 
 /// Paths a server may not read: what checks may not read, plus duet's own
-/// state and git history in every mode.
-fn server_hidden(presenter: &dyn Presenter, workspace: &Path) -> Vec<PathBuf> {
+/// state, git history and the sensitive commands' `TMPDIR` in every mode.
+fn server_hidden(presenter: &dyn Presenter, workspace: &Path, run_dir: &Path) -> Vec<PathBuf> {
     let mut v = presenter.hidden_from_checks(workspace);
     v.push(workspace.join(".git"));
     v.push(workspace.join(".duet"));
+    v.push(crate::tools::sensitive_scratch(run_dir));
     v
 }
 
@@ -531,7 +532,8 @@ async fn navigate(
 ) -> Result<Answer, Fail> {
     let presenter = ctx.presenter;
     let ws = ctx.workspace;
-    let hidden = move || server_hidden(presenter, ws);
+    let run_dir = ctx.run_dir;
+    let hidden = move || server_hidden(presenter, ws, run_dir);
     let mut scope = Scope::new(ctx, lsp);
     let raw_path = args.get("path").and_then(Value::as_str);
     let need_path =
@@ -941,7 +943,8 @@ pub(crate) async fn with_diagnostics(
     }
     let presenter = ctx.presenter;
     let ws = ctx.workspace;
-    let hidden = move || server_hidden(presenter, ws);
+    let run_dir = ctx.run_dir;
+    let hidden = move || server_hidden(presenter, ws, run_dir);
     let wait = lsp.settings.diagnostics_wait;
     let (section, outcome) = match lsp.diagnostics(&rel, &content, &hidden, false, wait).await {
         Ok(Some(p)) => (render_diagnostics(&scope, &rel, &content, &p.items), "ok"),
@@ -1098,7 +1101,8 @@ async fn rename_in(
         ));
     }
     let ws = ctx.workspace;
-    let hidden = move || server_hidden(presenter, ws);
+    let run_dir = ctx.run_dir;
+    let hidden = move || server_hidden(presenter, ws, run_dir);
     let scope = Scope::new(ctx, lsp);
     let t = target(ctx, lsp, &scope, string_arg(args, "path")?, true)?;
     let pos = line_col(args, &t.text)?;
