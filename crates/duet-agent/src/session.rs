@@ -21,7 +21,6 @@ use crate::prompt::session_prompt;
 use crate::run::{
     Conversation, INTERRUPTED, Limits, RunConfig, RunStats, Stop, Terminal, replay, work,
 };
-use crate::tools;
 use crate::transcript::{Entry, Transcript};
 use duet_boundary::GatedFrontier;
 use duet_boundary::audit::AuditEvent;
