@@ -469,7 +469,8 @@ pub(crate) enum Access {
     /// The host's checks: everything except sensitive data (protected source
     /// must compile); their output is presented as check output.
     Checks,
-    /// Everything; the output is held locally.
+    /// Everything except Duet's run state (denied to every command); the
+    /// output is held locally and placeholders in the command are resolved.
     SensitiveData,
 }
 
@@ -485,15 +486,37 @@ pub(crate) async fn sandboxed(
         Access::Checks => "checks",
         Access::SensitiveData => "sensitive_data",
     };
+    // Outside the workspace: `.duet/` (run state) is unreadable and unwritable
+    // to commands, so their TMPDIR lives in a per-run system temp directory.
+    // Commands that read sensitive data get their own, which no other command
+    // may read: what they leave there is derived data, like the files they write.
+    let run_name = ctx
+        .run_dir
+        .file_name()
+        .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned());
+    let scratch_root = std::env::temp_dir().join("duet-scratch");
+    let sensitive_scratch = scratch_root.join(format!("{run_name}-sensitive"));
+    let mut deny_read = match access {
+        Access::Ordinary => ctx.presenter.hidden_from_commands(ctx.workspace),
+        Access::Checks => ctx.presenter.hidden_from_checks(ctx.workspace),
+        // Everything but run state, which the sandbox denies to every command.
+        Access::SensitiveData => Vec::new(),
+    };
+    if access != Access::SensitiveData && sensitive_scratch.exists() {
+        deny_read.push(sensitive_scratch.clone());
+    }
+    // Placeholders in a sensitive_data command are resolved locally: its output
+    // stays on this machine. Elsewhere they stay as written.
+    let exec = match access {
+        Access::SensitiveData => ctx.presenter.detokenize(command),
+        _ => command.to_owned(),
+    };
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
-        // Outside the workspace: `.duet/` (run state) is unreadable and unwritable
-        // to commands, so their TMPDIR lives in a per-run system temp directory.
-        scratch: std::env::temp_dir().join("duet-scratch").join(
-            ctx.run_dir
-                .file_name()
-                .map_or_else(|| "run".into(), |n| n.to_string_lossy().into_owned()),
-        ),
+        scratch: match access {
+            Access::SensitiveData => sensitive_scratch,
+            _ => scratch_root.join(run_name),
+        },
         network: ctx.network,
         timeout,
         output_cap: 256 * 1024,
@@ -505,13 +528,8 @@ pub(crate) async fn sandboxed(
             ("CARGO_TERM_COLOR".into(), "never".into()),
             ("NO_COLOR".into(), "1".into()),
         ],
-        deny_read: match access {
-            Access::Ordinary => ctx.presenter.hidden_from_commands(ctx.workspace),
-            Access::Checks => ctx.presenter.hidden_from_checks(ctx.workspace),
-            Access::SensitiveData => Vec::new(),
-        },
+        deny_read,
     };
-    let restricted = !spec.deny_read.is_empty();
     let stop = async {
         match ctx.interrupted {
             Some(flag) => crate::run::raised(flag).await,
@@ -521,7 +539,7 @@ pub(crate) async fn sandboxed(
     let o = duet_sandbox::run_until(
         ctx.sandbox,
         &spec,
-        &["/bin/sh".into(), "-c".into(), command.into()],
+        &["/bin/sh".into(), "-c".into(), exec],
         ctx.workspace,
         stop,
     )
@@ -530,7 +548,8 @@ pub(crate) async fn sandboxed(
     if o.interrupted {
         return Err("interrupted: the command was stopped".into());
     }
-    if restricted && o.shows_denial() {
+    // Run state is denied to every command, so any command can meet a denial.
+    if o.shows_denial() {
         ctx.record(AuditEvent::SandboxDenial {
             command: command.to_owned(),
             access: access_name.to_owned(),
@@ -927,5 +946,115 @@ mod sensitive_command_tests {
             ["sandbox_denial", "sensitive_command", "sandbox_denial"]
         );
         assert!(log.contains("\"derived_files\":[\"totals.txt\"]"), "{log}");
+    }
+
+    #[tokio::test]
+    async fn sensitive_commands_never_reach_run_state_and_resolve_placeholders_locally() {
+        // Seen in a live run: a `sensitive_data` command (no deny list at all)
+        // listed `.duet`, read the vault and the transcripts, and found the
+        // value the operator had typed.
+        const CARD: &str = "4539578763621486";
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let id = format!("t{}", uuid::Uuid::new_v4().simple());
+        let run = ws.join(".duet/runs").join(&id);
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::create_dir_all(ws.join(".duet/audit")).unwrap();
+        std::fs::write(ws.join("data/cards.csv"), format!("id,card\n1,{CARD}\n")).unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        engine.prime(&ws, &["data/cards.csv".to_string()], "");
+        let token = engine.sanitize_message(CARD);
+        assert!(token.starts_with('⟨') && !token.contains(CARD), "{token}");
+        let audit_path = ws.join(".duet/audit").join(format!("{id}.jsonl"));
+        let audit = AuditHandle::new(duet_boundary::audit::AuditLog::open(&audit_path).unwrap());
+        audit.record(AuditEvent::RunStart {
+            mode: "hybrid".into(),
+            boundary: true,
+        });
+        let git = Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(30),
+            network: false,
+            checks: &[],
+            audit: Some(&audit),
+            interrupted: None,
+            web: None,
+        };
+        let scratch = std::env::temp_dir()
+            .join("duet-scratch")
+            .join(format!("{id}-sensitive"));
+        let shown = call(
+            &mut ctx,
+            "run_command",
+            json!({"command": format!(
+                "od -c .duet/runs/{id}/vault.json; ls -R .duet; grep -rl 4539 .duet; \
+                 echo forged >> .duet/audit/{id}.jsonl; cat data/cards.csv; \
+                 echo 'resolved {token}' > \"$TMPDIR/c\"; cat \"$TMPDIR/c\""
+            ), "sensitive_data": true}),
+        )
+        .await;
+        assert!(!shown.contains(CARD), "{shown}");
+        // The raw output, held locally: the data file was readable, run state was not.
+        let handle = shown.split_whitespace().next().unwrap();
+        let held = std::fs::read_to_string(run.join("handles").join(handle)).unwrap();
+        assert!(held.contains(&format!("1,{CARD}")), "{held}");
+        assert!(held.contains(&format!("resolved {CARD}")), "{held}");
+        assert!(
+            !held.contains("   4   5   3   9") && !held.contains("vault.json\n"),
+            "{held}"
+        );
+        assert!(held.contains(duet_sandbox::DENIAL_MESSAGE), "{held}");
+        assert!(
+            std::fs::read_to_string(scratch.join("c"))
+                .unwrap()
+                .contains(CARD)
+        );
+
+        // An ordinary command keeps placeholders as written and cannot read
+        // what a sensitive command left in its temporary directory.
+        call(
+            &mut ctx,
+            "run_command",
+            json!({"command": format!(
+                "echo '{token}' > literal.txt; cat {}/c > leak.txt", scratch.display()
+            )}),
+        )
+        .await;
+        assert_eq!(
+            std::fs::read_to_string(ws.join("literal.txt")).unwrap(),
+            format!("{token}\n")
+        );
+        assert!(
+            !std::fs::read_to_string(ws.join("leak.txt"))
+                .unwrap()
+                .contains(CARD)
+        );
+
+        // The audit log was not written by the command, names no value, and verifies.
+        let log = std::fs::read_to_string(&audit_path).unwrap();
+        assert!(
+            !log.lines().any(|l| l == "forged") && !log.contains(CARD),
+            "{log}"
+        );
+        assert!(log.contains("sandbox_denial"), "{log}");
+        assert!(matches!(
+            duet_boundary::audit::verify(&audit_path).unwrap(),
+            duet_boundary::audit::Verification::Intact { .. }
+        ));
+        let _ = std::fs::remove_dir_all(scratch);
     }
 }

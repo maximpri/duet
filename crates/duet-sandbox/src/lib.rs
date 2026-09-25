@@ -2,9 +2,10 @@
 //! Command sandbox (Seatbelt on macOS, bubblewrap on Linux), environment
 //! allowlist and process-tree control.
 //!
-//! Commands may read the filesystem (except paths the caller denies), write only inside the workspace and the
-//! run's scratch directory, never write `.git` or `.duet` at any depth, and have
-//! no network unless the run allows it. Resolution fails closed: without a
+//! Commands may read the filesystem (except paths the caller denies, and
+//! `.duet` at any depth: Duet's own run state), write only inside the workspace
+//! and the run's scratch directory, never write `.git` or `.duet` at any depth,
+//! and have no network unless the run allows it. Resolution fails closed: without a
 //! sandbox binary at its fixed absolute path, no command runs.
 
 use std::ffi::OsString;
@@ -223,6 +224,9 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         .to_str()
         .ok_or_else(|| SandboxError::Path(spec.workspace.display().to_string()))?;
     let reserved = format!("^{}(/.*)?/\\.(git|duet)(/.*)?$", regex_escape(root));
+    // Run state (the vault maps every placeholder to its real value; handles,
+    // transcripts, the audit log) is unreadable whatever the caller denies.
+    let run_state = format!("^{}(/.*)?/\\.duet(/.*)?$", regex_escape(root));
     let mut rules = vec![
         "(version 1)".to_owned(),
         "(deny default)".to_owned(),
@@ -241,6 +245,7 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         "(allow file-write* (regex #\"^/private/var/folders/[^/]+/[^/]+/T/xcrun_db\"))".to_owned(),
     ];
     // Later rules win: these override the blanket read allowance above.
+    rules.push(format!("(deny file-read* (regex #\"{run_state}\"))"));
     for p in &spec.deny_read {
         // A denied symlink is denied at its target too, so the content is not
         // readable under the target's own path.
@@ -370,8 +375,9 @@ fn push_bind(a: &mut Vec<OsString>, op: &str, src: &Path, dest: &Path) {
 /// `--chdir`, `--` and the command).
 ///
 /// The root is mounted read-only, with empty read-only `/tmp` and `/run`; the
-/// workspace and the scratch directory are mounted writable; every existing `.git` and `.duet` (`reserved`, at any
-/// depth) is mounted back read-only; every existing path in
+/// workspace and the scratch directory are mounted writable; every existing `.git` (`reserved`, at any
+/// depth) is mounted back read-only and every existing `.duet` is covered by a
+/// `stubs` stand-in (run state is never readable); every existing path in
 /// `spec.deny_read` is covered by a `stubs` stand-in. Paths are resolved
 /// first, so a symlink is covered at its target. A denied path that does not
 /// exist yet is skipped: there is nothing to read, and a mount point would
@@ -413,7 +419,13 @@ pub fn bwrap_args(spec: &Spec, reserved: &[Reserved], stubs: &DenyStubs) -> Vec<
     push_bind(&mut a, "--bind", &spec.workspace, &spec.workspace);
     for r in reserved {
         if let Ok(target) = r.path.canonicalize() {
-            push_bind(&mut a, "--ro-bind", &target, &target);
+            // Run state is unreadable, not only read-only.
+            let source = match (r.path.file_name(), target.is_dir()) {
+                (Some(n), true) if n == ".duet" => &stubs.dir,
+                (Some(n), false) if n == ".duet" => &stubs.file,
+                _ => &target,
+            };
+            push_bind(&mut a, "--ro-bind", source, &target);
         }
     }
     for p in &spec.deny_read {
@@ -1236,6 +1248,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_state_is_unreadable_even_when_nothing_is_denied() {
+        // A command allowed to read sensitive data gets no deny list; it must
+        // still not reach the vault, the transcripts or the audit log.
+        let (_d, ws) = setup();
+        std::fs::create_dir_all(ws.join(".duet/runs/r1")).unwrap();
+        std::fs::create_dir_all(ws.join("sub/.duet")).unwrap();
+        std::fs::write(ws.join(".duet/runs/r1/vault.json"), "{\"v\":\"4539\"}").unwrap();
+        std::fs::write(ws.join("sub/.duet/audit.jsonl"), "6121\n").unwrap();
+        std::fs::write(ws.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
+        let o = sh(
+            &ws,
+            "cat .duet/runs/r1/vault.json; ls -R .duet; cat sub/.duet/audit.jsonl; \
+             grep -r 4539 . ; echo x >> sub/.duet/audit.jsonl; cat .git/config",
+        )
+        .await;
+        let all = text(&o);
+        for secret in ["4539", "6121", "r1:"] {
+            assert!(!all.contains(secret), "{secret} readable: {all}");
+        }
+        assert!(o.shows_denial(), "{all}");
+        assert_eq!(
+            std::fs::read_to_string(ws.join("sub/.duet/audit.jsonl")).unwrap(),
+            "6121\n"
+        );
+        // Git metadata stays readable unless the caller denies it.
+        assert!(all.contains("bare = false"), "{all}");
+    }
+
+    #[tokio::test]
     async fn writes_inside_workspace_and_scratch_only() {
         let (_d, ws) = setup();
         assert_eq!(
@@ -1602,6 +1643,7 @@ mod bwrap_args_tests {
         let ws = s.workspace.display();
         assert!(joined.contains("--cap-drop ALL") && joined.contains("--tmpfs /run"));
         assert!(joined.contains(&format!("--ro-bind {ws}/.git {ws}/.git")));
+        assert!(joined.contains(&format!("--ro-bind {} {ws}/.duet", stubs.dir.display())));
         assert!(joined.contains(&format!(
             "--ro-bind {ws}/vendor/dep/.git {ws}/vendor/dep/.git"
         )));
