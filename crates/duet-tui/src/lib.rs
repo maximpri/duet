@@ -28,10 +28,38 @@ use std::time::Duration;
 /// Runs `duet doctor`; the argument is whether to include the `--online` checks.
 pub type Doctor = Box<dyn Fn(bool) -> Vec<DoctorLine>>;
 
-/// Runs the TUI on the terminal until the user quits.
+/// The smallest terminal the screens are laid out for (columns, rows).
+pub const MIN_SIZE: (u16, u16) = (80, 24);
+
+/// Refuses a terminal smaller than [`MIN_SIZE`], including one that reports
+/// no size at all (0x0), with a message saying what is needed.
+pub fn check_size(width: u16, height: u16) -> Result<(), String> {
+    let (w, h) = MIN_SIZE;
+    if width >= w && height >= h {
+        Ok(())
+    } else {
+        Err(format!(
+            "terminal too small: need at least {w}x{h}, this one is {width}x{height}"
+        ))
+    }
+}
+
+/// Runs the TUI on the terminal until the user quits. Fails before touching
+/// the terminal when it has no usable size.
 pub fn run(paths: Paths, doctor: Doctor) -> anyhow::Result<()> {
+    use std::io::IsTerminal;
+    anyhow::ensure!(
+        std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
+        "no usable terminal: duet tui needs an interactive terminal on standard input and output"
+    );
+    let (width, height) = ratatui::crossterm::terminal::size()
+        .map_err(|e| anyhow::anyhow!("no usable terminal: {e}"))?;
+    check_size(width, height).map_err(anyhow::Error::msg)?;
     let mut app = App::new(paths, doctor)?;
-    let mut terminal = ratatui::init();
+    let mut terminal = ratatui::try_init().map_err(|e| {
+        ratatui::restore();
+        anyhow::anyhow!("no usable terminal: {e}")
+    })?;
     let result = (|| -> anyhow::Result<()> {
         while !app.quit {
             terminal.draw(|f| ui::draw(f, &mut app))?;

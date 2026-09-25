@@ -547,3 +547,25 @@ fn empty_workspace_screens_render() {
     app.enter_tab(Tab::Audit);
     assert!(render(&mut app).contains("runs: none yet"));
 }
+
+#[test]
+fn a_terminal_without_a_usable_size_is_refused_with_the_minimum() {
+    let (w, h) = crate::MIN_SIZE;
+    assert_eq!(crate::check_size(w, h), Ok(()));
+    assert_eq!(crate::check_size(200, 60), Ok(()));
+    for (width, height) in [(0, 0), (w - 1, h), (w, h - 1), (40, 10)] {
+        let message = crate::check_size(width, height).unwrap_err();
+        assert_eq!(
+            message,
+            format!("terminal too small: need at least {w}x{h}, this one is {width}x{height}")
+        );
+    }
+    // A terminal shrunk while running shows the message instead of a clipped screen.
+    let (_d, mut app) = fixture("", "");
+    let out = screen(&mut app, 60, 12);
+    assert!(
+        out.contains("terminal too small: need at least 80x24"),
+        "{out}"
+    );
+    assert!(!out.contains("edits go to"), "{out}");
+}

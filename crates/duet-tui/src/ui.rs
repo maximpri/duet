@@ -29,6 +29,17 @@ pub(crate) fn status_style(status: &str) -> Style {
 }
 
 pub(crate) fn draw(f: &mut Frame, app: &mut App) {
+    // A terminal shrunk below the minimum while running shows why, not a
+    // clipped screen.
+    let area = f.area();
+    if let Err(message) = crate::check_size(area.width, area.height) {
+        f.render_widget(
+            Paragraph::new(format!("{message}; enlarge the window to continue"))
+                .wrap(Wrap { trim: true }),
+            area,
+        );
+        return;
+    }
     let [bar, body, keys] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(8),

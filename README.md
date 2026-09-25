@@ -107,7 +107,8 @@ content as they are written; read-only). The settings screens are generated from
 show where each value comes from (default, owner or project). Edits take the same path as
 `duet config set`: a change that loosens privacy shows its diff and needs `y`, `p` switches edits
 to the project file (which only tightens and never takes owner-only keys), and every applied change
-is recorded in the owner's config audit log.
+is recorded in the owner's config audit log. It needs an interactive terminal of at least 80x24;
+without one it says so and exits with status 1.
 
 **Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Duet
 asks y/N on the terminal before a `sensitive_data` command, a protected edit, or a write to anything
