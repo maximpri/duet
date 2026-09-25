@@ -595,14 +595,29 @@ pub async fn run_until(
 
 static MARKERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-async fn run_with(
+/// A sandboxed command ready to start.
+struct Prepared {
+    cmd: tokio::process::Command,
+    /// The spec with its scratch directory resolved.
+    spec: Spec,
+    reserved: Vec<Reserved>,
+    marker: Option<PathBuf>,
+    /// The named pipe a server reads its input from (bubblewrap).
+    fifo: Option<PathBuf>,
+}
+
+/// Builds the sandboxed command for `argv`. With `server_input`, the command
+/// reads the host's messages on its standard input (a pipe under Seatbelt, a
+/// named pipe in the scratch directory under bubblewrap, whose own standard
+/// input carries the seccomp filter); otherwise its input is empty.
+fn prepare(
     kind: SandboxKind,
     bwrap: &Path,
     spec: &Spec,
     argv: &[String],
     cwd: &Path,
-    stop: impl std::future::Future<Output = ()>,
-) -> Result<Output, SandboxError> {
+    server_input: bool,
+) -> Result<Prepared, SandboxError> {
     let (program, args) = argv
         .split_first()
         .ok_or_else(|| SandboxError::Spawn("empty command".into()))?;
@@ -618,7 +633,12 @@ async fn run_with(
     let spec = &resolved;
     let mut reserved = Vec::new();
     let mut marker = None;
-    let mut stdin = Stdio::null();
+    let mut fifo = None;
+    let mut stdin = if server_input {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    };
     let mut cmd = match kind {
         SandboxKind::Seatbelt => {
             let mut c = tokio::process::Command::new(SANDBOX_EXEC);
@@ -631,11 +651,10 @@ async fn run_with(
         SandboxKind::Bubblewrap => {
             reserved = reserved_entries(&spec.workspace);
             let stubs = DenyStubs::ensure(&std::env::temp_dir())?;
-            let m = spec.scratch.join(format!(
-                ".duet-sandbox-started-{}-{}",
-                std::process::id(),
-                MARKERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-            ));
+            let n = MARKERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let m = spec
+                .scratch
+                .join(format!(".duet-sandbox-started-{}-{n}", std::process::id(),));
             let mut c = tokio::process::Command::new(bwrap);
             c.args(bwrap_args(spec, &reserved, &stubs));
             if !spec.network {
@@ -643,21 +662,36 @@ async fn run_with(
                 let filter = seccomp::filter()?;
                 c.args(["--seccomp", "0"]);
                 stdin = Stdio::from(filter);
+            } else if server_input {
+                stdin = Stdio::null();
             }
-            c.arg("--chdir")
-                .arg(cwd)
-                .arg("--")
-                // Proves the sandbox was set up: bubblewrap only reaches this
-                // shell once every namespace and mount is in place. The
-                // command's standard input is empty, as under Seatbelt.
-                .args([
+            c.arg("--chdir").arg(cwd).arg("--");
+            // Proves the sandbox was set up: bubblewrap only reaches this
+            // shell once every namespace and mount is in place. A command's
+            // standard input is empty, as under Seatbelt; a server's is the
+            // named pipe the host writes to.
+            if server_input {
+                let f = spec
+                    .scratch
+                    .join(format!(".duet-sandbox-input-{}-{n}", std::process::id()));
+                make_fifo(&f)?;
+                c.args([
+                    "/bin/sh",
+                    "-c",
+                    "exec <\"$1\"; : > \"$0\" && shift && exec \"$@\"",
+                ])
+                .arg(&m)
+                .arg(&f);
+                fifo = Some(f);
+            } else {
+                c.args([
                     "/bin/sh",
                     "-c",
                     "exec </dev/null; : > \"$0\" && exec \"$@\"",
                 ])
-                .arg(&m)
-                .arg(program)
-                .args(args);
+                .arg(&m);
+            }
+            c.arg(program).args(args);
             marker = Some(m);
             c
         }
@@ -675,6 +709,51 @@ async fn run_with(
         .stderr(Stdio::piped())
         .process_group(0)
         .kill_on_drop(true);
+    Ok(Prepared {
+        cmd,
+        spec: resolved,
+        reserved,
+        marker,
+        fifo,
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn make_fifo(path: &Path) -> Result<(), SandboxError> {
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        path,
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::from_raw_mode(0o600),
+        0,
+    )
+    .map_err(|e| SandboxError::Spawn(format!("input pipe: {e}")))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn make_fifo(_path: &Path) -> Result<(), SandboxError> {
+    Err(SandboxError::Unavailable(
+        "bubblewrap runs only on Linux".into(),
+    ))
+}
+
+async fn run_with(
+    kind: SandboxKind,
+    bwrap: &Path,
+    spec: &Spec,
+    argv: &[String],
+    cwd: &Path,
+    stop: impl std::future::Future<Output = ()>,
+) -> Result<Output, SandboxError> {
+    let program = argv.first().cloned().unwrap_or_default();
+    let Prepared {
+        mut cmd,
+        spec: resolved,
+        reserved,
+        marker,
+        ..
+    } = prepare(kind, bwrap, spec, argv, cwd, false)?;
+    let spec = &resolved;
     let started = Instant::now();
     let mut child = cmd.spawn().map_err(|e| match kind {
         SandboxKind::Bubblewrap => {
@@ -777,6 +856,134 @@ async fn run_with(
         removed_reserved,
         duration: started.elapsed(),
     })
+}
+
+/// A long-running sandboxed program that talks to the host over its standard
+/// input and output (an MCP server). Same sandbox as a command: hidden paths
+/// denied, writes limited to the workspace and scratch directory, network as
+/// the spec says. Its whole process tree is killed when it is stopped or
+/// dropped.
+pub struct Process {
+    child: tokio::process::Child,
+    pid: Option<u32>,
+    stdin: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>,
+    stdout: Option<tokio::process::ChildStdout>,
+    stderr: Option<tokio::process::ChildStderr>,
+    workspace: PathBuf,
+    reserved: Vec<Reserved>,
+    marker: Option<PathBuf>,
+    fifo: Option<PathBuf>,
+    /// `.git` and `.duet` entries it creates are removed when it stops (bubblewrap).
+    sweep: bool,
+}
+
+/// The standard streams of a [`Process`]: its input, output and error output.
+pub type Streams = (
+    Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
+    tokio::process::ChildStdout,
+    tokio::process::ChildStderr,
+);
+
+/// Starts `argv` in `cwd` under the sandbox as a [`Process`]. `spec.timeout`,
+/// `output_cap` and `spill_file` do not apply (the caller bounds each exchange).
+pub async fn spawn(
+    kind: SandboxKind,
+    spec: &Spec,
+    argv: &[String],
+    cwd: &Path,
+) -> Result<Process, SandboxError> {
+    let program = argv.first().cloned().unwrap_or_default();
+    let Prepared {
+        mut cmd,
+        spec,
+        reserved,
+        marker,
+        fifo,
+    } = prepare(kind, Path::new(BWRAP), spec, argv, cwd, true)?;
+    // The host holds the named pipe open for reading and writing, so the
+    // server's open of it never waits and its input ends when the host closes it.
+    #[cfg(target_os = "linux")]
+    let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = match &fifo {
+        Some(f) => Some(Box::new(
+            tokio::net::unix::pipe::OpenOptions::new()
+                .read_write(true)
+                .open_sender(f)
+                .map_err(|e| SandboxError::Spawn(format!("input pipe: {e}")))?,
+        )),
+        None => None,
+    };
+    #[cfg(not(target_os = "linux"))]
+    let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = None;
+    let mut child = cmd.spawn().map_err(|e| match kind {
+        SandboxKind::Bubblewrap => SandboxError::Unavailable(format!("cannot start {BWRAP}: {e}")),
+        SandboxKind::Seatbelt => SandboxError::Spawn(format!("{program}: {e}")),
+    })?;
+    let stdin = match pipe {
+        Some(p) => Some(p),
+        None => child
+            .stdin
+            .take()
+            .map(|s| Box::new(s) as Box<dyn tokio::io::AsyncWrite + Send + Unpin>),
+    };
+    Ok(Process {
+        pid: child.id(),
+        stdout: child.stdout.take(),
+        stderr: child.stderr.take(),
+        child,
+        stdin,
+        workspace: spec.workspace,
+        reserved,
+        marker,
+        fifo,
+        sweep: kind == SandboxKind::Bubblewrap,
+    })
+}
+
+impl Process {
+    /// Its standard streams (once).
+    pub fn take_streams(&mut self) -> Option<Streams> {
+        Some((self.stdin.take()?, self.stdout.take()?, self.stderr.take()?))
+    }
+
+    /// Whether the sandbox was fully set up before the program started (under
+    /// bubblewrap, known once the program has run; always true under Seatbelt).
+    pub fn sandboxed(&self) -> bool {
+        self.marker.as_ref().is_none_or(|m| m.exists())
+    }
+
+    /// Its exit code once it has exited (`Some(None)`: killed by a signal).
+    pub fn exited(&mut self) -> Option<Option<i32>> {
+        self.child.try_wait().ok().flatten().map(|s| s.code())
+    }
+
+    /// Stops it: waits up to `grace` for it to exit (its input should be
+    /// closed first), then kills its whole tree. Returns the `.git` and
+    /// `.duet` entries it created, which are removed (bubblewrap).
+    pub async fn stop(&mut self, grace: Duration) -> Vec<PathBuf> {
+        let _ = tokio::time::timeout(grace, self.child.wait()).await;
+        if let Some(pid) = self.pid.take() {
+            kill_tree(pid);
+        }
+        let _ = self.child.kill().await;
+        for p in [self.marker.take(), self.fifo.take()].into_iter().flatten() {
+            let _ = std::fs::remove_file(p);
+        }
+        if !std::mem::take(&mut self.sweep) {
+            return Vec::new();
+        }
+        remove_new_reserved(&self.workspace, &std::mem::take(&mut self.reserved))
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        if let Some(pid) = self.pid.take() {
+            kill_tree(pid);
+        }
+        for p in [self.marker.take(), self.fifo.take()].into_iter().flatten() {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 }
 
 /// `(pid, ppid)` of every process, as `ps` reports them.
@@ -919,6 +1126,46 @@ mod tests {
         assert!(all.contains("public"), "{all}");
         assert!(!ws.join("copy.txt").exists());
         assert!(o.shows_denial(), "{all}");
+    }
+
+    #[tokio::test]
+    async fn a_server_process_talks_over_its_streams_under_the_same_sandbox() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let (_d, ws) = setup();
+        std::fs::write(ws.join(".env"), "TOKEN=Qx7pL2mN9vR4\n").unwrap();
+        let mut s = spec(&ws);
+        s.deny_read = vec![ws.join(".env")];
+        // Echoes each line it reads, prefixed with what reading `.env` gave.
+        let script = "while IFS= read -r l; do v=$(cat .env 2>&1); echo \"$l|$v\"; done";
+        let mut p = spawn(
+            KIND,
+            &s,
+            &["/bin/sh".into(), "-c".into(), script.into()],
+            &ws,
+        )
+        .await
+        .unwrap();
+        let (mut input, output, _err) = p.take_streams().unwrap();
+        let mut lines = BufReader::new(output).lines();
+        for n in 0..2 {
+            input.write_all(format!("m{n}\n").as_bytes()).await.unwrap();
+            input.flush().await.unwrap();
+            let line = tokio::time::timeout(Duration::from_secs(10), lines.next_line())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(line.starts_with(&format!("m{n}|")), "{line}");
+            assert!(
+                !line.contains("Qx7p") && line.contains(DENIAL_MESSAGE),
+                "{line}"
+            );
+        }
+        assert!(p.sandboxed());
+        // Closing its input ends it.
+        drop(input);
+        assert!(p.stop(Duration::from_secs(5)).await.is_empty());
+        assert!(p.exited().is_some());
     }
 
     #[tokio::test]
