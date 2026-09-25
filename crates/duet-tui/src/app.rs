@@ -948,7 +948,7 @@ impl App {
     fn commit(&mut self, p: Proposal, confirmed: bool) {
         let result = self
             .cfg
-            .apply(p.target, p.key, p.new.clone(), confirmed)
+            .apply(p.target, &p.key, p.new.clone(), confirmed)
             .map_err(anyhow::Error::from)
             .and_then(|change| {
                 record_config_change(&self.paths.config_audit(), &change, p.target, confirmed)?;

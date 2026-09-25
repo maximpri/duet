@@ -541,10 +541,166 @@ pub const REGISTRY: &[Setting] = &[
         false,
         "Author and committer of git_commit commits, as `Name <email>`. Empty: user.name and user.email from the repository's git config, else from ~/.gitconfig or ~/.config/git/config (only those two keys are read); without either, git_commit refuses."
     ),
+    // MCP servers: one `[mcp.servers.<name>]` table per server; `*` stands
+    // for the name (letters, digits, `_`, `-`; at most 32 characters).
+    s!(
+        "mcp.servers.*.command",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Program that starts a stdio MCP server, run in the command sandbox with the workspace as working directory (same hidden paths as commands). Set this or url."
+    ),
+    s!(
+        "mcp.servers.*.args",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Arguments of the server's command."
+    ),
+    s!(
+        "mcp.servers.*.url",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Streamable HTTP endpoint of a remote MCP server (https, or http to a loopback address). Set this or command."
+    ),
+    s!(
+        "mcp.servers.*.env",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Names of environment variables passed to a stdio server; every other variable is cleared (except the sandbox's base set: PATH, HOME, locale). Values are never stored."
+    ),
+    s!(
+        "mcp.servers.*.headers_env",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "HTTP headers taken from environment variables, as `Header=VARIABLE` (the variable holds the whole value, e.g. `Bearer ...`)."
+    ),
+    s!(
+        "mcp.servers.*.trust",
+        Choice(&["public", "sensitive"]),
+        r#""public""#,
+        Owner,
+        Any,
+        true,
+        "`public`: results are scanned and shown to the frontier, and arguments holding placeholders or sensitive values are refused. `sensitive`: results stay on this machine (handle + local summary); for a stdio server, placeholders in arguments are resolved to their values."
+    ),
+    s!(
+        "mcp.servers.*.network",
+        Bool,
+        "false",
+        Owner,
+        Any,
+        true,
+        "Network access for a stdio server's sandbox."
+    ),
+    s!(
+        "mcp.servers.*.approve",
+        Choice(&["auto", "writes", "always"]),
+        r#""writes""#,
+        Owner,
+        OnlyLaterChoice,
+        true,
+        "Which of the server's tools need approval when oversight.approve is `risky`: `writes` (tools not declared read-only), `always` (every tool) or `auto` (none). With `all`, every call is asked."
+    ),
+    s!(
+        "mcp.servers.*.enabled",
+        Bool,
+        "true",
+        Owner,
+        Any,
+        true,
+        "Start the server for runs."
+    ),
+    s!(
+        "mcp.servers.*.timeout_seconds",
+        Int { min: 1, max: 3600 },
+        "60",
+        Owner,
+        Any,
+        false,
+        "Limit for starting the server and for each tool call."
+    ),
 ];
 
+/// The setting `key` names: a registered key, or an instance of a template
+/// key (`mcp.servers.*.command` for `mcp.servers.files.command`).
 pub fn setting(key: &str) -> Option<&'static Setting> {
-    REGISTRY.iter().find(|s| s.key == key)
+    REGISTRY
+        .iter()
+        .find(|s| s.key == key)
+        .or_else(|| REGISTRY.iter().find(|s| instance_of(s.key, key)))
+}
+
+/// Whether a registry key stands for many settings (it holds a `*` segment).
+pub fn is_template(key: &str) -> bool {
+    key.split('.').any(|p| p == "*")
+}
+
+/// Names that may fill a template's `*`.
+fn valid_instance_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 32
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+fn instance_of(template: &str, key: &str) -> bool {
+    if !is_template(template) {
+        return false;
+    }
+    let (t, k): (Vec<&str>, Vec<&str>) = (template.split('.').collect(), key.split('.').collect());
+    t.len() == k.len()
+        && t.iter().zip(&k).all(|(t, k)| {
+            if *t == "*" {
+                valid_instance_name(k)
+            } else {
+                t == k
+            }
+        })
+}
+
+fn template_slot(template: &str) -> Option<usize> {
+    template.split('.').position(|p| p == "*")
+}
+
+/// `template` with its `*` filled by the name `instance` (a concrete key of
+/// any template with the same prefix) holds there.
+fn instantiate(template: &str, instance: &str) -> Option<String> {
+    let t: Vec<&str> = template.split('.').collect();
+    let at = t.iter().position(|p| *p == "*")?;
+    let k: Vec<&str> = instance.split('.').collect();
+    if k.len() <= at || t[..at] != k[..at] {
+        return None;
+    }
+    let mut out: Vec<&str> = t.clone();
+    out[at] = k[at];
+    Some(out.join("."))
+}
+
+/// The setting a change to `key` targets; a template itself cannot be set.
+fn concrete(key: &str) -> Result<&'static Setting, ConfigError> {
+    if is_template(key) {
+        return Err(ConfigError::Invalid {
+            key: key.into(),
+            message: "name the instance in place of `*` (for example mcp.servers.files.command)"
+                .into(),
+        });
+    }
+    setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -584,7 +740,8 @@ pub enum Origin {
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    values: BTreeMap<&'static str, (Value, Origin)>,
+    /// Every setting by key; a template's instances under their own keys.
+    values: BTreeMap<String, (Value, Origin)>,
     pub owner_path: PathBuf,
     pub project_path: Option<PathBuf>,
 }
@@ -794,7 +951,7 @@ impl Target {
 /// it loosens privacy, what it weakens (then applying it needs confirmation).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Proposal {
-    pub key: &'static str,
+    pub key: String,
     pub target: Target,
     pub old: Value,
     pub new: Value,
@@ -814,16 +971,19 @@ pub struct Change {
 impl Config {
     /// Merges defaults, the owner file and (optionally) a project file.
     pub fn load(owner_path: &Path, project_path: Option<&Path>) -> Result<Self, ConfigError> {
-        let mut values: BTreeMap<&'static str, (Value, Origin)> = REGISTRY
+        let mut values: BTreeMap<String, (Value, Origin)> = REGISTRY
             .iter()
-            .map(|s| (s.key, (default_value(s), Origin::Default)))
+            .filter(|s| !is_template(s.key))
+            .map(|s| (s.key.to_owned(), (default_value(s), Origin::Default)))
             .collect();
         for (key, v) in read_file(owner_path)? {
-            let s = setting(&key).ok_or_else(|| {
-                ConfigError::Unknown(format!("{} in {}", key, owner_path.display()))
-            })?;
+            let s = setting(&key)
+                .filter(|_| !is_template(&key))
+                .ok_or_else(|| {
+                    ConfigError::Unknown(format!("{} in {}", key, owner_path.display()))
+                })?;
             validate(s, &v)?;
-            values.insert(s.key, (v, Origin::Owner));
+            values.insert(key, (v, Origin::Owner));
         }
         if let Some(pp) = project_path {
             let file = pp.display().to_string();
@@ -841,7 +1001,22 @@ impl Config {
                     value: v.to_string(),
                     rule,
                 })?;
-                values.insert(s.key, (v, Origin::Project));
+                values.insert(key, (v, Origin::Project));
+            }
+        }
+        // Every field of a configured instance has a value.
+        let instances: Vec<String> = values
+            .keys()
+            .filter(|k| REGISTRY.iter().any(|s| instance_of(s.key, k)))
+            .cloned()
+            .collect();
+        for key in instances {
+            for s in REGISTRY.iter().filter(|s| is_template(s.key)) {
+                if let Some(field) = instantiate(s.key, &key) {
+                    values
+                        .entry(field)
+                        .or_insert_with(|| (default_value(s), Origin::Default));
+                }
             }
         }
         Ok(Self {
@@ -860,6 +1035,31 @@ impl Config {
 
     pub fn origin(&self, key: &str) -> Option<Origin> {
         self.values.get(key).map(|(_, o)| *o)
+    }
+
+    /// The configured instances of a template key, by the name in place of
+    /// `*` (`mcp.servers.*.command` gives the server names), sorted.
+    pub fn instances(&self, template: &str) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .values
+            .keys()
+            .filter(|k| setting(k).is_some_and(|s| is_template(s.key)))
+            .filter_map(|k| {
+                instantiate(template, k).map(|_| k.split('.').nth(template_slot(template)?))
+            })
+            .flatten()
+            .map(str::to_owned)
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    /// The effective value of a setting to be changed (its default when unset).
+    fn current(&self, key: &str, s: &Setting) -> Value {
+        self.values
+            .get(key)
+            .map_or_else(|| default_value(s), |(v, _)| v.clone())
     }
 
     pub fn str(&self, key: &str) -> Result<String, ConfigError> {
@@ -893,9 +1093,9 @@ impl Config {
         key: &str,
         value: Value,
     ) -> Result<Proposal, ConfigError> {
-        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        let s = concrete(key)?;
         validate(s, &value)?;
-        let old = self.values[s.key].0.clone();
+        let old = self.current(key, s);
         let weakens = match target {
             Target::Owner => loosening(s, &old, &value),
             Target::Project => {
@@ -919,7 +1119,7 @@ impl Config {
             }
         };
         Ok(Proposal {
-            key: s.key,
+            key: key.to_owned(),
             target,
             old,
             new: value,
@@ -960,9 +1160,9 @@ impl Config {
         value: Value,
         confirmed: bool,
     ) -> Result<Change, ConfigError> {
-        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        let s = concrete(key)?;
         validate(s, &value)?;
-        let old = self.values[s.key].0.clone();
+        let old = self.current(key, s);
         let weakens = loosening(s, &old, &value);
         if let (Some(w), false) = (&weakens, confirmed) {
             return Err(ConfigError::NeedsConfirm {
@@ -983,13 +1183,13 @@ impl Config {
 
     /// Sets a value in the owner file (validated; written atomically).
     pub fn set_owner(&mut self, key: &str, value: Value) -> Result<(), ConfigError> {
-        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        let s = concrete(key)?;
         validate(s, &value)?;
         let mut entries = read_file(&self.owner_path)?;
         entries.retain(|(k, _)| k != key);
         entries.push((key.to_owned(), value.clone()));
         write_entries(&self.owner_path, &entries)?;
-        self.values.insert(s.key, (value, Origin::Owner));
+        self.values.insert(key.to_owned(), (value, Origin::Owner));
         Ok(())
     }
 
@@ -1003,7 +1203,7 @@ impl Config {
                 key: key.into(),
                 message: "no project".into(),
             })?;
-        let s = setting(key).ok_or_else(|| ConfigError::Unknown(key.into()))?;
+        let s = concrete(key)?;
         let file = path.display().to_string();
         if s.scope == Owner {
             return Err(ConfigError::OwnerOnly {
@@ -1012,7 +1212,7 @@ impl Config {
             });
         }
         validate(s, &value)?;
-        tightens(s, &self.values[s.key].0, &value).map_err(|rule| ConfigError::Loosening {
+        tightens(s, &self.current(key, s), &value).map_err(|rule| ConfigError::Loosening {
             file,
             key: key.into(),
             value: value.to_string(),
@@ -1022,7 +1222,7 @@ impl Config {
         entries.retain(|(k, _)| k != key);
         entries.push((key.to_owned(), value.clone()));
         write_entries(&path, &entries)?;
-        self.values.insert(s.key, (value, Origin::Project));
+        self.values.insert(key.to_owned(), (value, Origin::Project));
         Ok(())
     }
 }
@@ -1353,5 +1553,85 @@ mod tests {
             Config::load(&o, Some(&p)),
             Err(ConfigError::Unknown(_))
         ));
+    }
+
+    #[test]
+    fn mcp_servers_are_template_settings_of_the_owner() {
+        let (_d, o, p) = files(
+            "[mcp.servers.files]\ncommand = \"npx\"\nargs = [\"-y\", \"server\"]\nenv = [\"TOKEN_A\"]\n\
+             [mcp.servers.tickets]\nurl = \"https://mcp.example.com/mcp\"\ntrust = \"sensitive\"\n",
+            "",
+        );
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(c.instances("mcp.servers.*.command"), ["files", "tickets"]);
+        assert_eq!(c.str("mcp.servers.files.command").unwrap(), "npx");
+        assert_eq!(c.list("mcp.servers.files.args").unwrap(), ["-y", "server"]);
+        // Unset fields of a configured server have their defaults.
+        assert_eq!(c.str("mcp.servers.files.approve").unwrap(), "writes");
+        assert_eq!(c.str("mcp.servers.files.trust").unwrap(), "public");
+        assert!(!c.bool("mcp.servers.files.network").unwrap());
+        assert_eq!(c.origin("mcp.servers.files.url"), Some(Origin::Default));
+        assert_eq!(c.str("mcp.servers.tickets.trust").unwrap(), "sensitive");
+        assert!(c.value("mcp.servers.other.command").is_err());
+
+        // Starting a program or reaching a server is a confirmed owner change.
+        let v = |t: &str| parse_value(t).unwrap();
+        assert!(matches!(
+            c.propose(Target::Owner, "mcp.servers.git.command", v("\"git-mcp\"")),
+            Ok(Proposal {
+                weakens: Some(_),
+                ..
+            })
+        ));
+        c.set_owner_checked("mcp.servers.git.command", v("\"git-mcp\""), true)
+            .unwrap();
+        assert_eq!(
+            c.instances("mcp.servers.*.command"),
+            ["files", "git", "tickets"]
+        );
+        assert!(
+            c.propose(Target::Owner, "mcp.servers.*.command", v("\"x\""))
+                .is_err()
+        );
+        assert!(
+            c.propose(Target::Owner, "mcp.servers.bad name.command", v("\"x\""))
+                .is_err()
+        );
+        assert!(
+            c.propose(Target::Project, "mcp.servers.git.approve", v("\"always\""))
+                .is_err()
+        );
+        assert!(matches!(
+            c.set_owner_checked("mcp.servers.files.approve", v("\"auto\""), false),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        c.set_owner_checked("mcp.servers.files.approve", v("\"always\""), true)
+            .unwrap();
+        let reloaded = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(reloaded.str("mcp.servers.git.command").unwrap(), "git-mcp");
+        assert_eq!(reloaded.str("mcp.servers.files.approve").unwrap(), "always");
+
+        // A project may not add or change servers.
+        for bad in [
+            "[mcp.servers.evil]\ncommand = \"sh\"\n",
+            "[mcp.servers.files]\nnetwork = true\n",
+        ] {
+            let (_d, o, p) = files("", bad);
+            assert!(
+                matches!(
+                    Config::load(&o, Some(&p)),
+                    Err(ConfigError::OwnerOnly { .. })
+                ),
+                "{bad}"
+            );
+        }
+        for bad in [
+            "[mcp.servers.files]\ncomand = \"x\"\n",
+            "[mcp.servers.\"a.b\"]\ncommand = \"x\"\n",
+            "[mcp.servers.files]\ntrust = \"trusted\"\n",
+        ] {
+            let (_d, o, p) = files(bad, "");
+            assert!(Config::load(&o, Some(&p)).is_err(), "{bad}");
+        }
     }
 }

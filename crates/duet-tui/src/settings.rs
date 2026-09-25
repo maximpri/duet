@@ -20,7 +20,7 @@ pub fn screen_of(key: &str) -> Option<Tab> {
         "frontier" | "local" => Some(Tab::Models),
         "sensitivity" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
-        "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git" => {
+        "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git" | "mcp" => {
             Some(Tab::Limits)
         }
         "data" => Some(Tab::Data),

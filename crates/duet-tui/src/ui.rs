@@ -242,7 +242,7 @@ fn draw_confirm(f: &mut Frame, app: &App, p: &Proposal) {
             Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
         ),
         Line::from(""),
-        Line::styled(p.key, Style::new().add_modifier(Modifier::BOLD)),
+        Line::styled(p.key.clone(), Style::new().add_modifier(Modifier::BOLD)),
     ];
     for (sign, text) in diff(&p.old, &p.new) {
         let color = if sign == '-' {
