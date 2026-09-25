@@ -110,6 +110,8 @@ pub struct Spec {
 pub struct Output {
     pub exit_code: Option<i32>,
     pub timed_out: bool,
+    /// Stopped by the caller (the run was interrupted) before it exited.
+    pub interrupted: bool,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     pub stdout_total: usize,
@@ -265,6 +267,19 @@ pub async fn run(
     argv: &[String],
     cwd: &Path,
 ) -> Result<Output, SandboxError> {
+    run_until(kind, spec, argv, cwd, std::future::pending()).await
+}
+
+/// [`run`], stopped early when `stop` resolves: the command's whole process
+/// tree is killed at once and the output so far is returned with
+/// `interrupted` set.
+pub async fn run_until(
+    kind: SandboxKind,
+    spec: &Spec,
+    argv: &[String],
+    cwd: &Path,
+    stop: impl std::future::Future<Output = ()>,
+) -> Result<Output, SandboxError> {
     let (program, args) = argv
         .split_first()
         .ok_or_else(|| SandboxError::Spawn("empty command".into()))?;
@@ -333,9 +348,12 @@ pub async fn run(
         let _ = err.read_to_end(&mut b).await;
         b
     });
-    let (exit_code, timed_out) = match tokio::time::timeout(spec.timeout, child.wait()).await {
-        Ok(status) => (status.ok().and_then(|s| s.code()), false),
-        Err(_) => (None, true),
+    let (exit_code, timed_out, interrupted) = tokio::select! {
+        waited = tokio::time::timeout(spec.timeout, child.wait()) => match waited {
+            Ok(status) => (status.ok().and_then(|s| s.code()), false, false),
+            Err(_) => (None, true, false),
+        },
+        () = stop => (None, false, true),
     };
     // Always sweep the tree: backgrounded or detached descendants must not outlive the command.
     if let Some(pid) = pid {
@@ -372,6 +390,7 @@ pub async fn run(
     Ok(Output {
         exit_code,
         timed_out,
+        interrupted,
         stdout: cap(stdout),
         stderr: cap(stderr),
         stdout_total,
@@ -577,6 +596,34 @@ mod tests {
         assert!(o.timed_out);
         tokio::time::sleep(Duration::from_secs(4)).await;
         assert!(!marker.exists(), "a descendant survived the timeout");
+    }
+
+    #[tokio::test]
+    async fn a_stop_kills_the_whole_tree_at_once() {
+        let (_d, ws) = setup();
+        let marker = ws.join("survivor");
+        let script = format!(
+            "/usr/bin/nohup /bin/sh -c 'sleep 3; echo alive > {}' >/dev/null 2>&1 & sleep 30",
+            marker.display()
+        );
+        let started = Instant::now();
+        let o = run_until(
+            SandboxKind::Seatbelt,
+            &spec(&ws),
+            &["/bin/sh".into(), "-c".into(), script],
+            &ws,
+            tokio::time::sleep(Duration::from_millis(500)),
+        )
+        .await
+        .unwrap();
+        assert!(o.interrupted && !o.timed_out && o.exit_code.is_none());
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            started.elapsed()
+        );
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(!marker.exists(), "a descendant survived the stop");
     }
 
     #[tokio::test]
