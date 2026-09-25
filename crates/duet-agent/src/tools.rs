@@ -994,6 +994,7 @@ mod sensitive_command_tests {
             audit: Some(&audit),
             interrupted: None,
             web: None,
+            git_tools: None,
         };
         let scratch = std::env::temp_dir()
             .join("duet-scratch")

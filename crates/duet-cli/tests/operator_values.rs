@@ -129,8 +129,10 @@ async fn run(
         oversight: Oversight {
             mode: ApproveMode::Off,
             approver: None,
+            ..Oversight::default()
         },
         web: None,
+        git_author: None,
     };
     let git = duet_git::Git::locate().unwrap();
     let (terminal, _) = duet_agent::run(
