@@ -1,0 +1,186 @@
+# Stack traces and runtime errors with absolute paths and file URLs.
+# Real output (2026-09-26), paths anonymized.
+# Node 26, EPERM in a live hybrid run (verbatim)
+node:fs:1334
+  const result = binding.mkdir(
+                         ^
+
+Error: EPERM: operation not permitted, mkdir '/Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/data'
+    at mkdirSync (node:fs:1334:26)
+    at openDatabase (file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/db.js:10:9)
+    at createAppWithDatabase (file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/app.js:179:22)
+    at file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/index.js:7:13
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:642:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'mkdir',
+  path: '/Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/data'
+}
+
+Node.js v26.0.0
+# Node 26, EPERM
+node:fs:1334
+  const result = binding.mkdir(
+                         ^
+
+Error: EPERM: operation not permitted, mkdir '/System/duet-fps-denied/data'
+    at mkdirSync (node:fs:1334:26)
+    at openDatabase (file:///Users/dev/projects/task-manager/dist/server/db.js:10:9)
+    at createAppWithDatabase (file:///Users/dev/projects/task-manager/dist/server/app.js:179:22)
+    at file:///Users/dev/projects/task-manager/dist/server/index.js:7:13
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:642:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -1,
+  code: 'EPERM',
+  syscall: 'mkdir',
+  path: '/System/duet-fps-denied/data'
+}
+
+Node.js v26.0.0
+# Node 26, eval error
+<anonymous_script>:1
+ "name": "task-manager",
+       ^
+
+SyntaxError: Unexpected non-whitespace character after JSON at position 7 (line 1 column 8)
+    at JSON.parse (<anonymous>)
+    at [eval]:1:6
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:483:12
+    at [eval]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:481:60)
+    at evalFunction (node:internal/process/execution:315:30)
+    at evalTypeScript (node:internal/process/execution:327:3)
+    at node:internal/main/eval_string:71:3
+
+Node.js v26.0.0
+# Python 3.9 traceback through site-packages
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connection.py", line 204, in _new_conn
+    sock = connection.create_connection(
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/util/connection.py", line 85, in create_connection
+    raise err
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/util/connection.py", line 73, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [Errno 61] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    response = self._make_request(
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connectionpool.py", line 493, in _make_request
+    conn.request(
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connection.py", line 500, in request
+    self.endheaders()
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1252, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 1012, in _send_output
+    self.send(msg)
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py", line 952, in send
+    self.connect()
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connection.py", line 331, in connect
+    self.sock = self._new_conn()
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connection.py", line 219, in _new_conn
+    raise NewConnectionError(
+urllib3.exceptions.NewConnectionError: HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/adapters.py", line 644, in send
+    resp = conn.urlopen(
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/connectionpool.py", line 841, in urlopen
+    retries = retries.increment(
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/urllib3/util/retry.py", line 535, in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+urllib3.exceptions.MaxRetryError: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /api/projects (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused"))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/runner/work/task-client/task-client/app/client.py", line 5, in fetch_projects
+    response = requests.get(f"{base_url}/api/projects", timeout=2)
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/api.py", line 73, in get
+    return request("get", url, params=params, **kwargs)
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/api.py", line 59, in request
+    return session.request(method=method, url=url, **kwargs)
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/sessions.py", line 589, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/sessions.py", line 703, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/requests/adapters.py", line 677, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /api/projects (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused"))
+# Rust 1.97 panics, RUST_BACKTRACE=1
+0 of 0 tasks open
+
+thread 'main' (24926287) panicked at src/main.rs:18:23:
+index out of bounds: the len is 0 but the index is 0
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic_bounds_check
+   3: <usize as core::slice::index::SliceIndex<[task_report::Task]>>::index
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/slice/index.rs:272:10
+   4: <[task_report::Task] as core::ops::index::Index<usize>>::index
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/slice/index.rs:19:15
+   5: <alloc::vec::Vec<task_report::Task> as core::ops::index::Index<usize>>::index
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/alloc/src/vec/mod.rs:3864:9
+   6: task_report::main
+             at ./src/main.rs:18:23
+   7: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+thread 'main' (24926314) panicked at src/main.rs:11:33:
+called `Result::unwrap()` on an `Err` value: Error("missing field `status`", line: 1, column: 48)
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: <core::result::Result<alloc::vec::Vec<task_report::Task>, serde_json::error::Error>>::unwrap
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/result.rs:1233:23
+   4: task_report::load
+             at ./src/main.rs:11:33
+   5: task_report::main
+             at ./src/main.rs:15:17
+   6: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+
+thread 'main' (24926321) panicked at src/main.rs:10:46:
+read the task file: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::result::unwrap_failed
+   3: <core::result::Result<alloc::string::String, std::io::error::Error>>::expect
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/result.rs:1185:23
+   4: task_report::load
+             at ./src/main.rs:10:46
+   5: task_report::main
+             at ./src/main.rs:15:17
+   6: <fn() as core::ops::function::FnOnce<()>>::call_once
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+# Java 17
+java.lang.NullPointerException: Cannot invoke "java.util.List.get(int)" because the return value of "java.util.Map.get(Object)" is null
+	at com.example.tasks.service.TaskServiceImpl.firstTask(TaskServiceImpl.java:13)
+	at com.example.tasks.service.TaskServiceImpl.lambda$main$0(TaskServiceImpl.java:22)
+	at com.example.tasks.service.TaskServiceImpl.main(TaskServiceImpl.java:24)
+Exception in thread "main" java.nio.file.FileSystemException: /System/duet-fps-denied: Operation not permitted
+	at java.base/sun.nio.fs.UnixException.translateToIOException(UnixException.java:100)
+	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:106)
+	at java.base/sun.nio.fs.UnixException.rethrowAsIOException(UnixException.java:111)
+	at java.base/sun.nio.fs.UnixFileSystemProvider.createDirectory(UnixFileSystemProvider.java:397)
+	at java.base/java.nio.file.Files.createDirectory(Files.java:700)
+	at java.base/java.nio.file.Files.createAndCheckIsDirectory(Files.java:807)
+	at java.base/java.nio.file.Files.createDirectories(Files.java:793)
+	at com.example.tasks.service.TaskServiceImpl.exportTo(TaskServiceImpl.java:17)
+	at com.example.tasks.service.TaskServiceImpl.main(TaskServiceImpl.java:28)

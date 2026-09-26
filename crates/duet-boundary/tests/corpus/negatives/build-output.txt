@@ -1,0 +1,146 @@
+# Build output of JavaScript bundlers: hashed asset names, chunk ids, source maps.
+# Real output (2026-09-26, NO_COLOR=1), paths anonymized.
+# vite 7, in a live hybrid run (verbatim)
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-PPSrQqgT.css    2.83 kB │ gzip:  0.99 kB
+dist/assets/index-DVuHW4gw.js   229.53 kB │ gzip: 71.48 kB
+✓ built in 2.71s
+# vite 7 build
+
+> task-manager@1.0.0 build
+> npm run build:server && npm run build:client
+
+
+> task-manager@1.0.0 build:server
+> tsc -p server
+
+
+> task-manager@1.0.0 build:client
+> vite build client
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 33 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-PPSrQqgT.css    2.83 kB │ gzip:  0.99 kB
+dist/assets/index-DVuHW4gw.js   229.53 kB │ gzip: 71.48 kB
+✓ built in 1.63s
+# vite 7 build --sourcemap
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 33 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-PPSrQqgT.css    2.83 kB │ gzip:  0.99 kB
+dist/assets/index-DVuHW4gw.js   229.58 kB │ gzip: 71.52 kB │ map: 1,077.96 kB
+✓ built in 508ms
+# webpack 5, [name].[contenthash].js
+
+> web-console@0.1.0 build
+> webpack --mode production
+
+asset runtime.7101082269b98c4e6011.js 2.79 KiB [emitted] [immutable] [minimized] (name: runtime) 1 related asset
+asset 94.f3b47ec7e52ac86a639a.js 322 bytes [emitted] [immutable] [minimized] 1 related asset
+asset main.918b1a049fcade96ed74.js 315 bytes [emitted] [immutable] [minimized] (name: main) 1 related asset
+asset admin.59ec1150a7b251cd97e7.js 235 bytes [emitted] [immutable] [minimized] (name: admin) 1 related asset
+asset 480.cf4760418166802dae48.chunk.js 207 bytes [emitted] [immutable] [minimized] 1 related asset
+Entrypoint main 3.42 KiB (15.1 KiB) = runtime.7101082269b98c4e6011.js 2.79 KiB 94.f3b47ec7e52ac86a639a.js 322 bytes main.918b1a049fcade96ed74.js 315 bytes 3 auxiliary assets
+Entrypoint admin 3.34 KiB (14.9 KiB) = runtime.7101082269b98c4e6011.js 2.79 KiB 94.f3b47ec7e52ac86a639a.js 322 bytes admin.59ec1150a7b251cd97e7.js 235 bytes 3 auxiliary assets
+runtime modules 7.01 KiB 9 modules
+cacheable modules 497 bytes
+  ./src/index.js 176 bytes [built] [code generated]
+  ./src/admin.js 75 bytes [built] [code generated]
+  ./src/util.js 208 bytes [built] [code generated]
+  ./src/lazy.js 38 bytes [built] [code generated]
+webpack 5.111.1 compiled successfully in 293 ms
+# next 16 build (turbopack)
+
+> status-board@0.1.0 build
+> next build
+
+▲ Next.js 16.3.6 (Turbopack)
+✓ Running next.config took 5ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 3.6s
+  Running TypeScript ...
+  Finished TypeScript in 1ms ...
+  Collecting page data using 4 workers ...
+  Generating static pages using 4 workers (0/3) ...
+✓ Generating static pages using 4 workers (3/3) in 325ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+└ ○ /_not-found
+
+
+○  (Static)  prerendered as static content
+
+# next 16 build --webpack
+▲ Next.js 16.3.6 (webpack)
+✓ Running next.config took 5ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 2.9s
+  Running TypeScript ...
+  Finished TypeScript in 1ms ...
+  Collecting page data using 5 workers ...
+  Generating static pages using 5 workers (0/3) ...
+✓ Generating static pages using 5 workers (3/3) in 385ms
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+└ ƒ /projects/[id]
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+# find .next/static .next/server/app -type f
+.next/server/app/_global-error.html
+.next/server/app/_global-error.meta
+.next/server/app/_global-error.rsc
+.next/server/app/_global-error.segments/_full.segment.rsc
+.next/server/app/_global-error.segments/_global-error/__PAGE__.segment.rsc
+.next/server/app/_global-error.segments/_tree.segment.rsc
+.next/server/app/_global-error/page_client-reference-manifest.js
+.next/server/app/_global-error/page.js
+.next/server/app/_global-error/page.js.nft.json
+.next/server/app/_not-found.html
+.next/server/app/_not-found.meta
+.next/server/app/_not-found.rsc
+.next/server/app/_not-found.segments/_full.segment.rsc
+.next/server/app/_not-found.segments/_not-found/__PAGE__.segment.rsc
+.next/server/app/_not-found.segments/_tree.segment.rsc
+.next/server/app/_not-found/page_client-reference-manifest.js
+.next/server/app/_not-found/page.js
+.next/server/app/_not-found/page.js.nft.json
+.next/server/app/index.html
+.next/server/app/index.meta
+.next/server/app/index.rsc
+.next/server/app/index.segments/__PAGE__.segment.rsc
+.next/server/app/index.segments/_full.segment.rsc
+.next/server/app/index.segments/_tree.segment.rsc
+.next/server/app/page_client-reference-manifest.js
+.next/server/app/page.js
+.next/server/app/page.js.nft.json
+.next/server/app/projects/[id]/page_client-reference-manifest.js
+.next/server/app/projects/[id]/page.js
+.next/server/app/projects/[id]/page.js.nft.json
+.next/static/appeUTuxWW71ZDitEyHcl/_buildManifest.js
+.next/static/appeUTuxWW71ZDitEyHcl/_ssgManifest.js
+.next/static/chunks/4bd1b696-92152b0f5947070d.js
+.next/static/chunks/794-a3c6349e754e6fcd.js
+.next/static/chunks/app/_global-error/page-88939cbf01b6aab7.js
+.next/static/chunks/app/_not-found/page-8114a319e678151d.js
+.next/static/chunks/app/layout-88939cbf01b6aab7.js
+.next/static/chunks/app/page-88939cbf01b6aab7.js
+.next/static/chunks/app/projects/[id]/page-88939cbf01b6aab7.js
+.next/static/chunks/framework-0f597d6e68ffafed.js

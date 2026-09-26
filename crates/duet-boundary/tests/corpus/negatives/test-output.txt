@@ -1,0 +1,185 @@
+# Test runner output: vitest, jest, pytest.
+# Real output (2026-09-26), paths anonymized.
+# vitest 4, passing
+
+> task-manager@1.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/dev/projects/task-manager
+
+
+ Test Files  3 passed (3)
+      Tests  27 passed (27)
+   Start at  21:16:58
+   Duration  25.18s (transform 9.48s, setup 0ms, import 23.50s, tests 604ms, environment 28.61s)
+
+# vitest 4, failing
+(node:42292) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:42316) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v4.1.11 /Users/dev/projects/task-manager
+
+(node:42332) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ tests/fps-fail.test.ts (2 tests | 2 failed) 11ms
+     × creates the data directory 7ms
+     × returns 400 for an invalid status 2ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/fps-fail.test.ts > database directory > creates the data directory
+AssertionError: expected [Function] to not throw an error but 'Error: EPERM: operation not permitted…' was thrown
+
+- Expected:
+undefined
+
++ Received:
+"Error: EPERM: operation not permitted, mkdir '/System/duet-fps-denied/data'"
+
+ ❯ tests/fps-fail.test.ts:5:86
+      3| describe("database directory", () => {
+      4|   it("creates the data directory", () => {
+      5|     expect(() => mkdirSync("/System/duet-fps-denied/data", { recursive…
+       |                                                                                      ^
+      6|   });
+      7|   it("returns 400 for an invalid status", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/fps-fail.test.ts > database directory > returns 400 for an invalid status
+AssertionError: expected { status: 404, …(1) } to deeply equal { status: 400, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": {
+-     "error": "'status' must be one of: todo, doing, done.",
++     "error": "not found",
+    },
+-   "status": 400,
++   "status": 404,
+  }
+
+ ❯ tests/fps-fail.test.ts:8:59
+      6|   });
+      7|   it("returns 400 for an invalid status", () => {
+      8|     expect({ status: 404, body: { error: "not found" } }).toEqual({ st…
+       |                                                           ^
+      9|   });
+     10| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  21:16:15
+   Duration  460ms (transform 25ms, setup 0ms, import 44ms, tests 11ms, environment 0ms)
+
+# jest
+
+> web-console@0.1.0 test
+> jest
+
+FAIL src/util.test.js
+  ● labels a status
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "In progress"
+    Received: "Doing"
+
+      1 | const { formatDue, statusLabel } = require("./util.cjs");
+      2 | test("formats a due date", () => { expect(formatDue("2026-02-01T10:00:00Z")).toBe("2026-02-01"); });
+    > 3 | test("labels a status", () => { expect(statusLabel("doing")).toBe("In progress"); });
+        |                                                              ^
+      4 |
+
+      at Object.toBe (src/util.test.js:3:62)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 passed, 2 total
+Snapshots:   0 total
+Time:        0.232 s
+Ran all test suites.
+# pytest --tb=short
+============================= test session starts ==============================
+platform darwin -- Python 3.9.6, pytest-8.4.2, pluggy-1.6.0
+rootdir: /home/runner/work/task-client/task-client
+collected 3 items
+
+tests/test_client.py .FF                                                 [100%]
+
+=================================== FAILURES ===================================
+____________________ test_summarize_rejects_missing_status _____________________
+tests/test_client.py:9: in test_summarize_rejects_missing_status
+    assert summarize([{"title": "no status"}]) == {}
+app/client.py:13: in summarize
+    by_status[task["status"]] = by_status.get(task["status"], 0) + 1
+E   KeyError: 'status'
+____________________ test_fetch_projects_from_local_server _____________________
+.venv/lib/python3.9/site-packages/urllib3/connection.py:204: in _new_conn
+    sock = connection.create_connection(
+.venv/lib/python3.9/site-packages/urllib3/util/connection.py:85: in create_connection
+    raise err
+.venv/lib/python3.9/site-packages/urllib3/util/connection.py:73: in create_connection
+    sock.connect(sa)
+E   ConnectionRefusedError: [Errno 61] Connection refused
+
+The above exception was the direct cause of the following exception:
+.venv/lib/python3.9/site-packages/urllib3/connectionpool.py:787: in urlopen
+    response = self._make_request(
+.venv/lib/python3.9/site-packages/urllib3/connectionpool.py:493: in _make_request
+    conn.request(
+.venv/lib/python3.9/site-packages/urllib3/connection.py:500: in request
+    self.endheaders()
+/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py:1252: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py:1012: in _send_output
+    self.send(msg)
+/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/http/client.py:952: in send
+    self.connect()
+.venv/lib/python3.9/site-packages/urllib3/connection.py:331: in connect
+    self.sock = self._new_conn()
+.venv/lib/python3.9/site-packages/urllib3/connection.py:219: in _new_conn
+    raise NewConnectionError(
+E   urllib3.exceptions.NewConnectionError: HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused
+
+The above exception was the direct cause of the following exception:
+.venv/lib/python3.9/site-packages/requests/adapters.py:644: in send
+    resp = conn.urlopen(
+.venv/lib/python3.9/site-packages/urllib3/connectionpool.py:841: in urlopen
+    retries = retries.increment(
+.venv/lib/python3.9/site-packages/urllib3/util/retry.py:535: in increment
+    raise MaxRetryError(_pool, url, reason) from reason  # type: ignore[arg-type]
+E   urllib3.exceptions.MaxRetryError: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /api/projects (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused"))
+
+During handling of the above exception, another exception occurred:
+tests/test_client.py:13: in test_fetch_projects_from_local_server
+    assert fetch_projects("http://127.0.0.1:9") == []
+app/client.py:5: in fetch_projects
+    response = requests.get(f"{base_url}/api/projects", timeout=2)
+.venv/lib/python3.9/site-packages/requests/api.py:73: in get
+    return request("get", url, params=params, **kwargs)
+.venv/lib/python3.9/site-packages/requests/api.py:59: in request
+    return session.request(method=method, url=url, **kwargs)
+.venv/lib/python3.9/site-packages/requests/sessions.py:589: in request
+    resp = self.send(prep, **send_kwargs)
+.venv/lib/python3.9/site-packages/requests/sessions.py:703: in send
+    r = adapter.send(request, **kwargs)
+.venv/lib/python3.9/site-packages/requests/adapters.py:677: in send
+    raise ConnectionError(e, request=request)
+E   requests.exceptions.ConnectionError: HTTPConnectionPool(host='127.0.0.1', port=9): Max retries exceeded with url: /api/projects (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=9): Failed to establish a new connection: [Errno 61] Connection refused"))
+=============================== warnings summary ===============================
+.venv/lib/python3.9/site-packages/urllib3/__init__.py:35
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_client.py::test_summarize_rejects_missing_status - KeyError...
+FAILED tests/test_client.py::test_fetch_projects_from_local_server - requests...
+==================== 2 failed, 1 passed, 1 warning in 0.34s ====================

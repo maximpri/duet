@@ -9,9 +9,12 @@
 //! - Hand-written positives (`positives.toml`): duet's own formats and the
 //!   international personal-data formats; each value must be withheld as its kind.
 //! - Hard negatives (`negatives/`): hashes, UUIDs, lockfiles, base64 of public
-//!   data, identifiers, fixtures, minified code, logs. Lines with a finding are
-//!   false positives; their count per file may not rise above
-//!   `baseline.toml` (lower the baseline when it falls).
+//!   data, identifiers, fixtures, minified code, logs, and real toolchain
+//!   output ([`TOOLCHAIN`]: bundler builds, stack traces, install logs, test
+//!   runners, docker builds). Lines with a finding are false positives; their
+//!   count per file may not rise above `baseline.toml` (lower the baseline
+//!   when it falls). The toolchain files also go through the engine as
+//!   command output, where no placeholder may appear.
 //! - Rules that do not compile are listed; their number may not rise either.
 //!
 //! `DUET_CORPUS_DUMP=<file>` writes the generated positives for review.
@@ -29,6 +32,16 @@ use std::path::{Path, PathBuf};
 
 /// Attempts at generating a positive for one rule.
 const ATTEMPTS: u32 = 200;
+
+/// Negatives recorded from real toolchain runs (2026-09-26), one command's
+/// output per `# title` section.
+const TOOLCHAIN: [&str; 5] = [
+    "build-output.txt",
+    "stack-traces.txt",
+    "install-logs.txt",
+    "test-output.txt",
+    "docker-build.txt",
+];
 
 fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
@@ -402,4 +415,79 @@ fn positives_reach_the_frontier_only_as_placeholders() {
         leaked.len()
     );
     assert!(leaked.is_empty(), "{leaked:#?}");
+}
+
+/// Real toolchain output (the `negatives/` files made of it) as the frontier
+/// sees it in hybrid mode with the shipped policy, each section as one
+/// command's output: nothing in it is a value, so nothing may become a
+/// placeholder, whether the output is shown inline or held locally (long
+/// output) with its error lines shown.
+#[test]
+fn toolchain_output_reaches_the_frontier_without_placeholders() {
+    use duet_boundary::engine::Engine;
+    use duet_boundary::policy::Policy;
+    use duet_boundary::view::{Presenter, Source};
+
+    let owner = tempfile::tempdir().unwrap();
+    let cfg = duet_config::Config::load(&owner.path().join("config.toml"), None).unwrap();
+    let list = |k: &str| cfg.list(k).unwrap();
+    let flag = |k: &str| cfg.bool(k).unwrap();
+    let policy = Policy {
+        sensitive_globs: list("sensitivity.globs"),
+        protected_paths: list("sensitivity.protected_paths"),
+        command_output_sensitive: flag("sensitivity.command_output_sensitive"),
+        raw_ok_commands: list("sensitivity.raw_ok_commands"),
+        secret_sinks: list("sensitivity.secret_sinks"),
+        detect_secrets: flag("sensitivity.detect_secrets"),
+        detect_pii: flag("sensitivity.detect_pii"),
+        detect_entropy: flag("sensitivity.detect_entropy"),
+        custom_patterns: list("sensitivity.custom_patterns"),
+        bulky_tokens: cfg.int("sensitivity.bulky_tokens").unwrap() as usize,
+        bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens").unwrap() as usize,
+        ..Policy::default()
+    };
+    let (ws, run) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let e = Engine::open(run.path(), policy, None).unwrap();
+    e.prime(
+        ws.path(),
+        &[],
+        "Build a task manager in TypeScript: Express, SQLite, React with Vite, vitest.",
+    );
+    let placeholder = regex::Regex::new(r"⟨[a-z]+:[^⟩]*⟩").unwrap();
+    let mut found = Vec::new();
+    for name in TOOLCHAIN {
+        let text = std::fs::read_to_string(corpus_dir().join("negatives").join(name)).unwrap();
+        // `# title` starts a section: one command's output.
+        let mut sections: Vec<(&str, String)> = Vec::new();
+        for line in text.lines() {
+            match line.strip_prefix("# ") {
+                Some(title) => sections.push((title, String::new())),
+                None => {
+                    if let Some((_, body)) = sections.last_mut() {
+                        body.push_str(line);
+                        body.push('\n');
+                    }
+                }
+            }
+        }
+        for (title, body) in sections.iter().filter(|(_, b)| !b.is_empty()) {
+            let source = Source::Command {
+                command: (*title).to_owned(),
+                exit_code: Some(1),
+            };
+            let view = e.present(&source, body.as_bytes());
+            let held = view.contains("Raw content stays on this machine");
+            let values: Vec<&str> = placeholder.find_iter(&view).map(|m| m.as_str()).collect();
+            println!(
+                "  {name:<18} {title:<48} {:>6} bytes  {:<6}  {} placeholders",
+                body.len(),
+                if held { "held" } else { "inline" },
+                values.len()
+            );
+            if !values.is_empty() {
+                found.push(format!("{name}: {title}: {values:?}"));
+            }
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
 }

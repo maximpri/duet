@@ -9,8 +9,11 @@ partial = 0
 
 # Hard negatives: lines holding a finding, scanned as that file (its name as the
 # path, so path conditions and path allowlists apply) and as text of unknown
-# origin. Measured 2026-09-25: 53 of 683 lines (7.8%); duet's detectors before
-# the rule import flagged 80 of the same lines, the imported rules add none.
+# origin. Measured 2026-09-26: 37 of 1,513 lines (2.4%). Before long tokens
+# were judged by their parts (paths, hashed file names, identifiers) and ISBNs
+# told from card numbers, 148 (9.8%): 57 of the 688 synthetic lines and 91 of
+# the 825 lines of real toolchain output. Before the rule import, 80 of the
+# first 683 lines; the imported rules add none.
 [negatives."Cargo.lock"]
 as_file = 0
 as_text = 0
@@ -21,11 +24,20 @@ as_text = 0
 as_file = 18
 as_text = 18
 
+# Real output of vite, webpack and next builds, with a file listing of .next/.
+[negatives."build-output.txt"]
+as_file = 0
+as_text = 0
+
 [negatives."code.txt"]
 as_file = 0
 as_text = 0
 
 [negatives."config.yaml"]
+as_file = 0
+as_text = 0
+
+[negatives."docker-build.txt"]
 as_file = 0
 as_text = 0
 
@@ -39,10 +51,14 @@ as_text = 14
 as_file = 0
 as_text = 0
 
-# Pod names with hashes, resource paths, identifiers with digits or acronyms.
 [negatives."identifiers.txt"]
-as_file = 6
-as_text = 6
+as_file = 0
+as_text = 0
+
+# npm, pip and cargo install logs and a cargo compile error.
+[negatives."install-logs.txt"]
+as_file = 0
+as_text = 0
 
 # A 13-digit millisecond timestamp that passes the card checksum.
 [negatives."logs.txt"]
@@ -63,7 +79,16 @@ as_text = 3
 as_file = 0
 as_text = 0
 
-# URL paths around a UUID (`/api/v1/orders/<uuid>/items`) read as one high-entropy token.
+# Node, Python, Rust and Java stack traces, two from a live run.
+[negatives."stack-traces.txt"]
+as_file = 0
+as_text = 0
+
+# vitest, jest and pytest output, passing and failing.
+[negatives."test-output.txt"]
+as_file = 0
+as_text = 0
+
 [negatives."uuids.txt"]
-as_file = 10
-as_text = 10
+as_file = 0
+as_text = 0

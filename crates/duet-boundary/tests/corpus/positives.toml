@@ -77,6 +77,28 @@ kind = "secret"
 value = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYW1wbGUtdXNlci0wNDIiLCJpYXQiOjE3OTAwMDAwMDB9.1mLrAqSfPW5WNgrtgaY0ZgM6z16kFdOPPkin_7e5eAA"
 text = "token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzYW1wbGUtdXNlci0wNDIiLCJpYXQiOjE3OTAwMDAwMDB9.1mLrAqSfPW5WNgrtgaY0ZgM6z16kFdOPPkin_7e5eAA"
 
+# A key in a URL path or query, and base64 with slashes: tokens judged by
+# their parts still withhold a random part.
+[[case]]
+kind = "secret"
+value = "Vt7qLw2ZkR9mXe4PbN8sYc3HjD6gFa5U"
+text = "GET https://api.internal.test/v1/keys/Vt7qLw2ZkR9mXe4PbN8sYc3HjD6gFa5U/rotate HTTP/1.1"
+
+[[case]]
+kind = "secret"
+value = "Nq4Rz8Tb2Wx6Ym1Kc9Pd3Sf7Lg5Hj0Va"
+text = "curl 'https://files.internal.test/download?token=Nq4Rz8Tb2Wx6Ym1Kc9Pd3Sf7Lg5Hj0Va&name=report'"
+
+[[case]]
+kind = "secret"
+value = "Gk2Lr8Qw4Zt6Xn9/Mb3Vc7Hp1Ds5Fj0Ye4Ua8Wq"
+text = "aws_secret = Gk2Lr8Qw4Zt6Xn9/Mb3Vc7Hp1Ds5Fj0Ye4Ua8Wq"
+
+[[case]]
+kind = "secret"
+value = "Hq3Zt8Lw2Nk7Xr5Vb9Mc4Pd6Sf1Gj0Ya"
+text = "uploaded dist/assets/share-Hq3Zt8Lw2Nk7Xr5Vb9Mc4Pd6Sf1Gj0Ya.js"
+
 [[case]]
 kind = "email"
 value = "amelia.velanwick42@mailbox-311.net"

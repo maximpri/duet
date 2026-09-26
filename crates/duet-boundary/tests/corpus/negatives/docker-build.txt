@@ -1,0 +1,117 @@
+# docker build --progress=plain: image digests, layer ids, build steps.
+# Real output (2026-09-26).
+# docker build
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile:
+#1 transferring dockerfile: 365B 0.0s done
+#1 DONE 5.1s
+
+#2 [internal] load metadata for docker.io/library/alpine:3.20
+#2 ...
+
+#3 [auth] library/alpine:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/alpine:3.20
+#2 DONE 11.3s
+
+#4 [internal] load .dockerignore
+#4 transferring context:
+#4 transferring context: 2B 0.0s done
+#4 DONE 6.2s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [build 1/5] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 resolve docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 resolve docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc 0.6s done
+#6 DONE 0.7s
+
+#6 [build 1/5] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 DONE 6.2s
+
+#5 [internal] load build context
+#5 transferring context:
+#5 transferring context: 195B 0.1s done
+#5 ...
+
+#6 [build 1/5] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 ...
+
+#5 [internal] load build context
+#5 DONE 6.5s
+
+#6 [build 1/5] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 sha256:3f26bc2dec0b515f1c2818f6e13a8f1da1f88179a008445d4e587233386bff78 847.87kB / 4.09MB 0.2s
+#6 sha256:3f26bc2dec0b515f1c2818f6e13a8f1da1f88179a008445d4e587233386bff78 4.09MB / 4.09MB 0.3s
+#6 sha256:3f26bc2dec0b515f1c2818f6e13a8f1da1f88179a008445d4e587233386bff78 4.09MB / 4.09MB 0.6s done
+#6 DONE 9.0s
+
+#6 [build 1/5] FROM docker.io/library/alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+#6 extracting sha256:3f26bc2dec0b515f1c2818f6e13a8f1da1f88179a008445d4e587233386bff78
+#6 extracting sha256:3f26bc2dec0b515f1c2818f6e13a8f1da1f88179a008445d4e587233386bff78 1.8s done
+#6 DONE 10.8s
+
+#7 [build 2/5] WORKDIR /app
+#7 DONE 3.9s
+
+#8 [build 3/5] COPY package.json ./
+#8 DONE 8.9s
+
+#9 [build 4/5] RUN apk add --no-cache nodejs npm && npm install --omit=dev --no-fund
+#9 6.813 fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/main/aarch64/APKINDEX.tar.gz
+#9 7.709 fetch https://dl-cdn.alpinelinux.org/alpine/v3.20/community/aarch64/APKINDEX.tar.gz
+#9 8.573 (1/12) Installing ca-certificates (20260413-r0)
+#9 8.642 (2/12) Installing libgcc (13.2.1_git20240309-r1)
+#9 8.684 (3/12) Installing libstdc++ (13.2.1_git20240309-r1)
+#9 8.709 (4/12) Installing ada-libs (2.7.8-r0)
+#9 8.717 (5/12) Installing libbase64 (0.5.2-r0)
+#9 8.727 (6/12) Installing brotli-libs (1.1.0-r2)
+#9 8.750 (7/12) Installing c-ares (1.33.1-r0)
+#9 8.762 (8/12) Installing icu-data-en (74.2-r1)
+#9 8.797 Executing icu-data-en-74.2-r1.post-install
+#9 8.808 *
+#9 8.808 * If you need ICU with non-English locales and legacy charset support, install
+#9 8.808 * package icu-data-full.
+#9 8.808 *
+#9 8.808 (9/12) Installing icu-libs (74.2-r1)
+#9 8.872 (10/12) Installing nghttp2-libs (1.62.1-r0)
+#9 8.888 (11/12) Installing nodejs (20.15.1-r0)
+#9 9.441 (12/12) Installing npm (10.9.1-r0)
+#9 9.798 Executing busybox-1.36.1-r31.trigger
+#9 9.873 Executing ca-certificates-20260413-r0.trigger
+#9 10.02 OK: 76 MiB in 26 packages
+#9 11.71
+#9 11.71 added 1 package, and audited 2 packages in 1s
+#9 11.71
+#9 11.71 found 0 vulnerabilities
+#9 DONE 13.3s
+
+#10 [build 5/5] COPY server ./server
+#10 DONE 7.2s
+
+#11 [stage-1 3/4] COPY --from=build /app /app
+#11 DONE 16.3s
+
+#12 [stage-1 4/4] RUN adduser -D app && mkdir -p /app/data && chown app /app/data
+#12 DONE 24.3s
+
+#13 exporting to image
+#13 exporting layers
+#13 exporting layers 21.6s done
+#13 exporting manifest sha256:bb2cb6c482528d4a95d2c3f0dd31677a00f4e6d6be42da0ff617beb64fa5e582
+#13 exporting manifest sha256:bb2cb6c482528d4a95d2c3f0dd31677a00f4e6d6be42da0ff617beb64fa5e582 0.8s done
+#13 exporting config sha256:fe7e06e8c2e2bd5d5aacf0945b3886fb579f443b98e1c1401f371245e56df60d
+#13 exporting config sha256:fe7e06e8c2e2bd5d5aacf0945b3886fb579f443b98e1c1401f371245e56df60d 0.6s done
+#13 exporting attestation manifest sha256:aff95b82d347e81dbeb7c9bcb132eb7337485e659606aea952066ed3d9682561
+#13 exporting attestation manifest sha256:aff95b82d347e81dbeb7c9bcb132eb7337485e659606aea952066ed3d9682561 2.1s done
+#13 exporting manifest list sha256:05ad17a1d9f5cd9379b020479d5607cbc54b1ddcec8f8ba53560583880e7a5e8
+#13 exporting manifest list sha256:05ad17a1d9f5cd9379b020479d5607cbc54b1ddcec8f8ba53560583880e7a5e8 1.0s done
+#13 naming to docker.io/library/fps-task-api:dev
+#13 naming to docker.io/library/fps-task-api:dev 0.2s done
+#13 unpacking to docker.io/library/fps-task-api:dev
+#13 unpacking to docker.io/library/fps-task-api:dev 9.3s done
+#13 DONE 36.3s

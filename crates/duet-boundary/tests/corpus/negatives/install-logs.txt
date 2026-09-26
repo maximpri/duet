@@ -1,0 +1,292 @@
+# Package installation logs: registry URLs, tarball names, digests, cache paths.
+# Real output (2026-09-26), paths anonymized.
+# npm install
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+
+> esbuild@0.28.2 postinstall
+> node install.js
+
+
+added 245 packages, and audited 246 packages in 5s
+
+found 0 vulnerabilities
+exit 0
+# npm install (webpack, jest)
+
+added 346 packages, and audited 347 packages in 21s
+
+found 0 vulnerabilities
+# npm install (next)
+
+added 24 packages, and audited 25 packages in 11s
+
+found 0 vulnerabilities
+# npm ci --loglevel http (first 80 lines)
+npm http cache yallist@https://registry.npmjs.org/yallist/-/yallist-3.1.1.tgz 0ms (cache hit)
+npm http cache ws@https://registry.npmjs.org/ws/-/ws-8.21.3.tgz 0ms (cache hit)
+npm http cache xml-name-validator@https://registry.npmjs.org/xml-name-validator/-/xml-name-validator-5.0.0.tgz 0ms (cache hit)
+npm http cache xmlchars@https://registry.npmjs.org/xmlchars/-/xmlchars-2.2.0.tgz 0ms (cache hit)
+npm http cache why-is-node-running@https://registry.npmjs.org/why-is-node-running/-/why-is-node-running-2.3.0.tgz 0ms (cache hit)
+npm http cache whatwg-url@https://registry.npmjs.org/whatwg-url/-/whatwg-url-14.2.0.tgz 0ms (cache hit)
+npm http cache whatwg-encoding@https://registry.npmjs.org/whatwg-encoding/-/whatwg-encoding-3.1.1.tgz 0ms (cache hit)
+npm http cache wrappy@https://registry.npmjs.org/wrappy/-/wrappy-1.0.2.tgz 0ms (cache hit)
+npm http cache webidl-conversions@https://registry.npmjs.org/webidl-conversions/-/webidl-conversions-7.0.0.tgz 0ms (cache hit)
+npm http cache whatwg-mimetype@https://registry.npmjs.org/whatwg-mimetype/-/whatwg-mimetype-4.0.0.tgz 0ms (cache hit)
+npm http cache w3c-xmlserializer@https://registry.npmjs.org/w3c-xmlserializer/-/w3c-xmlserializer-5.0.0.tgz 0ms (cache hit)
+npm http cache vite@https://registry.npmjs.org/vite/-/vite-7.3.6.tgz 0ms (cache hit)
+npm http cache vary@https://registry.npmjs.org/vary/-/vary-1.1.2.tgz 0ms (cache hit)
+npm http cache unpipe@https://registry.npmjs.org/unpipe/-/unpipe-1.0.0.tgz 0ms (cache hit)
+npm http cache vitest@https://registry.npmjs.org/vitest/-/vitest-4.1.11.tgz 0ms (cache hit)
+npm http cache undici-types@https://registry.npmjs.org/undici-types/-/undici-types-8.9.0.tgz 0ms (cache hit)
+npm http cache update-browserslist-db@https://registry.npmjs.org/update-browserslist-db/-/update-browserslist-db-1.3.3.tgz 0ms (cache hit)
+npm http cache typescript@https://registry.npmjs.org/typescript/-/typescript-5.9.3.tgz 0ms (cache hit)
+npm http cache tr46@https://registry.npmjs.org/tr46/-/tr46-5.1.1.tgz 1ms (cache hit)
+npm http cache tsx@https://registry.npmjs.org/tsx/-/tsx-4.23.15.tgz 0ms (cache hit)
+npm http cache tough-cookie@https://registry.npmjs.org/tough-cookie/-/tough-cookie-5.1.2.tgz 0ms (cache hit)
+npm http cache toidentifier@https://registry.npmjs.org/toidentifier/-/toidentifier-1.0.1.tgz 0ms (cache hit)
+npm http cache type-is@https://registry.npmjs.org/type-is/-/type-is-2.1.0.tgz 0ms (cache hit)
+npm http cache tldts-core@https://registry.npmjs.org/tldts-core/-/tldts-core-6.1.86.tgz 0ms (cache hit)
+npm http cache tldts@https://registry.npmjs.org/tldts/-/tldts-6.1.86.tgz 1ms (cache hit)
+npm http cache tinyrainbow@https://registry.npmjs.org/tinyrainbow/-/tinyrainbow-3.1.1.tgz 0ms (cache hit)
+npm http cache tinyexec@https://registry.npmjs.org/tinyexec/-/tinyexec-1.3.1.tgz 0ms (cache hit)
+npm http cache symbol-tree@https://registry.npmjs.org/symbol-tree/-/symbol-tree-3.2.4.tgz 0ms (cache hit)
+npm http cache tinybench@https://registry.npmjs.org/tinybench/-/tinybench-2.9.0.tgz 0ms (cache hit)
+npm http cache tinyglobby@https://registry.npmjs.org/tinyglobby/-/tinyglobby-0.2.17.tgz 0ms (cache hit)
+npm http cache supertest@https://registry.npmjs.org/supertest/-/supertest-7.3.0.tgz 0ms (cache hit)
+npm http cache std-env@https://registry.npmjs.org/std-env/-/std-env-4.2.0.tgz 0ms (cache hit)
+npm http cache source-map-js@https://registry.npmjs.org/source-map-js/-/source-map-js-1.2.1.tgz 0ms (cache hit)
+npm http cache stackback@https://registry.npmjs.org/stackback/-/stackback-0.0.2.tgz 0ms (cache hit)
+npm http cache statuses@https://registry.npmjs.org/statuses/-/statuses-2.0.2.tgz 1ms (cache hit)
+npm http cache superagent@https://registry.npmjs.org/superagent/-/superagent-10.4.1.tgz 0ms (cache hit)
+npm http cache side-channel-weakmap@https://registry.npmjs.org/side-channel-weakmap/-/side-channel-weakmap-1.0.2.tgz 0ms (cache hit)
+npm http cache siginfo@https://registry.npmjs.org/siginfo/-/siginfo-2.0.0.tgz 0ms (cache hit)
+npm http cache side-channel-map@https://registry.npmjs.org/side-channel-map/-/side-channel-map-1.0.1.tgz 0ms (cache hit)
+npm http cache side-channel@https://registry.npmjs.org/side-channel/-/side-channel-1.1.1.tgz 0ms (cache hit)
+npm http cache side-channel-list@https://registry.npmjs.org/side-channel-list/-/side-channel-list-1.0.1.tgz 0ms (cache hit)
+npm http cache serve-static@https://registry.npmjs.org/serve-static/-/serve-static-2.2.1.tgz 0ms (cache hit)
+npm http cache semver@https://registry.npmjs.org/semver/-/semver-6.3.1.tgz 0ms (cache hit)
+npm http cache scheduler@https://registry.npmjs.org/scheduler/-/scheduler-0.28.0.tgz 0ms (cache hit)
+npm http cache router@https://registry.npmjs.org/router/-/router-2.2.0.tgz 0ms (cache hit)
+npm http cache safer-buffer@https://registry.npmjs.org/safer-buffer/-/safer-buffer-2.1.2.tgz 0ms (cache hit)
+npm http cache saxes@https://registry.npmjs.org/saxes/-/saxes-6.0.0.tgz 0ms (cache hit)
+npm http cache setprototypeof@https://registry.npmjs.org/setprototypeof/-/setprototypeof-1.2.0.tgz 0ms (cache hit)
+npm http cache rollup@https://registry.npmjs.org/rollup/-/rollup-4.63.5.tgz 0ms (cache hit)
+npm http cache send@https://registry.npmjs.org/send/-/send-1.2.1.tgz 0ms (cache hit)
+npm http cache react-refresh@https://registry.npmjs.org/react-refresh/-/react-refresh-0.18.0.tgz 0ms (cache hit)
+npm http cache rrweb-cssom@https://registry.npmjs.org/rrweb-cssom/-/rrweb-cssom-0.8.0.tgz 0ms (cache hit)
+npm http cache react-is@https://registry.npmjs.org/react-is/-/react-is-17.0.2.tgz 0ms (cache hit)
+npm http cache raw-body@https://registry.npmjs.org/raw-body/-/raw-body-3.0.2.tgz 0ms (cache hit)
+npm http cache react@https://registry.npmjs.org/react/-/react-19.3.0.tgz 0ms (cache hit)
+npm http cache range-parser@https://registry.npmjs.org/range-parser/-/range-parser-1.3.0.tgz 0ms (cache hit)
+npm http cache proxy-addr@https://registry.npmjs.org/proxy-addr/-/proxy-addr-2.0.8.tgz 0ms (cache hit)
+npm http cache punycode@https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz 0ms (cache hit)
+npm http cache react-dom@https://registry.npmjs.org/react-dom/-/react-dom-19.3.0.tgz 0ms (cache hit)
+npm http cache picomatch@https://registry.npmjs.org/picomatch/-/picomatch-4.0.7.tgz 0ms (cache hit)
+npm http cache pretty-format@https://registry.npmjs.org/pretty-format/-/pretty-format-27.5.1.tgz 0ms (cache hit)
+npm http cache postcss@https://registry.npmjs.org/postcss/-/postcss-8.5.28.tgz 0ms (cache hit)
+npm http cache picocolors@https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz 0ms (cache hit)
+npm http cache parseurl@https://registry.npmjs.org/parseurl/-/parseurl-1.3.3.tgz 0ms (cache hit)
+npm http cache path-to-regexp@https://registry.npmjs.org/path-to-regexp/-/path-to-regexp-8.4.2.tgz 0ms (cache hit)
+npm http cache parse5@https://registry.npmjs.org/parse5/-/parse5-7.3.0.tgz 0ms (cache hit)
+npm http cache once@https://registry.npmjs.org/once/-/once-1.4.0.tgz 0ms (cache hit)
+npm http cache nwsapi@https://registry.npmjs.org/nwsapi/-/nwsapi-2.2.28.tgz 0ms (cache hit)
+npm http cache obug@https://registry.npmjs.org/obug/-/obug-2.2.1.tgz 0ms (cache hit)
+npm http cache node-releases@https://registry.npmjs.org/node-releases/-/node-releases-2.0.57.tgz 0ms (cache hit)
+npm http cache pathe@https://registry.npmjs.org/pathe/-/pathe-2.0.3.tgz 0ms (cache hit)
+npm http cache negotiator@https://registry.npmjs.org/negotiator/-/negotiator-1.1.0.tgz 0ms (cache hit)
+npm http cache on-finished@https://registry.npmjs.org/on-finished/-/on-finished-2.4.1.tgz 0ms (cache hit)
+npm http cache ms@https://registry.npmjs.org/ms/-/ms-2.1.3.tgz 0ms (cache hit)
+npm http cache nanoid@https://registry.npmjs.org/nanoid/-/nanoid-3.3.19.tgz 0ms (cache hit)
+npm http cache mime-types@https://registry.npmjs.org/mime-types/-/mime-types-3.0.2.tgz 0ms (cache hit)
+npm http cache qs@https://registry.npmjs.org/qs/-/qs-6.16.0.tgz 0ms (cache hit)
+npm http cache object-inspect@https://registry.npmjs.org/object-inspect/-/object-inspect-1.13.4.tgz 0ms (cache hit)
+npm http cache mime-db@https://registry.npmjs.org/mime-db/-/mime-db-1.54.0.tgz 0ms (cache hit)
+npm http cache mime@https://registry.npmjs.org/mime/-/mime-2.6.0.tgz 0ms (cache hit)
+# npm install of a missing package
+npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/definitely-not-a-real-pkg-duet-fps-4242 - Not found
+npm error 404
+npm error 404  The requested resource 'definitely-not-a-real-pkg-duet-fps-4242@*' could not be found or you do not have permission to access it.
+npm error 404
+npm error 404 Note that you can also install from a
+npm error 404 tarball, folder, http url, or git url.
+npm error A complete log of this run can be found in: /Users/dev/.npm/_logs/2026-09-26T01_15_34_520Z-debug-0.log
+exit 1
+# pip install -v
+Using pip 21.2.4 from /home/runner/work/task-client/task-client/.venv/lib/python3.9/site-packages/pip (python 3.9)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/56/5d/c814546c2333ceea4ba42262d8c4d55763003e767fa169adc693bd524478/requests-2.33.0-py3-none-any.whl#sha256=3324635456fa185245e24865e810cecec7b4caf933d7eb133dcde67d48cee69b (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/34/64/8860370b167a9721e8956ae116825caff829224fbca0ca6e7bf8ddef8430/requests-2.33.0.tar.gz#sha256=c7ebc5e8b0f21837386ad0e1c8fe8b829fa5f544d8df3b2253bff14ef29d7652 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/d7/8e/7540e8a2036f79a125c1d2ebadf69ed7901608859186c856fa0388ef4197/requests-2.33.1-py3-none-any.whl#sha256=4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/5f/a4/98b9c7c6428a668bf7e42ebb7c79d576a1c3c1e3ae2d47e674b468388871/requests-2.33.1.tar.gz#sha256=18817f8c57c6263968bc123d237e3b8b08ac046f5456bd1e307ee8f4250d3517 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/0c/53/ddb8b8fa96367976cf52bb0610ffd529bd7d2795b2e4c1724724d071718c/requests-2.34.0.dev1-py3-none-any.whl#sha256=c8749aeb3c4b204f80fd288f7507378c9afe66a3f189fb43fd77ea33e74d7564 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/f5/37/b3032e92a7712e988c92df2ed408d6aec5b00838e6c06009ae695433915b/requests-2.34.0.dev1.tar.gz#sha256=319ba4e42f1031737a08f3efc695c7dc436f22efb8d02630ca3a99cf23f752cd (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/ef/e6/e300fce5fe83c30520607a015dabd985df3251e188d234bfe9492e17a389/requests-2.34.0-py3-none-any.whl#sha256=917520a21b767485ce7c588f4ebb917c436b24a31231b44228715eaeb5a52c60 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/43/b8/7a707d60fea4c49094e40262cc0e2ca6c768cca21587e34d3f705afec47e/requests-2.34.0.tar.gz#sha256=7d62fe92f50eb82c529b0916bb445afa1531a566fc8f35ffdc64446e771b856a (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/15/5a/4a949d170476de3c04ac036b5466422fbcbf348a917d8042eedf2cac7d1b/requests-2.34.1-py3-none-any.whl#sha256=bf38a3ff993960d3dd819c08862c40b3c703306eb7c744fcd9f4ddbb95b548f0 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/24/36/7180e7f077c38108945dbbdf60fe04db681c3feb6e96419f8c6dc8723741/requests-2.34.1.tar.gz#sha256=0fc5669f2b69704449fe1552360bd2a73a54512dfd03e65529157f1513322beb (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl#sha256=2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz#sha256=f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed (from https://pypi.org/simple/requests/) (requires-python:>=3.10)
+Collecting requests
+  Downloading requests-2.32.5-py3-none-any.whl (64 kB)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/72/99/cafef234114a3b6d9f3aaed0723b437c40c57bdb7b3e4c3a575bc4890052/pytest-9.0.0-py3-none-any.whl#sha256=e5ccdf10b0bac554970ee88fc1a4ad0ee5d221f8ef22321f9b7e4584e19d7f96 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/da/1d/eb34f286b164c5e431a810a38697409cca1112cee04b287bb56ac486730b/pytest-9.0.0.tar.gz#sha256=8f44522eafe4137b0f35c9ce3072931a788a21ee40a2ed279e817d3cc16ed21e (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/0b/8b/6300fb80f858cda1c51ffa17075df5d846757081d11ab4aa35cef9e6258b/pytest-9.0.1-py3-none-any.whl#sha256=67be0030d194df2dfa7b556f2e56fb3c3315bd5c8822c6951162b92b32ce7dad (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/07/56/f013048ac4bc4c1d9be45afd4ab209ea62822fb1598f40687e6bf45dcea4/pytest-9.0.1.tar.gz#sha256=3e9c069ea73583e255c3b21cf46b8d3c56f6e3a1a8f6da94ccb0fcf57b9d73c8 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl#sha256=711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz#sha256=75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl#sha256=2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz#sha256=b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/8b/5a/ba30a81239b909821b3153e303e7def45178bf353da4f72380e6c5e8793b/pytest-9.1.0-py3-none-any.whl#sha256=8ebb0e7888bdf2bdfc602ec51f8f62d50200af37356c74e503c79a94f5c81f32 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/84/0e/b5858858d74958632c49b72cb25a3976ff9f632397626715be71c89d3971/pytest-9.1.0.tar.gz#sha256=41dd9148c08072446394cefd3d79701701335a9f4cae69ba92e39f6c7f5c061c (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl#sha256=37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz#sha256=1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313 (from https://pypi.org/simple/pytest/) (requires-python:>=3.10)
+Collecting pytest
+  Downloading pytest-8.4.2-py3-none-any.whl (365 kB)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl#sha256=9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897 (from https://pypi.org/simple/urllib3/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz#sha256=231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c (from https://pypi.org/simple/urllib3/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl#sha256=0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 (from https://pypi.org/simple/urllib3/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz#sha256=63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63 (from https://pypi.org/simple/urllib3/) (requires-python:>=3.10)
+Collecting urllib3<3,>=1.21.1
+  Downloading urllib3-2.6.3-py3-none-any.whl (131 kB)
+Collecting certifi>=2017.4.17
+  Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+Collecting charset_normalizer<4,>=2
+  Downloading charset_normalizer-3.5.1-cp39-cp39-macosx_10_9_universal2.whl (368 kB)
+Collecting idna<4,>=2.5
+  Downloading idna-3.20-py3-none-any.whl (69 kB)
+Collecting exceptiongroup>=1
+  Downloading exceptiongroup-1.3.1-py3-none-any.whl (16 kB)
+Collecting pygments>=2.7.2
+  Downloading pygments-2.21.0-py3-none-any.whl (1.3 MB)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/13/71/3970abe530a7a15e406874a30ed6cf1ead266444b4503ebb2f68b4d98f30/iniconfig-2.2.0-py3-none-any.whl#sha256=eeea4a571b616cf2951fbeeda9490863f3d1882a21cf673cd3236545488d6f1e (from https://pypi.org/simple/iniconfig/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/8e/11/2f7713979d561602e14b8fdd99a0e2e8ff2d901de1041c42a23a4c33f2c3/iniconfig-2.2.0.tar.gz#sha256=1807d2bc2eb4231a5e40e2ecee093fc25fc0eb0e2840f01ea50a1d15380adbff (from https://pypi.org/simple/iniconfig/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl#sha256=f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12 (from https://pypi.org/simple/iniconfig/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz#sha256=c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 (from https://pypi.org/simple/iniconfig/) (requires-python:>=3.10)
+Collecting iniconfig>=1
+  Downloading iniconfig-2.1.0-py3-none-any.whl (6.0 kB)
+Collecting packaging>=20
+  Downloading packaging-26.3-py3-none-any.whl (129 kB)
+Collecting pluggy<2,>=1.5
+  Downloading pluggy-1.6.0-py3-none-any.whl (20 kB)
+Collecting tomli>=1
+  Downloading tomli-2.4.1-py3-none-any.whl (14 kB)
+Collecting typing-extensions>=4.6.0
+  Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+Installing collected packages: typing-extensions, urllib3, tomli, pygments, pluggy, packaging, iniconfig, idna, exceptiongroup, charset-normalizer, certifi, requests, pytest
+  changing mode of /home/runner/work/task-client/task-client/.venv/bin/pygmentize to 755
+  changing mode of /home/runner/work/task-client/task-client/.venv/bin/idna to 755
+  changing mode of /home/runner/work/task-client/task-client/.venv/bin/normalizer to 755
+  changing mode of /home/runner/work/task-client/task-client/.venv/bin/py.test to 755
+  changing mode of /home/runner/work/task-client/task-client/.venv/bin/pytest to 755
+Successfully installed certifi-2026.7.22 charset-normalizer-3.5.1 exceptiongroup-1.3.1 idna-3.20 iniconfig-2.1.0 packaging-26.3 pluggy-1.6.0 pygments-2.21.0 pytest-8.4.2 requests-2.32.5 tomli-2.4.1 typing-extensions-4.16.0 urllib3-2.6.3
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/70/7a/be4bd8bcbb24ea475856dd68159d78b03b2bb53dae369f69c9606b8888f5/pip-26.1-py3-none-any.whl#sha256=4e8486d821d814b77319acb7b9e8bf5a4ee7590a643e7cb21029f209be8573c1 (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/73/7e/d2b04004e1068ad4fdfa2f227b839b5d03e602e47cdbbf49de71137c9546/pip-26.1.tar.gz#sha256=81e13ebcca3ffa8cc85e4deff5c27e1ee26dea0aa7fc2f294a073ac208806ff3 (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/3a/eb/fea4d1d51c49832120f7f285d07306db3960f423a2612c6057caf3e8196f/pip-26.1.1-py3-none-any.whl#sha256=99cb1c2899893b075ff56e4ed0af55669a955b49ad7fb8d8603ecdaf4ed653fb (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/b6/48/cb9b7a682f6fe01a4221e1728941dd4ac3cd9090a17db3779d6ff490b602/pip-26.1.1.tar.gz#sha256=d36762751d156a4ee895de8af39aa0abeeeb577f93a2eca6ab62467bbf0f8a78 (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/5d/95/6b5cb3461ea5673ba0995989746db58eb18b91b54dbf331e72f569540946/pip-26.1.2-py3-none-any.whl#sha256=382ff9f685ee3bc25864f820aa50505825f10f5458ffff07e30a6d96e5715cab (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/01/91/47e7d486260f618783899587af63ccf7980fb60245c3e63dd4571c6b57ad/pip-26.1.2.tar.gz#sha256=f49cd134c61cf2fd75e0ce2676db03e4054504a5a4986d00f8299ae632dc4605 (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/62/36/a3aed958d60531cb442b7ab4596cda7b3621cfb916f8ae1d6769795c7dc1/pip-26.2-py3-none-any.whl#sha256=931c303696af6fa3417112103b1cad26890e5a07eccb5b99783700e33f2b8aad (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/db/96/e6f8e9d9d7b9cc4457092712a7e919c3186aa2c2fa9ffed2c5d29cc947e8/pip-26.2.tar.gz#sha256=2d8542afcc84cdd8e846c2b36b2861fad1da376dd98f8e7113e9108a3c331690 (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl#sha256=71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+  Link requires a different Python (3.9.6 not in: '>=3.10'): https://files.pythonhosted.org/packages/ae/15/4500e320e6b101ec3b719ae85b697d9940b6cda672bc555bd6016fc60c6f/pip-26.2.1.tar.gz#sha256=f6ad667e89a1fe78046c8f13232b247200f5258d7828f3f7883d660878e0813f (from https://pypi.org/simple/pip/) (requires-python:>=3.10)
+WARNING: You are using pip version 21.2.4; however, version 26.0.1 is available.
+You should consider upgrading via the '/home/runner/work/task-client/task-client/.venv/bin/python3 -m pip install --upgrade pip' command.
+# cargo build, fresh registry
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded itoa v1.0.18
+  Downloaded zmij v1.0.23
+  Downloaded serde_core v1.0.229
+  Downloaded quote v1.0.47
+  Downloaded serde_derive v1.0.229
+  Downloaded unicode-ident v1.0.26
+  Downloaded proc-macro2 v1.0.107
+  Downloaded serde v1.0.229
+  Downloaded memchr v2.8.3
+  Downloaded serde_json v1.0.151
+  Downloaded syn v3.0.6
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling itoa v1.0.18
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.6
+   Compiling serde_derive v1.0.229
+   Compiling task-report v0.1.0 (/Volumes/Work/src/task-report)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.51s
+# cargo build, compile errors
+   Compiling task-report v0.1.0 (/Volumes/Work/src/task-report)
+error[E0061]: this function takes 1 argument but 2 arguments were supplied
+    --> src/extra.rs:2:5
+     |
+   2 |     serde_json::from_str(text, 1).unwrap()
+     |     ^^^^^^^^^^^^^^^^^^^^       - unexpected argument #2 of type `{integer}`
+     |
+note: function defined here
+    --> /home/dev/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.151/src/de.rs:2709:8
+     |
+2709 | pub fn from_str<'a, T>(s: &'a str) -> Result<T>
+     |        ^^^^^^^^
+help: remove the extra argument
+     |
+   2 -     serde_json::from_str(text, 1).unwrap()
+   2 +     serde_json::from_str(text).unwrap()
+     |
+
+error[E0277]: a value of type `u64` cannot be made by summing an iterator over elements of type `&u32`
+    --> src/extra.rs:4:52
+     |
+   4 | pub fn count(v: &Vec<u32>) -> u32 { v.iter().sum::<u64>() }
+     |                                              ---   ^^^ value of type `u64` cannot be made by summing a `std::iter::Iterator<Item=&u32>`
+     |                                              |
+     |                                              required by a bound introduced by this call
+     |
+     = help: the trait `Sum<&u32>` is not implemented for `u64`
+help: `u64` implements trait `Sum<A>`
+    --> /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/iter/traits/accum.rs:50:9
+     |
+  50 |         impl Sum for $a {
+     |         ^^^^^^^^^^^^^^^ `Sum`
+...
+  72 |         impl<'a> Sum<&'a $a> for $a {
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Sum<&u64>`
+...
+ 206 | integer_sum_product! { i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize }
+     | ---------------------------------------------------------------------------- in this macro invocation
+note: the method call chain might not have had the expected associated types
+    --> src/extra.rs:4:39
+     |
+   4 | pub fn count(v: &Vec<u32>) -> u32 { v.iter().sum::<u64>() }
+     |                                     - ^^^^^^ `Iterator::Item` is `&u32` here
+     |                                     |
+     |                                     this expression has type `&Vec<u32>`
+note: required by a bound in `std::iter::Iterator::sum`
+    --> /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/iter/traits/iterator.rs:3672:12
+     |
+3669 |     fn sum<S>(self) -> S
+     |        --- required by a bound in this associated function
+...
+3672 |         S: [const] Sum<Self::Item>,
+     |            ^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Iterator::sum`
+     = note: this error originates in the macro `integer_sum_product` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+ --> src/extra.rs:4:37
+  |
+4 | pub fn count(v: &Vec<u32>) -> u32 { v.iter().sum::<u64>() }
+  |                               ---   ^^^^^^^^^^^^^^^^^^^^^ expected `u32`, found `u64`
+  |                               |
+  |                               expected `u32` because of return type
+  |
+help: you can convert a `u64` to a `u32` and panic if the converted value doesn't fit
+  |
+4 | pub fn count(v: &Vec<u32>) -> u32 { v.iter().sum::<u64>().try_into().unwrap() }
+  |                                                          ++++++++++++++++++++
+
+Some errors have detailed explanations: E0061, E0277, E0308.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `task-report` (bin "task-report") due to 3 previous errors

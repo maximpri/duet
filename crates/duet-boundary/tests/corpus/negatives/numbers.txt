@@ -64,3 +64,5 @@ elapsed 00:12:45.678
 x = y +42 - 7
 semver 2.0.0-rc.1+build.5114f85
 2026-09-25T10:15:32+05:30
+// and in 'Collected Parsers', edited by the editors, Copyright 2007 Example Press, Inc. 798-0-596-51004-6
+ISBN 978-5-9651-0044-6 (paperback), 9785965100453 (ebook)
