@@ -778,24 +778,43 @@ fn the_searxng_preset_sets_up_private_search_and_starts_nothing() {
 fn doctor_names_the_search_backend_and_who_receives_the_queries() {
     let e = env();
     let no_brave = ("BRAVE_API_KEY", "");
-    // Nothing configured: the keyless fallback.
+    // Nothing configured: the native backend, whose every source receives
+    // the queries; the workspace's Cargo.toml adds crates.io.
+    std::fs::write(e.ws.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
     let (_, report) = doctor(&e, &[], &[no_brave]);
     assert_eq!(status(&report, "web search"), "pass", "{report}");
     let d = detail(&report, "web search");
-    assert!(d.contains("wikipedia") && d.contains("Wikimedia"), "{d}");
-    // The default frontier (the coding plan) with its key: the plan's search.
+    for want in [
+        "native: this machine asks public sources directly, no search provider in between",
+        "each source asked receives the query",
+        "stackoverflow, wikipedia, github, crates (api.stackexchange.com, en.wikipedia.org, api.github.com, crates.io)",
+        "when the frontier names them",
+    ] {
+        assert!(d.contains(want), "{want}: {d}");
+    }
+    // A Z.ai frontier with its key no longer implies Z.ai's search.
+    let (_, report) = doctor(&e, &[], &[no_brave, ("ZAI_API_KEY", "zk-doctor-1")]);
+    let d = detail(&report, "web search");
+    assert!(d.starts_with("native:"), "{d}");
+    assert!(!report.to_string().contains("zk-doctor-1"));
+    // Z.ai by name: the plan's search, and who receives the queries.
+    owner_config(&e, "[web.search]\nbackend = \"zai\"\n");
     let (_, report) = doctor(&e, &[], &[no_brave, ("ZAI_API_KEY", "zk-doctor-1")]);
     let d = detail(&report, "web search");
     assert!(
         d.contains("GLM Coding Plan") && d.contains("already receives the run"),
         "{d}"
     );
-    assert!(!report.to_string().contains("zk-doctor-1"));
     // An explicit backend without its key warns with a fix; `none` skips.
     owner_config(&e, "[web.search]\nbackend = \"brave\"\n");
     let (_, report) = doctor(&e, &[], &[no_brave]);
     assert_eq!(status(&report, "web search"), "warn", "{report}");
     assert!(detail(&report, "web search").contains("$BRAVE_API_KEY is not set"));
+    // An unknown source fails with a fix.
+    owner_config(&e, "[web.search]\nsources = [\"google\"]\n");
+    let (_, report) = doctor(&e, &[], &[no_brave]);
+    assert_eq!(status(&report, "web search"), "fail", "{report}");
+    assert!(detail(&report, "web search").contains("unknown source \"google\""));
     owner_config(&e, "[web.search]\nbackend = \"none\"\n");
     let (_, report) = doctor(&e, &[], &[]);
     assert_eq!(status(&report, "web search"), "skip", "{report}");

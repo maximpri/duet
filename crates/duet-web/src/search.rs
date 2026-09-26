@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Search backends: Z.ai's web search (the frontier provider's own, with the
-//! frontier's key: the GLM Coding Plan's search server, or the per-search
-//! Web Search API), a self-hosted SearXNG instance (JSON API, no key), the
-//! Brave Search API (key from an environment variable) and Wikipedia (the
-//! MediaWiki search API, no key: encyclopedic lookups when nothing else is set
-//! up).
+//! Search backends: native (the host asks public sources with open APIs
+//! itself, no search provider in between: [`native`]; the default), a
+//! self-hosted SearXNG instance (JSON API, no key), the Brave Search API (key
+//! from an environment variable), Wikipedia alone (the MediaWiki search API,
+//! no key) and Z.ai's web search (with the frontier's key: the GLM Coding
+//! Plan's search server, or the per-search Web Search API).
 
+pub mod native;
+
+use native::NativeSearch;
 use serde_json::{Map, Value, json};
 use url::Url;
 
@@ -38,6 +41,34 @@ pub struct SearchResult {
     pub snippet: String,
     /// The backend gave only the site (`https://host/`), not the page's address.
     pub site_only: bool,
+    /// Where it came from: the backend's name, or the native source's.
+    pub source: &'static str,
+}
+
+/// What one source (or a single backend) did for one search: for the audit
+/// log (host, bytes, outcome; never the query) and the frontier (note).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceReport {
+    pub source: &'static str,
+    pub host: String,
+    /// Bytes of the reply.
+    pub bytes: usize,
+    /// `ok`, `cached`, `not_applicable`, `throttled`, `backoff`,
+    /// `rate_limited`, or a failure ([`crate::WebError::outcome`]).
+    pub outcome: &'static str,
+    /// Why it was skipped or failed, for the frontier (never the reply's text).
+    pub note: String,
+    /// Results it gave.
+    pub hits: usize,
+}
+
+/// A search's results and what each source did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Searched {
+    pub results: Vec<SearchResult>,
+    pub requests: Vec<SourceReport>,
+    /// Results come from several sources and are shown with their source.
+    pub labelled: bool,
 }
 
 /// Where searches go. Keys are held only in memory and never printed.
@@ -64,6 +95,8 @@ pub enum Backend {
     Wikipedia {
         endpoint: Url,
     },
+    /// Public sources asked by the host itself.
+    Native(NativeSearch),
 }
 
 impl std::fmt::Debug for Backend {
@@ -76,6 +109,10 @@ impl std::fmt::Debug for Backend {
             Backend::Searxng { base } => write!(f, "Searxng({base})"),
             Backend::Brave { endpoint, .. } => write!(f, "Brave({endpoint}, key withheld)"),
             Backend::Wikipedia { endpoint } => write!(f, "Wikipedia({endpoint})"),
+            Backend::Native(n) => {
+                let names: Vec<&str> = n.sources.iter().map(|s| s.source.name()).collect();
+                write!(f, "Native({})", names.join(", "))
+            }
         }
     }
 }
@@ -106,37 +143,45 @@ impl Backend {
             Backend::Searxng { .. } => "searxng",
             Backend::Brave { .. } => "brave",
             Backend::Wikipedia { .. } => "wikipedia",
+            Backend::Native(_) => "native",
         }
     }
 
-    fn url(&self) -> &Url {
+    /// The host queries are sent to (for outbound checks and the audit log);
+    /// for the native backend, the hosts of its default sources.
+    pub fn host(&self) -> String {
         match self {
             Backend::Zai { endpoint, .. }
             | Backend::ZaiPlan { endpoint, .. }
             | Backend::Brave { endpoint, .. }
-            | Backend::Wikipedia { endpoint } => endpoint,
-            Backend::Searxng { base } => base,
+            | Backend::Wikipedia { endpoint } => endpoint.host_str().unwrap_or_default().to_owned(),
+            Backend::Searxng { base } => base.host_str().unwrap_or_default().to_owned(),
+            Backend::Native(n) => NativeSearch::hosts(&n.defaults().collect::<Vec<_>>()).join(", "),
         }
     }
 
-    /// The host queries are sent to (for outbound checks and the audit log).
-    pub fn host(&self) -> String {
-        self.url().host_str().unwrap_or_default().to_owned()
-    }
-
-    /// Whether this backend searches the web at large (not one encyclopedia).
+    /// Whether this backend searches the web at large (not a set of sources).
     pub fn whole_web(&self) -> bool {
-        !matches!(self, Backend::Wikipedia { .. })
+        !matches!(self, Backend::Wikipedia { .. } | Backend::Native(_))
     }
 
-    /// How to search for `query`.
-    pub(crate) fn call(&self, query: &str, count: usize) -> Call {
+    /// Results a search returns when the frontier gives no count.
+    pub fn default_count(&self) -> usize {
+        match self {
+            Backend::Native(_) => native::DEFAULT_RESULTS,
+            _ => crate::DEFAULT_RESULTS,
+        }
+    }
+
+    /// How to search for `query` (`None` for the native backend, which asks
+    /// each of its sources itself).
+    pub(crate) fn call(&self, query: &str, count: usize) -> Option<Call> {
         let get = |url: Url| Call::Http {
             url,
             headers: Vec::new(),
             body: None,
         };
-        match self {
+        Some(match self {
             Backend::Zai {
                 endpoint,
                 key,
@@ -202,7 +247,8 @@ impl Backend {
                     .append_pair("formatversion", "2");
                 get(url)
             }
-        }
+            Backend::Native(_) => return None,
+        })
     }
 
     /// What a refused request means, from the reply's status and body (the
@@ -241,6 +287,7 @@ and not by the coding plan; web.search.zai_engine = \"plan\" searches within the
                 "title",
                 "snippet",
             ),
+            Backend::Native(_) => return Err("the native backend reads each source's reply".into()),
         };
         let Some(list) = list.filter(|l| !l.is_null()) else {
             // Brave answers a query without web hits with no `web` section,
@@ -278,6 +325,7 @@ and not by the coding plan; web.search.zai_engine = \"plan\" searches within the
                     site_only: zai && is_site_root(&url),
                     url,
                     snippet: cut(text(r, snippet_key)),
+                    source: self.name(),
                 })
             })
             .take(count)
@@ -331,33 +379,66 @@ fn is_site_root(url: &str) -> bool {
 
 /// Snippets carry highlighting markup (`<strong>`, `<span class="searchmatch">`)
 /// and entities.
-fn clean(s: &str) -> String {
+pub(crate) fn clean(s: &str) -> String {
     crate::html::to_text(s, None)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
 }
 
-fn cut(s: String) -> String {
+pub(crate) fn cut(s: String) -> String {
     match s.char_indices().nth(MAX_SNIPPET_CHARS) {
         Some((at, _)) => format!("{}…", &s[..at]),
         None => s,
     }
 }
 
-/// Search results as the frontier reads them.
-pub fn render(query: &str, results: &[SearchResult]) -> String {
-    if results.is_empty() {
-        return format!("No results for {query:?}.\n");
+/// What a source did, in a few words.
+fn status(r: &SourceReport) -> String {
+    let hits = |n: usize| match n {
+        0 => "no results".to_owned(),
+        1 => "1 result".to_owned(),
+        n => format!("{n} results"),
+    };
+    match r.outcome {
+        "ok" => format!("{} ({})", r.source, hits(r.hits)),
+        "cached" => format!("{} ({}, answered earlier)", r.source, hits(r.hits)),
+        "not_applicable" | "throttled" | "backoff" => format!("{} (skipped: {})", r.source, r.note),
+        _ => format!("{} ({})", r.source, r.note),
     }
-    let mut out = format!("Results for {query:?}:\n");
+}
+
+/// Search results as the frontier reads them: for several sources, first
+/// what each source did, then the results with their source.
+pub fn render(query: &str, searched: &Searched) -> String {
+    let results = &searched.results;
+    let mut out = String::new();
+    if searched.labelled {
+        let asked: Vec<String> = searched.requests.iter().map(status).collect();
+        out.push_str(&format!("Sources asked: {}.\n", asked.join("; ")));
+    }
+    if results.is_empty() {
+        out.push_str(&format!("No results for {query:?}.\n"));
+        return out;
+    }
+    out.push_str(&format!("Results for {query:?}:\n"));
     for (i, r) in results.iter().enumerate() {
         let note = if r.site_only {
             " (the site only; the search gave no page address)"
         } else {
             ""
         };
-        out.push_str(&format!("{}. {}\n   {}{note}\n", i + 1, r.title, r.url));
+        let from = if searched.labelled {
+            format!(" [{}]", r.source)
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "{}. {}{from}\n   {}{note}\n",
+            i + 1,
+            r.title,
+            r.url
+        ));
         if !r.snippet.is_empty() {
             out.push_str(&format!("   {}\n", r.snippet));
         }
@@ -371,8 +452,19 @@ mod tests {
 
     type Http = (Url, Vec<(&'static str, String)>, Option<Value>);
 
-    fn http(call: Call) -> Http {
-        match call {
+    fn render(query: &str, results: &[SearchResult]) -> String {
+        super::render(
+            query,
+            &Searched {
+                results: results.to_vec(),
+                requests: Vec::new(),
+                labelled: false,
+            },
+        )
+    }
+
+    fn http(call: Option<Call>) -> Http {
+        match call.expect("a call") {
             Call::Http { url, headers, body } => (url, headers, body),
             Call::Mcp { .. } => panic!("an MCP call"),
         }
@@ -491,7 +583,7 @@ mod tests {
             headers,
             tool,
             arguments,
-        } = plan.call("what is Captain Comic", 5)
+        } = plan.call("what is Captain Comic", 5).expect("a call")
         else {
             panic!("not an MCP call");
         };
@@ -505,7 +597,8 @@ mod tests {
             Value::Object(arguments),
             json!({"search_query": "what is Captain Comic", "location": "us"})
         );
-        let Call::Mcp { arguments, .. } = plan.call("船长漫画 游戏", 5) else {
+        let Call::Mcp { arguments, .. } = plan.call("船长漫画 游戏", 5).expect("a call")
+        else {
             panic!("not an MCP call");
         };
         assert_eq!(arguments["location"], "cn");

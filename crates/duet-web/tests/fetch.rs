@@ -628,11 +628,15 @@ async fn live_wikipedia_search() {
     let w = live(Backend::Wikipedia {
         endpoint: url::Url::parse(duet_web::search::WIKIPEDIA_ENDPOINT).unwrap(),
     });
-    let r = w.search("Captain Comic 1988 PC game", 5).await.unwrap();
+    let s = w
+        .search_with("Captain Comic 1988 PC game", 5, None)
+        .await
+        .unwrap();
     print!(
         "{}",
-        duet_web::search::render("Captain Comic 1988 PC game", &r)
+        duet_web::search::render("Captain Comic 1988 PC game", &s)
     );
+    let r = s.results;
     assert!(
         r.iter()
             .any(|x| x.url == "https://en.wikipedia.org/wiki/The_Adventures_of_Captain_Comic"),
@@ -661,8 +665,8 @@ async fn live_zai_search() {
     // The query in `DUET_LIVE_QUERY`, or the one a run should have asked.
     let query =
         std::env::var("DUET_LIVE_QUERY").unwrap_or_else(|_| "Captain Comic 1988 PC game".into());
-    let r = w.search(&query, 5).await.unwrap();
-    print!("{}", duet_web::search::render(&query, &r));
+    let s = w.search_with(&query, 5, None).await.unwrap();
+    print!("{}", duet_web::search::render(&query, &s));
     // Relevance is the provider's; the test checks that hits arrive.
-    assert!(!r.is_empty());
+    assert!(!s.results.is_empty());
 }

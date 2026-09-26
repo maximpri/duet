@@ -695,12 +695,29 @@ pub const REGISTRY: &[Setting] = &[
     ),
     s!(
         "web.search.backend",
-        Choice(&["auto", "brave", "searxng", "wikipedia", "zai", "none"]),
+        Choice(&[
+            "auto",
+            "native",
+            "brave",
+            "searxng",
+            "wikipedia",
+            "zai",
+            "none"
+        ]),
         r#""auto""#,
         Owner,
         OnlyLaterChoice,
         true,
-        "Search backend for `web_search`, listed from the most to the fewest recipients of queries: `auto` (`zai` when the frontier is Z.ai and its key is set, else `searxng` when web.search.searxng_url is set, else `brave` when its key is set, else `wikipedia`), `brave` (Brave Search API, key from web.search.brave_key_env), `searxng` (your own instance at web.search.searxng_url; `duet config preset searxng` sets one up), `wikipedia` (English Wikipedia's search: articles only, no key), `zai` (Z.ai's search with the frontier's key; see web.search.zai_engine) or `none` (no web_search tool). Queries are checked for sensitive values before they are sent; `duet doctor` shows the backend in use."
+        "Search backend for `web_search`: `auto` (the default: `native`), `native` (this machine asks public sources with open APIs itself, no search provider in between: Stack Overflow, Wikipedia, GitHub and the package registries of the workspace's languages by default, see web.search.sources; each source asked receives the query), `brave` (Brave Search API, key from web.search.brave_key_env), `searxng` (your own instance at web.search.searxng_url; `duet config preset searxng` sets one up), `wikipedia` (English Wikipedia's search only), `zai` (Z.ai's search with the frontier's key; see web.search.zai_engine) or `none` (no web_search tool). `auto` never picks brave, searxng or zai: they are used only when named here. Queries are checked for sensitive values before they are sent; `duet doctor` shows the backend in use and who receives the queries."
+    ),
+    s!(
+        "web.search.sources",
+        List,
+        r#"["auto"]"#,
+        Owner,
+        Any,
+        true,
+        "Sources the native search backend may ask; each one asked receives the query. `auto`: stackoverflow, wikipedia and github (repositories) by default, plus crates for a Cargo.toml, npm for a package.json and pypi (exact package names) for a Python project at the workspace root; the frontier may name any other source in `sources`. A named source is asked by default too; without `auto` only the named sources are asked. Sources: stackoverflow, serverfault, superuser, askubuntu, unix (Stack Exchange API), wikipedia, github, github_issues (GitHub REST search, never with a token), crates (crates.io), npm, pypi, hackernews (Algolia's HN Search API), arxiv."
     ),
     s!(
         "web.search.zai_engine",
@@ -709,7 +726,7 @@ pub const REGISTRY: &[Setting] = &[
         Owner,
         Any,
         true,
-        "How the `zai` search backend searches: `plan` (the GLM Coding Plan's search server, counted in the plan's credits), `search_pro_jina` or `search-prime` (Z.ai's Web Search API with that engine, billed per search to the account balance, not by the plan) or `auto` (`plan` when the frontier is the coding plan endpoint, `search_pro_jina` otherwise). In tests (2026-09) `search_pro_jina` gave the most relevant hits, with page addresses; the plan's search often gave only a hit's site."
+        "How the `zai` search backend (only when web.search.backend = `zai`) searches: `plan` (the GLM Coding Plan's search server, counted in the plan's credits), `search_pro_jina` or `search-prime` (Z.ai's Web Search API with that engine, billed per search to the account balance, not by the plan) or `auto` (`plan` when the frontier is the coding plan endpoint, `search_pro_jina` otherwise). In tests (2026-09) `search_pro_jina` gave the most relevant hits, with page addresses; the plan's search often gave only a hit's site."
     ),
     s!(
         "web.search.searxng_url",

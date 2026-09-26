@@ -162,7 +162,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
             out.push(command_network(c));
             out.push(detection_rules(duet_boundary::rules::imported()));
             out.push(language_servers(c));
-            out.push(web_search(c, online).await);
+            out.push(web_search(c, ws, online).await);
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
             out.extend(mcp_servers(c, ws, online).await);
@@ -1159,8 +1159,9 @@ fn language_servers(c: &Config) -> Check {
 
 /// The search backend runs get (`web.search.backend`), who receives the
 /// queries, and with `--online` whether the owner's SearXNG answers JSON (the
-/// only backend queried: the others are third parties, some paid per search).
-async fn web_search(c: &Config, online: bool) -> Check {
+/// only backend queried: the others are third parties, some paid per search;
+/// the native backend's sources are asked only by runs).
+async fn web_search(c: &Config, ws: &Path, online: bool) -> Check {
     const NAME: &str = "web search";
     match c.bool("web.enabled") {
         Ok(true) => {}
@@ -1175,16 +1176,18 @@ async fn web_search(c: &Config, online: bool) -> Check {
         base_url: &base_url,
         key_env: &key_env,
     };
-    let choice = match crate::web::choose(c, Some(frontier), &|name| std::env::var(name).ok()) {
+    let choice = match crate::web::choose(c, Some(frontier), &|name| std::env::var(name).ok(), ws) {
         Ok(ch) => ch,
         Err(e) => {
             return check(NAME, Status::Fail, format!("{e:#}"))
-                .fix("correct web.search.searxng_url (an http or https URL)");
+                .fix("correct web.search.searxng_url (an http or https URL) or web.search.sources (`duet config list` names the sources)");
         }
     };
     if let Some(problem) = &choice.problem {
         return check(NAME, Status::Warn, choice.detail.clone()).fix(if problem.contains("$") {
             "export the key variable named above, or: duet config set web.search.backend '\"auto\"' --confirm"
+        } else if problem.contains("web.search.sources") {
+            "duet config set web.search.sources '[\"auto\"]' --confirm"
         } else {
             "duet config preset searxng --confirm, or: duet config set web.search.backend '\"auto\"' --confirm"
         });

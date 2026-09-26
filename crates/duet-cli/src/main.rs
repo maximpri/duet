@@ -780,6 +780,7 @@ async fn prepare(
                 base_url: &manifest.frontier_url,
                 key_env: &frontier_key_env,
             }),
+            ws,
         )?,
         git_author: approve::git_author(cfg)?,
         mcp: mcp::start(

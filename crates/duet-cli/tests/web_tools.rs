@@ -632,3 +632,332 @@ async fn hybrid_coding_plan_search_results_are_presented_through_the_boundary() 
     let log_text = std::fs::read_to_string(&log).unwrap();
     assert!(!log_text.contains(key) && !log_text.contains(EMAIL));
 }
+
+/// Every name resolves to the mock server (the native sources' test names).
+struct ToServer(SocketAddr);
+
+impl duet_web::Resolve for ToServer {
+    fn resolve(
+        &self,
+        _host: String,
+        _port: u16,
+    ) -> BoxFuture<'static, std::io::Result<Vec<SocketAddr>>> {
+        let a = self.0;
+        Box::pin(async move { Ok(vec![a]) })
+    }
+}
+
+/// A server standing in for the native sources (Stack Exchange, Wikipedia,
+/// GitHub, crates.io): every answer echoes the sensitive email and key. It
+/// records each request's host and target.
+async fn sources_server() -> (SocketAddr, Arc<Mutex<Vec<(String, String)>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen: Arc<Mutex<Vec<(String, String)>>> = Arc::default();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match sock.read(&mut tmp).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                    }
+                }
+                let head = String::from_utf8_lossy(&buf).into_owned();
+                let target = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                let host = head
+                    .lines()
+                    .filter_map(|l| l.split_once(':'))
+                    .find(|(k, _)| k.trim().eq_ignore_ascii_case("host"))
+                    .map(|(_, v)| v.trim().split(':').next().unwrap_or_default().to_owned())
+                    .unwrap_or_default();
+                log.lock().unwrap().push((host, target.clone()));
+                let leak = format!("mail {EMAIL} or use {SECRET}");
+                let reply = match target.split('?').next().unwrap_or_default() {
+                    "/2.3/search/advanced" => {
+                        json!({"items": [{"title": format!("Contact {EMAIL}"),
+                        "link": "https://stackoverflow.com/questions/1/a", "answer_count": 1,
+                        "score": 3, "tags": ["rust"]}], "quota_remaining": 250})
+                    }
+                    "/w/api.php" => json!({"query": {"search": [{"ns": 0,
+                        "title": "Tokio (software)", "snippet": leak}]}}),
+                    "/search/repositories" => json!({"items": [{"full_name": "tokio-rs/tokio",
+                        "html_url": "https://github.com/tokio-rs/tokio", "description": leak,
+                        "stargazers_count": 1}]}),
+                    "/api/v1/crates" => json!({"crates": [{"name": "tokio", "description": leak,
+                        "max_stable_version": "1.0.0", "downloads": 1}]}),
+                    _ => json!({}),
+                }
+                .to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    (addr, seen)
+}
+
+/// The native backend over the mock sources: Stack Overflow, Wikipedia,
+/// GitHub and crates.io asked by default, every other source on request.
+fn native_web(addr: SocketAddr) -> Arc<Web> {
+    use duet_web::search::native::{ALL, NativeSearch, Source, SourceSetup};
+    let at = |host: &str, path: &str| {
+        url::Url::parse(&format!("http://{host}:{}{path}", addr.port())).unwrap()
+    };
+    let defaults = [
+        Source::StackOverflow,
+        Source::Wikipedia,
+        Source::GitHub,
+        Source::Crates,
+    ];
+    let sources = ALL
+        .iter()
+        .map(|&s| SourceSetup {
+            source: s,
+            endpoint: match s {
+                Source::StackOverflow => at("se.test", "/2.3/search/advanced"),
+                Source::Wikipedia => at("wiki.test", "/w/api.php"),
+                Source::GitHub => at("gh.test", "/search/repositories"),
+                Source::Crates => at("crates.test", "/api/v1/crates"),
+                other => at(&format!("{}.test", other.name()), "/"),
+            },
+            default: defaults.contains(&s),
+        })
+        .collect();
+    Arc::new(
+        Web::new(WebConfig {
+            max_bytes: 100_000,
+            timeout: Duration::from_secs(5),
+            allowlist: Allowlist::parse(&["*.test".into()]).unwrap(),
+            search: Some(Backend::Native(NativeSearch { sources })),
+        })
+        .with_resolver(Arc::new(ToServer(addr))),
+    )
+}
+
+fn events(log: &Path) -> Vec<AuditEvent> {
+    read(log)
+        .unwrap()
+        .into_iter()
+        .filter_map(|l| match l {
+            Line::Event(e) => Some(e.event),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hybrid_native_search_checks_the_query_before_any_source_and_scans_every_answer() {
+    let (addr, seen) = sources_server().await;
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().canonicalize().unwrap();
+    let ws = workspace(&root);
+    let policy = Policy {
+        sensitive_globs: vec![".env*".into(), "data/**".into()],
+        command_output_sensitive: true,
+        detect_secrets: true,
+        detect_pii: true,
+        bulky_tokens: 2000,
+        bulky_file_tokens: 12000,
+        ..Policy::default()
+    };
+    let engine = Engine::open(&root.join("run"), policy, None).unwrap();
+    engine.prime(
+        &ws,
+        &[".env".to_owned(), "data/customers.csv".to_owned()],
+        "",
+    );
+    let token = engine
+        .present(
+            &duet_boundary::view::Source::Other { label: "x".into() },
+            EMAIL.as_bytes(),
+        )
+        .trim()
+        .to_owned();
+    assert!(token.starts_with('⟨'), "{token}");
+    let script = vec![
+        // Queries carrying a sensitive value, in any form, reach no source.
+        (
+            "web_search",
+            json!({"query": format!("stripe key {SECRET}")}),
+        ),
+        (
+            "web_search",
+            json!({"query": format!("who is {}", EMAIL.to_uppercase()), "sources": ["wikipedia"]}),
+        ),
+        ("web_search", json!({"query": format!("who is {token}")})),
+        // An unknown source is refused before anything is sent.
+        (
+            "web_search",
+            json!({"query": "tokio select", "sources": ["google"]}),
+        ),
+        ("web_search", json!({"query": "tokio select"})),
+        (
+            "web_search",
+            json!({"query": "tokio", "sources": ["wikipedia"]}),
+        ),
+        ("finish", json!({"summary": "looked it up"})),
+    ];
+    let (terminal, bodies, log) = run(
+        &root,
+        &ws,
+        engine.as_ref(),
+        Some(&engine),
+        Some(native_web(addr)),
+        script,
+    )
+    .await;
+    assert!(
+        matches!(terminal, Terminal::Completed { .. }),
+        "{terminal:?}"
+    );
+
+    // The tool describes the run's sources and offers them by name.
+    let request: Value = serde_json::from_str(&bodies[0]).unwrap();
+    let tool = request["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["function"]["name"] == "web_search")
+        .unwrap()["function"]
+        .clone();
+    let description = tool["description"].as_str().unwrap();
+    assert!(
+        description
+            .contains("Asked by default: stackoverflow (Stack Overflow questions), wikipedia")
+            && description.contains("Each source asked receives the query"),
+        "{description}"
+    );
+    let names = tool["parameters"]["properties"]["sources"]["items"]["enum"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(names, duet_web::search::native::ALL.len());
+
+    // Only the two clean searches left the host: the fan-out to the four
+    // default sources, then Wikipedia alone.
+    let requests = seen.lock().unwrap().clone();
+    let hosts: Vec<&str> = requests.iter().map(|(h, _)| h.as_str()).collect();
+    assert_eq!(requests.len(), 5, "{requests:?}");
+    for want in ["se.test", "gh.test", "crates.test"] {
+        assert_eq!(hosts.iter().filter(|h| **h == want).count(), 1, "{want}");
+    }
+    assert_eq!(hosts.iter().filter(|h| **h == "wiki.test").count(), 2);
+    for (_, target) in &requests {
+        let t = target.to_lowercase();
+        assert!(
+            !t.contains("stripe") && !t.contains("northwind"),
+            "{target}"
+        );
+    }
+
+    let all = bodies.concat();
+    for value in [SECRET, EMAIL] {
+        assert!(!all.contains(value), "{value} reached the frontier");
+    }
+    let last = bodies.last().unwrap();
+    assert_eq!(last.matches("not sent:").count(), 3, "{last}");
+    assert!(last.contains("unknown source `google`"), "{last}");
+    assert!(
+        last.contains("Sources asked: stackoverflow (1 result); wikipedia (1 result); github (1 result); crates (1 result).")
+            && last.contains("tokio-rs/tokio [github]")
+            && last.contains("untrusted web content"),
+        "{last}"
+    );
+
+    // One event per source asked (host, bytes, outcome), never the query;
+    // a refused query is one refusal and an event per host that would have
+    // received it.
+    let events = events(&log);
+    let refused = events
+        .iter()
+        .filter(|e| matches!(e, AuditEvent::OutboundRefused { .. }))
+        .count();
+    assert_eq!(refused, 3);
+    let web: Vec<(String, String, u64)> = events
+        .iter()
+        .filter_map(|e| match e {
+            AuditEvent::WebRequest {
+                host,
+                outcome,
+                bytes,
+                ..
+            } => Some((host.clone(), outcome.clone(), *bytes)),
+            _ => None,
+        })
+        .collect();
+    let ok: Vec<&(String, String, u64)> = web.iter().filter(|w| w.1 == "ok").collect();
+    assert_eq!(ok.len(), 5, "{web:?}");
+    assert!(ok.iter().all(|w| w.2 > 0), "{web:?}");
+    // Refusals: four default hosts twice, Wikipedia's once.
+    assert_eq!(
+        web.iter().filter(|w| w.1 == "refused_outbound").count(),
+        9,
+        "{web:?}"
+    );
+    let log_text = std::fs::read_to_string(&log).unwrap();
+    for value in [SECRET, EMAIL] {
+        assert!(!log_text.contains(value), "{value} in the audit log");
+    }
+    // The web events hold hosts, never the query (the turn's request record
+    // holds the tool call, as for every tool).
+    let web_events = serde_json::to_string(
+        &events
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    AuditEvent::WebRequest { .. } | AuditEvent::OutboundRefused { .. }
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    assert!(!web_events.contains("tokio"), "{web_events}");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn pass_through_native_search_shows_each_source_framed_as_data() {
+    let (addr, seen) = sources_server().await;
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().canonicalize().unwrap();
+    let ws = workspace(&root);
+    let presenter = PassThrough { max_bytes: 60_000 };
+    let script = vec![
+        (
+            "web_search",
+            json!({"query": "tokio", "sources": ["github", "crates"], "count": 2}),
+        ),
+        ("finish", json!({"summary": "done"})),
+    ];
+    let (terminal, bodies, log) =
+        run(&root, &ws, &presenter, None, Some(native_web(addr)), script).await;
+    assert!(
+        matches!(terminal, Terminal::Completed { .. }),
+        "{terminal:?}"
+    );
+    assert_eq!(seen.lock().unwrap().len(), 2);
+    let last = bodies.last().unwrap();
+    assert!(
+        last.contains("Sources asked: github (1 result); crates (1 result).")
+            && last.contains("untrusted web content")
+            && last.contains("https://crates.io/crates/tokio"),
+        "{last}"
+    );
+    let hosts: Vec<String> = events(&log)
+        .into_iter()
+        .filter_map(|e| match e {
+            AuditEvent::WebRequest { host, .. } => Some(host),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hosts, ["gh.test", "crates.test"]);
+}

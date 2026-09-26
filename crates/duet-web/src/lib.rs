@@ -12,6 +12,9 @@
 //!   anything else is refused;
 //! - no proxy from the environment, no cookies, a User-Agent naming Duet.
 //!
+//! Searches go to the configured backend; the native one ([`search::native`])
+//! asks public sources itself, through the same guarded client as a fetch.
+//!
 //! This crate only talks HTTP. Checking what is sent (the URL, the query) and
 //! presenting what comes back is the agent's job, through its presenter.
 
@@ -21,7 +24,7 @@ pub mod search;
 
 use futures_util::future::BoxFuture;
 use guard::Allowlist;
-pub use search::{Backend, SearchResult};
+pub use search::{Backend, SearchResult, Searched, SourceReport};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -225,6 +228,8 @@ pub struct Web {
     paced: tokio::sync::Mutex<Option<Instant>>,
     /// The session with an MCP search server, kept between searches.
     mcp: tokio::sync::Mutex<Option<duet_mcp::Client>>,
+    /// The native backend's pacing per service and answers kept for the run.
+    native: search::native::NativeState,
 }
 
 impl Web {
@@ -234,6 +239,7 @@ impl Web {
             resolver: Arc::new(SystemResolver),
             paced: tokio::sync::Mutex::new(None),
             mcp: tokio::sync::Mutex::new(None),
+            native: search::native::NativeState::default(),
         }
     }
 
@@ -497,10 +503,24 @@ impl Web {
         }
     }
 
-    /// Searches with the configured backend. The backend is a fixed endpoint
-    /// (the owner's own instance or a known provider), so it is not subject
-    /// to the address check.
+    /// Searches with the configured backend; the results only.
     pub async fn search(&self, query: &str, count: usize) -> Result<Vec<SearchResult>, WebError> {
+        self.search_with(query, count, None)
+            .await
+            .map(|s| s.results)
+    }
+
+    /// Searches with the configured backend. A single backend is a fixed
+    /// endpoint (the owner's own instance or a known provider), so it is not
+    /// subject to the address check; the native backend's sources are
+    /// (`sources` picks among them; `None`: its defaults). Either way the
+    /// reply says what each source did.
+    pub async fn search_with(
+        &self,
+        query: &str,
+        count: usize,
+        sources: Option<&[String]>,
+    ) -> Result<Searched, WebError> {
         let backend = self
             .cfg
             .search
@@ -515,25 +535,54 @@ impl Web {
             )));
         }
         let count = count.clamp(1, MAX_RESULTS);
-        let Backend::Wikipedia { .. } = backend else {
-            return self.search_once(backend, query, count).await;
-        };
-        let mut last = self.paced.lock().await;
-        if let Some(t) = *last {
-            tokio::time::sleep_until(t + WIKIPEDIA_INTERVAL).await;
+        if let Backend::Native(native) = backend {
+            return self.native_search(native, query, count, sources).await;
         }
-        let out = self.search_once(backend, query, count).await;
-        *last = Some(Instant::now());
-        out
+        if sources.is_some_and(|s| !s.is_empty()) {
+            return Err(WebError::Invalid(format!(
+                "this run searches with {}, which has no sources to choose from",
+                backend.name()
+            )));
+        }
+        let (results, bytes) = if let Backend::Wikipedia { .. } = backend {
+            let mut last = self.paced.lock().await;
+            if let Some(t) = *last {
+                tokio::time::sleep_until(t + WIKIPEDIA_INTERVAL).await;
+            }
+            let out = self.search_once(backend, query, count).await;
+            *last = Some(Instant::now());
+            out?
+        } else {
+            self.search_once(backend, query, count).await?
+        };
+        Ok(Searched {
+            requests: vec![SourceReport {
+                source: backend.name(),
+                host: backend.host(),
+                bytes,
+                outcome: "ok",
+                note: String::new(),
+                hits: results.len(),
+            }],
+            results,
+            labelled: false,
+        })
     }
 
+    /// One search on a single backend: its results and the reply's size.
     async fn search_once(
         &self,
         backend: &Backend,
         query: &str,
         count: usize,
-    ) -> Result<Vec<SearchResult>, WebError> {
-        let (url, headers, body) = match backend.call(query, count) {
+    ) -> Result<(Vec<SearchResult>, usize), WebError> {
+        let Some(call) = backend.call(query, count) else {
+            return Err(WebError::Search(format!(
+                "{} is not a single endpoint",
+                backend.name()
+            )));
+        };
+        let (url, headers, body) = match call {
             search::Call::Http { url, headers, body } => (url, headers, body),
             search::Call::Mcp {
                 url,
@@ -577,7 +626,8 @@ impl Web {
         let body: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
             WebError::Search(format!("the {} reply is not JSON: {e}", backend.name()))
         })?;
-        backend.parse(&body, count).map_err(WebError::Search)
+        let results = backend.parse(&body, count).map_err(WebError::Search)?;
+        Ok((results, bytes.len()))
     }
 
     /// One `tools/call` on an MCP search server, over the kept session (a
@@ -590,7 +640,7 @@ impl Web {
         tool: &str,
         arguments: &serde_json::Map<String, serde_json::Value>,
         count: usize,
-    ) -> Result<Vec<SearchResult>, WebError> {
+    ) -> Result<(Vec<SearchResult>, usize), WebError> {
         let timeout = self.cfg.timeout;
         let name = backend.name();
         let failed = |e: duet_mcp::McpError| match e {
@@ -634,9 +684,10 @@ impl Web {
                 "the {name} reply is larger than web.max_bytes"
             )));
         }
-        backend
+        let results = backend
             .parse_text(&result.text, count)
-            .map_err(WebError::Search)
+            .map_err(WebError::Search)?;
+        Ok((results, result.text.len()))
     }
 }
 

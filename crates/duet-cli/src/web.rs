@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The run's web access, from the `web.*` settings, and the choice of search
-//! backend (`web.search.backend`, `auto` by default): Z.ai when the frontier
-//! is Z.ai and its key is set (the queries go to the provider that already
-//! receives the frontier traffic), else the owner's SearXNG instance, else
-//! Brave when its key is set, else Wikipedia (no key, no setup).
+//! backend (`web.search.backend`, `auto` by default). `auto` is the native
+//! backend: the host asks public sources with open APIs itself (Stack
+//! Overflow, Wikipedia, GitHub and the workspace's package registries by
+//! default; `web.search.sources`), with no search provider in between. The
+//! owner's SearXNG, Brave, Wikipedia alone and Z.ai's search are used only
+//! when the owner selects them by name: a SearXNG URL or a Brave key alone no
+//! longer selects them, nor does a Z.ai frontier.
 
 use anyhow::{Context, Result, bail};
 use duet_config::Config;
 use duet_web::guard::Allowlist;
+use duet_web::search::native::{ALL, NativeSearch, Source, SourceSetup};
 use duet_web::search::{
     BRAVE_ENDPOINT, Backend, WIKIPEDIA_ENDPOINT, ZAI_ENDPOINT, ZAI_ENGINES, ZAI_PLAN_ENDPOINT,
 };
 use duet_web::{Web, WebConfig};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -77,17 +82,18 @@ fn var(env: &dyn Fn(&str) -> Option<String>, name: &str) -> Option<String> {
 }
 
 /// Web access for this run, or `None` when `web.enabled` is off. `frontier`
-/// is the run's frontier (`None` in local-only mode). A search backend that
-/// cannot be used leaves `web_search` out with a warning; `web_fetch` is still
-/// offered.
-pub fn access(cfg: &Config, frontier: Option<Frontier<'_>>) -> Result<Option<Arc<Web>>> {
+/// is the run's frontier (`None` in local-only mode); `ws` the workspace,
+/// whose languages pick the native backend's package registries. A search
+/// backend that cannot be used leaves `web_search` out with a warning;
+/// `web_fetch` is still offered.
+pub fn access(cfg: &Config, frontier: Option<Frontier<'_>>, ws: &Path) -> Result<Option<Arc<Web>>> {
     if !cfg.bool("web.enabled")? {
         return Ok(None);
     }
     let allowlist = Allowlist::parse(&cfg.list("web.allowlist_private")?)
         .map_err(anyhow::Error::msg)
         .context("web.allowlist_private")?;
-    let choice = choose(cfg, frontier, &|name| std::env::var(name).ok())?;
+    let choice = choose(cfg, frontier, &|name| std::env::var(name).ok(), ws)?;
     match &choice.problem {
         Some(p) => eprintln!("warning: {p}; web_search is off"),
         None if choice.backend.is_some() => eprintln!("web search: {}", choice.detail),
@@ -101,12 +107,14 @@ pub fn access(cfg: &Config, frontier: Option<Frontier<'_>>) -> Result<Option<Arc
     }))))
 }
 
-/// The search backend from the settings, the run's frontier and the
-/// environment (`env` looks variables up; keys are read, never printed).
+/// The search backend from the settings, the run's frontier, the
+/// environment (`env` looks variables up; keys are read, never printed) and
+/// the workspace (`ws`: its languages).
 pub fn choose(
     cfg: &Config,
     frontier: Option<Frontier<'_>>,
     env: &dyn Fn(&str) -> Option<String>,
+    ws: &Path,
 ) -> Result<Choice> {
     let setting = cfg.str("web.search.backend")?;
     Ok(match setting.as_str() {
@@ -128,26 +136,123 @@ pub fn choose(
             Err(why) => off(format!("web.search.backend is brave but {why}")),
         },
         "wikipedia" => wikipedia("web.search.backend is wikipedia"),
+        "native" => native(cfg, ws, None)?,
         _ => {
-            // `auto`: Z.ai only as the run's own frontier, never as a new
-            // recipient.
-            if frontier.is_some_and(|f| f.host_is_zai())
-                && let Ok(c) = zai(cfg, frontier, env)?
-            {
-                return Ok(c);
+            // `auto`: the native backend. What an earlier `auto` would have
+            // picked from the settings or the environment is only named.
+            let mut unused = Vec::new();
+            if !cfg.str("web.search.searxng_url")?.trim().is_empty() {
+                unused.push("web.search.searxng_url is set: web.search.backend = \"searxng\" searches with it");
             }
-            if let Some(c) = searxng(cfg)? {
-                return Ok(c);
+            let brave_env = cfg.str("web.search.brave_key_env")?;
+            if var(env, &brave_env).is_some() {
+                unused.push("a Brave key is set: web.search.backend = \"brave\" searches with it");
             }
-            if let Ok(c) = brave(cfg, env)? {
-                return Ok(c);
-            }
-            wikipedia(
-                "no other search backend is available (auto); for whole-web search set up \
-a private SearXNG (`duet config preset searxng`)",
-            )
+            native(cfg, ws, Some(&unused.join("; ")))?
         }
     })
+}
+
+/// The package registries of the languages found at the workspace root.
+pub fn registries(ws: &Path) -> Vec<Source> {
+    let has = |names: &[&str]| names.iter().any(|n| ws.join(n).is_file());
+    let mut out = Vec::new();
+    if has(&["Cargo.toml"]) {
+        out.push(Source::Crates);
+    }
+    if has(&["package.json"]) {
+        out.push(Source::Npm);
+    }
+    if has(&[
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "requirements.txt",
+        "Pipfile",
+    ]) {
+        out.push(Source::PyPi);
+    }
+    out
+}
+
+/// The sources `auto` asks by default: Stack Overflow, Wikipedia, GitHub
+/// repositories and the workspace's registries.
+pub fn auto_sources(ws: &Path) -> Vec<Source> {
+    let mut out = vec![Source::StackOverflow, Source::Wikipedia, Source::GitHub];
+    out.extend(registries(ws));
+    out
+}
+
+/// The native backend's sources from `web.search.sources`: `auto` (the
+/// defaults above, every other source on request) and names (asked by
+/// default). Without `auto`, only the named sources.
+pub fn native_search(cfg: &Config, ws: &Path) -> Result<NativeSearch> {
+    let entries = cfg.list("web.search.sources")?;
+    let mut defaults = Vec::new();
+    let mut auto = false;
+    for e in &entries {
+        match e.trim() {
+            "auto" => auto = true,
+            name => match Source::from_name(name) {
+                Some(s) => defaults.push(s),
+                None => {
+                    let known: Vec<&str> = ALL.iter().map(|s| s.name()).collect();
+                    bail!(
+                        "web.search.sources: unknown source {name:?} (auto, {})",
+                        known.join(", ")
+                    );
+                }
+            },
+        }
+    }
+    let on_request: Vec<Source> = if auto {
+        defaults.extend(auto_sources(ws));
+        ALL.iter()
+            .copied()
+            .filter(|s| !defaults.contains(s))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(NativeSearch::new(&defaults, &on_request))
+}
+
+fn hosts_of<'a>(
+    sources: impl Iterator<Item = &'a SourceSetup>,
+) -> (Vec<&'static str>, Vec<String>) {
+    let sources: Vec<&SourceSetup> = sources.collect();
+    (
+        sources.iter().map(|s| s.source.name()).collect(),
+        NativeSearch::hosts(&sources),
+    )
+}
+
+/// The native backend, or `web_search` off when it has no sources.
+/// `unused` names backends an earlier `auto` would have picked.
+fn native(cfg: &Config, ws: &Path, unused: Option<&str>) -> Result<Choice> {
+    let search = native_search(cfg, ws)?;
+    if search.defaults().next().is_none() {
+        return Ok(off("web.search.sources names no source".into()));
+    }
+    let (names, hosts) = hosts_of(search.defaults());
+    let mut detail = format!(
+        "native: this machine asks public sources directly, no search provider in between; each \
+source asked receives the query and this machine's address. By default {} ({})",
+        names.join(", "),
+        hosts.join(", ")
+    );
+    let (names, hosts) = hosts_of(search.on_request());
+    if !names.is_empty() {
+        detail.push_str(&format!(
+            "; when the frontier names them {} ({})",
+            names.join(", "),
+            hosts.join(", ")
+        ));
+    }
+    if let Some(unused) = unused.filter(|u| !u.is_empty()) {
+        detail.push_str(&format!(" [auto searches natively; {unused}]"));
+    }
+    Ok(chosen(Backend::Native(search), detail))
 }
 
 /// Z.ai's search with the frontier's key when the frontier is Z.ai: the
@@ -265,13 +370,23 @@ mod tests {
         (d, cfg)
     }
 
-    fn pick(toml: &str, frontier: Option<Frontier<'_>>, vars: &[(&str, &str)]) -> Choice {
+    fn pick_in(
+        ws: &Path,
+        toml: &str,
+        frontier: Option<Frontier<'_>>,
+        vars: &[(&str, &str)],
+    ) -> Choice {
         let (_d, cfg) = config(toml);
         let vars: HashMap<String, String> = vars
             .iter()
             .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
             .collect();
-        choose(&cfg, frontier, &|name| vars.get(name).cloned()).unwrap()
+        choose(&cfg, frontier, &|name| vars.get(name).cloned(), ws).unwrap()
+    }
+
+    fn pick(toml: &str, frontier: Option<Frontier<'_>>, vars: &[(&str, &str)]) -> Choice {
+        let ws = tempfile::tempdir().unwrap();
+        pick_in(ws.path(), toml, frontier, vars)
     }
 
     fn zai_frontier(base_url: &str) -> Option<Frontier<'_>> {
@@ -285,55 +400,129 @@ mod tests {
         c.backend.as_ref().map(Backend::name)
     }
 
-    #[test]
-    fn auto_prefers_the_zai_frontier_then_searxng_then_brave_then_wikipedia() {
-        let key = [("ZAI_API_KEY", "zk-1")];
-        // The default setup: the coding plan's frontier and its key.
-        let c = pick("", zai_frontier(CODING), &key);
-        assert_eq!(name(&c), Some("zai (coding plan)"));
-        assert!(
-            c.detail.contains("already receives the run"),
-            "{}",
-            c.detail
-        );
-        assert!(!c.detail.contains("zk-1"));
-        // A pay-as-you-go frontier searches with the Web Search API.
-        let c = pick("", zai_frontier("https://api.z.ai/api/paas/v4"), &key);
-        assert!(
-            matches!(&c.backend, Some(Backend::Zai { engine, .. }) if engine == "search_pro_jina"),
-            "{c:?}"
-        );
-        assert!(c.detail.contains("billed per search"));
+    fn defaults(c: &Choice) -> Vec<&'static str> {
+        match &c.backend {
+            Some(Backend::Native(n)) => n.defaults().map(|s| s.source.name()).collect(),
+            other => panic!("not native: {other:?}"),
+        }
+    }
 
-        let searx = "[web.search]\nsearxng_url = \"http://127.0.0.1:8888\"\n";
-        let brave = [("BRAVE_API_KEY", "bk-1")];
-        // Without the key, or with another frontier, the next one is tried.
-        assert_eq!(
-            name(&pick(searx, zai_frontier(CODING), &brave)),
-            Some("searxng")
-        );
-        assert_eq!(name(&pick("", zai_frontier(CODING), &brave)), Some("brave"));
+    #[test]
+    fn auto_searches_natively_whatever_else_is_set_up() {
+        let key = [("ZAI_API_KEY", "zk-1"), ("BRAVE_API_KEY", "bk-1")];
+        // The default setup (the coding plan's frontier and its key), a
+        // Brave key, another frontier, a local-only run: all native.
         let anthropic = Some(Frontier {
             base_url: "https://api.anthropic.com/v1",
             key_env: "ANTHROPIC_API_KEY",
         });
-        assert_eq!(
-            name(&pick(
-                "",
-                anthropic,
-                &[("ANTHROPIC_API_KEY", "ak"), ("ZAI_API_KEY", "zk")]
-            )),
-            Some("wikipedia")
+        for frontier in [zai_frontier(CODING), anthropic, None] {
+            let c = pick("", frontier, &key);
+            assert_eq!(name(&c), Some("native"), "{c:?}");
+            assert!(c.problem.is_none());
+            assert_eq!(defaults(&c), ["stackoverflow", "wikipedia", "github"]);
+            for want in [
+                "no search provider in between",
+                "each source asked receives the query",
+                "api.stackexchange.com, en.wikipedia.org, api.github.com",
+                "when the frontier names them serverfault",
+                "arxiv",
+            ] {
+                assert!(c.detail.contains(want), "{want}: {}", c.detail);
+            }
+            assert!(!c.detail.contains("zk-1") && !c.detail.contains("bk-1"));
+        }
+        // What an earlier `auto` would have used is named, not used.
+        let c = pick(
+            "[web.search]\nsearxng_url = \"http://127.0.0.1:8888\"\n",
+            zai_frontier(CODING),
+            &key,
         );
-        // Local-only runs have no frontier: Z.ai would be a new recipient.
-        assert_eq!(name(&pick("", None, &key)), Some("wikipedia"));
-        // Nothing configured at all: the keyless fallback.
-        let c = pick("", zai_frontier(CODING), &[("ZAI_API_KEY", "  ")]);
-        assert_eq!(name(&c), Some("wikipedia"));
+        assert_eq!(name(&c), Some("native"));
         assert!(
-            c.problem.is_none() && c.detail.contains("Wikimedia"),
-            "{c:?}"
+            c.detail
+                .contains("web.search.backend = \"searxng\" searches with it")
+                && c.detail.contains("web.search.backend = \"brave\""),
+            "{}",
+            c.detail
         );
+        let c = pick("", None, &[]);
+        assert!(!c.detail.contains("auto searches natively"), "{}", c.detail);
+        // `native` by name is the same backend.
+        assert_eq!(
+            name(&pick("[web.search]\nbackend = \"native\"\n", None, &[])),
+            Some("native")
+        );
+    }
+
+    #[test]
+    fn the_workspace_languages_add_their_registries() {
+        let ws = tempfile::tempdir().unwrap();
+        for f in ["Cargo.toml", "package.json", "pyproject.toml"] {
+            std::fs::write(ws.path().join(f), "").unwrap();
+        }
+        let c = pick_in(ws.path(), "", None, &[]);
+        assert_eq!(
+            defaults(&c),
+            [
+                "stackoverflow",
+                "wikipedia",
+                "github",
+                "crates",
+                "npm",
+                "pypi"
+            ]
+        );
+        assert!(
+            c.detail.contains("crates.io, registry.npmjs.org, pypi.org"),
+            "{}",
+            c.detail
+        );
+        let only_python = tempfile::tempdir().unwrap();
+        std::fs::write(only_python.path().join("requirements.txt"), "").unwrap();
+        assert_eq!(registries(only_python.path()), [Source::PyPi]);
+        // A directory named like a manifest is not one.
+        let odd = tempfile::tempdir().unwrap();
+        std::fs::create_dir(odd.path().join("Cargo.toml")).unwrap();
+        assert!(registries(odd.path()).is_empty());
+    }
+
+    #[test]
+    fn web_search_sources_pick_the_defaults_and_what_may_be_asked() {
+        // Named sources are asked by default; with `auto`, next to its own.
+        let c = pick(
+            "[web.search]\nsources = [\"auto\", \"github_issues\"]\n",
+            None,
+            &[],
+        );
+        assert_eq!(
+            defaults(&c),
+            ["stackoverflow", "wikipedia", "github", "github_issues"]
+        );
+        // Without `auto`, only the named ones, and nothing on request.
+        let c = pick(
+            "[web.search]\nsources = [\"wikipedia\", \"arxiv\"]\n",
+            None,
+            &[],
+        );
+        assert_eq!(defaults(&c), ["wikipedia", "arxiv"]);
+        match &c.backend {
+            Some(Backend::Native(n)) => assert_eq!(n.on_request().count(), 0),
+            other => panic!("{other:?}"),
+        }
+        assert!(
+            !c.detail.contains("when the frontier names them"),
+            "{}",
+            c.detail
+        );
+        // No source: no web_search; an unknown one is an error.
+        let c = pick("[web.search]\nsources = []\n", None, &[]);
+        assert!(c.backend.is_none());
+        assert!(c.problem.unwrap().contains("names no source"));
+        let (_d, cfg) = config("[web.search]\nsources = [\"google\"]\n");
+        let ws = tempfile::tempdir().unwrap();
+        let e = choose(&cfg, None, &|_| None, ws.path()).unwrap_err();
+        assert!(e.to_string().contains("unknown source \"google\""), "{e}");
     }
 
     #[test]
@@ -348,10 +537,42 @@ mod tests {
         let c = pick("[web.search]\nbackend = \"brave\"\n", None, &[]);
         assert!(c.backend.is_none());
         assert!(c.problem.unwrap().contains("$BRAVE_API_KEY is not set"));
+        let c = pick(
+            "[web.search]\nbackend = \"brave\"\n",
+            None,
+            &[("BRAVE_API_KEY", "bk")],
+        );
+        assert_eq!(name(&c), Some("brave"));
         let c = pick("[web.search]\nbackend = \"searxng\"\n", None, &[]);
         assert!(c.problem.unwrap().contains("searxng_url is empty"));
+        let c = pick(
+            "[web.search]\nbackend = \"searxng\"\nsearxng_url = \"http://127.0.0.1:8888\"\n",
+            None,
+            &[],
+        );
+        assert_eq!(name(&c), Some("searxng"));
         let c = pick("[web.search]\nbackend = \"wikipedia\"\n", None, &[]);
         assert_eq!(name(&c), Some("wikipedia"));
+
+        // Z.ai only by name: the coding plan's search with the frontier's key.
+        let zai = "[web.search]\nbackend = \"zai\"\n";
+        let c = pick(zai, zai_frontier(CODING), &[("ZAI_API_KEY", "zk-1")]);
+        assert_eq!(name(&c), Some("zai (coding plan)"));
+        assert!(
+            c.detail.contains("already receives the run"),
+            "{}",
+            c.detail
+        );
+        let c = pick(
+            zai,
+            zai_frontier("https://api.z.ai/api/paas/v4"),
+            &[("ZAI_API_KEY", "zk-1")],
+        );
+        assert!(
+            matches!(&c.backend, Some(Backend::Zai { engine, .. }) if engine == "search_pro_jina"),
+            "{c:?}"
+        );
+        assert!(c.detail.contains("billed per search"));
 
         // An explicit zai with another frontier uses ZAI_API_KEY, never the
         // frontier's key, and says Z.ai is a further recipient.
@@ -359,7 +580,6 @@ mod tests {
             base_url: "https://api.openai.com/v1",
             key_env: "OPENAI_API_KEY",
         });
-        let zai = "[web.search]\nbackend = \"zai\"\n";
         let c = pick(zai, openai, &[("OPENAI_API_KEY", "ok-1")]);
         assert!(c.problem.unwrap().contains("$ZAI_API_KEY is not set"));
         let c = pick(
@@ -387,17 +607,25 @@ mod tests {
             "{c:?}"
         );
         let c = pick(
-            "[web.search]\nzai_engine = \"plan\"\n",
+            "[web.search]\nbackend = \"zai\"\nzai_engine = \"plan\"\n",
             zai_frontier("https://api.z.ai/api/paas/v4"),
             &[("ZAI_API_KEY", "zk")],
         );
         assert_eq!(name(&c), Some("zai (coding plan)"));
+        // The engine alone does not select Z.ai.
+        let c = pick(
+            "[web.search]\nzai_engine = \"plan\"\n",
+            zai_frontier(CODING),
+            &[("ZAI_API_KEY", "zk")],
+        );
+        assert_eq!(name(&c), Some("native"));
     }
 
     #[test]
     fn a_searxng_url_must_be_http() {
         let (_d, cfg) =
             config("[web.search]\nbackend = \"searxng\"\nsearxng_url = \"file:///etc/passwd\"\n");
-        assert!(choose(&cfg, None, &|_| None).is_err());
+        let ws = tempfile::tempdir().unwrap();
+        assert!(choose(&cfg, None, &|_| None, ws.path()).is_err());
     }
 }
