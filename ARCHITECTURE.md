@@ -42,8 +42,8 @@ gate**.
 duet-provider    duet-fs    duet-sandbox                  (leaf crates)
 duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
-duet-web                     (leaf: host-side HTTP for the web tools; reqwest, url, ipnet)
 duet-mcp                     (leaf: MCP client, JSON-RPC 2.0 over stdio and streamable HTTP; reqwest)
+duet-web                     → duet-mcp   (host-side HTTP for the web tools; reqwest, url, ipnet)
 duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
 duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp   (not duet-provider)
 duet-cli                     → all of the above (composition root)
@@ -60,7 +60,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
-| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
+| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends (Z.ai: the coding plan's search server through `duet-mcp`, or the Web Search API; SearXNG; Brave; Wikipedia, paced to one request a second) | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
@@ -335,6 +335,14 @@ fetches (resolve, check every address, pin, follow at most 5 checked redirects, 
 `Presenter::present(Source::Web { url }, text)` (public-untrusted: scanned and tokenized like public
 content, offloaded to a handle when bulky) → framed between markers with a per-call random tag
 saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
+
+The search backend is chosen once per run in `crates/duet-cli/src/web.rs` (`choose`) from
+`web.search.backend` (`auto` by default), the run's frontier (its URL from the run manifest; none
+in local-only runs) and the environment: Z.ai when it is the frontier and its key is set (the
+coding plan's search server for a coding-plan frontier, else the Web Search API; see
+`web.search.zai_engine`), else the owner's SearXNG, else Brave with its key, else Wikipedia. The
+same function feeds `duet doctor`'s "web search" check, and the tool's description says whether it
+searches the web or Wikipedia only.
 
 ### 5.7 Git history and commits
 

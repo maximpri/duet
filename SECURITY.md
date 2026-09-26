@@ -492,7 +492,18 @@ host-side HTTP requests for the frontier. They are a channel out (URL, query) an
 | Server-side request forgery: the host reaching loopback services, the LAN, cloud metadata | `http`/`https` only, no credentials in URLs, `GET` only; every resolved address is checked (loopback, private, link-local, CGNAT, unique-local, multicast, reserved, IPv4 embedded in IPv6) and the connection is pinned to the checked address, so DNS rebinding cannot swap it; every redirect is checked the same way (at most 5); no proxy from the environment. `web.allowlist_private` (owner only, confirmed) opens named intranet hosts or networks; metadata addresses (169.254.169.254, fd00:ec2::254, 100.100.100.200, ...) stay refused |
 | A page carries instructions (prompt injection) or sensitive-looking data | Content is presented as `Source::Web`: scanned and tokenized like public content (values already in the vault are replaced too), offloaded when bulky, and framed as untrusted data between markers the page cannot forge (random tag per call) |
 | Huge or binary responses | Body cut at `web.max_bytes` (not downloaded further, marked truncated); binary types refused; `web.timeout_secs` per request including redirects |
-| The search key leaking | Read from the environment variable named by `web.search.brave_key_env`; never written to config, logs or the audit log |
+| A search key leaking or going to the wrong provider | Keys are read from environment variables (Brave: `web.search.brave_key_env`; Z.ai: `frontier.api_key_env` when the frontier is Z.ai, else `ZAI_API_KEY`, so another provider's key is never sent to Z.ai), sent only in a header to their own endpoint, and never written to config, logs, errors or the audit log |
+| Queries reaching a recipient the owner did not choose | `web.search.backend = "auto"` picks Z.ai only when Z.ai is already the run's frontier (never in local-only runs), then the owner's SearXNG, then Brave only when its key is set, then Wikipedia; each run prints the backend and `duet doctor` names it and who receives the queries (table below); `none` turns search off |
+| A backend's reply smuggling text past the boundary | Results are presented as `Source::Web` like pages; a refused request is reported by status and a known error code only, never by the reply's text |
+
+Who receives `web_search` queries, per backend (`duet doctor` shows the one in use):
+
+| Backend | Recipient | Identity sent |
+|---|---|---|
+| `zai` (default when Z.ai is the frontier) | Z.ai, the frontier provider, which already receives everything the frontier sees: no new recipient. Coding plan: its Web Search server (`api.z.ai/api/mcp/web_search_prime`); otherwise the Web Search API (`api.z.ai/api/paas/v4/web_search`) | the frontier's key |
+| `searxng` | your instance, which forwards the query to the engines it is set up with (Google, Bing, DuckDuckGo, ... by default) | your IP address, to those engines; no account |
+| `brave` | Brave Search API | your Brave key |
+| `wikipedia` (the keyless fallback) | the Wikimedia Foundation (`en.wikipedia.org`) | your IP address; a User-Agent naming Duet and its repository, nothing about you |
 
 Audit: each call is a `web_request` event with the tool, host, bytes and outcome; never the URL's
 path or the query (the request record of the turn that asked for it holds the tool call, as for
@@ -505,8 +516,12 @@ only values Duet knows (the vault, copied spans) are stopped. Turn the web off
 (`web.enabled = false`) for repositories where that matters; `oversight.approve` does not ask about
 web requests. HTML conversion is a small in-crate scanner: unusual markup may lose structure (never
 safety). Only UTF-8 and Latin-1 bodies are decoded; others are shown lossily. A ranged `web_fetch`
-fetches the page again. The SearXNG instance is the owner's endpoint and is not subject to the
-address check.
+fetches the page again. The search backends are fixed endpoints (the owner's SearXNG instance, or
+a known provider) and are not subject to the address check. The Wikipedia fallback searches
+encyclopedia articles only, so the frontier may search less well than with a whole-web backend.
+Z.ai's coding-plan search is reached through Duet's MCP client, which, unlike the web tools' own
+client, honours an `HTTPS_PROXY` in the environment. The outbound check applies to Z.ai queries too,
+although Z.ai already receives the run as the frontier.
 
 ## Git tools
 
