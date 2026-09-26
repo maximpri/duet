@@ -49,6 +49,9 @@ duet-fs = { workspace = true, features = ["fault-injection"] }
 tempfile = "3"
 bytes = "1"
 futures-util.workspace = true
+# The embedding tests check chain hashes.
+sha2.workspace = true
+hex.workspace = true
 
 [[bin]]
 name = "duet"

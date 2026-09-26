@@ -143,6 +143,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
     let cfg = match Config::load(&owner, Some(&project)) {
         Ok(c) => {
             out.push(config_loaded(&c, &owner, &project));
+            out.extend(policy_layer(&c, &owner, &project));
             Some(c)
         }
         Err(e) => {
@@ -351,6 +352,40 @@ fn config_loaded(c: &Config, owner: &Path, project: &Path) -> Check {
         }
     }
     check("config", Status::Pass, detail)
+}
+
+/// The policy layer of a program that embeds Duet, when the configuration
+/// has one: which policy, how it was checked, and the owner or project values
+/// it overrides (a warning: they do not apply).
+fn policy_layer(c: &Config, owner: &Path, project: &Path) -> Option<Check> {
+    let p = c.policy()?;
+    let detail = format!(
+        "{}: {} setting(s), {} required (sha256 {})",
+        p.meta(),
+        p.values().len(),
+        p.required().len(),
+        &p.meta().sha256[..p.meta().sha256.len().min(12)]
+    );
+    let overridden = c.policy_overrides();
+    if overridden.is_empty() {
+        return Some(check("policy", Status::Pass, detail));
+    }
+    Some(
+        check(
+            "policy",
+            Status::Warn,
+            format!(
+                "{detail}; it overrides {} value(s) set in your or the project's config: {}",
+                overridden.len(),
+                overridden.join(", ")
+            ),
+        )
+        .fix(format!(
+            "remove them from {} or {} (`duet config list` shows each bound; changes past it are refused)",
+            owner.display(),
+            project.display()
+        )),
+    )
 }
 
 fn config_audit() -> Check {
@@ -1472,6 +1507,65 @@ fn retention(ws: &Path, c: &Config) -> Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_policy_layer_explains_itself() {
+        struct Text;
+        impl duet_config::PolicySource for Text {
+            fn load(
+                &self,
+            ) -> Result<Option<(String, duet_config::PolicyMeta)>, duet_config::PolicyError>
+            {
+                Ok(Some((
+                    "[policy]\nname = \"acme\"\nrequired = [\"local.enabled\"]\n\
+                     [local]\nenabled = true\n[limits]\nfrontier_usd = 2.0\n"
+                        .into(),
+                    duet_config::PolicyMeta::new("test", "not verified"),
+                )))
+            }
+        }
+        let d = tempfile::tempdir().unwrap();
+        let (owner, project) = (d.path().join("owner.toml"), d.path().join("project.toml"));
+        let none = Config::load(&owner, Some(&project)).unwrap();
+        assert!(
+            policy_layer(&none, &owner, &project).is_none(),
+            "no line without one"
+        );
+        let c = Config::load_with(&owner, Some(&project), Some(&Text)).unwrap();
+        let ok = policy_layer(&c, &owner, &project).unwrap();
+        assert_eq!(ok.status, Status::Pass, "{ok:?}");
+        assert!(ok.detail.starts_with("acme from test"), "{}", ok.detail);
+        assert!(
+            ok.detail.contains("2 setting(s), 1 required"),
+            "{}",
+            ok.detail
+        );
+        std::fs::write(&owner, "[limits]\nfrontier_usd = 9.0\n").unwrap();
+        let c = Config::load_with(&owner, Some(&project), Some(&Text)).unwrap();
+        let warn = policy_layer(&c, &owner, &project).unwrap();
+        assert_eq!(warn.status, Status::Warn, "{warn:?}");
+        assert!(
+            warn.detail.contains("limits.frontier_usd"),
+            "{}",
+            warn.detail
+        );
+        // `duet config list` says how each key is bound.
+        let line = crate::list_line(&c, "limits.frontier_usd", "help").unwrap();
+        assert_eq!(
+            line,
+            "limits.frontier_usd = 2.0  (policy; the policy bounds it at 2.0; other layers may only lower it; help)"
+        );
+        let line = crate::list_line(&c, "local.enabled", "help").unwrap();
+        assert!(
+            line.contains("(policy; required by the policy at true;"),
+            "{line}"
+        );
+        assert!(
+            crate::list_line(&c, "local.model", "help")
+                .unwrap()
+                .ends_with("(default; help)")
+        );
+    }
 
     #[test]
     fn detection_rules_report_their_version_and_failures() {

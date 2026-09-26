@@ -533,6 +533,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
         _ => {}
     }
     let cfg = load_config(&ws)?;
+    if args.resume.is_none() {
+        crate::overrides::mode_allowed(&cfg, args.mode)?;
+    }
     let tty = std::io::stdin().is_terminal();
     let interrupted = Arc::new(AtomicBool::new(false));
     let working = Arc::new(AtomicBool::new(false));
@@ -606,6 +609,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             (manifest, false)
         }
     };
+    crate::overrides::check(&cfg, &manifest)?;
     eprintln!("session {} ({:?})", manifest.run_id, manifest.mode);
     let _lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
     let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
@@ -657,13 +661,21 @@ Add --no-privacy to confirm, or use --mode hybrid."
             .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
             .ok(),
     };
-    duet_agent::conclude(
+    // Duet's own command line adds no hooks (see ARCHITECTURE.md, "Embedding Duet").
+    duet_agent::conclude_with(
         &run_dir,
         &manifest.run_id,
         audit.as_ref(),
         &audit_log_path(&ws, &manifest.run_id),
         &terminal,
         &stats,
+        &duet_agent::Ending {
+            kind: duet_agent::RunKind::Session,
+            mode: &format!("{:?}", manifest.mode).to_lowercase(),
+            resumed: resume,
+            policy: cfg.policy().map(duet_config::Policy::meta),
+            hooks: &duet_agent::Hooks::default(),
+        },
     )?;
     let id = &manifest.run_id;
     Ok(match &terminal {

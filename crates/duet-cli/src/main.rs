@@ -32,6 +32,7 @@ mod explore;
 mod images;
 mod lsp;
 mod mcp;
+mod overrides;
 mod setup;
 mod subagents;
 mod term;
@@ -274,6 +275,22 @@ fn load_config(ws: &Path) -> Result<Config> {
         eprintln!("warning: {note}");
     }
     Ok(cfg)
+}
+
+/// One line of `duet config list`: the value, where it comes from, how the
+/// policy layer bounds it (when there is one) and the help text.
+fn list_line(cfg: &Config, key: &str, help: &str) -> Result<String> {
+    let origin = cfg
+        .origin(key)
+        .map_or("?".to_owned(), |o| format!("{o:?}").to_lowercase());
+    let bound = cfg
+        .policy_rule(key)
+        .map(|r| format!("; {r}"))
+        .unwrap_or_default();
+    Ok(format!(
+        "{key} = {}  ({origin}{bound}; {help})",
+        cfg.value(key)?
+    ))
 }
 
 fn new_run_id() -> String {
@@ -585,13 +602,21 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool, quiet: bool) 
             .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
             .ok(),
     };
-    let summary = duet_agent::conclude(
+    // Duet's own command line adds no hooks (see ARCHITECTURE.md, "Embedding Duet").
+    let summary = duet_agent::conclude_with(
         &run_dir,
         &manifest.run_id,
         audit.as_ref(),
         &audit_log_path(&ws, &manifest.run_id),
         &terminal,
         &stats,
+        &duet_agent::Ending {
+            kind: duet_agent::RunKind::Run,
+            mode: &format!("{:?}", manifest.mode).to_lowercase(),
+            resumed: resume,
+            policy: cfg.policy().map(duet_config::Policy::meta),
+            hooks: &duet_agent::Hooks::default(),
+        },
     )?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(match terminal {
@@ -667,6 +692,8 @@ async fn prepare(
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
 ) -> Result<Prepared> {
+    // Checked again here, where every run and session is set up.
+    overrides::check(cfg, manifest)?;
     let git = duet_git::Git::locate()?;
     let _ = git.exclude_state_dir(ws);
     let sandbox = duet_sandbox::detect()?;
@@ -947,6 +974,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             };
             let cfg = load_config(&ws)?;
             // Refused before bootstrap probes anything.
+            overrides::mode_allowed(&cfg, mode)?;
             approve::require_terminal(&cfg)?;
             let attached = images::from_args(&image, &image_public)?;
             images::precheck(&ws, &cfg, mode, &attached)?;
@@ -974,6 +1002,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 session: false,
                 images: attached,
             };
+            overrides::check(&cfg, &manifest)?;
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
             std::process::exit(execute(ws, manifest, false, quiet).await?);
         }
@@ -994,6 +1023,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
             if let Err(why) = duet_agent::resumable(&run_dir) {
                 bail!("run {run_id} cannot be resumed: {why}");
             }
+            // What it recorded when it started must still be allowed.
+            overrides::check(&load_config(&ws)?, &manifest)?;
             std::process::exit(execute(ws, manifest, true, quiet).await?);
         }
         Cmd::Chat {
@@ -1049,6 +1080,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
             let mut cfg = load_config(&ws)?;
             match action {
                 ConfigCmd::List => {
+                    if let Some(p) = cfg.policy() {
+                        println!("# policy layer: {} (sha256 {})", p.meta(), p.meta().sha256);
+                    }
                     for s in duet_config::REGISTRY {
                         if duet_config::is_template(s.key) {
                             // One line per configured instance (`*` names it).
@@ -1057,18 +1091,11 @@ Add --no-privacy to confirm, or use --mode hybrid."
                                 println!("{}  (none configured; {})", s.key, s.help);
                             }
                             for n in names {
-                                let key = s.key.replace('*', &n);
-                                let origin = cfg
-                                    .origin(&key)
-                                    .map_or("?".to_owned(), |o| format!("{o:?}").to_lowercase());
-                                println!("{key} = {}  ({origin}; {})", cfg.value(&key)?, s.help);
+                                println!("{}", list_line(&cfg, &s.key.replace('*', &n), s.help)?);
                             }
                             continue;
                         }
-                        let origin = cfg
-                            .origin(s.key)
-                            .map_or("?".to_owned(), |o| format!("{o:?}").to_lowercase());
-                        println!("{} = {}  ({origin}; {})", s.key, cfg.value(s.key)?, s.help);
+                        println!("{}", list_line(&cfg, s.key, s.help)?);
                     }
                 }
                 ConfigCmd::Get { key } => println!("{}", cfg.value(&key)?),
