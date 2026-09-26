@@ -427,13 +427,24 @@ fn anonymize(text: &str) -> String {
     VOLUME.replace_all(&t, "/Volumes/disk").into_owned()
 }
 
+/// A command output as a run recorded it.
+struct Seen {
+    command: String,
+    content: String,
+    /// How it was shown (`raw`, `handle_summary`, ...).
+    class: String,
+    /// Requests of the run sent after it, each carrying it again.
+    carried: usize,
+}
+
 /// Every command output (`run_command`, failed checks) a run's transcripts
-/// recorded, with its lane and the canaries planted in its workspace.
-fn run_outputs(run: &Path) -> Vec<(String, String, String)> {
+/// recorded, and the input tokens of all the run's requests.
+fn run_outputs(run: &Path) -> (Vec<Seen>, u64) {
     let mut out = Vec::new();
+    let mut input = 0;
     let runs = run.join("workspace/.duet/runs");
     let Ok(entries) = std::fs::read_dir(&runs) else {
-        return out;
+        return (out, input);
     };
     for e in entries.flatten() {
         let Ok(text) = std::fs::read_to_string(e.path().join("transcript.jsonl")) else {
@@ -441,12 +452,22 @@ fn run_outputs(run: &Path) -> Vec<(String, String, String)> {
         };
         let mut calls: BTreeMap<String, (String, String)> = BTreeMap::new();
         let mut classes: BTreeMap<String, String> = BTreeMap::new();
-        let mut results: Vec<(String, String)> = Vec::new();
+        // (call, content, requests sent before it)
+        let mut results: Vec<(String, String, usize)> = Vec::new();
+        let mut requests = 0;
         for line in text.lines() {
             let Ok(v) = serde_json::from_str::<Value>(line) else {
                 continue;
             };
             match v["kind"].as_str() {
+                Some("usage") => {
+                    requests += 1;
+                    let u = &v["usage"];
+                    input += ["input", "cache_read", "cache_write"]
+                        .iter()
+                        .filter_map(|k| u[k].as_u64())
+                        .sum::<u64>();
+                }
                 Some("item") => {
                     let item = &v["item"];
                     match item["type"].as_str() {
@@ -466,6 +487,7 @@ fn run_outputs(run: &Path) -> Vec<(String, String, String)> {
                         Some("tool_result") => results.push((
                             item["call_id"].as_str().unwrap_or_default().to_owned(),
                             item["content"].as_str().unwrap_or_default().to_owned(),
+                            requests,
                         )),
                         _ => {}
                     }
@@ -479,7 +501,7 @@ fn run_outputs(run: &Path) -> Vec<(String, String, String)> {
                 _ => {}
             }
         }
-        for (id, content) in results {
+        for (id, content, before) in results {
             let Some((name, command)) = calls.get(&id) else {
                 continue;
             };
@@ -487,15 +509,19 @@ fn run_outputs(run: &Path) -> Vec<(String, String, String)> {
             if name != "run_command" && !checks {
                 continue;
             }
-            let class = classes.get(&id).cloned().unwrap_or_default();
             let content = match content.strip_prefix("checks failed; the task is not complete:\n") {
                 Some(rest) => rest.to_owned(),
                 None => content,
             };
-            out.push((command.clone(), content, class));
+            out.push(Seen {
+                command: command.clone(),
+                content,
+                class: classes.get(&id).cloned().unwrap_or_default(),
+                carried: requests.saturating_sub(before),
+            });
         }
     }
-    out
+    (out, input)
 }
 
 fn canaries(run: &Path) -> Vec<String> {
@@ -560,6 +586,9 @@ fn recorded_runs() {
     let mut fixture: Vec<Value> = Vec::new();
     let mut seen = HashSet::new();
     let mut dropped = BTreeMap::<&str, usize>::new();
+    // Per lane: runs, input tokens of all requests, input tokens condensing
+    // would have saved (each output's saving times the requests carrying it).
+    let mut lanes = BTreeMap::<&str, (usize, u64, u64)>::new();
     for batch in ["gate2b", "gate2e", "xcal"] {
         let mut runs: Vec<PathBuf> = std::fs::read_dir(root.join(batch))
             .unwrap()
@@ -571,15 +600,35 @@ fn recorded_runs() {
         for run in runs {
             let name = run.file_name().unwrap().to_string_lossy().into_owned();
             let planted = canaries(&run);
-            for (command, output, class) in run_outputs(&run) {
+            let (outputs, input) = run_outputs(&run);
+            let lane = if name.contains("-duet-hybrid-") {
+                "duet-hybrid"
+            } else {
+                "duet-passthrough"
+            };
+            let totals = lanes.entry(lane).or_default();
+            totals.0 += 1;
+            totals.1 += input;
+            for Seen {
+                command,
+                content: output,
+                class,
+                carried,
+            } in outputs
+            {
                 let source = format!("{batch}/{name}");
-                // Output held as sensitive is never condensed: it stays as shown.
-                records.push(Record {
+                let record = Record {
                     source: source.clone(),
                     command: command.clone(),
                     output: output.clone(),
                     held: class != "raw",
-                });
+                };
+                if let Some((_, view)) = engine_view(&record) {
+                    let saved = tokens(&output).saturating_sub(tokens(&view));
+                    lanes.entry(lane).or_default().2 += (saved * carried) as u64;
+                }
+                // Output held as sensitive is never condensed: it stays as shown.
+                records.push(record);
                 if std::env::var_os("DUET_CONDENSE_WRITE").is_none() {
                     continue;
                 }
@@ -625,6 +674,13 @@ fn recorded_runs() {
         &per,
         &all,
     );
+    println!("input tokens over each run (every request), and what condensing saves there:");
+    for (lane, (runs, input, saved)) in &lanes {
+        println!(
+            "  {lane:<18} {runs:>3} runs {input:>11} tokens, {saved:>9} saved ({:.2}%)",
+            100.0 * *saved as f64 / (*input).max(1) as f64
+        );
+    }
     println!("survival failures: {}", lost.len());
     for l in &lost {
         println!("  {l}");
