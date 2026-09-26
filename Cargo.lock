@@ -682,6 +682,7 @@ dependencies = [
 name = "duet-web"
 version = "0.1.0"
 dependencies = [
+ "duet-mcp",
  "futures-util",
  "ipnet",
  "reqwest",

@@ -17,11 +17,14 @@ use tokio::net::TcpListener;
 /// A canned response: status, extra headers, body.
 type Reply = (u16, Vec<(String, String)>, Vec<u8>);
 
-/// One request the server received: its path and headers (lower-cased names).
+/// One request the server received: its method, path, headers (lower-cased
+/// names) and body.
 #[derive(Debug, Clone)]
 struct Seen {
+    method: String,
     path: String,
     headers: HashMap<String, String>,
+    body: String,
 }
 
 struct Server {
@@ -61,21 +64,38 @@ async fn serve(routes: HashMap<&'static str, Reply>) -> Server {
                         Ok(n) => buf.extend_from_slice(&tmp[..n]),
                     }
                 }
-                let head = String::from_utf8_lossy(&buf).into_owned();
+                let end = buf.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                let head = String::from_utf8_lossy(&buf[..end]).into_owned();
                 let mut lines = head.lines();
-                let target = lines
+                let first: Vec<String> = lines
                     .next()
-                    .and_then(|l| l.split_whitespace().nth(1))
-                    .unwrap_or("/")
-                    .to_owned();
-                let headers = lines
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect();
+                let method = first.first().cloned().unwrap_or_default();
+                let target = first.get(1).cloned().unwrap_or_else(|| "/".into());
+                let headers: HashMap<String, String> = lines
                     .filter_map(|l| l.split_once(':'))
                     .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().to_owned()))
                     .collect();
+                let length: usize = headers
+                    .get("content-length")
+                    .and_then(|l| l.parse().ok())
+                    .unwrap_or(0);
+                let mut body = buf[end..].to_vec();
+                while body.len() < length {
+                    match sock.read(&mut tmp).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => body.extend_from_slice(&tmp[..n]),
+                    }
+                }
                 let path = target.split('?').next().unwrap_or("/").to_owned();
                 log.lock().unwrap().push(Seen {
+                    method,
                     path: target.clone(),
                     headers,
+                    body: String::from_utf8_lossy(&body).into_owned(),
                 });
                 if path == "/slow" {
                     tokio::time::sleep(Duration::from_secs(30)).await;
@@ -390,6 +410,180 @@ async fn searxng_and_brave_replies_become_results() {
     assert!(matches!(w.search("x", 5).await, Err(WebError::Search(_))));
 }
 
+#[tokio::test]
+async fn zai_is_a_post_with_the_key_in_a_header_and_wikipedia_a_paced_get() {
+    let zai = r#"{"created":1790383976,"id":"t1","search_result":[
+        {"content":"The Adventures of Captain Comic is a platform game written by Michael Denio",
+         "icon":"","link":"https://en.wikipedia.org","media":"","publish_date":"","refer":"ref_1",
+         "title":"The Adventures of Captain Comic"}]}"#;
+    let wiki = r#"{"batchcomplete":true,"query":{"search":[
+        {"ns":0,"title":"The Adventures of Captain Comic","pageid":1558412,
+         "snippet":"a platform <span class=\"searchmatch\">game</span> released as shareware in 1988"}]}}"#;
+    let s = serve(HashMap::from([
+        (
+            "/api/coding/paas/v4/web_search",
+            reply(200, "application/json", zai),
+        ),
+        ("/w/api.php", reply(200, "application/json", wiki)),
+        ("/quota/web_search", reply(429, "application/json", "{}")),
+        ("/denied/web_search", reply(401, "text/plain", "key abc")),
+    ]))
+    .await;
+    let base =
+        |p: &str| url::Url::parse(&format!("http://127.0.0.1:{}{p}", s.addr.port())).unwrap();
+    let key = "zai-test-key-5521";
+    let w = web(
+        &s,
+        &[],
+        10_000,
+        Some(Backend::Zai {
+            endpoint: base("/api/coding/paas/v4/web_search"),
+            key: key.into(),
+            engine: "search_pro_jina".into(),
+        }),
+    );
+    let r = w.search("Captain Comic 1988 PC game", 3).await.unwrap();
+    assert_eq!(r[0].title, "The Adventures of Captain Comic");
+    assert!(r[0].site_only);
+    let seen = s.seen().last().unwrap().clone();
+    assert_eq!(seen.method, "POST");
+    assert_eq!(seen.path, "/api/coding/paas/v4/web_search");
+    assert_eq!(seen.headers["authorization"], format!("Bearer {key}"));
+    assert!(seen.headers["content-type"].starts_with("application/json"));
+    let body: serde_json::Value = serde_json::from_str(&seen.body).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({"search_engine": "search_pro_jina",
+            "search_query": "Captain Comic 1988 PC game", "count": 3})
+    );
+
+    // Refusals and exhausted quotas are named; the reply's text is not shown.
+    for (path, want) in [
+        ("/quota/web_search", "rate limit or quota"),
+        ("/denied/web_search", "key or the request was refused"),
+    ] {
+        let w = web(
+            &s,
+            &[],
+            10_000,
+            Some(Backend::Zai {
+                endpoint: base(path),
+                key: key.into(),
+                engine: "search-prime".into(),
+            }),
+        );
+        let e = w.search("x", 3).await.unwrap_err();
+        assert!(
+            matches!(e, WebError::Search(ref m) if m.contains(want) && !m.contains("abc")),
+            "{e}"
+        );
+        assert_eq!(e.outcome(), "search_error");
+    }
+
+    let w = web(
+        &s,
+        &[],
+        10_000,
+        Some(Backend::Wikipedia {
+            endpoint: base("/w/api.php"),
+        }),
+    );
+    let started = std::time::Instant::now();
+    let r = w.search("captain comic", 2).await.unwrap();
+    let r2 = w.search("captain comic game", 2).await.unwrap();
+    // The second search waited for the first to be a second old.
+    assert!(started.elapsed() >= duet_web::WIKIPEDIA_INTERVAL);
+    assert_eq!(r, r2);
+    assert_eq!(
+        r[0].url,
+        format!(
+            "http://127.0.0.1:{}/wiki/The_Adventures_of_Captain_Comic",
+            s.addr.port()
+        )
+    );
+    assert_eq!(
+        r[0].snippet,
+        "a platform game released as shareware in 1988"
+    );
+    let seen = s.seen().last().unwrap().clone();
+    assert_eq!(seen.method, "GET");
+    assert!(
+        seen.path.contains("srsearch=captain+comic+game") && seen.path.contains("list=search"),
+        "{}",
+        seen.path
+    );
+    // No key, and a User-Agent that names the software and where it lives.
+    assert!(!seen.headers.contains_key("authorization"));
+    let ua = &seen.headers["user-agent"];
+    assert!(ua.starts_with("duet/") && ua.contains("+https://"), "{ua}");
+}
+
+#[tokio::test]
+async fn the_coding_plan_search_keeps_one_mcp_session_and_decodes_its_hits() {
+    use duet_mcp::mock::{Answer, HttpMock, Mock};
+    let hits = serde_json::json!([
+        {"title": "The Adventures of Captain Comic", "link": "https://en.wikipedia.org/wiki/The_Adventures_of_Captain_Comic",
+         "content": "a platform game written by Michael Denio", "refer": "ref_1"},
+        {"title": "captain comic", "link": "https://en.namu.wiki", "content": "The first side-scrolling action game"}
+    ]);
+    let mock = Mock {
+        // The server double-encodes: a JSON string holding the list.
+        canned: serde_json::to_string(&hits.to_string()).unwrap(),
+        ..Mock::default()
+    };
+    let server = HttpMock::start(mock.clone(), Answer::EventStream).await;
+    let key = "zai-plan-key-7731";
+    let w = Web::new(WebConfig {
+        max_bytes: 100_000,
+        timeout: Duration::from_secs(5),
+        allowlist: Allowlist::default(),
+        search: Some(Backend::ZaiPlan {
+            endpoint: url::Url::parse(&server.url).unwrap(),
+            key: key.into(),
+        }),
+    });
+    let r = w.search("what is Captain Comic", 5).await.unwrap();
+    assert_eq!(r.len(), 2);
+    assert!(!r[0].site_only && r[1].site_only);
+    assert_eq!(w.search("Captain Comic", 1).await.unwrap().len(), 1);
+    // One session: initialized once, two calls, the key in every request.
+    let methods = mock.methods();
+    assert_eq!(
+        methods.iter().filter(|m| *m == "initialize").count(),
+        1,
+        "{methods:?}"
+    );
+    assert_eq!(
+        mock.calls(),
+        vec![
+            serde_json::json!({"search_query": "what is Captain Comic", "location": "us"}),
+            serde_json::json!({"search_query": "Captain Comic", "location": "us"}),
+        ]
+    );
+    assert!(
+        server
+            .seen()
+            .iter()
+            .all(|s| s.authorization.as_deref() == Some(&format!("Bearer {key}")))
+    );
+
+    // A server that cannot be reached is a network error, not a crash.
+    let w = Web::new(WebConfig {
+        max_bytes: 100_000,
+        timeout: Duration::from_secs(2),
+        allowlist: Allowlist::default(),
+        search: Some(Backend::ZaiPlan {
+            endpoint: url::Url::parse("http://127.0.0.1:9/mcp").unwrap(),
+            key: key.into(),
+        }),
+    });
+    let e = w.search("x", 3).await.unwrap_err();
+    assert!(
+        matches!(e, WebError::Network(_)) && !e.to_string().contains(key),
+        "{e}"
+    );
+}
+
 /// A real public page over HTTPS with the system resolver. Needs the internet,
 /// so it runs only on request: `cargo test -p duet-web -- --ignored`.
 #[tokio::test]
@@ -415,4 +609,60 @@ async fn live_fetch_of_a_public_page() {
         "{}",
         page.text.lines().take(25).collect::<Vec<_>>().join("\n")
     );
+}
+
+fn live(search: Backend) -> Web {
+    Web::new(WebConfig {
+        max_bytes: 2_000_000,
+        timeout: Duration::from_secs(30),
+        allowlist: Allowlist::default(),
+        search: Some(search),
+    })
+}
+
+/// A real Wikipedia search. Needs the internet: `cargo test -p duet-web --
+/// --ignored live_`.
+#[tokio::test]
+#[ignore = "needs the internet"]
+async fn live_wikipedia_search() {
+    let w = live(Backend::Wikipedia {
+        endpoint: url::Url::parse(duet_web::search::WIKIPEDIA_ENDPOINT).unwrap(),
+    });
+    let r = w.search("Captain Comic 1988 PC game", 5).await.unwrap();
+    print!(
+        "{}",
+        duet_web::search::render("Captain Comic 1988 PC game", &r)
+    );
+    assert!(
+        r.iter()
+            .any(|x| x.url == "https://en.wikipedia.org/wiki/The_Adventures_of_Captain_Comic"),
+        "{r:?}"
+    );
+}
+
+/// A real Z.ai search with the key in `ZAI_API_KEY` (never printed): the
+/// coding plan's search server, or with `DUET_ZAI_ENGINE` set, the Web Search
+/// API with that engine (billed per search to the account's balance).
+#[tokio::test]
+#[ignore = "needs the internet and a Z.ai key"]
+async fn live_zai_search() {
+    let key = std::env::var("ZAI_API_KEY").expect("ZAI_API_KEY");
+    let w = live(match std::env::var("DUET_ZAI_ENGINE") {
+        Ok(engine) => Backend::Zai {
+            endpoint: url::Url::parse(duet_web::search::ZAI_ENDPOINT).unwrap(),
+            key,
+            engine,
+        },
+        Err(_) => Backend::ZaiPlan {
+            endpoint: url::Url::parse(duet_web::search::ZAI_PLAN_ENDPOINT).unwrap(),
+            key,
+        },
+    });
+    // The query in `DUET_LIVE_QUERY`, or the one a run should have asked.
+    let query =
+        std::env::var("DUET_LIVE_QUERY").unwrap_or_else(|_| "Captain Comic 1988 PC game".into());
+    let r = w.search(&query, 5).await.unwrap();
+    print!("{}", duet_web::search::render(&query, &r));
+    // Relevance is the provider's; the test checks that hits arrive.
+    assert!(!r.is_empty());
 }

@@ -29,16 +29,23 @@ use tokio::time::Instant;
 use url::Url;
 
 pub const MAX_REDIRECTS: usize = 5;
+/// Names the software and where to learn about it, as API operators such as
+/// Wikimedia ask of automated clients; nothing about the operator.
 pub const USER_AGENT: &str = concat!(
     "duet/",
     env!("CARGO_PKG_VERSION"),
-    " (coding agent; host-side fetch on behalf of a model)"
+    " (coding agent; host-side fetch on behalf of a model; +",
+    env!("CARGO_PKG_REPOSITORY"),
+    ")"
 );
 /// Results a search returns when no count is given, and at most.
 pub const DEFAULT_RESULTS: usize = 5;
 pub const MAX_RESULTS: usize = 20;
 /// Longest URL or query accepted.
 pub const MAX_URL_CHARS: usize = 4096;
+/// Least time between two Wikipedia searches: Wikimedia asks API clients to
+/// send requests one at a time and gently.
+pub const WIKIPEDIA_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum WebError {
@@ -213,6 +220,11 @@ fn looks_like_html(text: &str) -> bool {
 pub struct Web {
     cfg: WebConfig,
     resolver: Arc<dyn Resolve>,
+    /// When the last Wikipedia search ended; held during one, so they go one
+    /// at a time (sub-agents share the run's `Web`).
+    paced: tokio::sync::Mutex<Option<Instant>>,
+    /// The session with an MCP search server, kept between searches.
+    mcp: tokio::sync::Mutex<Option<duet_mcp::Client>>,
 }
 
 impl Web {
@@ -220,6 +232,8 @@ impl Web {
         Self {
             cfg,
             resolver: Arc::new(SystemResolver),
+            paced: tokio::sync::Mutex::new(None),
+            mcp: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -483,8 +497,9 @@ impl Web {
         }
     }
 
-    /// Searches with the configured backend. The backend is the owner's own
-    /// endpoint, so it is not subject to the address check.
+    /// Searches with the configured backend. The backend is a fixed endpoint
+    /// (the owner's own instance or a known provider), so it is not subject
+    /// to the address check.
     pub async fn search(&self, query: &str, count: usize) -> Result<Vec<SearchResult>, WebError> {
         let backend = self
             .cfg
@@ -500,22 +515,57 @@ impl Web {
             )));
         }
         let count = count.clamp(1, MAX_RESULTS);
-        let deadline = Instant::now() + self.cfg.timeout;
-        let (url, headers) = backend.request(query, count);
-        let client = self.client(None, self.cfg.timeout)?;
-        let mut req = client
-            .get(url)
-            .header(reqwest::header::ACCEPT, "application/json");
-        for (k, v) in headers {
-            req = req.header(k, v);
+        let Backend::Wikipedia { .. } = backend else {
+            return self.search_once(backend, query, count).await;
+        };
+        let mut last = self.paced.lock().await;
+        if let Some(t) = *last {
+            tokio::time::sleep_until(t + WIKIPEDIA_INTERVAL).await;
         }
-        let mut resp = req.send().await.map_err(|e| self.map_err(e))?;
+        let out = self.search_once(backend, query, count).await;
+        *last = Some(Instant::now());
+        out
+    }
+
+    async fn search_once(
+        &self,
+        backend: &Backend,
+        query: &str,
+        count: usize,
+    ) -> Result<Vec<SearchResult>, WebError> {
+        let (url, headers, body) = match backend.call(query, count) {
+            search::Call::Http { url, headers, body } => (url, headers, body),
+            search::Call::Mcp {
+                url,
+                headers,
+                tool,
+                arguments,
+            } => {
+                return self
+                    .search_mcp(backend, &url, &headers, tool, &arguments, count)
+                    .await;
+            }
+        };
+        let deadline = Instant::now() + self.cfg.timeout;
+        let client = self.client(None, self.cfg.timeout)?;
+        let mut rb = match &body {
+            Some(body) => client.post(url).json(body),
+            None => client.get(url),
+        }
+        .header(reqwest::header::ACCEPT, "application/json");
+        for (k, v) in headers {
+            rb = rb.header(k, v);
+        }
+        let mut resp = rb.send().await.map_err(|e| self.map_err(e))?;
         let status = resp.status();
         let (bytes, truncated) = self.read_capped(&mut resp, deadline).await?;
         if !status.is_success() {
+            // The reply's text is not shown: it would reach the frontier
+            // outside the presenter.
             return Err(WebError::Search(format!(
-                "{} answered {status}",
-                backend.name()
+                "{} answered {status}{}",
+                backend.name(),
+                backend.refusal(status.as_u16(), &bytes)
             )));
         }
         if truncated {
@@ -528,6 +578,65 @@ impl Web {
             WebError::Search(format!("the {} reply is not JSON: {e}", backend.name()))
         })?;
         backend.parse(&body, count).map_err(WebError::Search)
+    }
+
+    /// One `tools/call` on an MCP search server, over the kept session (a
+    /// new one after any failure). The server's own error text is not shown.
+    async fn search_mcp(
+        &self,
+        backend: &Backend,
+        url: &Url,
+        headers: &[(String, String)],
+        tool: &str,
+        arguments: &serde_json::Map<String, serde_json::Value>,
+        count: usize,
+    ) -> Result<Vec<SearchResult>, WebError> {
+        let timeout = self.cfg.timeout;
+        let name = backend.name();
+        let failed = |e: duet_mcp::McpError| match e {
+            duet_mcp::McpError::Timeout(_) => WebError::Timeout(timeout.as_secs()),
+            duet_mcp::McpError::Http { status, .. } => WebError::Search(format!(
+                "{name} answered HTTP {status}{}",
+                backend.refusal(status, b"")
+            )),
+            duet_mcp::McpError::Rpc { code, .. } => {
+                WebError::Search(format!("{name} answered with error {code}"))
+            }
+            duet_mcp::McpError::Config(m) => WebError::Invalid(m),
+            _ => WebError::Network(format!("{name} could not be reached or did not answer")),
+        };
+        let mut slot = self.mcp.lock().await;
+        if slot.is_none() {
+            let transport = duet_mcp::Transport::http(url.as_str(), headers).map_err(failed)?;
+            *slot = Some(
+                duet_mcp::Client::connect(transport, timeout)
+                    .await
+                    .map_err(failed)?,
+            );
+        }
+        let Some(client) = slot.as_mut() else {
+            return Err(WebError::Network(format!("{name}: no session")));
+        };
+        let result = match client.call_tool(tool, arguments, timeout).await {
+            Ok(r) => r,
+            Err(e) => {
+                *slot = None;
+                return Err(failed(e));
+            }
+        };
+        if result.is_error {
+            return Err(WebError::Search(format!(
+                "{name} reported an error (a spent quota, for example; `duet doctor` shows the search setup)"
+            )));
+        }
+        if result.text.len() > self.cfg.max_bytes {
+            return Err(WebError::Search(format!(
+                "the {name} reply is larger than web.max_bytes"
+            )));
+        }
+        backend
+            .parse_text(&result.text, count)
+            .map_err(WebError::Search)
     }
 }
 

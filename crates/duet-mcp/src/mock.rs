@@ -7,7 +7,8 @@
 //! Tools: `echo` (read-only; returns its `text`), `write` (not read-only),
 //! `fail` (answers `isError`), `boom` (a JSON-RPC error), `slow` (sleeps
 //! `seconds`), `crash` (the server goes away), `picture` (an image block),
-//! `canned` (returns [`Mock::canned`]).
+//! `canned` (returns [`Mock::canned`]; also answers as `web_search_prime`, the
+//! tool of Z.ai's coding-plan search server).
 //! Listing is paginated two tools per page. Every call's arguments are
 //! recorded.
 
@@ -127,7 +128,7 @@ impl Mock {
                         ok(text("finally")),
                     ),
                     "crash" => Action::Crash,
-                    "canned" => Action::Reply(ok(text(&self.canned))),
+                    "canned" | "web_search_prime" => Action::Reply(ok(text(&self.canned))),
                     "picture" => Action::Reply(ok(json!({"content": [
                         {"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"}]}))),
                     other => Action::Reply(json!({"jsonrpc": "2.0", "id": id,

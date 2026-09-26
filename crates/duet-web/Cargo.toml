@@ -12,8 +12,10 @@ publish.workspace = true
 workspace = true
 
 # Deliberately no dependency on the boundary: this crate only talks HTTP. What
-# reaches the frontier is decided by the agent's presenter.
+# reaches the frontier is decided by the agent's presenter. `duet-mcp` (a leaf
+# too) is the client for the GLM Coding Plan's search server.
 [dependencies]
+duet-mcp.workspace = true
 reqwest.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
@@ -25,3 +27,4 @@ ipnet = "2"
 
 [dev-dependencies]
 tokio.workspace = true
+duet-mcp = { workspace = true, features = ["test-support"] }
