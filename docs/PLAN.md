@@ -66,6 +66,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 | 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
+| 2026-09-26 | Cost with security (operator: "yes"): the local model returns to cutting frontier cost, now aimed at the measured driver — frontier turns × context size (XL: 159 turns, ~120K tokens resent per turn, input ≈ 90% of frontier cost; privacy mode's `ask_local` round trips are 23% of S–L tool calls). Rule: offload only what removes frontier turns or shrinks context; never add turns; the local model never decides; everything it produces passes the boundary. See M5.2 |
 | 2026-09-26 | Everyday use at parity with popular agents (operator: "go" after a full-stack app test): registry-only network for ordinary commands **on by default** (they cannot read sensitive files, protected code or run state, so what they can send is public code the frontier already sees; `sensitive_data` commands and checks of protected code never get network); host-side egress proxy with a host allowlist, audited; detector false positives on build artifacts and paths fixed; work without git; `DUET.md` project instructions (untrusted repository text, can never loosen policy); chat line editing, history and streamed replies; commits offered in interactive sessions (asked inline). See M5.1b |
 | 2026-09-26 | System prompts matched to the request (operator, after a live one-shot build of a named game: the model never looked up the game, wrote it in one 9K-token `write_file`, checked only that its script parsed, finished in 6 turns, and quietly changed the brief to "an original game inspired by" it; the prompt was tuned for benchmark bug fixes): fixes keep the focused behaviour; building something new means understanding the brief first (looking up what it names with the web tools, named only when offered), keeping to it (assumptions stated in a run, real decisions asked in a session), planning, building in checkable steps and running what was built before finishing; plus tidy work. The one-shot prompt is pinned by a digest test. **Any change to the system prompts changes every run's behaviour and request prefix, so Gate 2 quality and cost are re-measured on the new prompt before M5** |
 | 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
@@ -520,6 +521,30 @@ vitest, jest, pytest; docker), false positives 148 → 37 of 1,513 lines, the to
 91 → 0, and every toolchain output through the hybrid engine without a placeholder; recall
 held (228 of 228, 34 of 34, 0 of 255 end to end). Found on the way: the entropy detector's
 `__` and camel-case exemptions let about 1% of random URL-safe keys through (DUET-2026-021, fixed).
+
+### M5.2 — Cost with security: the local model shrinks what the frontier reads
+
+Measured baseline (Gate 2 sets and `results/xcal`): frontier cost is driven by turns × context,
+not by the work itself; privacy mode adds turns (`ask_local`), which is its 1.6–1.8× premium.
+
+1. **Instrumentation** — per-turn context size, turns and cost per task in duet-eval reports; a
+   projection of every run's recorded tokens at other frontier price tables (e.g. `glm-5.3`,
+   Anthropic and OpenAI flagships); a `duet-hybrid-nolocal` lane (privacy mode with no local model)
+   so the local model's value is measured, not assumed.
+2. **Context compaction** — past a threshold the local model condenses older turns into a working
+   summary (recent turns verbatim; anything re-readable). Input is history the frontier already saw
+   (already filtered); output passes the local-output filter. Rare, to limit prompt-cache breaks.
+3. **Condensed command output and batching** — test/build output reduced to failures and relevant
+   lines (deterministic parsers for common runners first, local model only for long unknown output;
+   full text on request); the prompt asks for independent reads and commands in one turn.
+4. **Structure views and synthetic look-alikes** — sensitive files presented with schema, value
+   formats, masked sample lines and a rule-generated synthetic twin (no model reads real values for
+   this; a vault check proves no real value is in the twin); cuts `ask_local` round trips.
+5. **Local explorer** (second wave) — a read-only local sub-agent (secure zone: reads everything,
+   no writes, no network, no decisions) answers "where/what/how" questions in one delegated call.
+
+Each item ships behind a setting and is kept only if, head to head on the Gate 2 set and X1/X2, it
+lowers frontier cost (projected at flagship prices too) with no quality loss and zero leaks.
 
 ### M5 — Public benchmark (days 32–35)
 
