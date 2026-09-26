@@ -66,6 +66,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 | 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
+| 2026-09-26 | Everyday use at parity with popular agents (operator: "go" after a full-stack app test): registry-only network for ordinary commands **on by default** (they cannot read sensitive files, protected code or run state, so what they can send is public code the frontier already sees; `sensitive_data` commands and checks of protected code never get network); host-side egress proxy with a host allowlist, audited; detector false positives on build artifacts and paths fixed; work without git; `DUET.md` project instructions (untrusted repository text, can never loosen policy); chat line editing, history and streamed replies; commits offered in interactive sessions (asked inline). See M5.1b |
 | 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
 | 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
 
@@ -453,6 +454,34 @@ sub-agents ran in parallel and a write sub-agent limited to `src/export/**` fixe
 sub-agents, 18 requests, $0.0044 of the run's $0.0060); in hybrid (local oMLX) two parallel read
 sub-agents reported on a sensitive CSV through handles and `ask_local`, with no planted value in
 the audit log and the chain intact.
+
+### M5.1b — Everyday use (before the benchmark)
+
+A live test (2026-09-26) had duet build a full-stack TypeScript app from an empty repository
+(Express + SQLite + React/Vite, 27 tests, build, served on :3000; 8.6 min, $0.037) — but only
+with `sandbox.network = true`. Gaps found and fixed here:
+
+- **Registry-only network** (`sandbox.network = "registries"`, the new default; `"off"` and
+  `"all"` remain): commands reach an egress proxy on the host that allows only configured package
+  registry hosts (crates.io, npm, PyPI, Go proxy, Maven Central, GitHub release downloads by
+  default; `sandbox.registries` adds or removes), refuses everything else, and audits every
+  connection (host, bytes). `sensitive_data` commands never get network in any mode.
+- **Detector false positives** on hashed build artifacts (`index-DVuHW4gw.js`), absolute paths in
+  stack traces, and similar identifiers: they hid a debugging-relevant path from the frontier.
+  Fixed at the class level with corpus negatives.
+- **No git required**: file listing and search fall back to a walk that honours `.gitignore`.
+- **Project instructions**: `DUET.md` at the repository root (and `~/.config/duet/DUET.md` for the
+  owner) is given to the frontier at the start of a run or session. Repository text is untrusted:
+  it passes the boundary like any public content and cannot change policy.
+- **Chat**: line editing, history (from the session's own transcript, no new store), replies
+  streamed as they arrive.
+- **Commits in sessions**: with `git.commit = "ask"`, an interactive `duet chat` asks inline even
+  when `oversight.approve` is off; non-interactive runs keep today's rule.
+- **Tidy work**: the system prompt asks the agent to remove scratch files it created and to ignore
+  runtime data (databases, logs) it creates.
+
+Acceptance: the full-app test repeated with default settings in both modes, and a variant whose
+repository holds sensitive data (an `.env` with keys, a customer CSV the app must import).
 
 ### M5 — Public benchmark (days 32–35)
 
