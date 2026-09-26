@@ -7,7 +7,8 @@
 //! and a customer file), with every third-party endpoint pointed at a local
 //! server that records every byte it receives: the web page `web_fetch`
 //! reads, each search backend (SearXNG, Brave, Wikipedia, Z.ai's API and its
-//! coding-plan MCP server), an MCP server over HTTP, and a package registry
+//! coding-plan MCP server, and the host's own search over every public
+//! source), an MCP server over HTTP, and a package registry
 //! reached by commands through the egress proxy. Names are resolved by a
 //! resolver that records every name it is asked (the DNS channel).
 //!
@@ -38,6 +39,7 @@ use duet_boundary::view::{PassThrough, Presenter};
 use duet_mcp::mock::{Answer, HttpMock, Mock};
 use duet_web::guard::Allowlist;
 use duet_web::search::Backend;
+use duet_web::search::native::{ALL, NativeSearch, SourceSetup};
 use duet_web::{Resolve, Web, WebConfig};
 use futures_util::future::BoxFuture;
 use privacy::{CUSTOMERS, DB_PASSWORD, Fixture, KEY, Local, Step, planted};
@@ -512,6 +514,23 @@ async fn web_search_sends_no_withheld_value_to_any_backend() {
             endpoint: url::Url::parse(&format!("http://127.0.0.1:{plan_tap}/mcp")).unwrap(),
             key: "zai-test-key".into(),
         },
+        // The host's own search: every public source asked, each under its
+        // own name (resolved by the recording resolver).
+        Backend::Native(NativeSearch {
+            sources: ALL
+                .iter()
+                .map(|&s| SourceSetup {
+                    source: s,
+                    endpoint: url::Url::parse(&format!(
+                        "http://{}.test:{port}{}",
+                        s.name(),
+                        s.endpoint().path()
+                    ))
+                    .unwrap(),
+                    default: true,
+                })
+                .collect(),
+        }),
     ];
     let c = canaries(&[port, plan_port, plan_tap]);
     for backend in backends {

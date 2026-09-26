@@ -386,6 +386,12 @@ impl Web {
         let mut redirects = 0;
         loop {
             Self::check_form(&url)?;
+            if let Some(engine) = search_engine_page(&url) {
+                return Err(WebError::Refused(format!(
+                    "{engine} result pages are not fetched: search with web_search, which asks \
+public sources directly"
+                )));
+            }
             let request = Self::checked(
                 guard,
                 "web_fetch",
@@ -754,6 +760,59 @@ impl Web {
     }
 }
 
+/// The search engine whose result page `url` is, if it is one. Searching is
+/// `web_search`'s job, through sources with open APIs chosen by the owner
+/// (SECURITY.md, Web tools): a result page fetched instead sends the query to
+/// an engine nobody chose, and the engines' terms forbid automated queries.
+/// Their other pages (a home page, documentation) are fetched as usual.
+pub fn search_engine_page(url: &Url) -> Option<&'static str> {
+    let host = url.host_str()?.to_ascii_lowercase();
+    let host = host.trim_end_matches('.');
+    let path = url.path().trim_end_matches('/');
+    let query = |k: &str| url.query_pairs().any(|(name, _)| name == k);
+    // `name` is a registered domain label (`google` in `www.google.co.uk`).
+    let under = |name: &str| {
+        host.split('.')
+            .collect::<Vec<_>>()
+            .windows(2)
+            .any(|w| w[0] == name && !w[1].is_empty())
+            && !host.ends_with(".test")
+    };
+    let is = |h: &str| host == h || host.ends_with(&format!(".{h}"));
+    let engine = if under("google") && matches!(path, "/search" | "/webhp" | "/url") {
+        "Google"
+    } else if is("bing.com") && path == "/search" {
+        "Bing"
+    } else if is("duckduckgo.com")
+        && (host.starts_with("html.") || host.starts_with("lite.") || query("q"))
+    {
+        "DuckDuckGo"
+    } else if host == "search.yahoo.com" || (is("yahoo.co.jp") && host.starts_with("search.")) {
+        "Yahoo"
+    } else if (under("yandex") || is("ya.ru")) && path.starts_with("/search") {
+        "Yandex"
+    } else if is("baidu.com") && path == "/s" {
+        "Baidu"
+    } else if is("startpage.com") && (path.ends_with("/search") || query("query")) {
+        "Startpage"
+    } else if host == "search.brave.com" {
+        "Brave Search"
+    } else if is("ecosia.org") && path == "/search" {
+        "Ecosia"
+    } else if is("qwant.com") && query("q") {
+        "Qwant"
+    } else if (is("mojeek.com") || is("kagi.com")) && path == "/search" {
+        "a search engine"
+    } else if host == "search.naver.com" || host == "search.seznam.cz" {
+        "a search engine"
+    } else if (is("so.com") && path == "/s") || (is("sogou.com") && path == "/web") {
+        "a search engine"
+    } else {
+        return None;
+    };
+    Some(engine)
+}
+
 /// A single backend's search, checked and ready to send.
 enum Prepared {
     Http {
@@ -802,6 +861,38 @@ mod tests {
             "data:text/plain,hi",
         ] {
             assert!(Web::parse_url(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn search_engine_result_pages_are_recognized_and_other_pages_are_not() {
+        let page = |u: &str| search_engine_page(&Url::parse(u).unwrap());
+        for serp in [
+            "https://www.google.com/search?q=tokio",
+            "https://www.google.co.uk/search?q=x",
+            "https://html.duckduckgo.com/html/?q=x",
+            "https://lite.duckduckgo.com/lite/",
+            "https://duckduckgo.com/?q=x&ia=web",
+            "https://www.bing.com/search?q=x",
+            "https://search.yahoo.com/search?p=x",
+            "https://yandex.ru/search/?text=x",
+            "https://www.baidu.com/s?wd=x",
+            "https://www.startpage.com/do/search?query=x",
+            "https://search.brave.com/search?q=x",
+            "https://www.ecosia.org/search?q=x",
+        ] {
+            assert!(page(serp).is_some(), "{serp}");
+        }
+        for other in [
+            "https://www.google.com/",
+            "https://developers.google.com/search/docs",
+            "https://duckduckgo.com/about",
+            "https://docs.rs/tokio/latest/tokio/",
+            "https://github.com/search-engine/search",
+            "https://en.wikipedia.org/wiki/Search_engine",
+            "https://api.search.brave.test/search",
+        ] {
+            assert!(page(other).is_none(), "{other}");
         }
     }
 
