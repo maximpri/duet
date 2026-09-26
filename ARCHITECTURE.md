@@ -47,7 +47,7 @@ duet-mcp                     → duet-boundary, duet-net   (MCP client, JSON-RPC
 duet-web                     → duet-boundary, duet-net, duet-mcp   (host-side HTTP for the web tools; url, ipnet)
 duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
 duet-egress                  → duet-boundary, duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
-duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
+duet-agent                   → duet-boundary, duet-config, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
@@ -68,7 +68,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-web` | Every request checked by the caller's `Guard` and sent through `duet-net`; guarded `GET` fetch (search-engine result pages refused) (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `duet-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; the HTTP transport checks every message with the `Guard` it was opened with and sends through `duet-net`; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
-| `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
+| `duet-config` | Settings registry, file loading, scope and tighten-only rules, the policy layer of an embedding program (`policy`, §13) | Accept owner-only keys from a project file, or any value past a loaded policy |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
 | `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
@@ -903,7 +903,10 @@ struct Setting { key, kind: Bool | Int{min,max} | Float{min,max} | Str | List | 
 ```
 
 Loading merges defaults → owner file → project file, rejecting owner-only keys in project files
-and any project value that loosens privacy; reading an unregistered key is an error. A value in a
+and any project value that loosens privacy; reading an unregistered key is an error. A program that
+embeds Duet may add a policy layer on top (`Config::load_with`, §13); Duet's own command line
+loads none. `frontier.allow_passthrough` (on by default; a project may turn it off) decides whether
+`--mode passthrough` may run in a repository, for new and resumed runs and sessions alike. A value in a
 form an earlier version wrote is read as its current meaning with a note (`migrate`:
 `sandbox.network = true` / `false` read as `"all"` / `"off"`). `duet config
 list|get|set` and `duet tui` are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
@@ -913,7 +916,8 @@ change that loosens privacy (a `confirm` setting, or a value against its directi
 ## 10. Termination and recovery
 
 Every run ends in exactly one `Terminal` state, with `summary.json` and the audit log's `run_end`
-event (which anchors the log's final head) written by `duet_agent::conclude`:
+event (which anchors the log's final head) written by `duet_agent::conclude_with` (which then
+calls an embedding program's end hooks, §13):
 
 - `Completed{summary}`: `finish` passed the checks.
 - `Failed{reason}`: the task cannot be completed as things stand: an error a retry cannot fix
@@ -1020,3 +1024,148 @@ Each is backed by a test, except where noted.
     request, and only `Guard::check` (a presenter's policy over every part of the request) makes
     one; the other code that opens connections is `duet-provider` (the frontier and the local
     model) and the egress proxy's upstream (gate: "egress by construction"; the egress oracle).
+13. With a policy layer loaded (§13), no file, settings change, preset, command-line override or
+    recorded run value moves a setting past it, a required or direction-less key never changes,
+    and a policy source that fails leaves nothing running (`duet-config` policy tests,
+    `duet-cli` overrides tests).
+14. Hooks of an embedding program are told no content and cannot change a run: a subscriber gets
+    every record appended after it was attached, in order, without request bodies; end hooks run
+    exactly once per run or session invocation in every terminal state; a failing hook becomes a
+    `hook_failed` event (`duet-cli/tests/embedding.rs`, including a hybrid run with planted values).
+
+## 13. Embedding Duet
+
+A program may link Duet's crates and compose runs and sessions itself, the way `duet-cli` does
+(`prepare`, `execute` and `chat` in `crates/duet-cli/src`); Duet Enterprise does. Three generic
+extension points let such a program add to what Duet does without changing how a run behaves.
+`duet-cli` makes the same calls with none of them (no policy source, `Hooks::default()`), so
+Duet's own behaviour does not depend on them. What they see is what Duet already records: names,
+counts, digests, chain positions and paths, never content.
+
+**1. Policy layer** (`duet_config::policy`, re-exported by `duet_agent::embed`). A layer above the
+owner's and the project's configuration files:
+
+```rust
+pub trait PolicySource: Send + Sync {
+    /// The policy as TOML in the settings' own layout, or None when no policy applies.
+    fn load(&self) -> Result<Option<(String, PolicyMeta)>, PolicyError>;
+}
+PolicyMeta { origin, verified_by /* set by the source */, name, version, sha256 /* set on load */ }
+Config::load_with(owner: &Path, project: Option<&Path>, policy: Option<&dyn PolicySource>)
+    -> Result<Config, ConfigError>
+Config::policy() -> Option<&Policy>;  Config::policy_rule(key) -> Option<String>
+Config::policy_overrides() -> &[String];  Config::allows(key, &Value) -> Result<(), ConfigError>
+```
+
+An optional `[policy]` table names the policy (`name`, `version`) and lists `required` keys; every
+other key is a registered setting (or an instance of a template setting) with a valid value.
+- A setting with a tighten direction (the registry's `Direction`) may only be as tight as the
+  policy's value or tighter. Where a file is looser, the tighter of the two applies (the union of
+  add-only lists, the intersection of allowlists, the lower number, the stricter choice, the tighter
+  boolean), origin `policy`, with a note naming the file. A change past it is refused
+  (`ConfigError::Policy`, confirmed or not) by `Config::propose`, `apply`, `set_owner_checked`,
+  `set_owner` and `set_project`, so by `duet config set`, `duet config preset` and the TUI.
+- A setting without a direction, and every key in `required`, is fixed at the policy's value: no
+  layer may change it, not even to tighten it.
+- Values that do not come from the files are checked with `Config::allows` before a run or
+  session starts, and again in `prepare` (`crates/duet-cli/src/overrides.rs`): `--frontier-url`,
+  `--frontier-model`, the dialect, endpoints and mode a resumed run or session recorded, and the
+  local server the bootstrap found (`DUET_LOCAL_PORTS` only chooses where it looks). `--mode
+  passthrough` (and so `--no-privacy`) is governed by `frontier.allow_passthrough`; an image marked
+  `--image-public` reaches the frontier only with `frontier.vision`. `DUET_CONFIG_HOME` only chooses which owner file is read: the policy bounds
+  whichever it is.
+- Instances of template settings (`mcp.servers.<name>.*`, `lsp.servers.<language>.*`) are bounded
+  when the files configure them; a policy does not create one.
+- Fail closed: a source that is configured but fails (not found, not verified, not valid) makes
+  loading fail with `ConfigError::PolicyLoad` ("… duet does not run without its policy"), so
+  nothing runs. `Ok(None)` means no policy applies.
+- It explains itself: `duet config list` shows the policy (`# policy layer: …`) and each bound key
+  as origin `policy` with its rule, the TUI's detail pane shows the rule, a refused change names
+  the policy and the rule, and `duet doctor` adds a `policy` check (which policy, its digest, and
+  the owner or project values it overrides, as a warning).
+
+`PolicyFile::new(path)` is the reference source: an unsigned TOML file (a missing file is an
+error). Nothing in Duet's own command line configures a policy source; signed,
+organisation-managed policy is a Duet Enterprise feature.
+
+**2. Audit subscribers** (`duet_boundary::audit`). An embedding program follows a run's audit log
+as it is written:
+
+```rust
+pub trait AuditSubscriber: Send + Sync {
+    fn name(&self) -> &str;
+    fn opened(&self, log: &Opened) -> Result<(), String> { Ok(()) }   // where the chain stands
+    fn appended(&self, record: &Appended) -> Result<(), String>;
+}
+Opened   { log, run_id, records, head }
+Appended { seq, prev, hash /* SHA-256 of the line: the new head */, unix_ms, record: Recorded }
+Recorded::Event { event: AuditEvent }            // as recorded
+Recorded::Request { endpoint, model, request_sha256, bytes, interventions }   // never the body
+AuditLog::subscribe(Arc<dyn AuditSubscriber>);  AuditHandle::subscribe(..);  ::chain_head()
+```
+
+Delivery: every record appended after the subscriber was attached, once, in chain order, after its
+line is appended and synced and its anchor written (or the anchor write failed); records already in
+the log (a resumed run) are not delivered, `opened` says where the chain stood. Calls are made on
+the appending thread with the log locked: a subscriber must return quickly (queue slow work such as
+network export on its own thread) and must not append to the same log (that deadlocks). Several
+subscribers are told in the order they were attached. Failure: an error or a panic is caught,
+printed on stderr and recorded as a `hook_failed` event (`hook`, `stage` = `open` or `audit`, the
+`seq` it missed, `panicked`; never its message), which every subscriber is then told of; a failure
+to deliver that record is not recorded again. The run is not otherwise affected, and a subscriber
+can rebuild what it missed from the log (`audit::read`).
+
+**3. End hooks** (`duet_agent::embed`). Called once when a run or a session invocation ends:
+
+```rust
+pub trait EndHook: Send + Sync {
+    fn name(&self) -> &str;
+    fn ended(&self, report: &EndReport) -> Result<(), String>;
+}
+EndReport { run_id, kind: Run | Session, mode, resumed, state /* completed | failed | budget_stopped */,
+            budget, interrupted, resumable, audit_log, chain: Option<ChainHead { log, records, head, anchor }>,
+            policy: Option<PolicyMeta>, stats: EndStats /* turns, tool calls, tokens, cost, seconds */,
+            disclosure: Option<Disclosure> /* counts by class, as in summary.json */ }
+duet_agent::conclude_with(run_dir, run_id, audit, audit_log, &terminal, &stats, &Ending {
+    kind, mode, resumed, policy, hooks })
+```
+
+`conclude_with` records `run_end` (anchoring the head), writes `summary.json`, then calls each end
+hook, whether or not the summary could be written. Every `duet run`, `duet resume` and `duet chat`
+invocation that got as far as creating its run directory ends there exactly once, in every
+terminal state: completed, failed (including a panic and a failure before the audit log opened,
+then `chain` is `None`), budget-stopped, interrupted (`interrupted`, `resumable`), a session left
+open (`failed`, `resumable`) or closed (`completed`). A run interrupted and then resumed is one call
+per invocation (`resumed` on the second). The report holds no task, summary, failure reason or
+other text a model wrote or the workspace held. A failing hook is recorded as `hook_failed` (stage
+`end`) after `run_end`, so the reported head is the head at `run_end` and only such records follow
+it until the run is resumed. A process killed outright (SIGKILL, power loss) calls nothing.
+
+**Composing a run with hooks** (as `duet-cli` does, with `hooks` added):
+
+```rust
+let hooks = Hooks::default().subscribe(recorder).on_end(receipts);
+let cfg = Config::load_with(&owner, Some(&project), Some(&policy_source))?;   // fail closed
+let mut log = AuditLog::open_anchored(&log_path, &anchors)?;
+hooks.attach(&mut log);                                   // before anything is recorded
+let frontier = OutboundGate::new(log) /* .with_filter(..).with_check(..) */.wrap(provider);
+// … RunStart, duet_agent::run(..) or Session::open(..)/turn(..)/end(..) …
+duet_agent::conclude_with(&run_dir, &run_id, Some(frontier.audit()), &log_path, &terminal,
+    &stats, &Ending { kind: RunKind::Run, mode, resumed, policy: cfg.policy().map(Policy::meta),
+    hooks: &hooks })?;
+```
+
+Stability. The embedding API is the items named in this section: `duet_config::policy` and
+`Config::load_with`/`policy`/`policy_rule`/`policy_overrides`/`allows`, `ConfigError::Policy` and
+`PolicyLoad`, `Origin::Policy`; `duet_boundary::audit::{AuditSubscriber, Opened, Appended,
+Recorded, ChainHead}`, `AuditLog::subscribe`, `AuditHandle::subscribe`/`chain_head`; and
+`duet_agent::embed` with `conclude_with`. Duet's crates are versioned together (0.x, not yet on
+crates.io); an embedding program pins a Core release. Within 0.x a breaking change to these items
+comes with a minor version bump and a release note; a patch release never changes them. Additive
+changes are not breaking and may come in any release: new settings (a policy can then name them),
+new `AuditEvent` variants (match with a wildcard arm; `AuditEvent::kind` names any), new fields of
+the `#[non_exhaustive]` types (`Opened`, `Appended`, `Recorded`, `ChainHead`, `EndReport`,
+`EndStats`, `RunKind`, `PolicyMeta`, which Core constructs; build a `PolicyMeta` with
+`PolicyMeta::new`). `Ending` is built by the embedding program; a new field in it is a breaking
+change. What a policy can express is the settings that exist: for example no setting forbids
+adding MCP servers (each has its own `enabled`), so a policy cannot yet either.

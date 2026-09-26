@@ -168,7 +168,8 @@ are sandboxed, every use is audited, and side effects need approval.
 - **Repositories cannot loosen policy.** A repository's own configuration can only make policy
   stricter; endpoints, credentials and loosening are reserved to your user configuration.
 - **Loosening is deliberate and recorded.** Relaxing a privacy setting needs `--confirm` and is
-  audited. Running without the boundary needs an explicit `--no-privacy`.
+  audited. Running without the boundary needs an explicit `--no-privacy`, and a repository can
+  forbid it altogether (`duet config set --project frontier.allow_passthrough false`).
 - **Risky actions can need approval.** An optional approval mode asks before them.
 
 ## Measured, not promised
@@ -333,7 +334,9 @@ engine, the sandbox, the outbound gate and the audit log — everything describe
 *prove* how AI coding handles restricted data: an organisation-signed policy enforced on every
 developer machine (developers cannot loosen it), a signed receipt per session showing what each
 outside party received, an independent verifier, SIEM/GRC export, fleet management and compliance
-reports. It is planned, not yet built.
+reports. It is planned, not yet built. It builds on Duet Core's documented embedding API (a
+policy layer above the configuration, audit-event subscribers and a run-end hook; see
+[ARCHITECTURE.md](ARCHITECTURE.md) §13), which Core's own command line does not use.
 
 ## License
 

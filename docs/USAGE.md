@@ -28,7 +28,9 @@ duet purge                      # delete raw run data older than the retention p
 ```
 
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
-evaluation baseline).
+evaluation baseline). A repository can forbid it, for new and resumed runs and sessions alike:
+`duet config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
+with `--confirm`).
 
 **Project instructions.** Put how to work in a repository (conventions, the commands that build and
 test it, its layout) in `DUET.md` at its root, and your own standing instructions for every

@@ -747,10 +747,18 @@ Order: after the M5.2 head-to-head, the host-native web search and the single eg
 
 Generic, documented hooks exposed as a library embedding API; Duet Enterprise builds on them. Core's
 own `duet` CLI uses none of them (the policy feature itself is commercial):
-1. An additional top-precedence configuration layer with tighten-only merge, loaded and verified
-   by a caller-supplied source.
-2. An audit-event subscriber API (the events Core already records, never content).
-3. A run/session end hook carrying the terminal state and the audit chain head.
+1. [x] An additional top-precedence configuration layer with tighten-only merge, loaded and
+   verified by a caller-supplied source.
+2. [x] An audit-event subscriber API (the events Core already records, never content).
+3. [x] A run/session end hook carrying the terminal state and the audit chain head.
+
+Done 2026-09-26 as library APIs (`duet_config::policy`, `duet_boundary::audit::AuditSubscriber`,
+`duet_agent::embed` with `conclude_with`), documented with their stability rules in
+ARCHITECTURE.md §13 and threat-modelled in SECURITY.md ("Embedding"). Duet's own command line
+passes no policy source and no hooks. Added for a policy to have something to bound:
+`frontier.allow_passthrough` (a repository may forbid `--mode passthrough`). Next: expose the run
+composition (`prepare`/`execute`/`chat`, today in the `duet` binary) as a library entry point
+(`duet_cli::main(Embedding)`) so an enterprise build does not repeat it.
 
 The single egress choke point (in progress) is the other Core dependency: an Enterprise receipt's
 claim that nothing else left is only as strong as Core's guarantee that every outbound path goes

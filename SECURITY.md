@@ -171,6 +171,9 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
   and checks that can read protected source have none (see Command network).
 - **Images stay local.** `local.vision`, `frontier.vision` are off and `images.to_frontier` is
   `never`: in hybrid mode no image reaches the frontier unless the operator marks it public.
+- **A repository can forbid passthrough.** `frontier.allow_passthrough = false` in its
+  `.duet/config.toml` refuses `--mode passthrough` there, for new and resumed runs and sessions;
+  only the owner can turn it back on (confirmed and audited).
 
 ## Protected source (IP levels)
 
@@ -587,6 +590,7 @@ names what was by convention until the egress audit of 2026-09-26 (DUET-2026-025
 | Images | the frontier (by a named rule) or the local model | pixels | `route_image`; the gate refuses any image not routed to the frontier | structural |
 | git | nobody | nothing | the hardened runner: `protocol.allow=never`, no hooks, no push | structural |
 | `duet doctor --online`, `duet setup` discovery, context-window and cache probes | the configured frontier and local endpoints; the owner's SearXNG | fixed test prompts and images, model names, the owner's keys to their own endpoints; SearXNG gets the fixed query `duet` | no run content exists there; the owner starts them | fixed content (by construction of the probes) |
+| Hooks of a program that embeds Duet (ARCHITECTURE §13; Duet's own command line has none) | that program, in process | audit records as names, counts, digests and chain positions (a request as its endpoint, model, digest and size, never its body); a run's end state and counts | the types: no content is in what they are given | structural; what that program does with it is its own egress |
 | `duet-eval` (the evaluation harness, outside the product) | model providers through its own leak proxy; the lanes' agents | benchmark tasks | its leak proxy records every byte | outside the product; allowlisted in the gate |
 
 ### One way out for third parties
@@ -1158,6 +1162,32 @@ in the report's text may be withheld (the references' line numbers are Duet's an
 explorer's local requests carry raw content to the local host, as the engine's local roles do, and
 are not in the audit log (the call's event is). Its conversation is not kept: a call interrupted
 before its result was recorded is decided again by the frontier.
+
+## Embedding: policy layer and hooks
+
+A program that links Duet's crates (Duet Enterprise does) can add a policy layer above the
+configuration, audit subscribers and end hooks (ARCHITECTURE §13). Duet's own command line adds
+none of them. They are code running in the embedding program's own process, trusted like the
+binary itself: the extension points are not a boundary against that program, they make sure Duet
+hands it no content and that it cannot weaken or disturb a run by accident.
+
+| Threat | What stops it |
+|---|---|
+| A hook is handed content (a secret or personal data from the workspace, a request body, the task, the frontier's summary) | Subscribers get `AuditEvent`s as recorded (names, paths, counts, never content) and requests only as endpoint, model, SHA-256, size and the gate's interventions (counts); the end report holds states, counts, digests and paths, no failure reason, summary or task. Tested with planted values in hybrid mode: a secret and an email in sensitive files the frontier reads (and a command tries to print) reach no subscriber or end hook (`in_hybrid_mode_no_hook_is_told_a_sensitive_value`), and in pass-through a file's text that reaches the frontier and the log's request bodies reaches no hook |
+| A failing, panicking or hostile-by-accident hook changes the run, its records or its outcome | Every call is caught (error or panic); the run's terminal state, summary and audit chain are the same as without the hook, and the failure becomes a `hook_failed` event naming the hook (letters, digits, `.`, `_`, `-`) and the record it missed, never its message; a failure to deliver that event is not recorded again, so a hook failing on everything cannot loop. Tested (`failing_hooks_never_change_the_run`) |
+| A run ends without its end hook (no receipt) | `conclude_with` is the one end of every run and session invocation that created its run directory, in every terminal state (panic, a failure before the audit log opened, budget, interrupt, a session left open or closed), and calls each end hook once whether or not `summary.json` could be written. Tested per state |
+| A developer loosens a setting the policy bounds: owner file, project file, `duet config set` (with `--confirm`), presets, the TUI, `--frontier-url`/`--frontier-model`, `--mode passthrough`/`--no-privacy`, a resumed run's recorded endpoints, the bootstrap's local server, another owner file through `DUET_CONFIG_HOME` | The merge applies the tighter of the file's value and the policy's (a required or direction-less key is fixed); every change goes through `Config::allows` and is refused past the bound; values that do not come from files are checked before the run and again when it is set up. Tested for each path (`duet-config` policy tests, `duet-cli` overrides and doctor tests, the TUI test) |
+| A policy that cannot be read or verified is silently skipped | Fail closed: a configured source that errors makes the configuration fail to load (`… duet does not run without its policy`); only a source's explicit `None` means no policy |
+| The policy file is edited by the developer | Out of Core's scope: `PolicyFile` reads an unsigned file (protect it with file permissions); a source that verifies a signature is the embedding program's (Duet Enterprise's). The policy's SHA-256 is in its meta, `duet doctor` and every end report |
+
+**Known limits.** A policy can bound only settings that exist: no setting forbids adding MCP
+servers (each has its own `enabled`), so neither can a policy yet. Subscribers are called with the
+run's audit log locked, so a slow one slows every append; one that appends to the same log
+deadlocks it. A subscriber attached after records were written is not told of them (`opened` says
+where the chain stood; the log itself has them). An end hook's failure is recorded after `run_end`,
+so records follow the head the other end hooks were given. A hook that aborts the process (a stack
+overflow, `std::process::abort`) is not caught, and a process killed outright calls no end hook;
+the next `duet resume` ends the run and calls it then.
 
 ## Known limits
 
