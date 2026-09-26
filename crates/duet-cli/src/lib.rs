@@ -979,8 +979,9 @@ async fn tui_cache_probe(ws: &Path, emb: &Embedding) -> Result<duet_tui::CacheRe
 /// `--help`, `--version` and argument errors end the process as `duet` does,
 /// and background work still running when a command ends is not waited for.
 /// It also serves as the egress bridge helper inside a bubblewrap sandbox
-/// (`duet __sandbox-bridge …`, started from the running executable), so the
-/// embedding program's `main` must call it before doing anything else.
+/// (`duet __sandbox-bridge …`, started from the running executable), so an
+/// embedding program's `main` should not print, prompt or change any state
+/// before calling it.
 pub fn main_with(embedding: Embedding) -> ExitCode {
     let args: Vec<OsString> = std::env::args_os().collect();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
