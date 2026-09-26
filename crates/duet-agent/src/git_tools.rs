@@ -58,9 +58,10 @@ const BASE_FILE: &str = "git-base";
 pub enum CommitPolicy {
     /// Offered; commits without asking (still audited, still only the run's files).
     Allow,
-    /// Offered only when the operator can be asked (`oversight.approve` is not
-    /// `off`), and every commit waits for their approval. The default: a
-    /// commit is permanent history in the operator's repository.
+    /// Offered only when the operator can be asked (the run has an approver:
+    /// `oversight.approve` is not `off`, or an interactive `duet chat`), and
+    /// every commit waits for their approval. The default: a commit is
+    /// permanent history in the operator's repository.
     #[default]
     Ask,
     /// Never offered.

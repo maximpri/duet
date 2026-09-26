@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The terminal approver for `oversight.approve`: asks the operator on the
 //! controlling terminal before a risky action. A run with approval on and no
-//! terminal refuses to start (fail closed).
+//! terminal refuses to start (fail closed). In an interactive `duet chat`,
+//! commits (`git.commit = "ask"`) are asked in the conversation even with
+//! approval off.
 
 use anyhow::Result;
-use duet_agent::oversight::Action;
+use duet_agent::git_tools::CommitPolicy;
+use duet_agent::oversight::{Action, Risk};
 use duet_agent::{ApproveMode, Approver, Oversight};
 use duet_config::Config;
 use std::io::{BufRead, BufReader, IsTerminal, Write};
@@ -40,23 +43,34 @@ impl Terminal {
     }
 }
 
-/// What the operator is asked to approve (without the final question).
+/// What the operator is asked to approve (without the final question). A
+/// commit shows its files and message, under the setting that asks for it.
 pub(crate) fn describe(mode: ApproveMode, action: &Action) -> String {
+    let commit = action.risk == Risk::GitCommit;
+    let setting = if commit && mode != ApproveMode::All {
+        "git.commit = ask".to_owned()
+    } else {
+        format!("oversight.approve = {}", mode.as_str())
+    };
     let mut prompt = format!(
-        "\nduet: approval needed (oversight.approve = {})\n  {}: {}\n",
-        mode.as_str(),
+        "\nduet: approval needed ({setting})\n  {}: {}\n",
         action.tool,
         action.risk.describe()
     );
     if let Some(p) = &action.path {
-        prompt.push_str(&format!("  path: {p}"));
+        prompt.push_str(&format!("  {}: {p}", if commit { "files" } else { "path" }));
         if let Some(b) = action.bytes {
             prompt.push_str(&format!(" ({b} bytes)"));
         }
         prompt.push('\n');
     }
-    if let Some(c) = &action.command {
-        prompt.push_str(&format!("  command: {c}\n"));
+    match &action.command {
+        Some(m) if commit => prompt.push_str(&format!(
+            "  message: {}\n",
+            m.trim_end().replace('\n', "\n           ")
+        )),
+        Some(c) => prompt.push_str(&format!("  command: {c}\n")),
+        None => {}
     }
     prompt
 }
@@ -133,15 +147,29 @@ pub fn session_oversight(
     cfg: &Config,
     ask: impl FnOnce(ApproveMode) -> Arc<dyn Approver>,
 ) -> Result<Oversight> {
+    session_oversight_at(cfg, std::io::stdin().is_terminal(), ask)
+}
+
+/// [`session_oversight`], `tty` saying whether standard input is a terminal.
+/// With approval off, an interactive session still asks before each commit
+/// when `git.commit = "ask"`: the operator is there to answer, so
+/// `git_commit` is offered (nothing else is asked). Without a terminal (the
+/// TUI's pipe) it is not offered, as in a one-shot run.
+fn session_oversight_at(
+    cfg: &Config,
+    tty: bool,
+    ask: impl FnOnce(ApproveMode) -> Arc<dyn Approver>,
+) -> Result<Oversight> {
     let mode = mode(cfg)?;
     let git_commit = git_commit(cfg)?;
     if mode == ApproveMode::Off {
         return Ok(Oversight {
             git_commit,
+            approver: (tty && git_commit == CommitPolicy::Ask).then(|| ask(mode)),
             ..Oversight::default()
         });
     }
-    if !std::io::stdin().is_terminal() {
+    if !tty {
         anyhow::bail!(
             "oversight.approve = {} asks the operator at a terminal before risky actions, but \
 standard input is not a terminal; the session was not started. Run `duet chat` from an interactive \
@@ -193,6 +221,67 @@ pub fn oversight(cfg: &Config) -> Result<Oversight> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct Never;
+
+    impl Approver for Never {
+        fn approve(&self, _: &Action) -> bool {
+            false
+        }
+    }
+
+    fn config(owner: &str) -> (tempfile::TempDir, Config) {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("config.toml");
+        std::fs::write(&path, owner).unwrap();
+        let cfg = Config::load(&path, None).unwrap();
+        (d, cfg)
+    }
+
+    #[test]
+    fn an_interactive_session_asks_for_commits_with_approval_off() {
+        let never = |_: ApproveMode| -> Arc<dyn Approver> { Arc::new(Never) };
+        let asks = |owner: &str, tty: bool| {
+            let (_d, cfg) = config(owner);
+            let o = session_oversight_at(&cfg, tty, never).unwrap();
+            (o.mode, o.approver.is_some(), o.git_commit)
+        };
+        use ApproveMode::Off;
+        // The defaults: approval off, commits asked. At a terminal someone
+        // can answer, so there is an approver (and git_commit is offered).
+        assert_eq!(asks("", true), (Off, true, CommitPolicy::Ask));
+        // Through a pipe nobody can: no approver, git_commit not offered.
+        assert_eq!(asks("", false), (Off, false, CommitPolicy::Ask));
+        // Nothing to ask for otherwise.
+        let allow = "[git]\ncommit = \"allow\"\n";
+        assert_eq!(asks(allow, true), (Off, false, CommitPolicy::Allow));
+        let off = "[git]\ncommit = \"off\"\n";
+        assert_eq!(asks(off, true), (Off, false, CommitPolicy::Off));
+        // Approval on without a terminal still refuses the session.
+        let (_d, cfg) = config("[oversight]\napprove = \"risky\"\n");
+        assert!(session_oversight_at(&cfg, false, never).is_err());
+        let o = session_oversight_at(&cfg, true, never).unwrap();
+        assert_eq!((o.mode, o.approver.is_some()), (ApproveMode::Risky, true));
+    }
+
+    #[test]
+    fn a_commit_question_shows_its_files_message_and_setting() {
+        let action = Action {
+            tool: "git_commit".into(),
+            risk: Risk::GitCommit,
+            path: Some("src/a.rs, src/b.rs".into()),
+            command: Some("Add a\n\nWith tests.".into()),
+            bytes: None,
+        };
+        let shown = describe(ApproveMode::Off, &action);
+        assert!(shown.contains("(git.commit = ask)"), "{shown}");
+        assert!(shown.contains("  files: src/a.rs, src/b.rs\n"), "{shown}");
+        assert!(
+            shown.contains("  message: Add a\n           \n           With tests.\n"),
+            "{shown}"
+        );
+        assert!(describe(ApproveMode::All, &action).contains("(oversight.approve = all)"));
+    }
 
     #[test]
     fn only_an_explicit_yes_approves() {

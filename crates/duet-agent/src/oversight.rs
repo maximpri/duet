@@ -283,7 +283,9 @@ pub fn classify(
 
 /// A `git_commit` that needs approval: always under `all`, and under any
 /// mode when `git.commit = "ask"` (without an approver it is then denied; the
-/// tool is not offered in that case). The operator sees the message and paths.
+/// tool is not offered in that case). With `off` and an approver (an
+/// interactive session), commits are the only actions asked about. The
+/// operator sees the message and paths.
 fn commit_action(oversight: &Oversight, tool: &str, args: &Map<String, Value>) -> Option<Action> {
     use crate::git_tools::CommitPolicy;
     if tool != "git_commit"
@@ -512,6 +514,21 @@ mod tests {
             .is_ok()
         );
         assert!(review(&with(Off, Allow, None), "git_commit", &commit, &p, None).is_ok());
+        // With approval off and an approver, a commit is asked and nothing else is.
+        let seen = Arc::new(Scripted {
+            answers: Mutex::new(vec![false]),
+            seen: Mutex::default(),
+        });
+        let session = with(Off, Ask, Some(seen.clone()));
+        let write = args(json!({"path": "Cargo.toml", "content": "x"}));
+        let run = args(json!({"command": "cat data.csv", "sensitive_data": true}));
+        assert!(review(&session, "write_file", &write, &p, None).is_ok());
+        assert!(review(&session, "run_command", &run, &p, None).is_ok());
+        assert!(review(&session, "git_commit", &commit, &p, None).is_err());
+        let asked = seen.seen.lock().unwrap();
+        assert_eq!(asked.len(), 1);
+        assert_eq!(asked[0].risk, Risk::GitCommit);
+        assert_eq!(asked[0].command.as_deref(), Some("Fix totals"));
 
         // Whether git_commit is offered at all.
         let d = tempfile::tempdir().unwrap();
@@ -525,6 +542,8 @@ mod tests {
         git.run(d.path(), &["init", "-q"], &[], None).unwrap();
         assert_eq!(offered(&with(Off, Ask, None)), Some(false));
         assert_eq!(offered(&with(Risky, Ask, Some(yes.clone()))), Some(true));
+        // An interactive session: approval off, but someone to ask.
+        assert_eq!(offered(&with(Off, Ask, Some(yes.clone()))), Some(true));
         assert_eq!(offered(&with(Off, Allow, None)), Some(true));
         assert_eq!(
             offered(&with(All, CommitPolicy::Off, Some(yes))),

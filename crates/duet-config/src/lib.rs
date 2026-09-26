@@ -694,7 +694,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyLaterChoice,
         true,
-        "Whether the frontier may commit files it wrote in the run (git_commit; never sensitive or protected files, never a push). `ask`: each commit waits for the operator's approval, so git_commit is offered only when oversight.approve is risky or all. `allow`: commits without asking (audited). `off`: never offered."
+        "Whether the frontier may commit files it wrote in the run (git_commit; never sensitive or protected files, never a push). `ask`: each commit waits for the operator's approval, so git_commit is offered only where someone can answer: in an interactive `duet chat` (asked inline), or when oversight.approve is risky or all. `allow`: commits without asking (audited). `off`: never offered."
     ),
     s!(
         "git.author",
