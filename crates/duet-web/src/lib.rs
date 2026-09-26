@@ -15,14 +15,18 @@
 //! Searches go to the configured backend; the native one ([`search::native`])
 //! asks public sources itself, through the same guarded client as a fetch.
 //!
-//! This crate only talks HTTP. Checking what is sent (the URL, the query) and
-//! presenting what comes back is the agent's job, through its presenter.
+//! Every request, redirects and each native source's included, is checked in
+//! every part by the run's presenter before a name is resolved or a byte
+//! sent (the [`Guard`] the caller passes; see `duet_boundary::third_party`)
+//! and sent by `duet-net`, which sends nothing else. Presenting what comes
+//! back is the agent's job.
 
 pub mod guard;
 pub mod html;
 pub mod search;
 
-use futures_util::future::BoxFuture;
+use duet_boundary::third_party::{Guard, Outgoing};
+use duet_net::{Checked, Client, Credentials, Options};
 use guard::Allowlist;
 pub use search::{Backend, SearchResult, Searched, SourceReport};
 use std::net::{IpAddr, SocketAddr};
@@ -67,6 +71,9 @@ pub enum WebError {
     Binary(String),
     #[error("search: {0}")]
     Search(String),
+    /// The boundary's check refused the request: nothing was sent.
+    #[error("not sent: {0}")]
+    NotSent(duet_boundary::third_party::Refusal),
 }
 
 impl WebError {
@@ -80,35 +87,15 @@ impl WebError {
             WebError::TooManyRedirects => "too_many_redirects",
             WebError::Binary(_) => "binary",
             WebError::Search(_) => "search_error",
+            WebError::NotSent(_) => "refused_outbound",
         }
     }
 }
 
-/// Name resolution, replaceable in tests.
-pub trait Resolve: Send + Sync {
-    fn resolve(
-        &self,
-        host: String,
-        port: u16,
-    ) -> BoxFuture<'static, std::io::Result<Vec<SocketAddr>>>;
-}
-
-/// The system resolver.
-pub struct SystemResolver;
-
-impl Resolve for SystemResolver {
-    fn resolve(
-        &self,
-        host: String,
-        port: u16,
-    ) -> BoxFuture<'static, std::io::Result<Vec<SocketAddr>>> {
-        Box::pin(async move {
-            Ok(tokio::net::lookup_host((host.as_str(), port))
-                .await?
-                .collect())
-        })
-    }
-}
+/// Name resolution: the product's resolver lives in `duet-net`, the only
+/// networking crate for third parties; re-exported for the egress proxy and
+/// tests.
+pub use duet_net::{Resolve, SystemResolver};
 
 #[derive(Debug, Clone)]
 pub struct WebConfig {
@@ -289,13 +276,24 @@ impl Web {
         Ok(())
     }
 
-    /// The address to connect to for `url`: its host resolved, every address
-    /// checked, one chosen. `None` for an IP-literal host (connected as is).
+    /// `request` checked by `guard` for its host: nothing is sent, and no name
+    /// is resolved, unless every part of it passed.
+    fn checked(guard: &Guard, channel: &str, request: Outgoing) -> Result<Checked, WebError> {
+        let host = request.url.host_str().unwrap_or("web").to_owned();
+        guard
+            .check(channel, &host, request)
+            .map_err(WebError::NotSent)
+    }
+
+    /// The address to connect to for a checked request: its host resolved,
+    /// every address checked, one chosen. `None` for an IP-literal host
+    /// (connected as is).
     async fn checked_addr(
         &self,
-        url: &Url,
+        request: &Checked,
         deadline: Instant,
     ) -> Result<Option<SocketAddr>, WebError> {
+        let url = request.url();
         let port = url.port_or_known_default().unwrap_or(80);
         let refuse = |host: &str, ip: IpAddr, why: &str| {
             WebError::Refused(format!(
@@ -324,11 +322,12 @@ impl Web {
                     )));
                 }
                 let named_ok = self.cfg.allowlist.has_name(name);
-                let lookup = self.resolver.resolve(name.to_owned(), port);
+                let lookup = duet_net::lookup(self.resolver.as_ref(), request);
                 let addrs = tokio::time::timeout_at(deadline, lookup)
                     .await
                     .map_err(|_| WebError::Timeout(self.cfg.timeout.as_secs()))?
-                    .map_err(|e| WebError::Network(format!("cannot resolve {name}: {e}")))?;
+                    .map_err(|e| WebError::Network(format!("cannot resolve {name}: {e}")))?
+                    .unwrap_or_default();
                 if addrs.is_empty() {
                     return Err(WebError::Network(format!("{name} has no address")));
                 }
@@ -352,18 +351,14 @@ impl Web {
         &self,
         host: Option<(&str, SocketAddr)>,
         timeout: Duration,
-    ) -> Result<reqwest::Client, WebError> {
-        let mut b = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .no_proxy()
-            .user_agent(USER_AGENT)
-            .timeout(timeout)
-            .connect_timeout(timeout);
-        if let Some((name, addr)) = host {
-            b = b.resolve(name, addr);
-        }
-        b.build()
-            .map_err(|e| WebError::Network(format!("client: {e}")))
+    ) -> Result<Client, WebError> {
+        Client::new(Options {
+            timeout: Some(timeout),
+            connect_timeout: timeout,
+            user_agent: Some(USER_AGENT),
+            pin: host.map(|(name, addr)| (name.to_owned(), addr)),
+        })
+        .map_err(|e| WebError::Network(e.to_string()))
     }
 
     fn remaining(&self, deadline: Instant) -> Result<Duration, WebError> {
@@ -374,46 +369,46 @@ impl Web {
         Ok(left)
     }
 
-    fn map_err(&self, e: reqwest::Error) -> WebError {
-        if e.is_timeout() {
-            WebError::Timeout(self.cfg.timeout.as_secs())
-        } else {
+    fn map_err(&self, e: duet_net::NetError) -> WebError {
+        match e {
+            duet_net::NetError::Timeout => WebError::Timeout(self.cfg.timeout.as_secs()),
             // Without the URL: it is already known to the caller.
-            WebError::Network(format!("request failed: {}", e.without_url()))
+            other => WebError::Network(format!("request failed: {other}")),
         }
     }
 
     /// Fetches `raw` with `GET`, following at most [`MAX_REDIRECTS`] checked
-    /// redirects.
-    pub async fn fetch(&self, raw: &str) -> Result<Page, WebError> {
+    /// redirects. `guard` checks every request (the URL the frontier gave and
+    /// each redirect) before its name is resolved.
+    pub async fn fetch(&self, guard: &Guard, raw: &str) -> Result<Page, WebError> {
         let deadline = Instant::now() + self.cfg.timeout;
         let mut url = Self::parse_url(raw)?;
         let mut redirects = 0;
         loop {
             Self::check_form(&url)?;
-            let pinned = self.checked_addr(&url, deadline).await?;
+            let request = Self::checked(
+                guard,
+                "web_fetch",
+                Outgoing::get(url.clone()).header(
+                    "Accept",
+                    "text/html, text/plain, application/json, */*;q=0.5",
+                ),
+            )?;
+            let pinned = self.checked_addr(&request, deadline).await?;
             let host = url.host_str().unwrap_or_default().to_owned();
             let client = self.client(
                 pinned.map(|a| (host.as_str(), a)),
                 self.remaining(deadline)?,
             )?;
             let resp = client
-                .get(url.clone())
-                .header(
-                    reqwest::header::ACCEPT,
-                    "text/html, text/plain, application/json, */*;q=0.5",
-                )
-                .send()
+                .send(&request, &Credentials::default())
                 .await
                 .map_err(|e| self.map_err(e))?;
             let status = resp.status();
-            if status.is_redirection() {
-                let Some(location) = resp.headers().get(reqwest::header::LOCATION) else {
+            if (300..400).contains(&status) {
+                let Some(location) = resp.header("location") else {
                     return Err(WebError::Network(format!("{status} without a Location")));
                 };
-                let location = location.to_str().map_err(|_| {
-                    WebError::Invalid("a redirect Location that is not text".into())
-                })?;
                 redirects += 1;
                 if redirects > MAX_REDIRECTS {
                     return Err(WebError::TooManyRedirects);
@@ -430,16 +425,11 @@ impl Web {
     async fn read_page(
         &self,
         url: Url,
-        mut resp: reqwest::Response,
+        mut resp: duet_net::Response,
         deadline: Instant,
     ) -> Result<Page, WebError> {
-        let status = resp.status().as_u16();
-        let content_type = resp
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
+        let status = resp.status();
+        let content_type = resp.header("content-type").unwrap_or_default().to_owned();
         let mut kind = body_kind(&content_type);
         if kind == Body::Binary {
             return Err(WebError::Binary(content_type));
@@ -481,7 +471,7 @@ impl Web {
     /// Reads the body up to `max_bytes`; the rest is not read.
     async fn read_capped(
         &self,
-        resp: &mut reqwest::Response,
+        resp: &mut duet_net::Response,
         deadline: Instant,
     ) -> Result<(Vec<u8>, bool), WebError> {
         let cap = self.cfg.max_bytes;
@@ -504,8 +494,13 @@ impl Web {
     }
 
     /// Searches with the configured backend; the results only.
-    pub async fn search(&self, query: &str, count: usize) -> Result<Vec<SearchResult>, WebError> {
-        self.search_with(query, count, None)
+    pub async fn search(
+        &self,
+        guard: &Guard,
+        query: &str,
+        count: usize,
+    ) -> Result<Vec<SearchResult>, WebError> {
+        self.search_with(guard, query, count, None)
             .await
             .map(|s| s.results)
     }
@@ -513,10 +508,11 @@ impl Web {
     /// Searches with the configured backend. A single backend is a fixed
     /// endpoint (the owner's own instance or a known provider), so it is not
     /// subject to the address check; the native backend's sources are
-    /// (`sources` picks among them; `None`: its defaults). Either way the
-    /// reply says what each source did.
+    /// (`sources` picks among them; `None`: its defaults). Either way every
+    /// request is checked by `guard`, and the reply says what each source did.
     pub async fn search_with(
         &self,
+        guard: &Guard,
         query: &str,
         count: usize,
         sources: Option<&[String]>,
@@ -536,7 +532,9 @@ impl Web {
         }
         let count = count.clamp(1, MAX_RESULTS);
         if let Backend::Native(native) = backend {
-            return self.native_search(native, query, count, sources).await;
+            return self
+                .native_search(guard, native, query, count, sources)
+                .await;
         }
         if sources.is_some_and(|s| !s.is_empty()) {
             return Err(WebError::Invalid(format!(
@@ -545,15 +543,18 @@ impl Web {
             )));
         }
         let (results, bytes) = if let Backend::Wikipedia { .. } = backend {
+            // Checked before waiting its turn: a refused search costs no turn.
+            let prepared = self.prepare(guard, backend, query, count)?;
             let mut last = self.paced.lock().await;
             if let Some(t) = *last {
                 tokio::time::sleep_until(t + WIKIPEDIA_INTERVAL).await;
             }
-            let out = self.search_once(backend, query, count).await;
+            let out = self.send_prepared(guard, backend, prepared, count).await;
             *last = Some(Instant::now());
             out?
         } else {
-            self.search_once(backend, query, count).await?
+            let prepared = self.prepare(guard, backend, query, count)?;
+            self.send_prepared(guard, backend, prepared, count).await?
         };
         Ok(Searched {
             requests: vec![SourceReport {
@@ -569,52 +570,105 @@ impl Web {
         })
     }
 
-    /// One search on a single backend: its results and the reply's size.
-    async fn search_once(
+    /// One search on a single backend, built and checked: nothing is sent
+    /// (and no turn of a paced backend is taken) when the check refuses.
+    fn prepare(
         &self,
+        guard: &Guard,
         backend: &Backend,
         query: &str,
         count: usize,
-    ) -> Result<(Vec<SearchResult>, usize), WebError> {
+    ) -> Result<Prepared, WebError> {
         let Some(call) = backend.call(query, count) else {
             return Err(WebError::Search(format!(
                 "{} is not a single endpoint",
                 backend.name()
             )));
         };
-        let (url, headers, body) = match call {
-            search::Call::Http { url, headers, body } => (url, headers, body),
+        match call {
+            // The headers a backend call names are the owner's credentials
+            // (its key): added by the client, never part of what is checked.
+            search::Call::Http { url, headers, body } => {
+                let outgoing = match body {
+                    Some(body) => Outgoing::post_json(url, body),
+                    None => Outgoing::get(url),
+                }
+                .header("Accept", "application/json");
+                Ok(Prepared::Http {
+                    request: Self::checked(guard, "web_search", outgoing)?,
+                    credentials: Credentials::new(
+                        headers
+                            .into_iter()
+                            .map(|(k, v)| (k.to_owned(), v))
+                            .collect(),
+                    ),
+                })
+            }
+            // The MCP transport checks every message it sends; the arguments
+            // are checked here too, so a refusal opens no session.
             search::Call::Mcp {
                 url,
                 headers,
                 tool,
                 arguments,
             } => {
+                guard
+                    .check_value(
+                        "web_search",
+                        &backend.host(),
+                        &serde_json::Value::Object(arguments.clone()),
+                    )
+                    .map_err(WebError::NotSent)?;
+                Ok(Prepared::Mcp {
+                    url,
+                    headers,
+                    tool,
+                    arguments,
+                })
+            }
+        }
+    }
+
+    /// Sends a prepared search: its results and the reply's size.
+    async fn send_prepared(
+        &self,
+        guard: &Guard,
+        backend: &Backend,
+        prepared: Prepared,
+        count: usize,
+    ) -> Result<(Vec<SearchResult>, usize), WebError> {
+        let (request, credentials) = match prepared {
+            Prepared::Http {
+                request,
+                credentials,
+            } => (request, credentials),
+            Prepared::Mcp {
+                url,
+                headers,
+                tool,
+                arguments,
+            } => {
                 return self
-                    .search_mcp(backend, &url, &headers, tool, &arguments, count)
+                    .search_mcp(guard, backend, &url, &headers, tool, &arguments, count)
                     .await;
             }
         };
         let deadline = Instant::now() + self.cfg.timeout;
         let client = self.client(None, self.cfg.timeout)?;
-        let mut rb = match &body {
-            Some(body) => client.post(url).json(body),
-            None => client.get(url),
-        }
-        .header(reqwest::header::ACCEPT, "application/json");
-        for (k, v) in headers {
-            rb = rb.header(k, v);
-        }
-        let mut resp = rb.send().await.map_err(|e| self.map_err(e))?;
+        let mut resp = client
+            .send(&request, &credentials)
+            .await
+            .map_err(|e| self.map_err(e))?;
         let status = resp.status();
         let (bytes, truncated) = self.read_capped(&mut resp, deadline).await?;
-        if !status.is_success() {
+        if !(200..300).contains(&status) {
             // The reply's text is not shown: it would reach the frontier
             // outside the presenter.
             return Err(WebError::Search(format!(
-                "{} answered {status}{}",
+                "{} answered {}{}",
                 backend.name(),
-                backend.refusal(status.as_u16(), &bytes)
+                status_line(status),
+                backend.refusal(status, &bytes)
             )));
         }
         if truncated {
@@ -632,8 +686,11 @@ impl Web {
 
     /// One `tools/call` on an MCP search server, over the kept session (a
     /// new one after any failure). The server's own error text is not shown.
+    /// Every message of the session is checked by the guard that opened it.
+    #[allow(clippy::too_many_arguments)]
     async fn search_mcp(
         &self,
+        guard: &Guard,
         backend: &Backend,
         url: &Url,
         headers: &[(String, String)],
@@ -653,11 +710,13 @@ impl Web {
                 WebError::Search(format!("{name} answered with error {code}"))
             }
             duet_mcp::McpError::Config(m) => WebError::Invalid(m),
+            duet_mcp::McpError::NotSent(r) => WebError::NotSent(r),
             _ => WebError::Network(format!("{name} could not be reached or did not answer")),
         };
         let mut slot = self.mcp.lock().await;
         if slot.is_none() {
-            let transport = duet_mcp::Transport::http(url.as_str(), headers).map_err(failed)?;
+            let transport =
+                duet_mcp::Transport::http(url.as_str(), headers, guard.clone()).map_err(failed)?;
             *slot = Some(
                 duet_mcp::Client::connect(transport, timeout)
                     .await
@@ -669,6 +728,10 @@ impl Web {
         };
         let result = match client.call_tool(tool, arguments, timeout).await {
             Ok(r) => r,
+            Err(duet_mcp::McpError::NotSent(r)) => {
+                // Refused before it left: the session is still good.
+                return Err(WebError::NotSent(r));
+            }
             Err(e) => {
                 *slot = None;
                 return Err(failed(e));
@@ -689,6 +752,37 @@ impl Web {
             .map_err(WebError::Search)?;
         Ok((results, result.text.len()))
     }
+}
+
+/// A single backend's search, checked and ready to send.
+enum Prepared {
+    Http {
+        request: Checked,
+        credentials: Credentials,
+    },
+    /// An MCP search server's tool (its transport checks every message).
+    Mcp {
+        url: Url,
+        headers: Vec<(String, String)>,
+        tool: &'static str,
+        arguments: serde_json::Map<String, serde_json::Value>,
+    },
+}
+
+/// `404 Not Found`, as the HTTP client showed a status before.
+fn status_line(status: u16) -> String {
+    let reason = match status {
+        400 => " Bad Request",
+        401 => " Unauthorized",
+        403 => " Forbidden",
+        404 => " Not Found",
+        429 => " Too Many Requests",
+        500 => " Internal Server Error",
+        502 => " Bad Gateway",
+        503 => " Service Unavailable",
+        _ => "",
+    };
+    format!("{status}{reason}")
 }
 
 #[cfg(test)]

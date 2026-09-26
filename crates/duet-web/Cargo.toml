@@ -11,12 +11,14 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# Deliberately no dependency on the boundary: this crate only talks HTTP. What
-# reaches the frontier is decided by the agent's presenter. `duet-mcp` (a leaf
-# too) is the client for the GLM Coding Plan's search server.
+# HTTP only through `duet-net`, which sends only requests the boundary checked
+# (`duet-boundary`'s `third_party::Guard`); what reaches the frontier is decided
+# by the agent's presenter. `duet-mcp` is the client for the GLM Coding Plan's
+# search server.
 [dependencies]
+duet-boundary.workspace = true
 duet-mcp.workspace = true
-reqwest.workspace = true
+duet-net.workspace = true
 tokio.workspace = true
 futures-util.workspace = true
 serde.workspace = true
@@ -29,4 +31,6 @@ flate2 = "1"
 
 [dev-dependencies]
 tokio.workspace = true
+futures-util.workspace = true
+tempfile = "3"
 duet-mcp = { workspace = true, features = ["test-support"] }

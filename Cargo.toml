@@ -52,6 +52,7 @@ duet-boundary = { path = "crates/duet-boundary" }
 duet-agent = { path = "crates/duet-agent" }
 duet-tui = { path = "crates/duet-tui" }
 duet-web = { path = "crates/duet-web" }
+duet-net = { path = "crates/duet-net" }
 duet-egress = { path = "crates/duet-egress" }
 duet-mcp = { path = "crates/duet-mcp" }
 

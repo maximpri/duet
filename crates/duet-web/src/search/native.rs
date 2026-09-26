@@ -43,6 +43,8 @@
 
 use super::{SearchResult, Searched, SourceReport, clean, cut};
 use crate::{Web, WebError};
+use duet_boundary::third_party::{Guard, Outgoing};
+use duet_net::{Checked, Credentials};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Read;
@@ -831,13 +833,8 @@ struct Limits {
     reset_in: Option<Duration>,
 }
 
-fn limits(headers: &reqwest::header::HeaderMap) -> Limits {
-    let get = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok())
-    };
+fn limits(resp: &duet_net::Response) -> Limits {
+    let get = |name: &str| resp.header(name).and_then(|v| v.trim().parse::<u64>().ok());
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
@@ -954,6 +951,7 @@ impl Web {
     /// log and the frontier), whether it answered, was skipped or failed.
     pub(crate) async fn native_search(
         &self,
+        guard: &Guard,
         native: &NativeSearch,
         query: &str,
         count: usize,
@@ -962,7 +960,9 @@ impl Web {
         let chosen = native.select(names).map_err(WebError::Invalid)?;
         let budget = SOURCE_TIMEOUT.min(self.cfg.timeout);
         let asked = futures_util::future::join_all(
-            chosen.iter().map(|s| self.ask(s, query, count, budget)),
+            chosen
+                .iter()
+                .map(|s| self.ask(guard, s, query, count, budget)),
         )
         .await;
         let lists: Vec<Vec<SearchResult>> = asked.iter().map(|a| a.results.clone()).collect();
@@ -973,7 +973,14 @@ impl Web {
         })
     }
 
-    async fn ask(&self, setup: &SourceSetup, query: &str, count: usize, budget: Duration) -> Asked {
+    async fn ask(
+        &self,
+        guard: &Guard,
+        setup: &SourceSetup,
+        query: &str,
+        count: usize,
+        budget: Duration,
+    ) -> Asked {
         let source = setup.source;
         let report = |bytes: usize, outcome: &'static str, note: String| SourceReport {
             source: source.name(),
@@ -988,6 +995,16 @@ impl Web {
             Err(why) => {
                 return Asked {
                     report: report(0, "not_applicable", why.into()),
+                    results: Vec::new(),
+                };
+            }
+        };
+        // Checked before its turn is waited for: a refused request takes none.
+        let request = match self.native_request(guard, setup, url) {
+            Ok(r) => r,
+            Err(e) => {
+                return Asked {
+                    report: report(0, e.outcome(), e.to_string()),
                     results: Vec::new(),
                 };
             }
@@ -1009,7 +1026,7 @@ impl Web {
         let deadline = Instant::now() + budget;
         let asked = tokio::time::timeout_at(
             deadline,
-            self.ask_now(setup, url, query, count, budget, deadline),
+            self.ask_now(setup, &request, query, count, budget, deadline),
         )
         .await;
         match asked {
@@ -1053,7 +1070,7 @@ impl Web {
     async fn ask_now(
         &self,
         setup: &SourceSetup,
-        url: Url,
+        request: &Checked,
         query: &str,
         count: usize,
         budget: Duration,
@@ -1091,7 +1108,7 @@ impl Web {
         }
         tokio::time::sleep_until(ready).await;
         pace.started.push_back(Instant::now());
-        let reply = self.native_get(setup, &url, deadline).await;
+        let reply = self.native_get(setup, request, deadline).await;
         let now = Instant::now();
         pace.last = Some(now);
         let (status, limits, body) = match reply {
@@ -1157,34 +1174,44 @@ impl Web {
             .map_err(|e| (bytes, "search_error", e))
     }
 
+    /// A source's `GET`, checked in every part by `guard` (the query is in
+    /// its URL).
+    fn native_request(
+        &self,
+        guard: &Guard,
+        setup: &SourceSetup,
+        url: Url,
+    ) -> Result<Checked, WebError> {
+        Self::check_form(&url)?;
+        let mut out = Outgoing::get(url).header("Accept-Encoding", "gzip");
+        for (k, v) in setup.source.headers() {
+            out = out.header(*k, *v);
+        }
+        Self::checked(guard, "web_search", out)
+    }
+
     /// One guarded `GET` of a source's API: the address checked and pinned
     /// like a fetch, no redirects, the body capped and decompressed.
     async fn native_get(
         &self,
         setup: &SourceSetup,
-        url: &Url,
+        request: &Checked,
         deadline: Instant,
     ) -> Result<(u16, Limits, Vec<u8>), WebError> {
-        Self::check_form(url)?;
-        let pinned = self.checked_addr(url, deadline).await?;
-        let host = url.host_str().unwrap_or_default().to_owned();
+        let pinned = self.checked_addr(request, deadline).await?;
+        let host = request.url().host_str().unwrap_or_default().to_owned();
         let client = self.client(
             pinned.map(|a| (host.as_str(), a)),
             self.remaining(deadline)?,
         )?;
-        let mut rb = client
-            .get(url.clone())
-            .header(reqwest::header::ACCEPT_ENCODING, "gzip");
-        for (k, v) in setup.source.headers() {
-            rb = rb.header(*k, *v);
-        }
-        let mut resp = rb.send().await.map_err(|e| self.map_err(e))?;
-        let status = resp.status().as_u16();
-        let limits = limits(resp.headers());
+        let mut resp = client
+            .send(request, &Credentials::default())
+            .await
+            .map_err(|e| self.map_err(e))?;
+        let status = resp.status();
+        let limits = limits(&resp);
         let encoding = resp
-            .headers()
-            .get(reqwest::header::CONTENT_ENCODING)
-            .and_then(|v| v.to_str().ok())
+            .header("content-encoding")
             .unwrap_or_default()
             .to_owned();
         let (bytes, truncated) = self.read_capped(&mut resp, deadline).await?;

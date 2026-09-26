@@ -6,12 +6,18 @@
 //! assigns at initialization (`Mcp-Session-Id`) and the negotiated revision
 //! (`MCP-Protocol-Version`) are sent with every later message.
 //!
-//! Redirects are not followed (they would carry the configured headers to
-//! another address), bodies are size-capped and error bodies are cut short.
+//! Every message (protocol messages, tool arguments, the answers to the
+//! server's own requests, the closing `DELETE`) is checked in every part by
+//! the guard the transport was opened with and sent by `duet-net`, which
+//! sends nothing unchecked. The configured headers are the owner's
+//! credentials: added by the client, never shown. Redirects are not followed
+//! (they would carry the credentials to another address), no proxy from the
+//! environment is used, bodies are size-capped and error bodies cut short.
 
 use crate::sse::Events;
 use crate::{MAX_MESSAGE_BYTES, McpError, answers, reply_to};
-use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use duet_boundary::third_party::{Guard, Method, Outgoing};
+use duet_net::{Client, Credentials, Options};
 use serde_json::Value;
 use std::time::Duration;
 
@@ -19,9 +25,10 @@ const SESSION: &str = "mcp-session-id";
 const VERSION: &str = "mcp-protocol-version";
 
 pub struct Http {
-    client: reqwest::Client,
-    url: reqwest::Url,
-    headers: HeaderMap,
+    client: Client,
+    url: url::Url,
+    credentials: Credentials,
+    guard: Guard,
     pub(crate) session: Option<String>,
     pub(crate) version: Option<String>,
 }
@@ -36,9 +43,8 @@ fn is_loopback(host: &str) -> bool {
 
 /// Checks a server URL: `https`, or `http` to a loopback address only, and no
 /// credentials in the URL itself (use `headers_env`).
-pub fn check_url(url: &str) -> Result<reqwest::Url, McpError> {
-    let parsed =
-        reqwest::Url::parse(url).map_err(|e| McpError::Config(format!("invalid URL: {e}")))?;
+pub fn check_url(url: &str) -> Result<url::Url, McpError> {
+    let parsed = url::Url::parse(url).map_err(|e| McpError::Config(format!("invalid URL: {e}")))?;
     let host = parsed.host_str().unwrap_or_default();
     match parsed.scheme() {
         "https" => {}
@@ -58,18 +64,18 @@ pub fn check_url(url: &str) -> Result<reqwest::Url, McpError> {
     Ok(parsed)
 }
 
-fn http_error(e: reqwest::Error) -> McpError {
+fn http_error(e: duet_net::NetError) -> McpError {
     // Connection failures mean the server is unreachable, not that one call failed.
-    let message = e.to_string();
-    if e.is_connect() {
-        McpError::Closed(format!("cannot connect: {message}"))
-    } else {
-        McpError::Protocol(message)
+    match e {
+        duet_net::NetError::Connect(message) => {
+            McpError::Closed(format!("cannot connect: {message}"))
+        }
+        other => McpError::Protocol(other.to_string()),
     }
 }
 
 /// Reads a whole body, refusing more than [`MAX_MESSAGE_BYTES`].
-async fn body(mut response: reqwest::Response) -> Result<Vec<u8>, McpError> {
+async fn body(mut response: duet_net::Response) -> Result<Vec<u8>, McpError> {
     let mut out = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(http_error)? {
         out.extend_from_slice(&chunk);
@@ -82,71 +88,100 @@ async fn body(mut response: reqwest::Response) -> Result<Vec<u8>, McpError> {
     Ok(out)
 }
 
+fn valid_header(name: &str, value: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b))
+        && value
+            .bytes()
+            .all(|b| b == b'\t' || (0x20..0x7f).contains(&b))
+}
+
 impl Http {
-    pub fn new(url: &str, headers: &[(String, String)]) -> Result<Self, McpError> {
+    pub fn new(url: &str, headers: &[(String, String)], guard: Guard) -> Result<Self, McpError> {
         let url = check_url(url)?;
-        let mut map = HeaderMap::new();
         for (name, value) in headers {
-            let name = HeaderName::from_bytes(name.as_bytes())
-                .map_err(|_| McpError::Config(format!("invalid header name {name}")))?;
+            if !valid_header(name, "") {
+                return Err(McpError::Config(format!("invalid header name {name}")));
+            }
             // The value is a credential: never echoed in an error.
-            let mut value = HeaderValue::from_str(value).map_err(|_| {
-                McpError::Config(format!("the value for header {name} is not valid"))
-            })?;
-            value.set_sensitive(true);
-            map.insert(name, value);
+            if !valid_header(name, value) {
+                return Err(McpError::Config(format!(
+                    "the value for header {name} is not valid"
+                )));
+            }
         }
-        let client = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| McpError::Config(e.to_string()))?;
+        let client = Client::new(Options {
+            connect_timeout: Duration::from_secs(10),
+            ..Options::default()
+        })
+        .map_err(|e| McpError::Config(e.to_string()))?;
         Ok(Self {
             client,
             url,
-            headers: map,
+            credentials: Credentials::new(headers.to_vec()),
+            guard,
             session: None,
             version: None,
         })
     }
 
-    fn post(&self, message: &Value) -> reqwest::RequestBuilder {
-        let mut r = self
-            .client
-            .post(self.url.clone())
-            .headers(self.headers.clone())
-            .header(CONTENT_TYPE, "application/json")
-            .header(ACCEPT, "application/json, text/event-stream")
-            .body(message.to_string());
+    /// The server's name, as refusals and the audit log name it.
+    fn destination(&self) -> String {
+        format!("MCP server at {}", self.url.host_str().unwrap_or("?"))
+    }
+
+    /// Checks and sends one request to the endpoint.
+    async fn send(
+        &self,
+        method: Method,
+        message: Option<&Value>,
+    ) -> Result<duet_net::Response, McpError> {
+        let mut out = Outgoing {
+            method,
+            url: self.url.clone(),
+            headers: Vec::new(),
+            body: message.map(|m| duet_boundary::third_party::Body::Json(m.clone())),
+        };
+        if message.is_some() {
+            out = out
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream");
+        }
         if let Some(s) = &self.session {
-            r = r.header(SESSION, s);
+            out = out.header(SESSION, s.as_str());
         }
         if let Some(v) = &self.version {
-            r = r.header(VERSION, v);
+            out = out.header(VERSION, v.as_str());
         }
-        r
+        let checked = self
+            .guard
+            .check("mcp", &self.destination(), out)
+            .map_err(McpError::NotSent)?;
+        self.client
+            .send(&checked, &self.credentials)
+            .await
+            .map_err(http_error)
     }
 
     /// Checks the status of an answer; keeps the session id it assigns.
     async fn accepted(
         &mut self,
-        response: reqwest::Response,
-    ) -> Result<reqwest::Response, McpError> {
+        response: duet_net::Response,
+    ) -> Result<duet_net::Response, McpError> {
         let status = response.status();
-        if status.as_u16() == 404 && self.session.is_some() {
+        if status == 404 && self.session.is_some() {
             return Err(McpError::SessionExpired);
         }
-        if !status.is_success() {
+        if !(200..300).contains(&status) {
             let text = body(response).await.unwrap_or_default();
             return Err(McpError::Http {
-                status: status.as_u16(),
+                status,
                 body: String::from_utf8_lossy(&text).chars().take(300).collect(),
             });
         }
-        if let Some(id) = response
-            .headers()
-            .get(SESSION)
-            .and_then(|v| v.to_str().ok())
+        if let Some(id) = response.header(SESSION)
             && !id.is_empty()
             && id.bytes().all(|b| (0x21..=0x7e).contains(&b))
         {
@@ -156,7 +191,7 @@ impl Http {
     }
 
     pub async fn notify(&mut self, message: &Value) -> Result<(), McpError> {
-        let response = self.post(message).send().await.map_err(http_error)?;
+        let response = self.send(Method::Post, Some(message)).await?;
         self.accepted(response).await.map(drop)
     }
 
@@ -178,12 +213,10 @@ impl Http {
     }
 
     pub async fn request(&mut self, id: u64, message: &Value) -> Result<Value, McpError> {
-        let response = self.post(message).send().await.map_err(http_error)?;
+        let response = self.send(Method::Post, Some(message)).await?;
         let mut response = self.accepted(response).await?;
         let kind = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
+            .header("content-type")
             .unwrap_or_default()
             .to_ascii_lowercase();
         if kind.starts_with("text/event-stream") {
@@ -227,18 +260,11 @@ impl Http {
 
     /// Ends the session (`DELETE`); a server that does not support that is fine.
     pub async fn close(&mut self) {
-        let Some(s) = self.session.take() else {
+        if self.session.is_none() {
             return;
-        };
-        let mut r = self
-            .client
-            .delete(self.url.clone())
-            .headers(self.headers.clone())
-            .header(SESSION, s);
-        if let Some(v) = &self.version {
-            r = r.header(VERSION, v);
         }
-        let _ = tokio::time::timeout(Duration::from_secs(3), r.send()).await;
+        let _ = tokio::time::timeout(Duration::from_secs(3), self.send(Method::Delete, None)).await;
+        self.session = None;
     }
 }
 

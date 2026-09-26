@@ -12,8 +12,12 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+# HTTP only through `duet-net`: every message is checked by the boundary's
+# guard (`third_party::Guard`) first.
+duet-boundary.workspace = true
+duet-net.workspace = true
 tokio.workspace = true
-reqwest.workspace = true
+url = "2"
 futures-util.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

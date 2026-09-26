@@ -3,6 +3,8 @@
 //! Names are resolved by a scripted resolver, so "a public name that resolves
 //! to a private address" is tested without DNS. Nothing here leaves the host.
 
+use duet_boundary::third_party::Guard;
+use duet_boundary::view::{PassThrough, Presenter};
 use duet_web::guard::Allowlist;
 use duet_web::search::Backend;
 use duet_web::{Resolve, Web, WebConfig, WebError};
@@ -189,14 +191,14 @@ async fn loopback_and_names_resolving_to_private_addresses_are_refused_before_co
         "http://100.64.1.1/".into(),
         "http://[fd00::1]/".into(),
     ] {
-        let e = w.fetch(&url).await.unwrap_err();
+        let e = w.fetch(&open(), &url).await.unwrap_err();
         assert!(matches!(e, WebError::Refused(_)), "{url}: {e}");
     }
     assert!(s.seen().is_empty(), "{:?}", s.seen());
     // Even an allowlisted link-local network never opens the metadata address.
     let w = web(&s, &["169.254.0.0/16"], 10_000, None);
     assert!(matches!(
-        w.fetch("http://169.254.169.254/").await,
+        w.fetch(&open(), "http://169.254.169.254/").await,
         Err(WebError::Refused(_))
     ));
 }
@@ -210,7 +212,7 @@ async fn an_allowlisted_host_is_fetched_at_the_checked_address_and_html_becomes_
     .await;
     let w = web(&s, &["intranet.test"], 10_000, None);
     let page = w
-        .fetch(&format!("{}/docs", s.base("intranet.test")))
+        .fetch(&open(), &format!("{}/docs", s.base("intranet.test")))
         .await
         .unwrap();
     assert_eq!(page.status, 200);
@@ -229,7 +231,8 @@ async fn an_allowlisted_host_is_fetched_at_the_checked_address_and_html_becomes_
     assert!(seen[0].headers["user-agent"].starts_with("duet/"));
     // The allowlisted name does not open other names at the same address.
     assert!(matches!(
-        w.fetch(&format!("{}/docs", s.base("evil.test"))).await,
+        w.fetch(&open(), &format!("{}/docs", s.base("evil.test")))
+            .await,
         Err(WebError::Refused(_))
     ));
 }
@@ -245,14 +248,14 @@ async fn every_redirect_is_checked_and_their_number_is_limited() {
     .await;
     let w = web(&s, &["intranet.test"], 10_000, None);
     let page = w
-        .fetch(&format!("{}/start", s.base("intranet.test")))
+        .fetch(&open(), &format!("{}/start", s.base("intranet.test")))
         .await
         .unwrap();
     assert_eq!(page.text, "arrived");
     assert!(page.url.ends_with("/next"));
 
     let e = w
-        .fetch(&format!("{}/loop", s.base("intranet.test")))
+        .fetch(&open(), &format!("{}/loop", s.base("intranet.test")))
         .await
         .unwrap_err();
     assert_eq!(e, WebError::TooManyRedirects);
@@ -260,7 +263,7 @@ async fn every_redirect_is_checked_and_their_number_is_limited() {
     assert_eq!(loops, duet_web::MAX_REDIRECTS + 1);
 
     let e = w
-        .fetch(&format!("{}/to-file", s.base("intranet.test")))
+        .fetch(&open(), &format!("{}/to-file", s.base("intranet.test")))
         .await
         .unwrap_err();
     assert!(matches!(e, WebError::Refused(_)), "{e}");
@@ -281,7 +284,7 @@ async fn a_redirect_to_loopback_is_refused_before_it_is_followed() {
     .await;
     let w = web(&s, &["public.test"], 10_000, None);
     let e = w
-        .fetch(&format!("{}/go", s.base("public.test")))
+        .fetch(&open(), &format!("{}/go", s.base("public.test")))
         .await
         .unwrap_err();
     assert!(
@@ -318,29 +321,32 @@ async fn bodies_are_capped_binary_is_refused_and_slow_servers_time_out() {
     .await;
     let w = web(&s, &["intranet.test"], 1000, None);
     let base = s.base("intranet.test");
-    let page = w.fetch(&format!("{base}/big")).await.unwrap();
+    let page = w.fetch(&open(), &format!("{base}/big")).await.unwrap();
     assert!(page.truncated);
     assert_eq!(page.bytes, 1000);
     assert_eq!(page.text.len(), 1000);
     assert!(matches!(
-        w.fetch(&format!("{base}/logo")).await,
+        w.fetch(&open(), &format!("{base}/logo")).await,
         Err(WebError::Binary(_))
     ));
     assert!(matches!(
-        w.fetch(&format!("{base}/untyped")).await,
+        w.fetch(&open(), &format!("{base}/untyped")).await,
         Err(WebError::Binary(_))
     ));
     assert_eq!(
-        w.fetch(&format!("{base}/untyped-html")).await.unwrap().text,
+        w.fetch(&open(), &format!("{base}/untyped-html"))
+            .await
+            .unwrap()
+            .text,
         "hello\n"
     );
     assert_eq!(
-        w.fetch(&format!("{base}/api")).await.unwrap().text,
+        w.fetch(&open(), &format!("{base}/api")).await.unwrap().text,
         "{\"a\": [1, 2]}"
     );
     let started = std::time::Instant::now();
     assert!(matches!(
-        w.fetch(&format!("{base}/slow")).await,
+        w.fetch(&open(), &format!("{base}/slow")).await,
         Err(WebError::Timeout(_))
     ));
     assert!(started.elapsed() < Duration::from_secs(10));
@@ -370,7 +376,7 @@ async fn searxng_and_brave_replies_become_results() {
             base: base("/searx"),
         }),
     );
-    let r = w.search("rust lang", 1).await.unwrap();
+    let r = w.search(&open(), "rust lang", 1).await.unwrap();
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].url, "https://www.rust-lang.org/");
     assert_eq!(r[0].snippet, "A language empowering everyone");
@@ -390,7 +396,7 @@ async fn searxng_and_brave_replies_become_results() {
             key: key.into(),
         }),
     );
-    let r = w.search("rust", 3).await.unwrap();
+    let r = w.search(&open(), "rust", 3).await.unwrap();
     assert_eq!(r[0].title, "Rust docs");
     assert_eq!(r[0].snippet, "Official & free");
     let seen = s.seen().last().unwrap().clone();
@@ -405,9 +411,15 @@ async fn searxng_and_brave_replies_become_results() {
             base: base("/broken"),
         }),
     );
-    assert!(matches!(w.search("x", 5).await, Err(WebError::Search(_))));
+    assert!(matches!(
+        w.search(&open(), "x", 5).await,
+        Err(WebError::Search(_))
+    ));
     let w = web(&s, &[], 10_000, None);
-    assert!(matches!(w.search("x", 5).await, Err(WebError::Search(_))));
+    assert!(matches!(
+        w.search(&open(), "x", 5).await,
+        Err(WebError::Search(_))
+    ));
 }
 
 #[tokio::test]
@@ -442,7 +454,10 @@ async fn zai_is_a_post_with_the_key_in_a_header_and_wikipedia_a_paced_get() {
             engine: "search_pro_jina".into(),
         }),
     );
-    let r = w.search("Captain Comic 1988 PC game", 3).await.unwrap();
+    let r = w
+        .search(&open(), "Captain Comic 1988 PC game", 3)
+        .await
+        .unwrap();
     assert_eq!(r[0].title, "The Adventures of Captain Comic");
     assert!(r[0].site_only);
     let seen = s.seen().last().unwrap().clone();
@@ -472,7 +487,7 @@ async fn zai_is_a_post_with_the_key_in_a_header_and_wikipedia_a_paced_get() {
                 engine: "search-prime".into(),
             }),
         );
-        let e = w.search("x", 3).await.unwrap_err();
+        let e = w.search(&open(), "x", 3).await.unwrap_err();
         assert!(
             matches!(e, WebError::Search(ref m) if m.contains(want) && !m.contains("abc")),
             "{e}"
@@ -489,8 +504,8 @@ async fn zai_is_a_post_with_the_key_in_a_header_and_wikipedia_a_paced_get() {
         }),
     );
     let started = std::time::Instant::now();
-    let r = w.search("captain comic", 2).await.unwrap();
-    let r2 = w.search("captain comic game", 2).await.unwrap();
+    let r = w.search(&open(), "captain comic", 2).await.unwrap();
+    let r2 = w.search(&open(), "captain comic game", 2).await.unwrap();
     // The second search waited for the first to be a second old.
     assert!(started.elapsed() >= duet_web::WIKIPEDIA_INTERVAL);
     assert_eq!(r, r2);
@@ -542,10 +557,13 @@ async fn the_coding_plan_search_keeps_one_mcp_session_and_decodes_its_hits() {
             key: key.into(),
         }),
     });
-    let r = w.search("what is Captain Comic", 5).await.unwrap();
+    let r = w.search(&open(), "what is Captain Comic", 5).await.unwrap();
     assert_eq!(r.len(), 2);
     assert!(!r[0].site_only && r[1].site_only);
-    assert_eq!(w.search("Captain Comic", 1).await.unwrap().len(), 1);
+    assert_eq!(
+        w.search(&open(), "Captain Comic", 1).await.unwrap().len(),
+        1
+    );
     // One session: initialized once, two calls, the key in every request.
     let methods = mock.methods();
     assert_eq!(
@@ -577,7 +595,7 @@ async fn the_coding_plan_search_keeps_one_mcp_session_and_decodes_its_hits() {
             key: key.into(),
         }),
     });
-    let e = w.search("x", 3).await.unwrap_err();
+    let e = w.search(&open(), "x", 3).await.unwrap_err();
     assert!(
         matches!(e, WebError::Network(_)) && !e.to_string().contains(key),
         "{e}"
@@ -595,7 +613,7 @@ async fn live_fetch_of_a_public_page() {
         allowlist: Allowlist::default(),
         search: None,
     });
-    let page = w.fetch("https://www.rust-lang.org").await.unwrap();
+    let page = w.fetch(&open(), "https://www.rust-lang.org").await.unwrap();
     assert_eq!(page.status, 200);
     assert!(page.text.contains("Rust"), "{}", page.text);
     assert!(page.text.contains("](https://"), "links are kept");
@@ -629,7 +647,7 @@ async fn live_wikipedia_search() {
         endpoint: url::Url::parse(duet_web::search::WIKIPEDIA_ENDPOINT).unwrap(),
     });
     let s = w
-        .search_with("Captain Comic 1988 PC game", 5, None)
+        .search_with(&open(), "Captain Comic 1988 PC game", 5, None)
         .await
         .unwrap();
     print!(
@@ -665,8 +683,113 @@ async fn live_zai_search() {
     // The query in `DUET_LIVE_QUERY`, or the one a run should have asked.
     let query =
         std::env::var("DUET_LIVE_QUERY").unwrap_or_else(|_| "Captain Comic 1988 PC game".into());
-    let s = w.search_with(&query, 5, None).await.unwrap();
+    let s = w.search_with(&open(), &query, 5, None).await.unwrap();
     print!("{}", duet_web::search::render(&query, &s));
     // Relevance is the provider's; the test checks that hits arrive.
     assert!(!s.results.is_empty());
+}
+
+/// The guard of a run without the boundary: every request passes.
+fn open() -> Guard {
+    PassThrough { max_bytes: 0 }.outbound_guard()
+}
+
+/// Records every name it is asked to resolve; all resolve to `addr`.
+struct Recording(SocketAddr, Mutex<Vec<String>>);
+
+impl Resolve for Recording {
+    fn resolve(
+        &self,
+        host: String,
+        _port: u16,
+    ) -> BoxFuture<'static, std::io::Result<Vec<SocketAddr>>> {
+        self.1.lock().unwrap().push(host);
+        let addr = self.0;
+        Box::pin(async move { Ok(vec![addr]) })
+    }
+}
+
+#[tokio::test]
+async fn what_the_boundary_refuses_is_neither_resolved_nor_sent() {
+    const PASSWORD: &str = "quartz-otter-5519";
+    let dir = tempfile::tempdir().unwrap();
+    let engine = duet_boundary::engine::Engine::open(
+        dir.path(),
+        duet_boundary::policy::Policy {
+            sensitive_globs: vec![".env*".into()],
+            ..Default::default()
+        },
+        None,
+    )
+    .unwrap();
+    engine.present(
+        &duet_boundary::view::Source::File {
+            path: ".env".into(),
+            ranged: false,
+        },
+        format!("DB_PASSWORD={PASSWORD}\n").as_bytes(),
+    );
+    let guard = engine.outbound_guard();
+    let s = serve(HashMap::from([
+        ("/", reply(200, "text/plain", "hi")),
+        ("/go", redirect(&format!("/leak?k={PASSWORD}"))),
+        (
+            "/searx/search",
+            reply(200, "application/json", r#"{"results":[]}"#),
+        ),
+    ]))
+    .await;
+    let names = Arc::new(Recording(s.addr, Mutex::new(Vec::new())));
+    let searx = url::Url::parse(&format!("http://127.0.0.1:{}/searx", s.addr.port())).unwrap();
+    let w = Web::new(WebConfig {
+        max_bytes: 10_000,
+        timeout: Duration::from_secs(2),
+        allowlist: Allowlist::parse(&["127.0.0.1".to_owned()]).unwrap(),
+        search: Some(Backend::Searxng { base: searx }),
+    })
+    .with_resolver(names.clone());
+    let port = s.addr.port();
+    for url in [
+        format!("http://{PASSWORD}.public.test:{port}/"),
+        format!("http://public.test:{port}/?k={}", PASSWORD.to_uppercase()),
+    ] {
+        let e = w.fetch(&guard, &url).await.unwrap_err();
+        assert!(matches!(e, WebError::NotSent(_)), "{url}: {e:?}");
+        assert_eq!(e.outcome(), "refused_outbound");
+    }
+    assert!(
+        names.1.lock().unwrap().is_empty(),
+        "a refused name was resolved"
+    );
+    assert!(s.seen().is_empty(), "a refused request was sent");
+    // The server's redirect to a URL holding the value is a new request: refused too.
+    let e = w
+        .fetch(&guard, &format!("http://public.test:{port}/go"))
+        .await
+        .unwrap_err();
+    assert!(matches!(e, WebError::NotSent(_)), "{e:?}");
+    assert_eq!(s.seen().len(), 1);
+    // A search query holding it never reaches the backend.
+    let e = w
+        .search(&guard, &format!("password {PASSWORD}"), 3)
+        .await
+        .unwrap_err();
+    assert!(matches!(e, WebError::NotSent(_)), "{e:?}");
+    assert_eq!(s.seen().len(), 1);
+    assert!(
+        !s.seen()
+            .iter()
+            .any(|r| r.path.contains(PASSWORD) || r.body.contains(PASSWORD))
+    );
+    // Each refusal is recorded for the audit log, without the value.
+    let refused: Vec<_> = engine
+        .take_events()
+        .into_iter()
+        .filter_map(|e| match e {
+            duet_boundary::audit::AuditEvent::OutboundRefused { reason, .. } => Some(reason),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(refused.len(), 4, "{refused:?}");
+    assert!(refused.iter().all(|r| !r.contains(PASSWORD)), "{refused:?}");
 }

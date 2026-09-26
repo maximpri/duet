@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The client against scripted servers over both transports.
 
+use duet_boundary::third_party::Guard;
+use duet_boundary::view::{PassThrough, Presenter};
 use duet_mcp::mock::{Answer, HttpMock, Mock};
 use duet_mcp::{Client, McpError, Transport};
 use serde_json::{Map, Value, json};
@@ -132,6 +134,7 @@ async fn http_json_and_event_stream_answers_with_a_session() {
         let t = Transport::http(
             &server.url,
             &[("Authorization".into(), "Bearer t0ken".into())],
+            open(),
         )
         .unwrap();
         let mut c = Client::connect(t, T).await.unwrap();
@@ -180,10 +183,15 @@ async fn http_json_and_event_stream_answers_with_a_session() {
 
 #[tokio::test]
 async fn an_unreachable_http_server_is_closed_and_errors_are_short() {
-    let t = Transport::http("http://127.0.0.1:9/mcp", &[]).unwrap();
+    let t = Transport::http("http://127.0.0.1:9/mcp", &[], open()).unwrap();
     let Err(e) = Client::connect(t, T).await else {
         panic!("connected")
     };
     assert!(matches!(e, McpError::Closed(_)), "{e:?}");
-    assert!(Transport::http("http://example.com/mcp", &[]).is_err());
+    assert!(Transport::http("http://example.com/mcp", &[], open()).is_err());
+}
+
+/// The guard of a run without the boundary: every message passes.
+fn open() -> Guard {
+    PassThrough { max_bytes: 0 }.outbound_guard()
 }

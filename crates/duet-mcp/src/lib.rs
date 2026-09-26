@@ -59,6 +59,10 @@ pub enum McpError {
     SessionExpired,
     #[error("{0}")]
     Config(String),
+    /// The boundary's check refused a message: nothing was sent, and the
+    /// session is as it was.
+    #[error("not sent: {0}")]
+    NotSent(duet_boundary::third_party::Refusal),
 }
 
 /// A tool as the server lists it.
@@ -97,9 +101,15 @@ impl Transport {
         Transport::Stdio(stdio::Stdio::new(input, output))
     }
 
-    /// Streamable HTTP to `url` with extra `headers` (name, value) on every request.
-    pub fn http(url: &str, headers: &[(String, String)]) -> Result<Self, McpError> {
-        http::Http::new(url, headers).map(Transport::Http)
+    /// Streamable HTTP to `url` with the owner's credential `headers` (name,
+    /// value) on every request. Every message is checked by `guard` (see
+    /// `duet_boundary::third_party`) before it is sent.
+    pub fn http(
+        url: &str,
+        headers: &[(String, String)],
+        guard: duet_boundary::third_party::Guard,
+    ) -> Result<Self, McpError> {
+        http::Http::new(url, headers, guard).map(Transport::Http)
     }
 
     async fn request(&mut self, id: u64, message: &Value) -> Result<Value, McpError> {

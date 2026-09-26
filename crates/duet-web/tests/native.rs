@@ -5,6 +5,8 @@
 //! backoff, the run's answer cache, source selection and the address rules.
 //! Nothing here leaves the host except the ignored live test.
 
+use duet_boundary::third_party::Guard;
+use duet_boundary::view::{PassThrough, Presenter};
 use duet_web::guard::Allowlist;
 use duet_web::search::native::{ALL, NativeSearch, Source, SourceSetup};
 use duet_web::search::{Backend, Searched};
@@ -280,7 +282,10 @@ async fn the_query_fans_out_to_every_default_source_and_the_answers_merge() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    let got = w.search_with("tokio select", 8, None).await.unwrap();
+    let got = w
+        .search_with(&open(), "tokio select", 8, None)
+        .await
+        .unwrap();
     assert_eq!(
         outcomes(&got),
         [
@@ -364,7 +369,7 @@ async fn the_query_fans_out_to_every_default_source_and_the_answers_merge() {
     assert!(target("wiki.test").contains("srsearch=tokio+select"));
     // The count caps the merge.
     assert_eq!(
-        w.search_with("tokio select", 3, None)
+        w.search_with(&open(), "tokio select", 3, None)
             .await
             .unwrap()
             .results
@@ -387,7 +392,7 @@ async fn a_slow_source_times_out_without_holding_up_the_others() {
         &["*.test"],
     );
     let started = Instant::now();
-    let got = w.search_with("tokio", 5, None).await.unwrap();
+    let got = w.search_with(&open(), "tokio", 5, None).await.unwrap();
     assert!(
         started.elapsed() < Duration::from_secs(4),
         "{:?}",
@@ -429,7 +434,7 @@ async fn a_429_is_waited_out_for_that_source_only() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    let first = w.search_with("tokio", 5, None).await.unwrap();
+    let first = w.search_with(&open(), "tokio", 5, None).await.unwrap();
     let crates = &first.requests[3];
     assert_eq!((crates.source, crates.outcome), ("crates", "rate_limited"));
     assert!(
@@ -438,7 +443,7 @@ async fn a_429_is_waited_out_for_that_source_only() {
     );
     assert!(!crates.note.contains("slow down"));
     // A new query: crates.io is not asked while it waits; the others are.
-    let second = w.search_with("serde", 5, None).await.unwrap();
+    let second = w.search_with(&open(), "serde", 5, None).await.unwrap();
     assert_eq!(
         outcomes(&second),
         [
@@ -481,12 +486,12 @@ async fn stack_exchange_backoff_and_githubs_spent_budget_are_honoured() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    let first = w.search_with("a", 5, None).await.unwrap();
+    let first = w.search_with(&open(), "a", 5, None).await.unwrap();
     assert_eq!(
         outcomes(&first),
         [("stackoverflow", "ok"), ("github", "ok")]
     );
-    let second = w.search_with("b", 5, None).await.unwrap();
+    let second = w.search_with(&open(), "b", 5, None).await.unwrap();
     assert_eq!(
         outcomes(&second),
         [("stackoverflow", "backoff"), ("github", "backoff")]
@@ -500,7 +505,7 @@ async fn stack_exchange_backoff_and_githubs_spent_budget_are_honoured() {
     // Another Stack Exchange site shares the pause; GitHub's issues share
     // the search budget.
     let names = vec!["unix".to_owned(), "github_issues".to_owned()];
-    let third = w.search_with("c", 5, Some(&names)).await.unwrap();
+    let third = w.search_with(&open(), "c", 5, Some(&names)).await.unwrap();
     assert_eq!(
         outcomes(&third),
         [("unix", "backoff"), ("github_issues", "backoff")]
@@ -530,7 +535,7 @@ async fn throttle_violations_back_off_and_errors_never_show_the_reply() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    let got = w.search_with("x", 5, None).await.unwrap();
+    let got = w.search_with(&open(), "x", 5, None).await.unwrap();
     assert_eq!(
         outcomes(&got),
         [
@@ -563,7 +568,12 @@ async fn a_sentence_that_matches_nothing_gets_a_hint() {
         &["*.test"],
     );
     let got = w
-        .search_with("how do I cancel a tokio select branch safely", 5, None)
+        .search_with(
+            &open(),
+            "how do I cancel a tokio select branch safely",
+            5,
+            None,
+        )
         .await
         .unwrap();
     let text = duet_web::search::render("q", &got);
@@ -573,7 +583,7 @@ async fn a_sentence_that_matches_nothing_gets_a_hint() {
         ),
         "{text}"
     );
-    let got = w.search_with("tokio", 5, None).await.unwrap();
+    let got = w.search_with(&open(), "tokio", 5, None).await.unwrap();
     assert!(
         duet_web::search::render("tokio", &got).contains("stackoverflow (no results);"),
         "{got:?}"
@@ -590,8 +600,14 @@ async fn answers_are_kept_for_the_run() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    let first = w.search_with("tokio  select", 5, None).await.unwrap();
-    let again = w.search_with("tokio select", 5, None).await.unwrap();
+    let first = w
+        .search_with(&open(), "tokio  select", 5, None)
+        .await
+        .unwrap();
+    let again = w
+        .search_with(&open(), "tokio select", 5, None)
+        .await
+        .unwrap();
     assert_eq!(s.seen().len(), 4);
     assert!(
         again
@@ -616,8 +632,8 @@ async fn requests_to_one_service_are_spaced() {
         Duration::from_secs(5),
         &["*.test"],
     );
-    w.search_with("one", 5, None).await.unwrap();
-    let got = w.search_with("two", 5, None).await.unwrap();
+    w.search_with(&open(), "one", 5, None).await.unwrap();
+    let got = w.search_with(&open(), "two", 5, None).await.unwrap();
     assert_eq!(outcomes(&got), [("crates", "ok")]);
     let seen = s.seen();
     assert_eq!(seen.len(), 2);
@@ -641,27 +657,33 @@ async fn sources_restrict_the_search_and_pypi_takes_exact_names() {
         &["*.test"],
     );
     let pypi = vec!["pypi".to_owned()];
-    let got = w.search_with("Requests", 5, Some(&pypi)).await.unwrap();
+    let got = w
+        .search_with(&open(), "Requests", 5, Some(&pypi))
+        .await
+        .unwrap();
     assert_eq!(outcomes(&got), [("pypi", "ok")]);
     assert_eq!(got.results[0].url, "https://pypi.org/project/requests/");
     assert_eq!(s.seen()[0].target, "/pypi/requests/json");
     // No such project: no results, not an error.
     let got = w
-        .search_with("no-such-project", 5, Some(&pypi))
+        .search_with(&open(), "no-such-project", 5, Some(&pypi))
         .await
         .unwrap();
     assert_eq!(outcomes(&got), [("pypi", "ok")]);
     assert!(got.results.is_empty());
     // A phrase is not a package name: PyPI is not asked.
     let got = w
-        .search_with("http for humans", 5, Some(&pypi))
+        .search_with(&open(), "http for humans", 5, Some(&pypi))
         .await
         .unwrap();
     assert_eq!(outcomes(&got), [("pypi", "not_applicable")]);
     assert_eq!(s.seen().len(), 2);
 
     let two = vec!["wikipedia".to_owned(), "stackoverflow".to_owned()];
-    let got = w.search_with("tokio", 5, Some(&two)).await.unwrap();
+    let got = w
+        .search_with(&open(), "tokio", 5, Some(&two))
+        .await
+        .unwrap();
     assert_eq!(
         outcomes(&got),
         [("stackoverflow", "ok"), ("wikipedia", "ok")]
@@ -669,7 +691,7 @@ async fn sources_restrict_the_search_and_pypi_takes_exact_names() {
     // Unknown sources are refused before anything is sent.
     let before = s.seen().len();
     let e = w
-        .search_with("tokio", 5, Some(&["google".to_owned()]))
+        .search_with(&open(), "tokio", 5, Some(&["google".to_owned()]))
         .await
         .unwrap_err();
     assert!(matches!(e, WebError::Invalid(_)), "{e}");
@@ -684,7 +706,7 @@ async fn native_sources_are_held_to_the_address_rules() {
     // The test names resolve to loopback and are not allowlisted: refused
     // before any connection, like a fetch.
     let w = web(&s, native(&s, DEFAULTS), Duration::from_secs(5), &[]);
-    let got = w.search_with("tokio", 5, None).await.unwrap();
+    let got = w.search_with(&open(), "tokio", 5, None).await.unwrap();
     assert!(
         got.requests.iter().all(|r| r.outcome == "refused"),
         "{got:?}"
@@ -728,14 +750,19 @@ async fn live_native_search() {
             .into()
     });
     for q in queries.split('|') {
-        let got = w.search_with(q, 8, None).await.unwrap();
+        let got = w.search_with(&open(), q, 8, None).await.unwrap();
         println!("{}", duet_web::search::render(q, &got));
     }
     if let Ok(extra) = std::env::var("DUET_LIVE_SOURCES") {
         let names: Vec<String> = extra.split(',').map(str::to_owned).collect();
         for q in queries.split('|') {
-            let got = w.search_with(q, 5, Some(&names)).await.unwrap();
+            let got = w.search_with(&open(), q, 5, Some(&names)).await.unwrap();
             println!("{}", duet_web::search::render(q, &got));
         }
     }
+}
+
+/// The guard of a run without the boundary: every request passes.
+fn open() -> Guard {
+    PassThrough { max_bytes: 0 }.outbound_guard()
 }
