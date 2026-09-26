@@ -522,6 +522,26 @@ vitest, jest, pytest; docker), false positives 148 → 37 of 1,513 lines, the to
 held (228 of 228, 34 of 34, 0 of 255 end to end). Found on the way: the entropy detector's
 `__` and camel-case exemptions let about 1% of random URL-safe keys through (DUET-2026-021, fixed).
 
+*Built (branch `egress`):* registry-only network, the default. `sandbox.network` = `off`,
+`registries` or `all` (the old booleans read as `all` / `off` with a note; loosening confirmed, a
+project only tightens); `sandbox.registries` owner-only, adding a host confirmed. A host-side
+proxy (`crates/duet-egress`, own code): `CONNECT` and plain-HTTP `GET`/`HEAD`, only listed names
+resolved, every address checked with the web tools' classes, a tunnel's TLS server name must be
+its host, one `egress` audit event per connection (host, port, bytes; never a path). One route per
+command: Seatbelt lets a command reach the proxy's loopback port and the development ports free on
+the host (a positive list: Seatbelt ignores a port `deny` after a wildcard `allow` for some ports,
+found here); bubblewrap keeps `--unshare-net` and a helper inside (`duet __sandbox-bridge`) hands
+each connection to the host over `SCM_RIGHTS`, so the `AF_UNIX` seccomp filter stays. Checks that
+can read protected source and `sensitive_data` commands never get network; credential stores in
+the home directory are unreadable to every command; per-run package caches (cargo seeded with
+links to the operator's crates). github.com is not a default (it takes pushes); its download hosts
+are. Live check (2026-09-26, macOS, default settings, through the sandbox and the proxy): `cargo
+new` + `cargo add itoa oorandom` + `cargo run` (index.crates.io, static.crates.io) and `npm init
+-y && npm install left-pad`; `curl https://example.com` refused. Linux: `tools/linux-check.sh`
+(bubblewrap 0.8.0, OrbStack kernel), the bridge with duet itself as the helper through the
+frontier loop. Found on the way: `sensitive_data` commands and checks had the unrestricted network
+of `sandbox.network = true`, and home credential files were readable (DUET-2026-022, fixed).
+
 ### M5.2 — Cost with security: the local model shrinks what the frontier reads
 
 Measured baseline (Gate 2 sets and `results/xcal`): frontier cost is driven by turns × context,
