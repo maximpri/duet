@@ -5,8 +5,12 @@
 //! is sent anywhere and no model runs; the workspace is only read.
 //!
 //! ```text
-//! cargo run -p duet-boundary --example structure_report -- <workspace> <objective file> <state dir> [rows]
+//! cargo run -p duet-boundary --example structure_report -- <workspace> <objective file> <state dir> [rows] [commands.json]
 //! ```
+//!
+//! `commands.json`, when given, is a list of `{"command": …, "output": <file>}`:
+//! each recorded output is then shown as the output of that command run with
+//! `sensitive_data` would be (masked output, probes), in order.
 //!
 //! `<state dir>` receives the engine's run state (vault, handles); it must
 //! be outside the workspace. Used to measure how many of the questions a
@@ -111,6 +115,28 @@ fn main() {
                 Some(Err(e)) => println!("=== synthetic_sample {h} ===\n[error] {e}\n"),
                 None => {}
             }
+        }
+    }
+    if let Some(list) = args.get(5) {
+        let list: Vec<serde_json::Value> =
+            serde_json::from_str(&std::fs::read_to_string(list).expect("commands file"))
+                .expect("a JSON list");
+        for c in list {
+            let command = c["command"].as_str().unwrap_or_default();
+            let Ok(output) = std::fs::read(c["output"].as_str().unwrap_or_default()) else {
+                continue;
+            };
+            let view = engine.present(
+                &Source::SensitiveCommand {
+                    command: command.to_owned(),
+                    exit_code: Some(0),
+                },
+                &output,
+            );
+            println!(
+                "=== run_command (sensitive_data) {} ===\n{view}",
+                command.lines().next().unwrap_or_default()
+            );
         }
     }
     for e in engine.take_events() {

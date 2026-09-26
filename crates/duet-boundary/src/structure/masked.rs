@@ -146,7 +146,7 @@ fn mask_line(
         words(&line[at..s], &mut shown, &mut key);
         let v = &line[s..e];
         if let Some(kind) = kind {
-            shown.push_str(&shape::shape(v, Detail::Runs));
+            shown.push_str(&value_shape(v, kind));
             key.push_str(&format!("⟨{}⟩", kind.tag()));
         } else {
             let date: String = v
@@ -160,6 +160,29 @@ fn mask_line(
     }
     words(&line[at..], &mut shown, &mut key);
     Masked { shown, key }
+}
+
+/// How a value shows in masked text: a secret as `•••` (the class of each
+/// of its characters is a part of its strength; a URL keeps its layout,
+/// its password withheld), any other value by its runs, a date inside it
+/// by its layout.
+fn value_shape(v: &str, kind: Kind) -> String {
+    if kind == Kind::Secret {
+        return super::profile::url_shape(v.trim()).unwrap_or_else(|| "•••".to_owned());
+    }
+    let mut shown = String::new();
+    let mut last = 0;
+    for d in DATE.find_iter(v) {
+        shown.push_str(&shape::shape(&v[last..d.start()], Detail::Runs));
+        shown.extend(
+            d.as_str()
+                .chars()
+                .map(|c| if c.is_ascii_digit() { '9' } else { c }),
+        );
+        last = d.end();
+    }
+    shown.push_str(&shape::shape(&v[last..], Detail::Runs));
+    shown
 }
 
 /// A command's output with every value masked. `command` is the command

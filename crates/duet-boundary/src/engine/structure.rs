@@ -25,6 +25,7 @@ use crate::audit::AuditEvent;
 use crate::detect::Kind;
 use crate::structure::twin::{Twin, mix};
 use crate::structure::{self, Knowledge, masked, profile, twin};
+use aho_corasick::{AhoCorasick, MatchKind};
 use regex::Regex;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -48,6 +49,11 @@ const OUTLINE_FILE_CHARS: usize = 1200;
 const OUTLINE_CHARS: usize = 4000;
 /// Seeds tried for a sample that passes the checks.
 const SAMPLE_ATTEMPTS: u64 = 3;
+/// Values of structured sensitive data remembered as values (the rest are
+/// still in the vault when a detector found them).
+const DATA_VALUES_MAX: usize = 200_000;
+/// A value this short is remembered as a word only (a code, a category).
+const DATA_VALUE_MIN: usize = 4;
 
 /// Lines Duet writes around a command's output (not the program's).
 static FRAMING: LazyLock<Regex> = LazyLock::new(|| {
@@ -70,8 +76,12 @@ pub(super) enum Origin<'a> {
 /// What the structure views know, per run.
 #[derive(Default)]
 pub(super) struct StructureState {
-    /// Words of values of structured sensitive data.
+    /// One-word values of structured sensitive data, lower-cased (`settled`).
     data_words: HashSet<String>,
+    /// Values of structured sensitive data (4+ characters), and a matcher
+    /// over them built on first use after a change.
+    data_values: std::collections::BTreeSet<String>,
+    data_matcher: std::sync::OnceLock<Option<AhoCorasick>>,
     /// Words of the schema names shown (keys, columns).
     schema_words: HashSet<String>,
     /// The seed of this run's samples (persisted in `sample-seed`).
@@ -139,9 +149,64 @@ impl Fixtures {
 /// words of values in sensitive data.
 pub(super) struct Known<'a>(pub(super) &'a State);
 
+impl StructureState {
+    fn data_matcher(&self) -> Option<&AhoCorasick> {
+        self.data_matcher
+            .get_or_init(|| {
+                (!self.data_values.is_empty())
+                    .then(|| {
+                        AhoCorasick::builder()
+                            .match_kind(MatchKind::LeftmostLongest)
+                            .ascii_case_insensitive(true)
+                            .build(&self.data_values)
+                            .ok()
+                    })
+                    .flatten()
+            })
+            .as_ref()
+    }
+
+    /// Remembers the values of structured sensitive content.
+    fn note_values(&mut self, values: Vec<String>) {
+        let before = self.data_values.len();
+        for v in values {
+            if !v.chars().any(char::is_alphanumeric) || structure::marker_word(&v) {
+                continue;
+            }
+            if v.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                self.data_words.insert(v.to_lowercase());
+            }
+            if v.chars().count() >= DATA_VALUE_MIN && self.data_values.len() < DATA_VALUES_MAX {
+                self.data_values.insert(v);
+            }
+        }
+        if self.data_values.len() != before {
+            self.data_matcher = std::sync::OnceLock::new();
+        }
+    }
+}
+
 impl Knowledge for Known<'_> {
+    /// Known values (the vault), and values of structured sensitive data
+    /// wherever they occur (as `data`).
     fn values(&self, text: &str) -> Vec<(usize, usize, Kind)> {
-        self.0.vault.spans(text)
+        let mut out = self.0.vault.spans(text);
+        if let Some(ac) = self.0.structure.data_matcher() {
+            let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+            for m in ac.find_iter(text) {
+                // Whole words only (`Novapay` is not in `NOVAPAY_API_KEY`),
+                // and a value inside a known one is already covered.
+                if word(text[..m.start()].chars().next_back())
+                    || word(text[m.end()..].chars().next())
+                    || out.iter().any(|&(s, e, _)| m.start() < e && s < m.end())
+                {
+                    continue;
+                }
+                out.push((m.start(), m.end(), Kind::Data));
+            }
+            out.sort_unstable_by_key(|x| x.0);
+        }
+        out
     }
     fn public_word(&self, word: &str) -> bool {
         self.0.public_words.contains(word) || self.0.structure.schema_words.contains(word)
@@ -149,8 +214,15 @@ impl Knowledge for Known<'_> {
     fn data_word(&self, word: &str) -> bool {
         self.0.structure.data_words.contains(word)
     }
+    /// A known value, or a value of structured sensitive data: what no
+    /// fake of a sample may hold.
     fn known(&self, text: &str) -> bool {
         !self.0.vault.values_in(text).is_empty()
+            || self
+                .0
+                .structure
+                .data_matcher()
+                .is_some_and(|ac| ac.is_match(text))
     }
 }
 
@@ -243,8 +315,7 @@ impl Engine {
             return;
         }
         st.structure
-            .data_words
-            .extend(structure::value_words(text, Some(path)));
+            .note_values(structure::values(text, Some(path)));
         let outline =
             profile::profile(text, Some(path), &Known(st)).map(|p| p.outline(OUTLINE_FILE_CHARS));
         if let Some(o) = outline {

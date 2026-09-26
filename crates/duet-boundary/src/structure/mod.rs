@@ -171,75 +171,83 @@ pub fn detect(text: &str, path: Option<&Path>) -> Format {
     if is_log { Format::Log } else { Format::Text }
 }
 
-/// The one-word values (lower-cased) of structured content: JSON strings,
+/// The string values of structured content, trimmed: JSON strings,
 /// delimited cells after a header, XML text and attributes, fixed-width
-/// cells that are a single word (`settled`, `PSTN`, `F`). Such a word is a
-/// categorical value of the data, masked in masked output and line
-/// templates even when public files use it too. Words of longer text
-/// (notes, addresses) are left out: they are the language's, and names in
-/// them are known values anyway.
-pub fn value_words(text: &str, path: Option<&Path>) -> std::collections::HashSet<String> {
-    fn words(s: &str, out: &mut std::collections::HashSet<String>) {
-        let w = s.trim();
-        if !w.is_empty()
-            && w.chars().all(|c| c.is_alphanumeric() || c == '_')
-            && w.chars().any(char::is_alphabetic)
-        {
-            out.insert(w.to_lowercase());
-        }
-    }
-    fn json_words(v: &parse::Json, out: &mut std::collections::HashSet<String>) {
+/// cells. The caller treats them as values wherever they appear again (in
+/// masked output and line templates), even when every word of one is also
+/// a word of the public files (`same-day`, a note of plain words).
+pub fn values(text: &str, path: Option<&Path>) -> Vec<String> {
+    fn json_values(v: &parse::Json, out: &mut Vec<String>) {
         match v {
             parse::Json::Object { entries, .. } => {
-                entries.iter().for_each(|(_, x)| json_words(x, out))
+                entries.iter().for_each(|(_, x)| json_values(x, out))
             }
-            parse::Json::Array { items, .. } => items.iter().for_each(|x| json_words(x, out)),
-            parse::Json::String { value, .. } => words(value, out),
+            parse::Json::Array { items, .. } => items.iter().for_each(|x| json_values(x, out)),
+            parse::Json::String { value, .. } => out.push(value.trim().to_owned()),
             _ => {}
         }
     }
-    let mut out = std::collections::HashSet::new();
+    let mut out = Vec::new();
     let body = text.trim_start_matches('\u{feff}');
     match detect(body, path) {
         Format::Json => {
             if let Some(v) = parse::json(body) {
-                json_words(&v, &mut out);
+                json_values(&v, &mut out);
             }
         }
         Format::JsonLines => {
             for v in parse::json_lines(body).unwrap_or_default() {
-                json_words(&v, &mut out);
+                json_values(&v, &mut out);
             }
         }
         Format::Delimited { delimiter } => {
             if let Some(rows) = parse::delimited(body, delimiter) {
                 let skip = usize::from(profile::has_header(&rows, &Nothing));
                 for r in &rows[skip..] {
-                    for c in &r.cells {
-                        words(&c.value, &mut out);
-                    }
+                    out.extend(r.cells.iter().map(|c| c.value.trim().to_owned()));
                 }
             }
         }
         Format::Xml => {
             if let Some(x) = parse::xml(body) {
-                for v in &x.values {
-                    words(&v.value, &mut out);
-                }
+                out.extend(x.values.iter().map(|v| v.value.trim().to_owned()));
             }
         }
         Format::FixedWidth => {
             if let Some(cols) = parse::fixed_width(body) {
                 for l in body.lines().skip(1) {
                     for c in &cols {
-                        words(l.get(c.clone()).unwrap_or_default(), &mut out);
+                        out.push(l.get(c.clone()).unwrap_or_default().trim().to_owned());
                     }
                 }
             }
         }
         Format::Env | Format::Log | Format::Text => {}
     }
+    out.retain(|v| !v.is_empty());
     out
+}
+
+/// Words that mean "no value" or a yes/no: never a value on their own.
+pub fn marker_word(word: &str) -> bool {
+    matches!(
+        word.to_lowercase().as_str(),
+        "null"
+            | "none"
+            | "nil"
+            | "n/a"
+            | "na"
+            | "undefined"
+            | "nan"
+            | "true"
+            | "false"
+            | "yes"
+            | "no"
+            | "y"
+            | "n"
+            | "-"
+            | "--"
+    )
 }
 
 /// Built-in member names of common languages' objects: data keys with
