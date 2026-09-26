@@ -180,8 +180,8 @@ How Duet looks for its own weaknesses:
   fragments of numbers.
 - **The detection rules are tested.** A detection corpus checks an example for every imported
   rule (228 of 228 caught) and every personal-data format, and tracks the false-positive rate.
-- **Every leak found is published.** Seventeen advisories (DUET-2026-001 to 017) each have a root
-  cause and a regression test.
+- **Every leak found is published.** Twenty-one advisories (DUET-2026-001 to 021) each have a
+  root cause and a regression test.
 
 Several of those leaks were found by exactly this process, including one in a quality-gate batch
 that led to a fix and a full re-run. Full results with method and raw data will be published in

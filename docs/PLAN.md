@@ -511,6 +511,16 @@ looks hung; standard output keeps only the summary. Checked by hand in tmux (str
 `/stop`, Ctrl-C, approval of a commit, history after resume, resize, Ctrl-Z/`fg`, `NO_COLOR`, the
 terminal restored on exit).
 
+*Built (branch `fps`):* detector false positives. All six public values of the live run came from
+the entropy detector; long tokens are now judged by their parts (names, ids, content hashes before
+a build-artifact extension, a Next.js build id; a random long part in a path or URL is still
+withheld), and ISBNs are not card numbers (a calibration run's citation). Corpus: five files of
+real toolchain output (vite, webpack, next; Node, Python, Rust, Java traces; npm, pip, cargo;
+vitest, jest, pytest; docker), false positives 148 → 37 of 1,513 lines, the toolchain lines
+91 → 0, and every toolchain output through the hybrid engine without a placeholder; recall
+held (228 of 228, 34 of 34, 0 of 255 end to end). Found on the way: the entropy detector's
+`__` and camel-case exemptions let about 1% of random URL-safe keys through (DUET-2026-021, fixed).
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

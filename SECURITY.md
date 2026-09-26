@@ -355,11 +355,30 @@ whatever they find in it). What they recognize:
 
 | Detector | Finds |
 |---|---|
-| Duet's own secret detectors | provider key formats (payment, forge, chat, cloud, model-provider keys), JWTs, private-key blocks, URL passwords, credential assignments (`API_KEY=…`, `"password": "…"`), high-entropy tokens (not CamelCase identifiers or `sha512-…` integrity digests) |
+| Duet's own secret detectors | provider key formats (payment, forge, chat, cloud, model-provider keys), JWTs, private-key blocks, URL passwords, credential assignments (`API_KEY=…`, `"password": "…"`), high-entropy tokens, judged by their parts (below) |
 | Imported secret rules | the gitleaks default rule set (v8.30.1): 221 rules for specific services' credentials (cloud, SaaS, CI, payment, messaging and AI providers), generic keys next to key-like names, credentials in `curl` commands, Kubernetes Secret manifests (in `*.yaml`), Terraform passwords (in `*.tf`). A placeholder is named after the rule (`⟨secret:gcp_api_key#1⟩`) |
-| Personal data | email; phone numbers in US format, in international (E.164) format with an assigned country code and, for the larger numbering plans, their national length, and national numbers after a phone label (`Tel.:`, `"mobile":`); card numbers (Luhn); IBANs of every registry country (registry length and mod-97, compact or printed in groups); US SSN, UK NINO, DE Steuer-ID, FR NIR, ES DNI and NIE, IT codice fiscale (each with its check digit where the format has one), NL BSN (eleven test, next to its label); IPv4 and IPv6; postal addresses in labelled fields (`address:`, `shipping_address`, `Adresse`, `Anschrift`, `dirección`, `indirizzo`, …); 12–19 digit numbers labelled as card, account or ID |
+| Personal data | email; phone numbers in US format, in international (E.164) format with an assigned country code and, for the larger numbering plans, their national length, and national numbers after a phone label (`Tel.:`, `"mobile":`); card numbers (Luhn; not ISBNs: a 13-digit number in the ISBN layout `978-0-596-51004-6`, or 978/979 with a valid ISBN check digit, or after an `ISBN` label); IBANs of every registry country (registry length and mod-97, compact or printed in groups); US SSN, UK NINO, DE Steuer-ID, FR NIR, ES DNI and NIE, IT codice fiscale (each with its check digit where the format has one), NL BSN (eleven test, next to its label); IPv4 and IPv6; postal addresses in labelled fields (`address:`, `shipping_address`, `Adresse`, `Anschrift`, `dirección`, `indirizzo`, …); 12–19 digit numbers labelled as card, account or ID |
 | Sensitive text only | title-case names, person and address fields, long numbers, identifier-like strings (see Enforcement) |
 | Local personal-data pass (optional) | people's names and postal addresses in the free text of public content |
+
+**High-entropy tokens.** A run of 24+ letters, digits and `+/_-` with high entropy and two
+character classes is a key of no known format, unless it reads as something public. Entropy alone
+cannot tell: a path, a hashed bundle name or a long identifier has as many bits per character as
+a key once it is long enough (a live run sent `dist/assets/index-DVuHW4gw.js`, the paths of a Node
+stack trace and of an EPERM error the frontier was debugging as placeholders). So a token is read
+by its parts (split at `/`, `-`, `_`; `crates/duet-boundary/src/detect/random.rs`): names (words,
+numbered words, camel case with acronyms such as `asyncRunEntryPointWithESMLoader`), ids (numbers
+and single-case hex: UUIDs, git object ids, digests, timestamps), a bundler's content hash between
+a name and a build-artifact extension (`index-DVuHW4gw.js`, `react-dom-Bx8f9aQz.js.map`, 6–16
+characters), a Next.js build id (`.next/static/<id>/`), short one-case parts (`v2`, `cp39`), and
+long parts (24+), judged on their own. A token whose every part has one of these shapes and that
+holds two names is structured: a random long part in it is withheld (alone in an absolute path or a
+URL, `/v1/keys/⟨secret⟩/rotate`; with the whole token elsewhere), the rest is shown. Anything else,
+and anything with `+` or `=` padding (base64), is judged whole. `sha1-`…`sha512-` integrity
+digests and `go.sum` `h1:` digests are public. A seeded measurement over a million random tokens
+of five alphabets (base62, base64, base64url, base36, letters) finds 55 not withheld whole, mostly
+letters that read as camel case; the rule this replaced let 3,177 of a like sample through (any token holding `__`,
+and camel-case letters).
 
 **Rule provenance.** The imported rules are data, not code: gitleaks' `config/gitleaks.toml` at
 release tag v8.30.1 (commit `83d9cd6`), MIT-licensed, vendored unmodified in
@@ -392,16 +411,17 @@ only adds: when the local model fails or misses, the result is as the detectors 
 prompt asks for exact copies, but its output never leaves the machine.
 
 **Measured** by the detection corpus (`crates/duet-boundary/tests/corpus.rs`, in the gate; data in
-`tests/corpus/`, all synthetic):
+`tests/corpus/`, synthetic, except five files of real toolchain output with paths anonymized):
 
-| Measure | Result (2026-09-25) |
+| Measure | Result (2026-09-26) |
 |---|---|
 | Imported rules | 221 in use, 0 not compiled, 0 partly supported, 1 path-only |
 | Imported-rule positives: one generated from each rule's own expression, plus 7 hand-written realistic forms | 228 of 228 found by their rule and withheld by the full detector |
-| Hand-written positives for duet's own and the international formats | 30 of 30 withheld as their kind |
-| End to end, hybrid engine: each positive in a file the model reads and in the frontier's own text | 0 of 251 reach the frontier |
-| False positives on 683 lines of hard negatives (hashes, UUIDs, Cargo.lock and package-lock excerpts, base64 of public data, identifiers, fixtures, minified JS, logs, code, config, numbers) | 53 lines (7.8%); 80 before this detection work; the imported rules add none |
-| Throughput, 10 MB of mixed log and code, release build, before and after in one process | 34–43 MB/s as one text, 49–50 MB/s in 8 KB pieces (before: 50–64 and 58–66); the imported rules alone 85–109 and 141–153 MB/s, 12 of 221 rules past the keyword prefilter |
+| Hand-written positives for duet's own and the international formats, and keys inside paths, URLs and base64 | 34 of 34 withheld as their kind |
+| End to end, hybrid engine: each positive in a file the model reads and in the frontier's own text | 0 of 255 reach the frontier |
+| False positives on 1,513 lines of hard negatives (hashes, UUIDs, Cargo.lock and package-lock excerpts, base64 of public data, identifiers, fixtures, minified JS, logs, code, config, numbers; real vite, webpack and next builds, Node, Python, Rust and Java stack traces, npm, pip and cargo install logs, vitest, jest and pytest runs, a docker build) | 37 lines (2.4%): base64 of public data 18, placeholder and test values in fixtures 14, digit runs that pass the card checksum or read as an IPv4 address 4, a credential-named assignment in minified code 1. Before tokens were judged by their parts, 148 (9.8%), 91 of them in the 825 toolchain lines; 80 of the first 683 lines before this detection work; the imported rules add none |
+| The toolchain output as the frontier sees it: each of 26 command outputs through the hybrid engine with the shipped policy (inline, or held with its error lines shown) | 0 placeholders (before: 11 of 26 outputs had some) |
+| Throughput, 10 MB of mixed log and code, release build, before and after in one process | 34–43 MB/s as one text, 49–50 MB/s in 8 KB pieces (before: 50–64 and 58–66); the imported rules alone 85–109 and 141–153 MB/s, 12 of 221 rules past the keyword prefilter (2026-09-25). Judging tokens by their parts: no difference beyond noise in five interleaved runs of each build on a loaded machine (2026-09-26) |
 
 The gate fails when a rule stops compiling or a positive is missed, and when false positives rise
 above the recorded baseline (`tests/corpus/baseline.toml`, per file).
@@ -742,11 +762,20 @@ before. The ledger's image tokens are estimates (no provider reports them apart 
   measure what gets through. The detection corpus shows that each imported rule matches its own
   format, not that the formats are complete.
 - The remaining false positives are mostly base64 of public data (certificates, data URIs, public
-  keys), ids inside URL paths and long file paths that mix case and digits
-  (`test/test-suite/groups/function-fromMillis/case000`), which the entropy detector cannot tell
-  from secrets, and placeholder values in credential assignments; each costs a placeholder, also
-  in the frontier's own earlier messages once found (an edited turn's signed reasoning is then
-  not replayed).
+  keys), which the entropy detector cannot tell from secrets, and placeholder values in credential
+  assignments; each costs a placeholder, also in the frontier's own earlier messages once found
+  (an edited turn's signed reasoning is then not replayed). A path or name with a random-looking
+  part of 6–23 characters that is not a content hash before a build-artifact extension (a nanoid
+  directory, a temporary name) is judged whole and may still become one.
+- A token read by its parts shows its non-random parts: in an absolute path or a URL, a random
+  segment of 24+ characters is withheld and the segments around it are shown. A secret that has a
+  public shape is not found by the entropy detector: words or a camel-case identifier,
+  single-case hex, a number, 6–16 characters between a name and a build-artifact extension
+  (`share-<key>.js`), 21 characters under `.next/static/`, a value after `h1:`. About 55 in a
+  million random tokens read as names or structured tokens (measured above), mostly letters only.
+- A 13-digit number that passes the card checksum is not a card when printed in the ISBN layout,
+  when it starts with 978/979 and passes the ISBN check, or after an `ISBN` label; 13-digit card
+  numbers start with 4, and a number labelled as a card is one whatever its layout.
 - The final check skips the body's framing by exact string: a content string identical to a
   framing string (a role, a tool name, a call id) is not searched, and holds nothing the framing
   does not. The Responses dialect's `prompt_cache_key` is a digest of the system prompt and tools,
@@ -907,6 +936,7 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-018 | Sensitive file diffed as public text | CWE-638 Not Using Complete Mediation (consequence CWE-201) | In a git repository `diff` showed the changes of every listed file, a tracked sensitive file included, through the generic sanitizer for public text: values it recognized became placeholders, but the file's lines, labels and anything no detector knows (a name, an internal code) were sent. A tracked customer file overwritten by a `sensitive_data` command showed its old rows and the new content's key name. Found in review while adding `diff` outside git repositories, not observed in a run | `diff` names changed sensitive files (policy or derived) and never diffs them for the frontier, in a repository and outside one, like `/diff` does for the operator; reserved paths are never listed as new files |
 | DUET-2026-019 | Filter and final check disagreeing on values the filter found | CWE-696 Incorrect Behavior Order (consequence: a run ended `failed`; not a leak) | The outbound filter sanitized a request item by item: detectors re-ran on messages and tool results, and known values were replaced in the model's own messages. A value the detectors found in a later item joined the vault after the earlier items were done, so it stayed in them, and the final check, which reads the whole request, blocked it and ended the run. Context masking set it off in an XL calibration run (X2, hybrid, seed 2, build `14f1066`) after 139 requests and 65 minutes: the stub replacing an old command result quoted the command, the entropy detector took a test-suite path in it (`…/groups/function-fromMillis/case000`) for a secret, and the same path in the model's own earlier tool calls stayed; the run's code passed 42 of 55 hidden tests and scored 0. `read_file` set it off on the next request as well, since its result names the path it read. Nothing was sent (fail-closed) | Two passes: detectors first, then every value known by then replaced in every string of the request (system prompt, tool descriptions, every field of every item, replayed reasoning, JSON inside strings), read exactly as the check reads it; a property test holds "the check passes what the filter returns" for any request. A request the check still refuses is sent with each part that holds a value withheld (`send_withheld` event), and only one that still fails ends the run (`d1470f2`) |
 | DUET-2026-020 | Final check reading the wire format as content | CWE-697 Incorrect Comparison (consequence: every request blocked; not a leak) | The final check searched the whole serialized body, keys and structure included, for every vault value of 6+ bytes. A `.env` value that spells part of the wire format (`required` in every tool schema, `assistant`, `function`, the model's name as `LLM_MODEL=`) would block every request of the run, and no filter can change the format. Found by the property test written for DUET-2026-019, not observed in a run | The check reads the body string by string and skips the body's framing: the strings the same request's body has with all content blanked (keys, roles, block types, the model's name, call ids, tool names and schemas); content keeps being checked (`d1470f2`) |
+| DUET-2026-021 | Random keys taken for identifiers | CWE-183 Permissive List of Allowed Inputs (consequence CWE-201) | The entropy detector passed any token holding `__` (meant for dunder names) and any letters-only token whose capitals looked like camel case, so about 1% of random URL-safe base64 keys and 0.6% of random letter keys were sent as written, in public content and in the frontier's own text, unless another detector knew their format or a key-like name stood next to them. Found by the random-token measurement written while fixing the detector's false positives on paths and build output (seen in a live run, 2026-09-26), not observed in a run | The exemptions are gone; an identifier is recognized by its word shape (camel case with acronyms, words of one or two letters only those identifiers use, at most two capitals in five letters) and a long token by its parts; a seeded test over a million random tokens of five alphabets bounds those not withheld whole (55 measured; 3,177 before) |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values

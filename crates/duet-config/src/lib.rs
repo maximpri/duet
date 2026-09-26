@@ -278,7 +278,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyTrue,
         true,
-        "High-entropy strings next to key-like names."
+        "High-entropy tokens (keys of no known format); paths, hashed build files and identifiers are judged by their parts."
     ),
     s!(
         "sensitivity.custom_patterns",
