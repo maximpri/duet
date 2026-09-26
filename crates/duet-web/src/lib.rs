@@ -801,12 +801,18 @@ pub fn search_engine_page(url: &Url) -> Option<&'static str> {
         "Ecosia"
     } else if is("qwant.com") && query("q") {
         "Qwant"
-    } else if (is("mojeek.com") || is("kagi.com")) && path == "/search" {
-        "a search engine"
-    } else if host == "search.naver.com" || host == "search.seznam.cz" {
-        "a search engine"
-    } else if (is("so.com") && path == "/s") || (is("sogou.com") && path == "/web") {
-        "a search engine"
+    } else if is("mojeek.com") && path == "/search" {
+        "Mojeek"
+    } else if is("kagi.com") && path == "/search" {
+        "Kagi"
+    } else if host == "search.naver.com" {
+        "Naver"
+    } else if host == "search.seznam.cz" {
+        "Seznam"
+    } else if is("so.com") && path == "/s" {
+        "360 Search"
+    } else if is("sogou.com") && path == "/web" {
+        "Sogou"
     } else {
         return None;
     };
