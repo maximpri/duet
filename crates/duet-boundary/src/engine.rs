@@ -1362,6 +1362,13 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
             .map_err(|e| format!("local model: {}", e.message))?;
             let mut st = self.lock();
             let (answer, withheld) = match &image {
+                // An answer about public content (a bulky page, file or
+                // output the frontier could read with `read_raw`) is public
+                // text: cleaned as `read_raw` cleans it. Read as local output
+                // about sensitive content, the numbers and identifiers it
+                // quotes entered the vault and were then masked in every later
+                // result, public web pages and search results included.
+                None if info.public => (self.clean_public(&mut st, &a.answer, &info.source), 0),
                 // What an image shows is unknown here: an answer to a
                 // positional question about it shows no short piece at all.
                 Some(_) => {

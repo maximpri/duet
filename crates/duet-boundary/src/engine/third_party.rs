@@ -423,3 +423,44 @@ mod tests {
         assert!(r.unwrap_err().reason.contains("ended"));
     }
 }
+
+#[cfg(test)]
+mod public_answers {
+    use super::Engine;
+    use crate::view::{Presenter, Source};
+    use serde_json::{Map, json};
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_local_answer_about_public_web_content_does_not_withhold_its_numbers() {
+        // Seen in a live run: numbers of a bulky public JSON page, quoted in a
+        // local answer about it, entered the vault as data and stayed masked
+        // in later search results (and refused later queries).
+        let (local, _) = crate::testing::scripted_local(vec![
+            json!({"summary": "Crate listing.", "facts": []}).to_string(),
+            json!({"answer": "serde has 123456789 downloads; its id is serde1234abcd.",
+                "evidence_lines": [1], "unanswerable": false})
+            .to_string(),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let e = Engine::open(d.path(), super::super::tests::policy(), Some(local)).unwrap();
+        let page: String = (0..400)
+            .map(|i| format!("{{\"id\":\"crate{i}\",\"downloads\":{}}}\n", 123456789 + i))
+            .collect();
+        let web = |url: &str| Source::Web { url: url.into() };
+        let shown = e.present(&web("https://crates.io/api/v1/crates"), page.as_bytes());
+        let handle = shown.split_whitespace().next().unwrap().to_owned();
+        let mut args = Map::new();
+        args.insert("handle".into(), json!(handle));
+        args.insert("question".into(), json!("How many downloads has serde?"));
+        let answer = e.call_tool("ask_local", &args).unwrap().unwrap();
+        assert!(answer.contains("123456789"), "{answer}");
+        assert!(answer.contains("serde1234abcd"), "{answer}");
+        assert_eq!(e.lock().vault.values().count(), 0, "public numbers vaulted");
+        let later = e.present(
+            &web("https://crates.io/search"),
+            b"serde: 123456789 downloads\n",
+        );
+        assert!(later.contains("123456789"), "{later}");
+        assert!(e.check_outbound("crates.io", "serde 123456789").is_ok());
+    }
+}
