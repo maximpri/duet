@@ -516,6 +516,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "clap",
+ "crossterm",
  "duet-agent",
  "duet-boundary",
  "duet-config",
@@ -535,6 +536,8 @@ dependencies = [
  "time",
  "tokio",
  "toml",
+ "unicode-segmentation",
+ "unicode-width",
  "url",
  "uuid",
 ]

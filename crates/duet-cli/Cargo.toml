@@ -32,8 +32,12 @@ tokio.workspace = true
 toml.workspace = true
 uuid.workspace = true
 time.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["termios"] }
 futures-util.workspace = true
+# The chat console and run progress (all three already in Cargo.lock through ratatui).
+crossterm = "0.29"
+unicode-width = "0.2"
+unicode-segmentation = "1"
 
 
 [dev-dependencies]

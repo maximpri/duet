@@ -502,3 +502,45 @@ fn a_message_typed_while_duet_works_steers_the_turn_and_stop_ends_it() {
         text(&o)
     );
 }
+
+#[test]
+fn piped_output_is_plain_lines_as_before() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "src/lib.rs"})),
+        Step::Call("reply", json!({"message": "Done.\nTwo lines."})),
+    ]);
+    let mut c = chat_command(&e, &f, &[]);
+    c.stdin(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    // The message, then the end of input.
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"Add a function b.\n")
+        .unwrap();
+    let o = child.wait_with_output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+    let id = only_run_id(&e);
+    let summary: Value = serde_json::from_slice(
+        &std::fs::read(e.ws.join(".duet/runs").join(&id).join("summary.json")).unwrap(),
+    )
+    .unwrap();
+    let cost = summary["stats"]["cost_usd"].as_f64().unwrap();
+    // Without a terminal: no prompt, no escape sequences, exactly these lines.
+    assert_eq!(
+        String::from_utf8(o.stdout).unwrap(),
+        format!(
+            "  · read_file src/lib.rs\n\
+duet: Done.\n      Two lines.\n\
+session {id} left open (${cost:.4} so far); continue with: duet chat --resume {id}\n"
+        )
+    );
+    assert!(
+        !o.stderr.contains(&0x1b),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+}

@@ -22,8 +22,15 @@
 //!
 //! At the prompt, Ctrl-C twice leaves the session, like `/quit` or the end
 //! of input; `duet chat --resume` continues it. `/close` ends it for good.
+//!
+//! On a terminal the console ([`crate::term::console`]) reads the keyboard
+//! instead of the reader thread: a line editor with history (the session's
+//! own messages) and completion, duet's replies streamed and formatted as
+//! they arrive, and a status line while duet works. The lines it sends and
+//! the Ctrl-C rules are the same.
 
 use crate::approve;
+use crate::term::console::{Console, Hooks, Mode as Live};
 use crate::{
     LocalOverride, Mode, Prepared, RunLimits, RunManifest, audit_log_path, checked_run_id,
     frontier_dialect, load_config, new_run_id, open_audit, prepare, setup,
@@ -37,6 +44,7 @@ use duet_boundary::audit::AuditHandle;
 use duet_boundary::model::Item;
 use duet_boundary::view::{PassThrough, Presenter, ViewClass};
 use futures_util::FutureExt;
+use futures_util::future::Either;
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, IsTerminal, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -128,6 +136,17 @@ impl Inbox {
         self.lock().lines.pop_front().map(|(_, l)| l)
     }
 
+    /// The input ended (the console's Ctrl-D, or its terminal is gone).
+    fn close(&self) {
+        self.lock().closed = true;
+        self.ready.notify_all();
+    }
+
+    /// Whether an approval question waits for the next line.
+    fn answering(&self) -> bool {
+        self.lock().answering
+    }
+
     /// Takes the next line unless an approval question is waiting for it.
     fn pop_unless_answering(&self) -> Option<String> {
         let mut q = self.lock();
@@ -188,22 +207,16 @@ struct AskInline {
     mode: ApproveMode,
     inbox: Arc<Inbox>,
     interrupted: Arc<AtomicBool>,
+    screen: Screen,
 }
 
 impl AskInline {
     fn ask(&self, action: &Action) -> bool {
         let mark = self.inbox.mark();
-        let mut out = std::io::stdout().lock();
-        let _ = write!(
-            out,
-            "{}approve? answer y or n: ",
-            approve::describe(self.mode, action)
-        );
-        let _ = out.flush();
-        drop(out);
+        self.screen.ask(&approve::describe(self.mode, action));
         let answer = self.inbox.answer_after(mark, &self.interrupted);
         let yes = answer.as_deref().is_some_and(approve::is_yes);
-        println!("{}", if yes { "approved" } else { "denied" });
+        self.screen.line(if yes { "approved" } else { "denied" });
         yes
     }
 }
@@ -241,6 +254,11 @@ pub(crate) enum Command {
     Unknown(String),
     Empty,
 }
+
+/// The commands, for completion.
+pub(crate) const COMMANDS: &[&str] = &[
+    "/close", "/diff", "/exit", "/help", "/image", "/quit", "/status", "/stop", "/undo",
+];
 
 pub(crate) fn parse(line: &str) -> Command {
     let trimmed = line.trim();
@@ -296,10 +314,97 @@ Commands (never sent to the model):
 Ctrl-C stops duet's turn at once (a running command is killed);
 at the prompt, Ctrl-C twice leaves.";
 
-fn prompt(tty: bool) {
-    if tty {
-        print!("you> ");
-        let _ = std::io::stdout().flush();
+/// Where the conversation is written: line by line on standard output
+/// (without a terminal, or when it cannot be driven: exactly as it always
+/// was), or the console.
+#[derive(Clone)]
+pub(crate) enum Screen {
+    Plain { tty: bool },
+    Live(Arc<Console>),
+}
+
+impl Screen {
+    /// A line (or lines) of the conversation.
+    fn line(&self, text: &str) {
+        match self {
+            Screen::Plain { .. } => println!("{text}"),
+            Screen::Live(c) => c.lines(text),
+        }
+    }
+
+    /// Text shown as it is (it ends its own lines).
+    fn text(&self, text: &str) {
+        match self {
+            Screen::Plain { .. } => {
+                print!("{text}");
+                let _ = std::io::stdout().flush();
+            }
+            Screen::Live(c) => c.text(text),
+        }
+    }
+
+    /// An approval question; the answer is the next line.
+    fn ask(&self, question: &str) {
+        match self {
+            Screen::Plain { .. } => self.text(&format!("{question}approve? answer y or n: ")),
+            // The input line asks (`approve? y/n>`).
+            Screen::Live(c) => c.text(question),
+        }
+    }
+
+    fn diff(&self, text: &str) {
+        match self {
+            Screen::Plain { .. } => print!("{text}"),
+            Screen::Live(c) => c.diff(text),
+        }
+    }
+
+    /// What Ctrl-C did.
+    fn notice(&self, text: &str) {
+        match self {
+            Screen::Plain { .. } => eprintln!("\n{text}"),
+            Screen::Live(c) => c.lines(text),
+        }
+    }
+
+    /// How a turn ended.
+    fn end(&self, end: &TurnEnd) {
+        match self {
+            Screen::Plain { .. } => println!("{}", describe_end(end)),
+            Screen::Live(c) => c.end(end),
+        }
+    }
+
+    /// Waits for the operator's next line.
+    fn prompt(&self) {
+        match self {
+            Screen::Plain { tty: true } => {
+                print!("you> ");
+                let _ = std::io::stdout().flush();
+            }
+            Screen::Plain { tty: false } => {}
+            Screen::Live(c) => c.mode(Live::Prompt),
+        }
+    }
+
+    fn hide(&self) {
+        if let Screen::Live(c) = self {
+            c.mode(Live::Hidden);
+        }
+    }
+
+    fn console(&self) -> Option<&Arc<Console>> {
+        match self {
+            Screen::Live(c) => Some(c),
+            Screen::Plain { .. } => None,
+        }
+    }
+
+    /// Gives the terminal back (the final lines are printed after it).
+    fn close(&self) {
+        if let Screen::Live(c) = self {
+            c.stop();
+        }
     }
 }
 
@@ -356,15 +461,16 @@ fn resumed(ws: &Path, id: Option<String>) -> Result<RunManifest> {
 async fn first_message(
     inbox: &Inbox,
     leave: &AtomicBool,
-    tty: bool,
+    screen: &Screen,
     ws: &Path,
     cfg: &duet_config::Config,
     mode: Mode,
 ) -> Option<(String, Vec<crate::images::AttachedImage>)> {
-    if tty {
-        println!("duet chat: a new session starts with your first message. /help lists commands.");
+    if !matches!(screen, Screen::Plain { tty: false }) {
+        screen
+            .line("duet chat: a new session starts with your first message. /help lists commands.");
     }
-    prompt(tty);
+    screen.prompt();
     let mut images = Vec::new();
     loop {
         if leave.load(Ordering::SeqCst) {
@@ -380,7 +486,7 @@ async fn first_message(
         match parse(&line) {
             Command::Message(m) => return Some((m, images)),
             Command::Quit | Command::Close => return None,
-            Command::Help => println!("{HELP}"),
+            Command::Help => screen.text(&format!("{HELP}\n")),
             Command::Empty => {}
             Command::Image { path, public } => {
                 let a = crate::images::AttachedImage {
@@ -389,15 +495,17 @@ async fn first_message(
                 };
                 match crate::images::precheck(ws, cfg, mode, std::slice::from_ref(&a)) {
                     Ok(()) => {
-                        println!("image {path} will be attached to your first message");
+                        screen.line(&format!(
+                            "image {path} will be attached to your first message"
+                        ));
                         images.push(a);
                     }
-                    Err(e) => println!("{e:#}"),
+                    Err(e) => screen.line(&format!("{e:#}")),
                 }
             }
-            _ => println!("nothing to show yet: the session starts with your first message"),
+            _ => screen.line("nothing to show yet: the session starts with your first message"),
         }
-        prompt(tty);
+        screen.prompt();
     }
 }
 
@@ -426,19 +534,28 @@ Add --no-privacy to confirm, or use --mode hybrid."
     }
     let cfg = load_config(&ws)?;
     let tty = std::io::stdin().is_terminal();
-    let inbox = Inbox::stdin();
     let interrupted = Arc::new(AtomicBool::new(false));
+    let working = Arc::new(AtomicBool::new(false));
+    let leave = Arc::new(AtomicBool::new(false));
+    let interrupts = Arc::new(Interrupts {
+        working: working.clone(),
+        interrupted: interrupted.clone(),
+        leave: leave.clone(),
+        idle_press: Mutex::new(None),
+    });
+    let (inbox, screen) = open_screen(tty, &interrupts);
+    // The terminal is given back on every way out.
+    let _closing = Closing(screen.clone());
     // Refused before anything else when approval is on and nobody can answer.
     let oversight = approve::session_oversight(&cfg, |mode| {
         Arc::new(AskInline {
             mode,
             inbox: inbox.clone(),
             interrupted: interrupted.clone(),
+            screen: screen.clone(),
         })
     })?;
-    let working = Arc::new(AtomicBool::new(false));
-    let leave = Arc::new(AtomicBool::new(false));
-    watch_interrupts(working.clone(), interrupted.clone(), leave.clone());
+    watch_interrupts(interrupts, screen.clone());
 
     let (manifest, resume) = match args.resume {
         Some(id) => {
@@ -451,11 +568,13 @@ Add --no-privacy to confirm, or use --mode hybrid."
         None => {
             let (first, first_images) = match args.message {
                 Some(m) => (m, Vec::new()),
-                None => match first_message(&inbox, &leave, tty, &ws, &cfg, args.mode).await {
+                None => match first_message(&inbox, &leave, &screen, &ws, &cfg, args.mode).await {
                     Some(m) => m,
                     None => return Ok(0),
                 },
             };
+            // Setting up prints freely.
+            screen.hide();
             let local = match args.mode {
                 Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
                     Ok(found) => found.map(|b| LocalOverride {
@@ -506,6 +625,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         tty,
         working,
         leave,
+        screen: screen.clone(),
     };
     let mut audit = None;
     let driven = std::panic::AssertUnwindSafe(converse(
@@ -526,6 +646,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             RunStats::default(),
         ),
     };
+    screen.close();
     let audit = match audit {
         Some(a) => Some(a),
         None => open_audit(&ws, &manifest.run_id)
@@ -575,28 +696,86 @@ struct Io {
     working: Arc<AtomicBool>,
     /// Raised by a second Ctrl-C at the prompt.
     leave: Arc<AtomicBool>,
+    screen: Screen,
 }
 
-/// Ctrl-C during a turn interrupts it; at the prompt, twice within two
-/// seconds leaves the session.
-fn watch_interrupts(
+/// The console when standard input and output are a terminal that can take
+/// it (its lines go to the inbox), else the reader thread and plain lines.
+fn open_screen(tty: bool, interrupts: &Arc<Interrupts>) -> (Arc<Inbox>, Screen) {
+    let plain = || (Inbox::stdin(), Screen::Plain { tty });
+    if !(tty && std::io::stdout().is_terminal() && crate::term::capable()) {
+        return plain();
+    }
+    let inbox = Arc::new(Inbox::default());
+    let hooks = Hooks {
+        line: {
+            let inbox = inbox.clone();
+            Box::new(move |l| inbox.push(l))
+        },
+        eof: {
+            let inbox = inbox.clone();
+            Box::new(move || inbox.close())
+        },
+        interrupt: {
+            let i = interrupts.clone();
+            Box::new(move || i.press().map(str::to_owned))
+        },
+        answering: {
+            let inbox = inbox.clone();
+            Box::new(move || inbox.answering())
+        },
+    };
+    match Console::start(hooks) {
+        Ok(console) => (inbox, Screen::Live(console)),
+        Err(_) => plain(),
+    }
+}
+
+/// Closes the screen when dropped.
+struct Closing(Screen);
+
+impl Drop for Closing {
+    fn drop(&mut self) {
+        self.0.close();
+    }
+}
+
+/// Ctrl-C, as a signal or (on the console) a key.
+struct Interrupts {
     working: Arc<AtomicBool>,
     interrupted: Arc<AtomicBool>,
     leave: Arc<AtomicBool>,
-) {
+    idle_press: Mutex<Option<std::time::Instant>>,
+}
+
+impl Interrupts {
+    /// During a turn Ctrl-C interrupts it; at the prompt, twice within two
+    /// seconds leaves the session. Returns what to tell the operator.
+    fn press(&self) -> Option<&'static str> {
+        if self.working.load(Ordering::SeqCst) {
+            self.interrupted.store(true, Ordering::SeqCst);
+            return Some("interrupt: stopping this turn; the session stays open");
+        }
+        let mut idle = self
+            .idle_press
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if idle.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
+            self.leave.store(true, Ordering::SeqCst);
+            None
+        } else {
+            *idle = Some(std::time::Instant::now());
+            Some("Ctrl-C again leaves the session (it stays open to resume); /close ends it")
+        }
+    }
+}
+
+/// Ctrl-C sent as a signal (the console reads the key itself).
+fn watch_interrupts(interrupts: Arc<Interrupts>, screen: Screen) {
     tokio::spawn(async move {
-        let mut idle_press: Option<std::time::Instant> = None;
         while tokio::signal::ctrl_c().await.is_ok() {
-            if working.load(Ordering::SeqCst) {
-                interrupted.store(true, Ordering::SeqCst);
-                eprintln!("\ninterrupt: stopping this turn; the session stays open");
-            } else if idle_press.is_some_and(|t| t.elapsed() < Duration::from_secs(2)) {
-                leave.store(true, Ordering::SeqCst);
-            } else {
-                idle_press = Some(std::time::Instant::now());
-                eprintln!(
-                    "\nCtrl-C again leaves the session (it stays open to resume); /close ends it"
-                );
+            if let Some(notice) = interrupts.press() {
+                screen.notice(notice);
             }
         }
     });
@@ -648,6 +827,17 @@ async fn converse(
         }
         None => Arc::new(|t: &str| t.to_owned()),
     };
+    if let Some(c) = io.screen.console() {
+        c.restore(shown.clone());
+        // History: the operator's own messages of this session.
+        c.remember(
+            session
+                .history()
+                .iter()
+                .flat_map(|x| std::iter::once(x.message.clone()).chain(x.steered.clone()))
+                .collect(),
+        );
+    }
     let ctx = TurnCtx {
         run_dir,
         io,
@@ -657,7 +847,7 @@ async fn converse(
         presenter,
     };
     if resume {
-        recap(&session, &manifest.run_id);
+        recap(&session, &manifest.run_id, &io.screen);
     } else {
         turns(&mut session, manifest.objective.clone(), &ctx).await;
     }
@@ -666,10 +856,12 @@ async fn converse(
             break false;
         }
         if let Some(which) = session.spent() {
-            println!("the session budget {which} is spent; no further turns can start");
+            io.screen.line(&format!(
+                "the session budget {which} is spent; no further turns can start"
+            ));
             break false;
         }
-        prompt(io.tty);
+        io.screen.prompt();
         let line = loop {
             if io.leave.load(Ordering::SeqCst) {
                 break None;
@@ -681,50 +873,51 @@ async fn converse(
             }
         };
         let Some(line) = line else {
-            if io.tty {
+            if matches!(io.screen, Screen::Plain { tty: true }) {
                 println!();
             }
             break false;
         };
+        let say = |text: &str| io.screen.line(text);
         match parse(&line) {
             Command::Empty => {}
             Command::Quit => break false,
             Command::Close => break true,
-            Command::Help => println!("{HELP}"),
-            Command::Status => println!("{}", status(&session, &manifest.run_id, cfg)),
-            Command::Diff => print!("{}", local_diff(&git, ws, run_dir, presenter)),
+            Command::Help => io.screen.text(&format!("{HELP}\n")),
+            Command::Status => say(&status(&session, &manifest.run_id, cfg)),
+            Command::Diff => io.screen.diff(&local_diff(&git, ws, run_dir, presenter)),
             Command::Undo => match session.undo() {
                 Ok((turn, paths)) if paths.is_empty() => {
-                    println!("turn {turn} wrote no files; nothing to revert")
+                    say(&format!("turn {turn} wrote no files; nothing to revert"))
                 }
                 Ok((turn, paths)) => {
-                    println!("reverted the writes of turn {turn} and later:");
+                    say(&format!("reverted the writes of turn {turn} and later:"));
                     for p in paths {
-                        println!("  {}", p.display());
+                        say(&format!("  {}", p.display()));
                     }
-                    println!("duet is told with your next message.");
+                    say("duet is told with your next message.");
                 }
-                Err(e) => println!("undo: {e}"),
+                Err(e) => say(&format!("undo: {e}")),
             },
-            Command::Stop => println!("duet is not working; nothing to stop"),
-            Command::Unknown(c) => println!("unknown command /{c}; /help lists the commands"),
-            Command::Image { path, .. } if path.is_empty() => println!(
+            Command::Stop => say("duet is not working; nothing to stop"),
+            Command::Unknown(c) => say(&format!("unknown command /{c}; /help lists the commands")),
+            Command::Image { path, .. } if path.is_empty() => say(&format!(
                 "usage: /image [--public] <path>{}",
                 match session.attached().len() {
                     0 => String::new(),
                     n => format!(" ({n} image(s) wait for your next message)"),
                 }
-            ),
+            )),
             Command::Image { path, public } => {
                 match session.attach(image_path(ws, &path), public) {
-                    Ok(said) => println!("attached {said}"),
-                    Err(e) => println!("{e}"),
+                    Ok(said) => say(&format!("attached {said}")),
+                    Err(e) => say(&e.to_string()),
                 }
             }
             Command::Message(m) => {
                 if !io.tty {
                     // Piped input is not on screen: the output keeps the conversation.
-                    println!("you> {}", m.replace('\n', "\n     "));
+                    say(&format!("you> {}", m.replace('\n', "\n     ")));
                 }
                 turns(&mut session, m, &ctx).await;
             }
@@ -761,10 +954,14 @@ async fn turns(session: &mut Session<'_>, message: String, t: &TurnCtx<'_>) {
         }
         if matches!(end, TurnEnd::Stopped | TurnEnd::Interrupted) {
             for l in &late {
-                println!("not delivered (you stopped the turn): {}", clip(l));
+                t.io.screen.line(&format!(
+                    "not delivered (you stopped the turn): {}",
+                    clip(l)
+                ));
             }
         } else if session.spent().is_none() {
-            println!("your message arrived as duet ended its turn; it starts the next one");
+            t.io.screen
+                .line("your message arrived as duet ended its turn; it starts the next one");
             next = Some(late.join("\n\n"));
         }
     }
@@ -784,12 +981,28 @@ async fn take_turn(
     let path = t.run_dir.join("transcript.jsonl");
     let from = std::fs::metadata(&path).map_or(0, |m| m.len());
     let done = Arc::new(AtomicBool::new(false));
-    let follower = tokio::spawn(follow(path, from, done.clone(), t.shown.clone()));
+    let sink: Box<dyn FnMut(Entry) + Send> = match io.screen.console() {
+        Some(c) => {
+            let c = c.clone();
+            Box::new(move |e| c.entry(e))
+        }
+        None => printed(t.shown.clone()),
+    };
+    let follower = tokio::spawn(follow(path, from, done.clone(), sink));
     let steering = session.steering();
     let mut held = Vec::new();
     io.working.store(true, Ordering::SeqCst);
+    let say = |text: &str| io.screen.line(text);
     let end = {
-        let mut turn = std::pin::pin!(session.turn(message));
+        // On the console the frontier's responses show as they stream.
+        let turn = match io.screen.console() {
+            Some(c) => Either::Left(duet_boundary::live::observe(c.tap(), session.turn(message))),
+            None => Either::Right(session.turn(message)),
+        };
+        if let Some(c) = io.screen.console() {
+            c.begin();
+        }
+        let mut turn = std::pin::pin!(turn);
         loop {
             tokio::select! {
                 end = &mut turn => break end,
@@ -797,27 +1010,30 @@ async fn take_turn(
                     while let Some(line) = io.inbox.pop_unless_answering() {
                         match parse(&line) {
                             Command::Message(m) => {
-                                println!("  ▸ for duet after the current step: {}", clip(&m));
+                                say(&format!(
+                                    "  ▸ for duet after the current step: {}",
+                                    clip(&m)
+                                ));
                                 steering.steer(m);
                             }
                             Command::Stop => {
                                 steering.stop();
-                                println!("  ■ stopping after the current step");
+                                say("  ■ stopping after the current step");
                             }
                             Command::Diff => {
-                                print!("{}", local_diff(t.git, t.ws, t.run_dir, t.presenter))
+                                io.screen.diff(&local_diff(t.git, t.ws, t.run_dir, t.presenter))
                             }
-                            Command::Help => println!("{HELP}"),
+                            Command::Help => io.screen.text(&format!("{HELP}\n")),
                             Command::Empty => {}
                             Command::Unknown(c) => {
-                                println!("unknown command /{c}; /help lists the commands")
+                                say(&format!("unknown command /{c}; /help lists the commands"))
                             }
                             Command::Quit
                             | Command::Close
                             | Command::Undo
                             | Command::Status
                             | Command::Image { .. } => {
-                                println!("  (after this turn: {})", line.trim());
+                                say(&format!("  (after this turn: {})", line.trim()));
                                 held.push(line);
                             }
                         }
@@ -829,7 +1045,7 @@ async fn take_turn(
     io.working.store(false, Ordering::SeqCst);
     done.store(true, Ordering::SeqCst);
     let _ = follower.await;
-    println!("{}", describe_end(&end));
+    io.screen.end(&end);
     io.inbox.requeue(held);
     (end, steering.take())
 }
@@ -860,28 +1076,31 @@ pub(crate) fn describe_end(end: &TurnEnd) -> String {
 }
 
 /// The last few turns of a resumed session.
-fn recap(session: &Session<'_>, id: &str) {
+fn recap(session: &Session<'_>, id: &str, screen: &Screen) {
     let history: &[Exchange] = session.history();
-    println!(
+    screen.line(&format!(
         "session {id} resumed: {} turn(s) so far, ${:.4}",
         session.turns(),
         session.stats().cost_usd
-    );
+    ));
     let skip = history.len().saturating_sub(5);
     if skip > 0 {
-        println!("  ({skip} earlier turn(s) not shown)");
+        screen.line(&format!("  ({skip} earlier turn(s) not shown)"));
     }
     for x in &history[skip..] {
-        println!("you> {}", x.message.trim().replace('\n', "\n     "));
+        screen.line(&format!(
+            "you> {}",
+            x.message.trim().replace('\n', "\n     ")
+        ));
         for m in &x.steered {
-            println!(
+            screen.line(&format!(
                 "you, while duet worked> {}",
                 m.trim().replace('\n', "\n     ")
-            );
+            ));
         }
         match &x.end {
-            Some(end) => println!("{}", describe_end(end)),
-            None => println!("(this turn did not end; it counts as interrupted)"),
+            Some(end) => screen.end(end),
+            None => screen.line("(this turn did not end; it counts as interrupted)"),
         }
     }
 }
@@ -977,15 +1196,24 @@ fn local_diff(git: &duet_git::Git, ws: &Path, run_dir: &Path, presenter: &dyn Pr
     }
 }
 
-/// Prints the progress of a turn from the transcript, starting at byte
-/// `from`, until `done` is raised (then reads what is left).
-async fn follow(
+/// Progress lines on standard output, with placeholders restored by `shown`.
+fn printed(shown: Arc<dyn Fn(&str) -> String + Send + Sync>) -> Box<dyn FnMut(Entry) + Send> {
+    let mut names: HashMap<String, String> = HashMap::new();
+    Box::new(move |entry| {
+        for l in progress(&entry, &mut names, shown.as_ref()) {
+            println!("{l}");
+        }
+    })
+}
+
+/// Follows the transcript from byte `from` as it is written, handing each
+/// entry to `sink`, until `done` is raised (then reads what is left).
+pub(crate) async fn follow(
     path: PathBuf,
     mut from: u64,
     done: Arc<AtomicBool>,
-    shown: Arc<dyn Fn(&str) -> String + Send + Sync>,
+    mut sink: Box<dyn FnMut(Entry) + Send>,
 ) {
-    let mut names: HashMap<String, String> = HashMap::new();
     let mut partial = String::new();
     loop {
         let last = done.load(Ordering::SeqCst);
@@ -1001,9 +1229,7 @@ async fn follow(
         while let Some(at) = partial.find('\n') {
             let line: String = partial.drain(..=at).collect();
             if let Ok(entry) = serde_json::from_str::<Entry>(&line) {
-                for l in progress(&entry, &mut names, shown.as_ref()) {
-                    println!("{l}");
-                }
+                sink(entry);
             }
         }
         if last {

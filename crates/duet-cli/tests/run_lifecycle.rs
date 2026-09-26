@@ -299,3 +299,47 @@ fn the_dollar_budget_ends_a_run_as_budget_stopped() {
     let o = duet(&e, &["audit", "verify", &only_run_id(&e)]);
     assert_eq!(o.status.code(), Some(0), "{}", text(&o));
 }
+
+#[test]
+fn progress_goes_to_standard_error_and_standard_output_keeps_the_summary() {
+    for quiet in [false, true] {
+        let e = env();
+        let f = Frontier::start();
+        f.script(vec![
+            Step::Call(
+                "write_file",
+                json!({"path": "src/b.rs", "content": "pub fn b() {}\n"}),
+                1000,
+            ),
+            Step::Call("finish", json!({"summary": "added b"}), 1000),
+        ]);
+        let url = f.url();
+        let mut args = vec![
+            "run",
+            "--mode",
+            "passthrough",
+            "--no-privacy",
+            "--frontier-url",
+            &url,
+            "--frontier-model",
+            "glm-5.3-flash",
+        ];
+        if quiet {
+            args.push("--quiet");
+        }
+        args.push("Add a function b to src/lib.rs.");
+        let o = duet(&e, &args);
+        assert_eq!(o.status.code(), Some(0), "{}", text(&o));
+        // Standard output is the summary (as summary.json holds it) and
+        // nothing else.
+        let id = only_run_id(&e);
+        let stored = std::fs::read(e.ws.join(".duet/runs").join(&id).join("summary.json")).unwrap();
+        assert_eq!(o.stdout, [stored, b"\n".to_vec()].concat());
+        // Standard error (not a terminal): one plain line per step.
+        let stderr = String::from_utf8(o.stderr).unwrap();
+        assert!(!stderr.contains('\x1b'), "{stderr}");
+        for step in ["  · write_file src/b.rs", "  · finish (running the checks)"] {
+            assert_eq!(stderr.contains(step), !quiet, "{step}: {stderr}");
+        }
+    }
+}

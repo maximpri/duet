@@ -18,6 +18,7 @@ use duet_config::{Config, Target};
 use duet_provider::{ChatProvider, Dialect, ProviderConfig, Role};
 use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +32,7 @@ mod lsp;
 mod mcp;
 mod setup;
 mod subagents;
+mod term;
 mod web;
 
 #[derive(Parser)]
@@ -89,9 +91,19 @@ enum Cmd {
         /// path; needs frontier.vision); recorded as your decision. Repeatable.
         #[arg(long = "image-public", value_name = "PATH")]
         image_public: Vec<PathBuf>,
+        /// No progress on standard error (tool steps, the frontier's text as
+        /// it streams, a status line on a terminal). Standard output (the
+        /// summary) is the same either way.
+        #[arg(long)]
+        quiet: bool,
     },
     /// Continue an interrupted run.
-    Resume { run_id: String },
+    Resume {
+        run_id: String,
+        /// No progress on standard error (as for `duet run`).
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Code in a conversation: each message you type is a turn duet works
     /// on, with the same boundary, sandbox, budgets and audit as a run; duet
     /// replies, asks when it needs a decision, and keeps the context for your
@@ -434,11 +446,22 @@ fn policy(cfg: &Config) -> Result<Policy> {
     })
 }
 
-async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32> {
+async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool, quiet: bool) -> Result<i32> {
     let _lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
     let cfg = load_config(&ws)?;
     // Before anything starts: with approval on and no terminal, the run is refused.
-    let oversight = approve::oversight(&cfg)?;
+    let mut oversight = approve::oversight(&cfg)?;
+    // Progress on standard error: live on a terminal, else compact lines.
+    let live = std::io::stderr().is_terminal() && term::capable();
+    let watch = (!quiet).then(|| term::watch::Watch::start(live));
+    if let (Some(w), Some(a)) = (&watch, oversight.approver.take()) {
+        // A question on the terminal pauses the status line.
+        oversight.approver = Some(if live {
+            term::watch::holding(a, w.clone())
+        } else {
+            a
+        });
+    }
     let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
     duet_fs::private::ensure_private_dir(&run_dir)?;
     duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
@@ -456,18 +479,57 @@ async fn execute(ws: PathBuf, manifest: RunManifest, resume: bool) -> Result<i32
         interrupted: Arc::new(AtomicBool::new(false)),
     };
     let flag = limits.interrupted.clone();
+    let notices = watch.clone();
     tokio::spawn(async move {
         if tokio::signal::ctrl_c().await.is_ok() {
-            eprintln!("\ninterrupt received; stopping the current step");
+            match notices.filter(|_| live) {
+                Some(w) => w.note("interrupt received; stopping the current step"),
+                None => eprintln!("\ninterrupt received; stopping the current step"),
+            }
             flag.store(true, Ordering::SeqCst);
         }
     });
+    // The run's steps from its transcript, as they are written.
+    let transcript = run_dir.join("transcript.jsonl");
+    let from = if resume {
+        std::fs::metadata(&transcript).map_or(0, |m| m.len())
+    } else {
+        0
+    };
+    let done = Arc::new(AtomicBool::new(false));
+    let follower = watch.as_ref().map(|w| {
+        let w = w.clone();
+        tokio::spawn(chat::follow(
+            transcript,
+            from,
+            done.clone(),
+            Box::new(move |e| w.entry(e)),
+        ))
+    });
     let mut audit = None;
-    let started = std::panic::AssertUnwindSafe(start(
-        &ws, &manifest, &cfg, oversight, &run_dir, resume, &limits, &mut audit,
-    ))
-    .catch_unwind()
-    .await;
+    let work = start(
+        &ws,
+        &manifest,
+        &cfg,
+        oversight,
+        &run_dir,
+        resume,
+        &limits,
+        &mut audit,
+        watch.as_ref(),
+    );
+    let work = match &watch {
+        Some(w) => futures_util::future::Either::Left(duet_boundary::live::observe(w.tap(), work)),
+        None => futures_util::future::Either::Right(work),
+    };
+    let started = std::panic::AssertUnwindSafe(work).catch_unwind().await;
+    done.store(true, Ordering::SeqCst);
+    if let Some(f) = follower {
+        let _ = f.await;
+    }
+    if let Some(w) = &watch {
+        w.stop();
+    }
     let (terminal, stats) = match started {
         Ok(Ok(outcome)) => outcome,
         Ok(Err(e)) => (
@@ -517,8 +579,15 @@ async fn start(
     resume: bool,
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
+    watch: Option<&Arc<term::watch::Watch>>,
 ) -> Result<(Terminal, duet_agent::RunStats)> {
     let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit).await?;
+    if let (Some(w), Some(e)) = (watch, &p.engine) {
+        let e = e.clone();
+        w.restore(Arc::new(move |t: &str| {
+            duet_boundary::view::Presenter::detokenize(e.as_ref(), t)
+        }));
+    }
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn duet_boundary::view::Presenter = match &p.engine {
         Some(e) => e.as_ref(),
@@ -797,6 +866,7 @@ async fn main() -> Result<()> {
             no_privacy,
             image,
             image_public,
+            quiet,
         } => {
             match (mode, no_privacy) {
                 (Mode::Passthrough, false) => bail!(
@@ -842,9 +912,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 images: attached,
             };
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
-            std::process::exit(execute(ws, manifest, false).await?);
+            std::process::exit(execute(ws, manifest, false, quiet).await?);
         }
-        Cmd::Resume { run_id } => {
+        Cmd::Resume { run_id, quiet } => {
             let run_dir = ws.join(".duet/runs").join(checked_run_id(&run_id)?);
             let manifest: RunManifest = serde_json::from_slice(
                 &std::fs::read(run_dir.join("run.json"))
@@ -861,7 +931,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             if let Err(why) = duet_agent::resumable(&run_dir) {
                 bail!("run {run_id} cannot be resumed: {why}");
             }
-            std::process::exit(execute(ws, manifest, true).await?);
+            std::process::exit(execute(ws, manifest, true, quiet).await?);
         }
         Cmd::Chat {
             message,
