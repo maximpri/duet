@@ -446,6 +446,26 @@ without a word), refuse to start. Turning it back on lets a local model read sen
 again, so it needs `--confirm`. The work is harder for the frontier without answers about the
 data; the evaluation lane `duet-hybrid-nolocal` measures by how much.
 
+**Condensed command output.** In hybrid mode, test, build and install output the frontier may see
+is shown condensed (`context.condense_output`, on by default): failing tests with their assertion
+messages, the first compiler or type error of each kind whole and later ones by location and label,
+each warning once per place, summary counts, the exit code and the sandbox's notes. Passing tests,
+compile, download and progress lines, repeated warnings, the middle of a long failure and deep
+stack frames are left out; each omitted run is one marker naming its lines
+(`[lines 4-12 omitted: 8 passing tests, 1 routine line]`), and the view ends with
+`condensed from N lines; read_raw(handle="h3", start_line=..., end_line=...) for the full output`.
+Formats: `cargo test` and rustc (`cargo build`, `check`, `clippy`), pytest, unittest, jest, vitest,
+mocha, `node --test`, `go test`, tsc, eslint, npm, pnpm and yarn, Maven, Gradle, and any output that
+reports pass/fail counts. Shown as before: output under about 300 tokens; output in no recognized
+format (over `sensitivity.bulky_tokens`: the first lines and an outline, as before); output a view
+would cut by less than 30%; output of a command that shows or searches files (`cat`, `grep`,
+`git diff`) or that the model piped through a filter (`| grep FAIL`; `| head` and `| tail` are
+fine); and output held as sensitive (a `sensitive_data` command's, or over 6,000 characters while
+command output is sensitive). Pass-through mode shows command output as it is. On the recorded Gate 2
+and X1/X2 runs the condensed outputs shrank by 48%, but only 43 of 1,635 command outputs qualified
+(the models already cut test output with `| tail`, and most command output is file reading):
+0.26% of the hybrid lane's input tokens.
+
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git (and,

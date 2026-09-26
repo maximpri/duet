@@ -155,6 +155,7 @@ are sandboxed, every use is audited, and side effects need approval.
 | Git history and commits | A file that is sensitive today stays protected in every past revision, and old commits are scanned for secrets. Commits include only files Duet wrote, never sensitive ones, and in a conversation each one waits for your yes |
 | Project instructions (`DUET.md`) | Scanned like any repository file before the frontier reads them; they guide how Duet works in a repository but can never change its settings, policy or sandbox |
 | Sub-agents | They share the same engine, vault and audit chain, and get no more than their parent |
+| Test and build output | Shown condensed (failures, errors with locations, summaries; passing tests and progress left out, the whole output a `read_raw` away), and only when it may be shown at all: it is sanitized whole first, and output held as sensitive stays held |
 | Package installs | Commands reach only the registries in `sandbox.registries` (crates.io, npm, PyPI, Go, Maven Central, RubyGems, GitHub downloads) through an audited proxy; `sandbox.network = "off"` takes even that away, `"all"` opens everything (with `--confirm`) |
 | Images | Images can't be text-scanned, so the local model describes them unless you mark one public |
 | Context compaction (off by default) | The local model condenses a long conversation from what the frontier was already sent; its summary is filtered like any local output and passes the same gate |

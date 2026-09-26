@@ -14,7 +14,7 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 | Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
 | Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
 | Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
-| Other command output, including `git log` / `git show` | Scanned | Shown with detected and known values and copied spans replaced (over 6,000 characters: handle + summary) |
+| Other command output, including `git log` / `git show` | Scanned | Shown with detected and known values and copied spans replaced (over 6,000 characters: handle + summary); test, build and install output condensed, the whole behind `read_raw` ([Condensed command output](#condensed-command-output)) |
 | Large public results (files, allowlisted command output, searches, listings) | Public | Handle + first lines and outline; ranges on request (`read_raw`), scanned like any public content |
 | Source code marked Interface-only | Protected | Signatures, types and doc comments; bodies withheld |
 | Source code marked Sealed | Protected | Existence only |
@@ -801,6 +801,31 @@ parent does that. The operator's approval prompt for a sub-agent's action looks 
 against the paths and refuses the whole edit if one is outside. A read-only MCP tool is the
 server's own claim, as for the parent. Line counts in the change summary compare lines as sets
 (a moved line counts as unchanged).
+
+## Condensed command output
+
+`context.condense_output` (on by default; hybrid mode only) shows test, build and install output
+condensed: failing tests, errors with their locations and the summaries kept, passing tests and
+progress left out, the whole output under a public handle for `read_raw`
+([docs/USAGE.md](docs/USAGE.md)). It builds a new view of command output and gives `read_raw` a
+new kind of content, so it must never show what the frontier would not have been shown whole.
+
+| Threat | What stops it |
+|---|---|
+| Output held as sensitive reaches the frontier condensed | Condensing comes after the engine's decision and only for output the frontier may see: public command and check output (allowlisted, or all of it with `sensitivity.command_output_sensitive` off) and scanned output small enough to be shown whole (≤ 6,000 characters). A `sensitive_data` command's output, and output held because it is too long, are presented as before (handle, sanitized error lines, local summary; `read_raw` refused) |
+| A value passes because the line that labels it was left out (a "card" label on an omitted passing line, the number on a kept line) | The whole output is sanitized before any line is left out (detectors with every line's context, the vault, copied sensitive spans), and the view is sanitized again |
+| `read_raw` on the handle gives more than the frontier could see | The handle holds the sanitized whole output: what the frontier would have been shown inline. Every `read_raw` range is sanitized again, so a value that became known later is replaced too |
+| Condensing hides what the frontier needs, costing turns or a wrong fix | Kept: failing tests with assertion lines, errors with locations, summaries, the exit code and the sandbox's notes (a refused download). Every omitted run is a marker naming its lines and what they held. Shown as before: unknown formats, short output, output a view would cut by less than 30%, output of commands that show or search files, output the model filtered itself. Tested on recorded and synthetic output: every failing test's name and every assertion line of the original is in the view, and every original line is shown in order or named by a marker |
+| Injected text in the output | Omitted lines are not shown at all; kept ones are data as before |
+
+**Known limits.** Formats are recognized by content, not by the command: output of a program the
+eligibility rule does not know as a file viewer (`python -c 'print(open(f).read())'`) that looks
+like test output is condensed; its lines stay readable through `read_raw`. A kept line is cut at
+400 characters (the rest in the handle). The whole output is sanitized once more than before (up to
+512 KB per condensed result). Pass-through mode does not condense (it keeps no handles). Maven,
+Gradle, eslint, tsc, pytest, unittest, jest, vitest, mocha, go and the package managers have been
+checked on synthetic output in each tool's format; the recorded runs held only cargo and
+`node --test` output.
 
 ## Images
 

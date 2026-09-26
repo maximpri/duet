@@ -591,6 +591,22 @@ previous one in; detail of resolved issues thins out over generations (the fourt
 early error texts and line numbers). Duet's estimate counts about 1.5× the provider's tokens on
 these transcripts, so 100K estimated is about 67K provider tokens (XL mean context 71K).
 
+*Built (branch `condense`), item 3:* deterministic condensers (`duet-boundary/src/condense.rs`) for
+cargo test and rustc, pytest, unittest, jest, vitest, mocha, `node --test`, go test, tsc, eslint,
+npm/pnpm/yarn, Maven, Gradle and generic pass/fail counts, applied by the engine after its
+sensitivity decisions (public command and check output, and scanned output small enough to show
+whole; held output untouched): the whole output sanitized first and kept under a public handle for
+`read_raw`, omitted runs as markers naming their lines; unknown formats keep the outline and, with a
+local model, its summary, as before. `context.condense_output`, on. The run, session and sub-agent
+prompts ask for independent steps in one response (the loop runs a response's calls in order) and
+the whole suite in one command; the run prompt's digest changed, so Gate 2 is re-measured before M5.
+Measured on the 1,635 command outputs of `gate2b`, `gate2e` and `xcal`: every failing test name and
+assertion line survives; the 43 that qualify shrink by 48%, which is 1.4% of all command-output
+tokens and a projected 0.26% of the hybrid lane's input tokens over its runs (the models already cut
+test output with `| tail`, and most command output is file reading). *Open:* the head-to-head
+(setting on and off, Gate 2 and X1/X2); telling the frontier that test output arrives condensed, so
+it stops cutting it with `| tail` (a prompt that depends on the setting).
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

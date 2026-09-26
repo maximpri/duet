@@ -67,7 +67,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
-| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
+| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
@@ -149,7 +149,9 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
      → append AuditLog record → Provider.create
 3. Response parsed. `length`: no tool call executes; the frontier is told to continue in smaller
    steps. `content_filter`: Failed.
-4. For each tool call, in order:
+4. For each tool call, in order, one after another (a later call may rely on an earlier one having
+   run; the frontier sees all their results in the next request; consecutive `delegate` calls start
+   their sub-agents together, up to `subagents.max_parallel`):
      a. validate arguments against the tool schema (errors return as tool results)
      b. write tools: resolve placeholders (secret-sink rule); record values the frontier wrote
      c. execute (duet-fs / duet-sandbox with sensitive paths denied / duet-git)
@@ -267,6 +269,7 @@ itself (test data) are shown as written unless the same value is in the vault.
 | Tokenized (secret-bearing files) | structure intact, every value → placeholder |
 | HandleSummary (sensitive files, large command output, `sensitive_data` output) | handle + size + up to 12 error lines (sanitized) + repeated line shapes for texts over 40 lines (digits as `#`, values as `⟨…⟩`) + local summary and facts |
 | Command output ≤ 6,000 chars (not allowlisted) | shown sanitized, no local call |
+| Condensed (public command and check output, and the ≤ 6,000-char output above, in a recognized format; `context.condense_output`) | handle line + the condensed view (kept lines in order; each omitted run one `[lines a-b omitted: …]` marker; a sum of passing `test result` lines) + `condensed from N lines; read_raw(handle=…)`; the whole output is sanitized first and the public handle keeps that sanitized text; no local call; recorded as BulkyHandle |
 | BulkyHandle (public) | handle + first 40 lines + deterministic outline (declarations; error/warning lines and last 20 lines of output; counts per directory/file for listings and searches) + local summary of command output only (never of source); `read_raw` ranges (≤500 lines, default 200, sanitized) |
 | Protected (Interface-only) | tree-sitter skeleton; bodies → `⟨body:hN⟩` |
 | Protected (Sealed) | existence only |
@@ -274,6 +277,21 @@ itself (test data) are shown as written unless the same value is in the vault.
 Offload thresholds: a file read without a range is shown whole up to `sensitivity.bulky_file_tokens`
 (12,000); a ranged read up to 500 lines; allowlisted command output, listings and searches up to
 `sensitivity.bulky_tokens` (2,000). Tokens are estimated as characters / 3.
+
+Condensing (`condense.rs`, one module per runner family under `condense/`): every line of the output
+is marked kept or omitted (and why) by the rules of each format recognized in it (by content: a
+format's summary or harness lines, never the command name); lines no rule decides are kept. Kept:
+failing tests and their captured output (first and last lines, and between them lines carrying an
+assertion, expected/actual or error, up to 20), the first diagnostic of each kind whole up to a cap
+and later ones as header, location and labelled source, summaries, exit codes, the sandbox's notes.
+Omitted: passing and skipped tests, build, download and progress lines, exact repeats and warnings
+past 30 of a kind, stack frames but the first in the project (Python: the last two), the middle of
+long failures. A run shorter than its marker is shown instead; three or more identical lines become
+one with `[×N]`; a view over `bulky_tokens` is cut in the middle (the end holds the summaries).
+Applied only when the output is over 300 tokens, the command neither shows nor searches files nor
+pipes into a content filter, and the view (with its handle line and note) is at most 70% of the
+output; otherwise the output takes the path above as before (unknown bulky output: the outline, and
+a local summary when a local model is configured).
 
 Metadata: sensitive paths are listed by name (and named in the task note); a search reports the
 location of a match in a sensitive file but not the line; `diff` is the working-tree diff, sanitized,
@@ -287,7 +305,7 @@ The local model is called only by the boundary, never by the loop directly, and 
 | Role | Trigger | Required fields |
 |---|---|---|
 | Brief | run start, sensitive files other than secret-bearing ones (≤20K chars each, ≤3 calls) | `summary`, `facts[]` |
-| Digest | new HandleSummary, or BulkyHandle of command output | `summary` (≤800 chars per chunk), `facts[]` |
+| Digest | new HandleSummary, or BulkyHandle of command output (not a condensed one) | `summary` (≤800 chars per chunk), `facts[]` |
 | Answer | `ask_local(handle, questions[≤6])`, one call per question on the most relevant chunk; `handle` may be a placeholder from an operator message (the handle is that message) | `answer` (≤1,200 chars), `evidence_lines[]`, `unanswerable` |
 | Implement | `edit_protected(path, spec, tests?, command?)` | `code`: the whole new protected file, written by the host and validated by host-run checks |
 | Condense | context compaction (§6): the older part of a conversation as the frontier was sent it, read part by part (≤60K characters each), each call updating the notes of the parts before it | `summary` (≤12,000 chars; own schema) |
