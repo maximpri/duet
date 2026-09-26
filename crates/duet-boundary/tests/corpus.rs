@@ -492,3 +492,114 @@ fn toolchain_output_reaches_the_frontier_without_placeholders() {
     }
     assert!(found.is_empty(), "{found:#?}");
 }
+
+/// Lines of hard negatives the check of text for third parties refuses
+/// (`Presenter::check_outbound`: a web query, a URL, tool arguments), with an
+/// engine primed on a workspace of sensitive files like a real project's (a
+/// `.env` with keys and settings, a customer table with names, emails, cards
+/// and amounts). Every refusal is a false positive: nothing in the negatives
+/// comes from those files. Measured 2026-09-26 (6 of 1,513 lines; lower it
+/// when it falls): five lines holding `production`, a `.env` value that is an
+/// ordinary word (withheld wherever it appears, as in what the frontier
+/// sees), and one `bytes=3914`, a number standing alone whose digits all
+/// occur in a row in a withheld card. Before numbers inside hashes,
+/// identifiers and longer numbers stopped counting as a card's digits: 28.
+const OUTBOUND_FALSE_POSITIVES: usize = 6;
+
+#[test]
+fn the_third_party_check_refuses_no_hard_negative() {
+    use duet_boundary::engine::Engine;
+    use duet_boundary::policy::Policy;
+    use duet_boundary::third_party::Outgoing;
+    use duet_boundary::view::Presenter;
+
+    let d = tempfile::tempdir().unwrap();
+    let ws = d.path().join("ws");
+    std::fs::create_dir_all(ws.join("data")).unwrap();
+    std::fs::write(
+        ws.join(".env"),
+        "DATABASE_URL=postgres://ledger:quartz-otter-5519@db.internal:5432/ledger\n\
+         DB_PASSWORD=quartz-otter-5519\nSTRIPE_SECRET_KEY=sk_live_Qm7Tz2Lp9Xv4Rb8Nw3Kd\n\
+         SESSION_SECRET=9f2c7a1e4b8d3f6a0c5e7b9d2f4a6c8e\nAPP_ENV=production\nLOG_LEVEL=info\n\
+         SMTP_HOST=smtp.mailbox-311.net\nPORT=8080\n",
+    )
+    .unwrap();
+    let mut csv = String::from("id,name,email,phone,card,balance,signup\n");
+    for (i, (first, last)) in [
+        ("Vakdril", "Thorsko"),
+        ("Orla", "Brennvik"),
+        ("Ysolde", "Marrquin"),
+        ("Tamsin", "Okonkwo"),
+        ("Priya", "Tolvenrin"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        csv.push_str(&format!(
+            "{},{first} {last},{}.{}@kestrelpost-mail.net,+44 7700 9{:05},{},{}.{:02},2025-0{}-1{}\n",
+            1000 + i,
+            first.to_lowercase(),
+            last.to_lowercase(),
+            31_000 + i * 17,
+            ["4539148803436467", "5293761582049377", "3762948510736285", "6011000990139424", "4917352680941621"][i],
+            18_000 + i * 731,
+            i * 13 % 100,
+            i + 1,
+            i
+        ));
+    }
+    std::fs::write(ws.join("data/customers.csv"), csv).unwrap();
+    let policy = Policy {
+        sensitive_globs: vec![".env*".into(), "data/**".into()],
+        detect_secrets: true,
+        detect_pii: true,
+        detect_entropy: true,
+        ..Policy::default()
+    };
+    let e = Engine::open(&d.path().join("run"), policy, None).unwrap();
+    e.prime(&ws, &[".env".into(), "data/customers.csv".into()], "");
+    let guard = e.outbound_guard();
+
+    let dir = corpus_dir().join("negatives");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("negatives")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let (mut lines, mut refused) = (0, Vec::new());
+    println!("hard negatives refused by the third-party check (as text / in a URL query)");
+    for name in &names {
+        let text = std::fs::read_to_string(dir.join(name)).expect("negative file");
+        let (mut as_text, mut in_url) = (0, 0);
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            lines += 1;
+            let text_refused = e.check_outbound("search.test", line).err();
+            let mut url = url::Url::parse("https://search.test/q").unwrap();
+            url.query_pairs_mut().append_pair("q", line);
+            let url_refused = guard
+                .check("web_search", "search.test", Outgoing::get(url))
+                .err()
+                .map(|r| r.reason);
+            as_text += usize::from(text_refused.is_some());
+            in_url += usize::from(url_refused.is_some());
+            if let Some(why) = text_refused.or(url_refused) {
+                refused.push(format!(
+                    "{name}: {} ({why})",
+                    line.chars().take(100).collect::<String>()
+                ));
+            }
+        }
+        println!("  {name:<20} {as_text:>3} / {in_url:>3}");
+    }
+    println!(
+        "refused: {} of {lines} lines\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+    assert!(
+        refused.len() <= OUTBOUND_FALSE_POSITIVES,
+        "the third-party check refuses {} hard negatives (baseline {OUTBOUND_FALSE_POSITIVES}):\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+}

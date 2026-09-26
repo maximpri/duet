@@ -115,7 +115,7 @@ impl Engine {
     /// Why `texts` may not be sent to `destination`, or `None`.
     pub(super) fn third_party_refusal(&self, destination: &str, texts: &Texts) -> Option<String> {
         let st = self.lock();
-        let grams = numeric_grams(&st.vault);
+        let grams = numbers(&st.vault);
         let found = texts
             .parts
             .iter()
@@ -125,33 +125,61 @@ impl Engine {
     }
 }
 
-/// Every run of [`FRAGMENT_DIGITS`] digits of a withheld identifying number.
-fn numeric_grams(vault: &Vault) -> HashSet<Vec<u8>> {
-    let mut grams = HashSet::new();
-    for (v, _) in vault
-        .values()
-        .filter(|(_, e)| e.kind.is_numeric_identifier())
-    {
-        for run in DIGITS.find_iter(v) {
-            grams.extend(
-                run.as_str()
-                    .as_bytes()
-                    .windows(FRAGMENT_DIGITS)
-                    .map(<[u8]>::to_vec),
-            );
-        }
-    }
-    grams
+/// Consecutive digits of a withheld number that identify it inside a longer
+/// number (by chance about one in a hundred million, as the canary matcher
+/// counts them).
+const LONG_FRAGMENT: usize = 8;
+
+/// The digits of the withheld identifying numbers (card, account, ID, IBAN,
+/// phone), and every run of [`LONG_FRAGMENT`] of them.
+struct Numbers {
+    digits: Vec<String>,
+    long: HashSet<Vec<u8>>,
 }
 
-fn has_fragment(grams: &HashSet<Vec<u8>>, text: &str) -> bool {
-    !grams.is_empty()
-        && DIGITS.find_iter(text).any(|m| {
-            m.as_str()
+fn numbers(vault: &Vault) -> Numbers {
+    let digits: Vec<String> = vault
+        .values()
+        .filter(|(_, e)| e.kind.is_numeric_identifier())
+        .map(|(v, _)| v.chars().filter(char::is_ascii_digit).collect::<String>())
+        .filter(|d| d.len() >= FRAGMENT_DIGITS)
+        .collect();
+    let long = digits
+        .iter()
+        .flat_map(|d| d.as_bytes().windows(LONG_FRAGMENT).map(<[u8]>::to_vec))
+        .collect();
+    Numbers { digits, long }
+}
+
+/// Whether `text` holds a number made of a withheld number's digits: a
+/// number standing alone (no letter or digit next to it, so not part of a
+/// hash or an identifier) of [`FRAGMENT_DIGITS`] or more digits that all
+/// occur in a row in a withheld number (a card's last four, the digits of one
+/// group), or [`LONG_FRAGMENT`] of them in a row inside a longer number. A
+/// timestamp or a digest sharing four digits with a card by chance is not
+/// one: the rule for local output (DUET-2026-012), applied to every number
+/// in a URL, refused one query in fifteen that held a number.
+fn has_fragment(numbers: &Numbers, text: &str) -> bool {
+    if numbers.digits.is_empty() {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    let alone = |at: Option<usize>| {
+        at.and_then(|i| bytes.get(i))
+            .is_none_or(|b| !b.is_ascii_alphanumeric())
+    };
+    DIGITS.find_iter(text).any(|m| {
+        let run = m.as_str();
+        if run.len() < FRAGMENT_DIGITS || !alone(m.start().checked_sub(1)) || !alone(Some(m.end()))
+        {
+            return false;
+        }
+        numbers.digits.iter().any(|d| d.contains(run))
+            || run
                 .as_bytes()
-                .windows(FRAGMENT_DIGITS)
-                .any(|w| grams.contains(w))
-        })
+                .windows(LONG_FRAGMENT)
+                .any(|w| numbers.long.contains(w))
+    })
 }
 
 /// A withheld value in bytes decoded from an encoding.
@@ -174,7 +202,7 @@ fn found_decoded(st: &State, decoded: &[u8]) -> Option<Found> {
 }
 
 /// What one part of a request holds that may not be sent.
-fn found_in(st: &State, grams: &HashSet<Vec<u8>>, text: &str) -> Option<Found> {
+fn found_in(st: &State, grams: &Numbers, text: &str) -> Option<Found> {
     let forms = reencoded::outbound_forms(text);
     if let Some(p) = forms.iter().find_map(|f| placeholder_in(f)) {
         return Some(Found::Placeholder(p));
