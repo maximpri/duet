@@ -1035,7 +1035,7 @@ fn render(
         let sensitive = presenter.path_sensitive(rel);
         let protection = presenter.protection(rel);
         let class = match (sensitive, protection) {
-            (true, _) => " (sensitive: content not shown)",
+            (true, _) => " (sensitive: content not shown; read_file gives its structure)",
             (_, Some(IpLevel::Sealed)) => " (sealed: content not shown)",
             (_, Some(IpLevel::InterfaceOnly)) => " (interface-only: read_file shows its skeleton)",
             _ => "",

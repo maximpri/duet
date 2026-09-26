@@ -490,9 +490,8 @@ async fn the_explorer_can_only_read() {
 }
 
 /// Tool calls that paste everything the explorer was shown, and every
-/// planted value in several spellings, into its report. (A field no
-/// detector knows, such as a date of birth, is caught inside a copied run;
-/// written alone in prose it passes, as in any local output: SECURITY.md.)
+/// planted value in several spellings, into its report, with a date of
+/// birth (which no detector knows) written in prose on its own.
 fn careless_report(body: &Value) -> Vec<(&'static str, Value)> {
     let read: Vec<String> = body["messages"]
         .as_array()
@@ -510,13 +509,14 @@ fn careless_report(body: &Value) -> Vec<(&'static str, Value)> {
     let card = CUSTOMERS[0].card;
     let answer = format!(
         "Everything I read:\n{}\nValues: {}.\nSpelled out: {}.\nIn base64: {}.\nThe first card \
-starts with {} and ends in {}.",
+starts with {} and ends in {}; the second customer was born {}.",
         read.join("\n"),
         values.join(", "),
         spaced.join("; "),
         encoded.join(", "),
         &card[..4],
         &card[card.len() - 4..],
+        CUSTOMERS[1].born,
     );
     let row = |i: usize| {
         let c = &CUSTOMERS[i];
@@ -567,8 +567,8 @@ async fn a_careless_explorer_pasting_what_it_read_leaks_nothing() {
     f.assert_no_leak(&f.canaries(CUSTOMERS.map(|c| c.born)));
     let result = &f.results_of("explore")[0];
     for expected in [
-        "- data/customers.csv line 2 (sensitive: content not shown):",
-        "- .env line 1 (sensitive: content not shown):",
+        "- data/customers.csv line 2 (sensitive: content not shown; read_file gives its structure):",
+        "- .env line 1 (sensitive: content not shown; read_file gives its structure):",
         "- src/lib.rs line 2: total, next to the customer file",
         "2 | pub fn total(amounts: &[i64]) -> i64 {",
     ] {
