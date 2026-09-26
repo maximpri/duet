@@ -266,7 +266,7 @@ async fn connect(
             let spec = duet_sandbox::Spec {
                 workspace: setup.workspace.to_path_buf(),
                 scratch: scratch(setup, &cfg.name),
-                network: cfg.network,
+                network: cfg.network.into(),
                 timeout: cfg.timeout,
                 output_cap: 0,
                 spill_file: None,

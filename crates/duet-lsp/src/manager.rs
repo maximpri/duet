@@ -46,7 +46,7 @@ impl Launcher for SandboxLauncher {
             let spec = duet_sandbox::Spec {
                 workspace: self.workspace.clone(),
                 scratch: self.scratch.clone(),
-                network: false,
+                network: duet_sandbox::Network::Off,
                 timeout: Duration::MAX,
                 output_cap: 0,
                 spill_file: None,

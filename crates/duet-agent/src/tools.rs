@@ -647,7 +647,7 @@ pub(crate) async fn sandboxed(
             Access::SensitiveData => sensitive_scratch(ctx.run_dir),
             _ => scratch_root().join(run_name(ctx.run_dir)),
         },
-        network: ctx.network,
+        network: ctx.network.into(),
         timeout,
         output_cap: 256 * 1024,
         spill_file: Some(

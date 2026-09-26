@@ -5,14 +5,18 @@
 //! Commands may read the filesystem (except paths the caller denies, and
 //! `.duet` at any depth: Duet's own run state), write only inside the workspace
 //! and the run's scratch directory, never write `.git` or `.duet` at any depth,
-//! and have no network unless the run allows it. Resolution fails closed: without a
-//! sandbox binary at its fixed absolute path, no command runs.
+//! and reach the network only as [`Network`] says: not at all, only through the
+//! host's egress proxy, or freely. Resolution fails closed: without a sandbox
+//! binary at its fixed absolute path, no command runs.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
+
+pub mod bridge;
 
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 pub const BWRAP: &str = "/usr/bin/bwrap";
@@ -118,6 +122,109 @@ pub const ENV_ALLOWLIST: &[&str] = &[
     "DEVELOPER_DIR",
 ];
 
+/// Where the operator's credentials live, relative to the home directory:
+/// keys, cloud and registry tokens, git and HTTP passwords, coding agents'
+/// logins, database passwords, shell histories and startup files (tokens
+/// typed or exported there), browser profiles (cookies, saved logins). The
+/// agent denies them to every command ([`home_secrets`]): a command's output
+/// may reach the frontier, and with the egress proxy a command could send
+/// what it reads to a package registry, so it must not be able to read them.
+/// A list of well-known places, not a guarantee: the rest of the home
+/// directory stays readable.
+pub const HOME_SECRETS: &[&str] = &[
+    // Keys and keyrings.
+    ".ssh",
+    ".gnupg",
+    ".password-store",
+    ".local/share/keyrings",
+    "Library/Keychains",
+    // Clouds, clusters, containers, infrastructure.
+    ".aws",
+    ".azure",
+    ".config/gcloud",
+    ".kube",
+    ".oci",
+    ".config/doctl",
+    ".docker/config.json",
+    ".terraform.d/credentials.tfrc.json",
+    ".vault-token",
+    ".fly",
+    // Git and HTTP credentials.
+    ".netrc",
+    ".git-credentials",
+    ".config/git/credentials",
+    ".config/gh",
+    ".config/hub",
+    // Package registries.
+    ".npmrc",
+    ".yarnrc",
+    ".yarnrc.yml",
+    ".pypirc",
+    ".cargo/credentials",
+    ".cargo/credentials.toml",
+    ".gem/credentials",
+    ".m2/settings.xml",
+    ".m2/settings-security.xml",
+    ".gradle/gradle.properties",
+    ".config/configstore",
+    // Coding agents' logins and transcripts.
+    ".claude",
+    ".claude.json",
+    ".codex",
+    ".gemini",
+    ".config/github-copilot",
+    ".local/share/opencode",
+    ".duet-eval",
+    // Databases and password managers.
+    ".pgpass",
+    ".my.cnf",
+    ".config/op",
+    ".op",
+    // Shell histories and startup files.
+    ".bash_history",
+    ".zsh_history",
+    ".zhistory",
+    ".zsh_sessions",
+    ".local/share/fish/fish_history",
+    ".python_history",
+    ".node_repl_history",
+    ".psql_history",
+    ".mysql_history",
+    ".sqlite_history",
+    ".lesshst",
+    ".bashrc",
+    ".bash_profile",
+    ".profile",
+    ".zshrc",
+    ".zprofile",
+    ".config/fish/config.fish",
+    // Browser profiles.
+    ".mozilla",
+    ".config/google-chrome",
+    ".config/chromium",
+    ".config/BraveSoftware",
+    ".config/microsoft-edge",
+    "Library/Application Support/Google/Chrome",
+    "Library/Application Support/Firefox",
+    "Library/Application Support/BraveSoftware",
+    "Library/Application Support/Microsoft Edge",
+    "Library/Cookies",
+];
+
+/// The [`HOME_SECRETS`] that exist under `$HOME`, except any holding
+/// `workspace` (denying it would deny the work itself).
+pub fn home_secrets(workspace: &Path) -> Vec<PathBuf> {
+    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+        return Vec::new();
+    };
+    let home = PathBuf::from(home);
+    HOME_SECRETS
+        .iter()
+        .map(|p| home.join(p))
+        .filter(|p| p.symlink_metadata().is_ok() && !workspace.starts_with(p))
+        .collect()
+}
+
 /// macOS services toolchains need. Everything else (keychain, pasteboard,
 /// arbitrary launchd agents) is unreachable.
 const MACH_SERVICES: &[&str] = &[
@@ -137,13 +244,98 @@ const MACH_SERVICES: &[&str] = &[
     "com.apple.logd",
 ];
 
+/// What a sandboxed process may reach over the network.
+#[derive(Debug, Clone, Default)]
+pub enum Network {
+    /// Nothing: no IP, no Unix sockets.
+    #[default]
+    Off,
+    /// Only the host's egress proxy, which decides every connection, and
+    /// servers the process starts itself on loopback (any port under
+    /// bubblewrap, the [`DEV_PORTS`] under Seatbelt). The proxy variables
+    /// (`HTTPS_PROXY` and the like, [`proxy_env`]) point at it; name
+    /// resolution is left to the proxy.
+    Proxy(ProxyRoute),
+    /// Unrestricted.
+    All,
+}
+
+impl From<bool> for Network {
+    /// `true`: [`Network::All`]; `false`: [`Network::Off`].
+    fn from(all: bool) -> Self {
+        if all { Network::All } else { Network::Off }
+    }
+}
+
+impl Network {
+    pub fn is_off(&self) -> bool {
+        matches!(self, Network::Off)
+    }
+}
+
+/// How a command reaches the egress proxy.
+#[derive(Debug, Clone)]
+pub enum ProxyRoute {
+    /// Seatbelt: the proxy listens on this port of the host's loopback.
+    /// Commands may connect to it and to the [`DEV_PORTS`] nobody on the
+    /// host listened on when they started (their own servers); every other
+    /// address is refused.
+    Loopback { port: u16 },
+    /// bubblewrap: the command keeps its own network namespace (only its own
+    /// loopback) and is started under a helper that forwards its proxy
+    /// connections over `channel` (see [`bridge`]). `helper` is the helper's
+    /// command line (a program and its leading arguments, e.g. `duet
+    /// __sandbox-bridge`); the program is mounted into the sandbox.
+    Bridge {
+        channel: Arc<std::os::fd::OwnedFd>,
+        helper: Vec<OsString>,
+    },
+}
+
+/// The variables that point HTTP clients at a proxy on `127.0.0.1:port`:
+/// the usual `HTTP(S)_PROXY` family, and the tools that read their own
+/// (npm, yarn, cargo, pip, Node's own `fetch`, Maven and Gradle). Loopback is
+/// excluded (`NO_PROXY`), so a command reaches the servers it starts itself.
+pub fn proxy_env(port: u16) -> Vec<(String, String)> {
+    let url = format!("http://127.0.0.1:{port}");
+    let local = "localhost,127.0.0.1,::1";
+    let java = format!(
+        "-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort={port} -Dhttps.proxyHost=127.0.0.1 \
+         -Dhttps.proxyPort={port} -Dhttp.nonProxyHosts=localhost|127.0.0.1"
+    );
+    let mut env: Vec<(String, String)> = [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "npm_config_proxy",
+        "npm_config_https_proxy",
+        "YARN_HTTP_PROXY",
+        "YARN_HTTPS_PROXY",
+        "CARGO_HTTP_PROXY",
+        "PIP_PROXY",
+    ]
+    .iter()
+    .map(|k| ((*k).to_owned(), url.clone()))
+    .collect();
+    for k in ["NO_PROXY", "no_proxy", "npm_config_noproxy"] {
+        env.push((k.to_owned(), local.to_owned()));
+    }
+    env.push(("NODE_USE_ENV_PROXY".into(), "1".into()));
+    env.push(("MAVEN_OPTS".into(), java.clone()));
+    env.push(("GRADLE_OPTS".into(), java));
+    env
+}
+
 #[derive(Debug, Clone)]
 pub struct Spec {
     /// Canonical workspace root.
     pub workspace: PathBuf,
     /// Scratch directory for `TMPDIR`; must be outside `.git`.
     pub scratch: PathBuf,
-    pub network: bool,
+    pub network: Network,
     pub timeout: Duration,
     /// Bytes of stdout/stderr kept in memory each; the full output is spilled.
     pub output_cap: usize,
@@ -218,8 +410,12 @@ fn regex_escape(s: &str) -> String {
         .collect()
 }
 
-/// Seatbelt profile for a workspace-write command.
-pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
+/// Seatbelt profile for a workspace-write command. `host_ports` matter only
+/// for [`ProxyRoute::Loopback`]: the TCP ports something on the host
+/// listened on when the command started ([`listening_ports`]), which stay
+/// closed to it (the proxy's excepted); `None` (unknown) closes every
+/// loopback port but the proxy's.
+pub fn seatbelt_profile(spec: &Spec, host_ports: Option<&[u16]>) -> Result<String, SandboxError> {
     let ws = quote(&spec.workspace)?;
     let scratch = quote(&spec.scratch)?;
     let root = spec
@@ -271,10 +467,125 @@ pub fn seatbelt_profile(spec: &Spec) -> Result<String, SandboxError> {
         .map(|s| format!("(global-name \"{s}\")"))
         .collect();
     rules.push(format!("(allow mach-lookup {})", services.join(" ")));
-    if spec.network {
-        rules.push("(allow network*)".to_owned());
+    match &spec.network {
+        Network::Off => {}
+        Network::All => rules.push("(allow network*)".to_owned()),
+        Network::Proxy(ProxyRoute::Loopback { port }) => {
+            rules.extend(proxy_rules(*port, host_ports));
+        }
+        Network::Proxy(ProxyRoute::Bridge { .. }) => {
+            return Err(SandboxError::Unavailable(
+                "the bridge route to the egress proxy needs bubblewrap".into(),
+            ));
+        }
     }
     Ok(rules.join("\n"))
+}
+
+/// Loopback ports a command may connect to under Seatbelt with the proxy
+/// route, besides the proxy's: the usual ports of development servers
+/// (`npm run dev`, Vite, Rails, Django, Flask, Storybook, Expo, debuggers).
+/// Inclusive ranges. Seatbelt cannot give a command loopback ports of its own
+/// the way a network namespace does, and cannot reliably carve the host's
+/// ports out of an allowed range (a later `deny` for one port is ignored for
+/// some ports), so the rule is a positive list, minus the ports the host
+/// already uses when the command starts.
+pub const DEV_PORTS: &[(u16, u16)] = &[
+    (1234, 1234),
+    (1313, 1313),
+    (1337, 1337),
+    (3000, 3099),
+    (4000, 4099),
+    (4173, 4173),
+    (4200, 4200),
+    (4321, 4321),
+    (5000, 5099),
+    (5173, 5199),
+    (5500, 5510),
+    (6006, 6007),
+    (7000, 7099),
+    (8000, 8099),
+    (8443, 8443),
+    (8787, 8788),
+    (8888, 8889),
+    (9000, 9099),
+    (9229, 9230),
+    (19000, 19006),
+    (24678, 24678),
+];
+
+/// Seatbelt rules for [`ProxyRoute::Loopback`]: the command may listen on
+/// loopback, and connect over TCP to the proxy and to the [`DEV_PORTS`] no
+/// host process held when it started (`host_ports`; `None`: unknown, so the
+/// proxy only). Nothing else: no other address, no UDP (so no resolver,
+/// local or not), no Unix socket. Only `allow` rules, one with every port.
+fn proxy_rules(port: u16, host_ports: Option<&[u16]>) -> Vec<String> {
+    let mut ports = vec![port];
+    if let Some(busy) = host_ports {
+        ports.extend(
+            DEV_PORTS
+                .iter()
+                .flat_map(|&(a, b)| a..=b)
+                .filter(|p| !busy.contains(p) && *p != port),
+        );
+    }
+    let filters: Vec<String> = ports
+        .iter()
+        .map(|p| format!("(remote tcp \"localhost:{p}\")"))
+        .collect();
+    vec![
+        "(allow network-bind (local ip \"localhost:*\"))".to_owned(),
+        "(allow network-inbound (local ip \"localhost:*\"))".to_owned(),
+        format!("(allow network-outbound {})", filters.join(" ")),
+    ]
+}
+
+/// The TCP ports something on this machine listens on (any address: a port
+/// bound to all addresses is reachable on loopback too): those of the
+/// operator's processes, from `lsof`, and whatever `netstat` reports besides
+/// (it lists every user's sockets, but only for some callers: started by an
+/// unsigned program it prints no TCP sockets at all). `None` when neither
+/// could be read.
+pub fn listening_ports() -> Option<Vec<u16>> {
+    let run = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .env_clear()
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+    };
+    // `-Fn`: one `n<address>:<port>` line per socket; exit 1 when there are none.
+    let lsof = run("/usr/sbin/lsof", &["-nP", "-iTCP", "-sTCP:LISTEN", "-Fn"]);
+    let netstat = run("/usr/sbin/netstat", &["-an"]);
+    if lsof.is_none() && netstat.is_none() {
+        return None;
+    }
+    let mut ports: Vec<u16> = lsof
+        .iter()
+        .flat_map(|t| t.lines())
+        .filter_map(|l| l.strip_prefix('n')?.rsplit(':').next()?.parse().ok())
+        .chain(
+            netstat
+                .iter()
+                .flat_map(|t| t.lines())
+                .filter(|l| l.starts_with("tcp") && l.split_whitespace().any(|w| w == "LISTEN"))
+                // `tcp4 0 0 127.0.0.1.8080 *.* LISTEN`: the port ends the local address.
+                .filter_map(|l| {
+                    l.split_whitespace()
+                        .nth(3)?
+                        .rsplit('.')
+                        .next()?
+                        .parse()
+                        .ok()
+                }),
+        )
+        .collect();
+    ports.sort_unstable();
+    ports.dedup();
+    Some(ports)
 }
 
 /// A `.git` or `.duet` entry in the workspace, identified by its inode so a
@@ -414,7 +725,8 @@ pub fn bwrap_args(spec: &Spec, reserved: &[Reserved], stubs: &DenyStubs) -> Vec<
     .iter()
     .map(OsString::from)
     .collect();
-    if spec.network {
+    let share_net = matches!(spec.network, Network::All);
+    if share_net {
         // Name resolution on systemd hosts goes through a stub under /run.
         push_bind(
             &mut a,
@@ -452,15 +764,27 @@ pub fn bwrap_args(spec: &Spec, reserved: &[Reserved], stubs: &DenyStubs) -> Vec<
         push_bind(&mut a, "--ro-bind", stub, &target);
     }
     push_bind(&mut a, "--bind", &spec.scratch, &spec.scratch);
+    if let Network::Proxy(ProxyRoute::Bridge { helper, .. }) = &spec.network
+        && let Some(program) = helper.first()
+    {
+        // At a fixed place, whatever the host path (under /tmp it would be hidden).
+        push_bind(
+            &mut a,
+            "--ro-bind",
+            Path::new(program),
+            Path::new(bridge::HELPER_PATH),
+        );
+    }
     // The empty /tmp and /run only hold mount points: nothing else is writable.
     a.extend(["--remount-ro", "/tmp", "--remount-ro", "/run"].map(OsString::from));
-    if spec.network {
+    if share_net {
         a.push(OsString::from("--share-net"));
     }
     a
 }
 
-/// The seccomp filter bubblewrap installs when the network is off.
+/// The seccomp filter bubblewrap installs unless the network is unrestricted
+/// (with the egress proxy too: its bridge needs only socket pairs).
 ///
 /// A new network namespace cuts off IP, but Unix sockets are files: one
 /// under `$HOME` (a container engine's, an agent's) stays reachable through
@@ -619,6 +943,24 @@ pub async fn run_until(
 
 static MARKERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Held while a sandboxed process is started. A descriptor meant for one
+/// sandbox is made inheritable only under it (see [`prepare`]), so no other
+/// sandboxed process started meanwhile inherits it.
+static SPAWNING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn spawning() -> std::sync::MutexGuard<'static, ()> {
+    SPAWNING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// An inheritable descriptor for the process about to start, and the lock
+/// that keeps every other sandboxed start waiting until it is closed.
+struct Inherited {
+    _fd: std::os::fd::OwnedFd,
+    _starting: std::sync::MutexGuard<'static, ()>,
+}
+
 /// A sandboxed command ready to start.
 struct Prepared {
     cmd: tokio::process::Command,
@@ -628,6 +970,19 @@ struct Prepared {
     marker: Option<PathBuf>,
     /// The named pipe a server reads its input from (bubblewrap).
     fifo: Option<PathBuf>,
+    /// Drop right after starting the command.
+    inherited: Option<Inherited>,
+}
+
+impl Prepared {
+    /// Starts the command; no other sandboxed process starts meanwhile.
+    fn start(&mut self) -> std::io::Result<tokio::process::Child> {
+        let starting = self.inherited.is_none().then(spawning);
+        let child = self.cmd.spawn();
+        drop(self.inherited.take());
+        drop(starting);
+        child
+    }
 }
 
 /// Builds the sandboxed command for `argv`. With `server_input`, the command
@@ -658,21 +1013,42 @@ fn prepare(
     let mut reserved = Vec::new();
     let mut marker = None;
     let mut fifo = None;
+    let mut inherited = None;
     let mut stdin = if server_input {
         Stdio::piped()
     } else {
         Stdio::null()
     };
+    if server_input && matches!(spec.network, Network::Proxy(_)) {
+        return Err(SandboxError::Spawn(
+            "a server process cannot use the egress proxy".into(),
+        ));
+    }
     let mut cmd = match kind {
         SandboxKind::Seatbelt => {
+            let host_ports = match spec.network {
+                Network::Proxy(_) => listening_ports(),
+                _ => None,
+            };
             let mut c = tokio::process::Command::new(SANDBOX_EXEC);
             c.arg("-p")
-                .arg(seatbelt_profile(spec)?)
+                .arg(seatbelt_profile(spec, host_ports.as_deref())?)
                 .arg(program)
                 .args(args);
             c
         }
         SandboxKind::Bubblewrap => {
+            let bridge = match &spec.network {
+                Network::Proxy(ProxyRoute::Bridge { channel, helper }) => {
+                    Some((channel.clone(), helper.clone()))
+                }
+                Network::Proxy(ProxyRoute::Loopback { .. }) => {
+                    return Err(SandboxError::Unavailable(
+                        "bubblewrap reaches the egress proxy only through the bridge".into(),
+                    ));
+                }
+                _ => None,
+            };
             reserved = reserved_entries(&spec.workspace);
             let stubs = DenyStubs::ensure(&std::env::temp_dir())?;
             let n = MARKERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -681,20 +1057,49 @@ fn prepare(
                 .join(format!(".duet-sandbox-started-{}-{n}", std::process::id(),));
             let mut c = tokio::process::Command::new(bwrap);
             c.args(bwrap_args(spec, &reserved, &stubs));
-            if !spec.network {
-                // bubblewrap reads the filter from its standard input.
-                let filter = seccomp::filter()?;
-                c.args(["--seccomp", "0"]);
-                stdin = Stdio::from(filter);
-            } else if server_input {
-                stdin = Stdio::null();
+            match (&spec.network, &bridge) {
+                (Network::All, _) => {
+                    if server_input {
+                        stdin = Stdio::null();
+                    }
+                }
+                (_, None) => {
+                    // bubblewrap reads the filter from its standard input.
+                    let filter = seccomp::filter()?;
+                    c.args(["--seccomp", "0"]);
+                    stdin = Stdio::from(filter);
+                }
+                (_, Some((channel, _))) => {
+                    // The standard input carries the channel to the bridge
+                    // helper, so the filter goes by descriptor number: an
+                    // inheritable copy, open only while this command starts.
+                    use std::os::fd::AsRawFd;
+                    let err = |e: rustix::io::Errno| SandboxError::Spawn(format!("bridge: {e}"));
+                    let filter = seccomp::filter()?;
+                    let starting = spawning();
+                    let fd = rustix::io::dup(&filter).map_err(err)?;
+                    c.arg("--seccomp").arg(fd.as_raw_fd().to_string());
+                    stdin =
+                        Stdio::from(rustix::io::fcntl_dupfd_cloexec(&**channel, 0).map_err(err)?);
+                    inherited = Some(Inherited {
+                        _fd: fd,
+                        _starting: starting,
+                    });
+                }
             }
             c.arg("--chdir").arg(cwd).arg("--");
             // Proves the sandbox was set up: bubblewrap only reaches this
             // shell once every namespace and mount is in place. A command's
-            // standard input is empty, as under Seatbelt; a server's is the
-            // named pipe the host writes to.
-            if server_input {
+            // standard input is empty, as under Seatbelt (a bridged one's is
+            // the channel, which the helper keeps and replaces with an empty
+            // input for the command); a server's is the named pipe the host
+            // writes to.
+            if let Some((_, helper)) = &bridge {
+                c.args(["/bin/sh", "-c", ": > \"$0\" && exec \"$@\""])
+                    .arg(&m)
+                    .arg(bridge::HELPER_PATH)
+                    .args(helper.iter().skip(1));
+            } else if server_input {
                 let f = spec
                     .scratch
                     .join(format!(".duet-sandbox-input-{}-{n}", std::process::id()));
@@ -727,8 +1132,12 @@ fn prepare(
         }
     }
     cmd.env("TMPDIR", &spec.scratch)
-        .envs(spec.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .stdin(stdin)
+        .envs(spec.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    // Under bubblewrap the bridge helper sets them, with the port it listens on.
+    if let Network::Proxy(ProxyRoute::Loopback { port }) = spec.network {
+        cmd.envs(proxy_env(port));
+    }
+    cmd.stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0)
@@ -739,6 +1148,7 @@ fn prepare(
         reserved,
         marker,
         fifo,
+        inherited,
     })
 }
 
@@ -770,16 +1180,21 @@ async fn run_with(
     stop: impl std::future::Future<Output = ()>,
 ) -> Result<Output, SandboxError> {
     let program = argv.first().cloned().unwrap_or_default();
-    let Prepared {
-        mut cmd,
-        spec: resolved,
-        reserved,
-        marker,
-        ..
-    } = prepare(kind, bwrap, spec, argv, cwd, false)?;
+    // In a block of its own: what `prepare` holds is gone before any await.
+    let (spawned, resolved, reserved, marker) = {
+        let mut prepared = prepare(kind, bwrap, spec, argv, cwd, false)?;
+        let spawned = prepared.start();
+        let Prepared {
+            spec,
+            reserved,
+            marker,
+            ..
+        } = prepared;
+        (spawned, spec, reserved, marker)
+    };
     let spec = &resolved;
     let started = Instant::now();
-    let mut child = cmd.spawn().map_err(|e| match kind {
+    let mut child = spawned.map_err(|e| match kind {
         SandboxKind::Bubblewrap => {
             SandboxError::Unavailable(format!("cannot start {}: {e}", bwrap.display()))
         }
@@ -917,28 +1332,33 @@ pub async fn spawn(
     cwd: &Path,
 ) -> Result<Process, SandboxError> {
     let program = argv.first().cloned().unwrap_or_default();
-    let Prepared {
-        mut cmd,
-        spec,
-        reserved,
-        marker,
-        fifo,
-    } = prepare(kind, Path::new(BWRAP), spec, argv, cwd, true)?;
-    // The host holds the named pipe open for reading and writing, so the
-    // server's open of it never waits and its input ends when the host closes it.
-    #[cfg(target_os = "linux")]
-    let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = match &fifo {
-        Some(f) => Some(Box::new(
-            tokio::net::unix::pipe::OpenOptions::new()
-                .read_write(true)
-                .open_sender(f)
-                .map_err(|e| SandboxError::Spawn(format!("input pipe: {e}")))?,
-        )),
-        None => None,
+    let (spawned, spec, reserved, marker, fifo, pipe) = {
+        let mut prepared = prepare(kind, Path::new(BWRAP), spec, argv, cwd, true)?;
+        let fifo = prepared.fifo.take();
+        // The host holds the named pipe open for reading and writing, so the
+        // server's open of it never waits and its input ends when the host closes it.
+        #[cfg(target_os = "linux")]
+        let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = match &fifo {
+            Some(f) => Some(Box::new(
+                tokio::net::unix::pipe::OpenOptions::new()
+                    .read_write(true)
+                    .open_sender(f)
+                    .map_err(|e| SandboxError::Spawn(format!("input pipe: {e}")))?,
+            )),
+            None => None,
+        };
+        #[cfg(not(target_os = "linux"))]
+        let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = None;
+        let spawned = prepared.start();
+        let Prepared {
+            spec,
+            reserved,
+            marker,
+            ..
+        } = prepared;
+        (spawned, spec, reserved, marker, fifo, pipe)
     };
-    #[cfg(not(target_os = "linux"))]
-    let pipe: Option<Box<dyn tokio::io::AsyncWrite + Send + Unpin>> = None;
-    let mut child = cmd.spawn().map_err(|e| match kind {
+    let mut child = spawned.map_err(|e| match kind {
         SandboxKind::Bubblewrap => SandboxError::Unavailable(format!("cannot start {BWRAP}: {e}")),
         SandboxKind::Seatbelt => SandboxError::Spawn(format!("{program}: {e}")),
     })?;
@@ -1085,7 +1505,7 @@ mod tests {
         Spec {
             workspace: ws.to_path_buf(),
             scratch: ws.parent().unwrap().join("scratch"),
-            network: false,
+            network: Network::Off,
             timeout: Duration::from_secs(30),
             output_cap: 4096,
             spill_file: Some(ws.parent().unwrap().join("spill.txt")),
@@ -1450,7 +1870,7 @@ mod tests {
         assert!(accepted.is_err(), "the command connected to the socket");
         // With the network allowed, the same connection is made.
         let mut s = spec(&ws);
-        s.network = true;
+        s.network = Network::All;
         let (_, accepted) = tokio::join!(
             sh_with(&s, &curl),
             tokio::time::timeout(Duration::from_secs(5), listener.accept())
@@ -1586,7 +2006,7 @@ mod fail_closed_tests {
         Spec {
             workspace: root.join("ws"),
             scratch: root.join("scratch"),
-            network: false,
+            network: Network::Off,
             timeout: Duration::from_secs(30),
             output_cap: 4096,
             spill_file: None,
@@ -1679,7 +2099,7 @@ mod bwrap_args_tests {
         let mut s = Spec {
             workspace: root.join("ws"),
             scratch: root.join("scratch"),
-            network: false,
+            network: Network::Off,
             timeout: Duration::from_secs(30),
             output_cap: 4096,
             spill_file: None,
@@ -1734,6 +2154,109 @@ mod bwrap_args_tests {
     }
 }
 
+#[cfg(all(test, unix))]
+mod network_rule_tests {
+    use super::*;
+
+    fn spec(root: &Path, network: Network) -> Spec {
+        Spec {
+            workspace: root.join("ws"),
+            scratch: root.join("scratch"),
+            network,
+            timeout: Duration::from_secs(30),
+            output_cap: 4096,
+            spill_file: None,
+            extra_env: vec![],
+            deny_read: Vec::new(),
+            read_only: false,
+        }
+    }
+
+    fn network_lines(profile: &str) -> Vec<&str> {
+        profile.lines().filter(|l| l.contains("network")).collect()
+    }
+
+    #[tokio::test]
+    async fn seatbelt_rules_follow_the_network_mode() {
+        let root = Path::new("/private/tmp/duet-rules");
+        let off = seatbelt_profile(&spec(root, Network::Off), None).unwrap();
+        assert!(network_lines(&off).is_empty(), "{off}");
+        let all = seatbelt_profile(&spec(root, Network::All), None).unwrap();
+        assert_eq!(network_lines(&all), ["(allow network*)"]);
+
+        let proxied = spec(root, Network::Proxy(ProxyRoute::Loopback { port: 41000 }));
+        // Only allow rules: Seatbelt does not reliably honour a port deny.
+        let p = seatbelt_profile(&proxied, Some(&[3000, 8080, 41000])).unwrap();
+        let lines = network_lines(&p);
+        assert!(
+            lines.iter().all(|l| l.starts_with("(allow network-")),
+            "{p}"
+        );
+        let outbound = lines
+            .iter()
+            .find(|l| l.starts_with("(allow network-outbound"))
+            .unwrap();
+        for open in ["localhost:41000\"", "localhost:3001\"", "localhost:5173\""] {
+            assert!(outbound.contains(open), "{open}: {outbound}");
+        }
+        // The host's ports stay closed; nothing but loopback TCP opens.
+        for closed in [
+            "localhost:3000\"",
+            "localhost:8080\"",
+            "localhost:5432\"",
+            "*:",
+        ] {
+            assert!(!outbound.contains(closed), "{closed}: {outbound}");
+        }
+        assert!(!p.contains("remote ip") && !p.contains("remote udp"), "{p}");
+        // Unknown host ports: the proxy only.
+        let p = seatbelt_profile(&proxied, None).unwrap();
+        assert!(p.contains("(allow network-outbound (remote tcp \"localhost:41000\"))"));
+        // The bridge is bubblewrap's.
+        let (route, _incoming) = bridge::channel(vec!["/bin/true".into()]).unwrap();
+        assert!(seatbelt_profile(&spec(root, Network::Proxy(route)), None).is_err());
+    }
+
+    #[tokio::test]
+    async fn bwrap_keeps_its_network_namespace_with_the_bridge() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("ws")).unwrap();
+        let stubs = DenyStubs::ensure(&root).unwrap();
+        let join = |s: &Spec| {
+            bwrap_args(s, &[], &stubs)
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        let (route, _incoming) = bridge::channel(vec!["/opt/duet".into(), "x".into()]).unwrap();
+        let bridged = join(&spec(&root, Network::Proxy(route)));
+        assert!(!bridged.contains("--share-net"), "{bridged}");
+        assert!(bridged.contains(&format!("--ro-bind /opt/duet {}", bridge::HELPER_PATH)));
+        assert!(!bridged.contains("/run/systemd/resolve"), "{bridged}");
+        let all = join(&spec(&root, Network::All));
+        assert!(all.contains("--share-net") && all.contains("/run/systemd/resolve"));
+        assert!(!join(&spec(&root, Network::Off)).contains("--share-net"));
+    }
+
+    #[test]
+    fn proxy_variables_point_at_loopback_and_spare_it() {
+        let env: std::collections::BTreeMap<_, _> = proxy_env(4321).into_iter().collect();
+        for k in [
+            "HTTPS_PROXY",
+            "https_proxy",
+            "HTTP_PROXY",
+            "ALL_PROXY",
+            "CARGO_HTTP_PROXY",
+        ] {
+            assert_eq!(env[k], "http://127.0.0.1:4321", "{k}");
+        }
+        assert_eq!(env["NO_PROXY"], "localhost,127.0.0.1,::1");
+        assert_eq!(env["npm_config_https_proxy"], "http://127.0.0.1:4321");
+    }
+}
+
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod toolchain_tests {
     use super::*;
@@ -1746,7 +2269,7 @@ mod toolchain_tests {
         Spec {
             workspace: ws.to_path_buf(),
             scratch: ws.parent().unwrap().join("scratch"),
-            network: false,
+            network: Network::Off,
             timeout: Duration::from_secs(240),
             output_cap: 64 * 1024,
             spill_file: None,
@@ -1829,7 +2352,7 @@ mod linker_tests {
         let spec = Spec {
             workspace: ws.clone(),
             scratch: d.path().join("scratch"),
-            network: false,
+            network: Network::Off,
             timeout: Duration::from_secs(240),
             output_cap: 64 * 1024,
             spill_file: None,

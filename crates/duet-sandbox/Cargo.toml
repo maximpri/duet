@@ -14,7 +14,16 @@ workspace = true
 [dependencies]
 tokio.workspace = true
 thiserror.workspace = true
-rustix.workspace = true
+# `net`: the egress bridge hands connections over with SCM_RIGHTS.
+rustix = { workspace = true, features = ["net"] }
+
+# The egress bridge helper for this crate's tests (duet itself is the helper
+# in a release: `duet __sandbox-bridge`). Never part of a release:
+# tools/release.sh builds only `duet`.
+[[bin]]
+name = "duet-sandbox-bridge"
+path = "src/bin/duet-sandbox-bridge.rs"
+test = false
 
 [dev-dependencies]
 tempfile = "3"
