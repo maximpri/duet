@@ -15,9 +15,12 @@
 //! server's trust class (public: scanned; sensitive: held locally as a handle).
 //! Arguments are checked before they leave: for a `sensitive` stdio server
 //! (local, its results stay local) placeholders are resolved to their values;
-//! for every other server any placeholder or known sensitive value refuses the
-//! call. A server that stops or hangs costs its calls, never the run. Every
-//! start and call is an audit event.
+//! for every other server any placeholder or known sensitive value, in any
+//! string or key and in any spelling the presenter's guard reads, refuses the
+//! call. An HTTP server's every message (protocol messages included) is
+//! checked again by the guard its transport was opened with, and sent by
+//! `duet-net`, which sends nothing else. A server that stops or hangs costs
+//! its calls, never the run. Every start and call is an audit event.
 
 use crate::oversight::{Action, ApproveMode, Risk};
 use duet_boundary::audit::{AuditEvent, AuditHandle};
@@ -312,7 +315,8 @@ async fn connect(
                 headers.push((header.clone(), value));
             }
             (
-                Transport::http(url, &headers).map_err(|e| e.to_string())?,
+                Transport::http(url, &headers, setup.presenter.outbound_guard())
+                    .map_err(|e| e.to_string())?,
                 None,
             )
         }
@@ -510,22 +514,17 @@ impl Hub {
                 Ok(d)
             })
         } else {
-            map_strings(&mut outgoing, true, &mut |s| {
-                presenter.check_outbound(&destination, s)
-            })
+            // Every string and key, JSON inside strings, and values cut into
+            // consecutive strings; the guard records a refusal.
+            presenter
+                .outbound_guard()
+                .check_value(name, &destination, &outgoing)
+                .map_err(|r| r.reason)
         };
         if let Err(reason) = checked {
-            if let Some(a) = audit {
-                a.record(AuditEvent::OutboundRefused {
-                    channel: name.to_owned(),
-                    destination: destination.clone(),
-                    reason: reason.clone(),
-                });
-            }
+            drain(presenter, audit);
             record("refused_outbound", false);
-            return Err(format!(
-                "not sent: {reason}. Call the tool again without placeholders or values taken from sensitive content."
-            ));
+            return Err(not_sent(&reason));
         }
         let Value::Object(outgoing) = outgoing else {
             unreachable!("an object stays an object")
@@ -552,6 +551,8 @@ impl Hub {
                 return Err("interrupted: the call was abandoned".into());
             }
         };
+        // Refusals of the transport's check go to the log now.
+        drain(presenter, audit);
         match answer {
             Ok(r) if !r.is_error => {
                 record("ok", resolved);
@@ -567,6 +568,10 @@ impl Hub {
             Ok(r) => {
                 record("tool_error", resolved);
                 Err(format!("the tool reported an error:\n{}", show(&r.text)))
+            }
+            Err(McpError::NotSent(r)) => {
+                record("refused_outbound", resolved);
+                Err(not_sent(&r.reason))
             }
             Err(McpError::Timeout(s)) => {
                 record("timeout", resolved);
@@ -608,6 +613,22 @@ impl Hub {
                     p.stop(STOP_GRACE).await;
                 }
             }
+        }
+    }
+}
+
+/// The tool error for arguments the outbound check refused.
+fn not_sent(reason: &str) -> String {
+    format!(
+        "not sent: {reason}. Call the tool again without placeholders or values taken from sensitive content."
+    )
+}
+
+/// The presenter's security events (the guard's refusals) into the run's log.
+fn drain(presenter: &dyn Presenter, audit: Option<&AuditHandle>) {
+    for event in presenter.take_events() {
+        if let Some(a) = audit {
+            a.record(event);
         }
     }
 }

@@ -656,24 +656,44 @@ pub(crate) async fn sandboxed(
         _ => scratch_root().join(run_name(ctx.run_dir)),
     };
     let mut note = None;
+    let guard = ctx.presenter.outbound_guard();
+    // A command the frontier wrote that would have network is text for a
+    // third party: one that holds a placeholder or a withheld value (in any
+    // spelling the check reads) runs without network. (What a command sends
+    // inside a TLS tunnel is not visible to the proxy.)
+    let offline = matches!(access, Access::Ordinary | Access::ReadOnly)
+        && !matches!(ctx.network, crate::egress::Network::Off)
+        && match guard.check_text("run_command", "the network", command) {
+            Ok(()) => false,
+            Err(r) => {
+                note = Some(format!(
+                    "\n[sandbox] the command ran without network: {}\n",
+                    r.reason
+                ));
+                true
+            }
+        };
     let (network, route) = match (access, ctx.network) {
         (Access::SensitiveData, _) | (_, crate::egress::Network::Off) => {
             (duet_sandbox::Network::Off, None)
         }
+        _ if offline => (duet_sandbox::Network::Off, None),
         (Access::Checks, _) if reads_protected => (duet_sandbox::Network::Off, None),
         (_, crate::egress::Network::All) => (duet_sandbox::Network::All, None),
-        (_, crate::egress::Network::Registries(r)) => match r.route(ctx.sandbox, ctx.audit).await {
-            Ok(route) => (
-                duet_sandbox::Network::Proxy(route.network.clone()),
-                Some(route),
-            ),
-            Err(e) => {
-                note = Some(format!(
-                    "\n[sandbox] the egress proxy could not start ({e}); the command ran without network\n"
-                ));
-                (duet_sandbox::Network::Off, None)
+        (_, crate::egress::Network::Registries(r)) => {
+            match r.route(ctx.sandbox, ctx.audit, &guard).await {
+                Ok(route) => (
+                    duet_sandbox::Network::Proxy(route.network.clone()),
+                    Some(route),
+                ),
+                Err(e) => {
+                    note = Some(format!(
+                        "\n[sandbox] the egress proxy could not start ({e}); the command ran without network\n"
+                    ));
+                    (duet_sandbox::Network::Off, None)
+                }
             }
-        },
+        }
     };
     // Package caches: filled by commands with network, read by the rest.
     let caches = match ctx.network {

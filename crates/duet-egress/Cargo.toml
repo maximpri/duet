@@ -14,6 +14,7 @@ workspace = true
 # Only HTTP proxying. Which hosts are allowed comes from the caller; what is
 # recorded goes to the caller's sink (the agent's audit log).
 [dependencies]
+duet-boundary.workspace = true
 duet-sandbox.workspace = true
 duet-web.workspace = true
 tokio.workspace = true

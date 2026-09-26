@@ -15,9 +15,12 @@
 //!   unless it names the same host ([`tls`]); nothing else of the tunnel is
 //!   looked at (no TLS interception);
 //! - for plain HTTP, sends one request with `Host` set from the target and
-//!   no body, then only the response;
+//!   no body, then only the response, and only after the run's outbound check
+//!   passed every part of that request (`duet_boundary::third_party`: its
+//!   path, query and headers can carry what the command was given); a
+//!   tunnel's host passes the same check;
 //! - reports one [`Event`] (host, port, bytes each way, outcome), never a
-//!   path, a query or content.
+//!   path, a query or content, and never a host name the check refuses.
 //!
 //! One [`Route`] serves one command: a loopback listener under Seatbelt, a
 //! bridge channel under bubblewrap (see `duet_sandbox::bridge`). It stops
@@ -27,6 +30,7 @@ pub mod head;
 pub mod hosts;
 pub mod tls;
 
+use duet_boundary::third_party::{Guard, Method, Outgoing};
 use duet_sandbox::{ProxyRoute, SandboxKind};
 use duet_web::{Resolve, guard};
 pub use hosts::Hosts;
@@ -112,6 +116,8 @@ struct Inner {
     rules: Rules,
     resolver: Arc<dyn Resolve>,
     sink: Sink,
+    /// The run's outbound check (see `duet_boundary::third_party`).
+    guard: Guard,
 }
 
 /// The targets one route refused, for the command's output.
@@ -157,12 +163,15 @@ impl Drop for Route {
 }
 
 impl Proxy {
-    pub fn new(rules: Rules, resolver: Arc<dyn Resolve>, sink: Sink) -> Self {
+    /// A proxy that allows `rules`, resolves with `resolver`, reports to
+    /// `sink` and checks what it forwards with `guard` (the run's presenter's).
+    pub fn new(rules: Rules, resolver: Arc<dyn Resolve>, sink: Sink, guard: Guard) -> Self {
         Self {
             inner: Arc::new(Inner {
                 rules,
                 resolver,
                 sink,
+                guard,
             }),
         }
     }
@@ -240,7 +249,7 @@ impl Proxy {
             Ok(r) => r,
             Err(refusal) => {
                 if let Some((host, port)) = &refusal.target {
-                    record.target(host, *port);
+                    record.target(&self.inner.guard.name(host), *port);
                 }
                 self.refuse(
                     &mut client,
@@ -261,7 +270,28 @@ impl Proxy {
                 .await;
             return;
         };
-        record.target(&host, port);
+        record.target(&self.inner.guard.name(&host), port);
+        // What leaves: a tunnel's host, or every part of a plain request.
+        let checked = match &request {
+            head::Request::Connect { .. } => {
+                self.inner.guard.check_text("egress proxy", &host, &host)
+            }
+            head::Request::Forward { head, .. } => match outgoing(&host, port, head) {
+                Some(out) => self.inner.guard.check("egress proxy", &host, out).map(drop),
+                None => {
+                    let why = "a request head that cannot be checked";
+                    self.refuse(&mut client, &mut record, refusals, 400, why)
+                        .await;
+                    return;
+                }
+            },
+        };
+        if let Err(r) = checked {
+            let why = format!("not sent: {}", r.reason);
+            self.refuse(&mut client, &mut record, refusals, 403, &why)
+                .await;
+            return;
+        }
         let upstream = match self.connect(&host, port).await {
             Ok(s) => s,
             Err((outcome, status, why)) => {
@@ -417,6 +447,31 @@ impl Proxy {
         let (ur, uw) = upstream.into_split();
         tokio::join!(pump(cr, uw, &record.up), pump(ur, cw, &record.down));
     }
+}
+
+/// The plain-HTTP request `head` (as it would be sent to `host:port`) for
+/// the outbound check: its method, URL (path and query) and every header.
+fn outgoing(host: &str, port: u16, head: &[u8]) -> Option<Outgoing> {
+    let text = std::str::from_utf8(head).ok()?;
+    let mut lines = text.split("\r\n");
+    let mut first = lines.next()?.split(' ');
+    let method = match first.next()? {
+        "GET" => Method::Get,
+        "HEAD" => Method::Head,
+        _ => return None,
+    };
+    let url = url::Url::parse(&format!("http://{host}:{port}{}", first.next()?)).ok()?;
+    let headers = lines
+        .take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
+        .collect();
+    Some(Outgoing {
+        method,
+        url,
+        headers,
+        body: None,
+    })
 }
 
 /// Sends a plain-HTTP request head and relays the response. Nothing more

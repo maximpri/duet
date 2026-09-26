@@ -561,6 +561,7 @@ dependencies = [
 name = "duet-egress"
 version = "0.1.0"
 dependencies = [
+ "duet-boundary",
  "duet-sandbox",
  "duet-web",
  "futures-util",

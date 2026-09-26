@@ -112,7 +112,7 @@ async fn setup(reply: &'static [u8]) -> Setup {
     let sink_events = events.clone();
     let sink: Sink = Arc::new(move |e| sink_events.lock().unwrap().push(e));
     Setup {
-        proxy: Proxy::new(rules, resolver.clone(), sink),
+        proxy: Proxy::new(rules, resolver.clone(), sink, open()),
         events,
         resolver,
         port,
@@ -267,7 +267,7 @@ async fn private_and_metadata_addresses_are_refused_even_for_listed_hosts() {
     let mut rules = Rules::new(Hosts::parse(&[format!("registry.test:{}", s.port)]).unwrap());
     rules.exempt = guard::Allowlist::default();
     let strict = Setup {
-        proxy: Proxy::new(rules, s.resolver.clone(), Arc::new(|_| {})),
+        proxy: Proxy::new(rules, s.resolver.clone(), Arc::new(|_| {}), open()),
         ..setup(b"x").await
     };
     let request = format!("CONNECT registry.test:{} HTTP/1.1\r\n\r\n", s.port);
@@ -389,4 +389,10 @@ async fn a_route_listens_until_it_is_dropped() {
     );
     // Bubblewrap routes need the helper.
     assert!(s.proxy.route(SandboxKind::Bubblewrap, &[]).await.is_err());
+}
+
+/// The check of a run without the boundary: everything passes it.
+fn open() -> duet_boundary::third_party::Guard {
+    use duet_boundary::view::Presenter;
+    duet_boundary::view::PassThrough { max_bytes: 0 }.outbound_guard()
 }

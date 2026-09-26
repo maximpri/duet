@@ -17,6 +17,7 @@
 //! change code the operator later builds outside the sandbox).
 
 use duet_boundary::audit::{AuditEvent, AuditHandle};
+use duet_boundary::third_party::Guard;
 use duet_egress::{Hosts, Proxy, Route, Rules};
 use duet_sandbox::SandboxKind;
 use std::ffi::OsString;
@@ -97,8 +98,9 @@ impl Registries {
     }
 
     /// The run's proxy; the first caller's audit log receives its events
-    /// (sub-agents share their parent's log).
-    fn proxy(&self, audit: Option<&AuditHandle>) -> &Proxy {
+    /// (sub-agents share their parent's log), and its presenter's guard
+    /// checks what the proxy forwards (sub-agents share the engine).
+    fn proxy(&self, audit: Option<&AuditHandle>, guard: &Guard) -> &Proxy {
         self.proxy.get_or_init(|| {
             let audit = audit.cloned();
             let sink: duet_egress::Sink = Arc::new(move |e: duet_egress::Event| {
@@ -113,7 +115,12 @@ impl Registries {
                     });
                 }
             });
-            Proxy::new(self.rules.clone(), self.resolver.clone(), sink)
+            Proxy::new(
+                self.rules.clone(),
+                self.resolver.clone(),
+                sink,
+                guard.clone(),
+            )
         })
     }
 
@@ -122,8 +129,9 @@ impl Registries {
         &self,
         kind: SandboxKind,
         audit: Option<&AuditHandle>,
+        guard: &Guard,
     ) -> Result<Route, String> {
-        self.proxy(audit)
+        self.proxy(audit, guard)
             .route(kind, &self.helper)
             .await
             .map_err(|e| e.to_string())

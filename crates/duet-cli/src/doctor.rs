@@ -200,6 +200,29 @@ async fn mcp_servers(c: &Config, ws: &Path, online: bool) -> Vec<Check> {
     let mut out = Vec::new();
     let mut start = Vec::new();
     for (name, s) in configured {
+        // A local server trusted with sensitive data gets real values (its
+        // arguments' placeholders are resolved); with network it can send
+        // them anywhere, and no check sees what it sends.
+        if let Ok((server, true)) = &s
+            && server.is_local_sensitive()
+            && server.network
+        {
+            out.push(
+                check(
+                    "mcp",
+                    Status::Warn,
+                    format!(
+                        "server `{name}` (stdio, trust = \"sensitive\", network = true): it receives \
+real values and has network, so it can send them anywhere; the outbound check does not see what it \
+sends (a risk the owner accepted)"
+                    ),
+                )
+                .fix(format!(
+                    "duet config set mcp.servers.{name}.network false, or trust = \"public\" \
+(its arguments are then checked and placeholders never resolved)"
+                )),
+            );
+        }
         match s {
             Err(e) => out.push(check("mcp", Status::Fail, format!("{e:#}")).fix(format!(
                 "fix [mcp.servers.{name}] in the owner config (`duet config list`)"
@@ -1211,7 +1234,11 @@ async fn web_search(c: &Config, ws: &Path, online: bool) -> Check {
         allowlist: duet_web::guard::Allowlist::default(),
         search: Some(backend),
     });
-    match web.search("duet", 3).await {
+    // A fixed query, no run: nothing to check it against.
+    let guard = duet_boundary::view::Presenter::outbound_guard(&duet_boundary::view::PassThrough {
+        max_bytes: 0,
+    });
+    match web.search(&guard, "duet", 3).await {
         Ok(r) => check(
             NAME,
             Status::Pass,

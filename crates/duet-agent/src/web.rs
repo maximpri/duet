@@ -6,23 +6,29 @@
 //!
 //! Both are a channel out (the URL, the query) and a channel in (the page, the
 //! results), so both directions go through the presenter:
-//! - out: [`Presenter::check_outbound`] refuses a URL or query holding a
-//!   placeholder or a known sensitive value, before any request is made;
+//! - out: every request (the URL the frontier gave, each redirect, each
+//!   search source's request with the query) is checked in every part by the
+//!   presenter's guard ([`Presenter::outbound_guard`]) before a name is
+//!   resolved or a byte sent, and `duet-web` cannot send anything else; a
+//!   query is also checked once for all its recipients before any is asked.
+//!   A refusal is a tool error and an `outbound_refused` audit event;
 //! - in: content is presented as [`Source::Web`] (public but untrusted:
 //!   scanned, offloaded when bulky) and framed as data between markers that
 //!   carry a per-call random tag, so the page cannot close the frame itself.
 //!
 //! Every call is an audit event with the host, bytes and outcome; never the
-//! URL's path or the query. A native search is one event per source asked
-//! (each source is a host that receives the query).
+//! URL's path or the query, and never a host name that itself holds a
+//! withheld value ([`Guard::name`]). A native search is one event per source
+//! asked (each source is a host that receives the query).
 
 use crate::tools::{Ctx, string_arg};
 use duet_boundary::audit::AuditEvent;
 use duet_boundary::model::ToolSpec;
+use duet_boundary::third_party::Guard;
 use duet_boundary::view::{Presenter, Source};
 use duet_web::search::Backend;
 use duet_web::search::native::{NativeSearch, SourceSetup};
-use duet_web::{MAX_RESULTS, Web};
+use duet_web::{MAX_RESULTS, Web, WebError};
 use serde_json::{Map, Value, json};
 
 pub const FETCH: &str = "web_fetch";
@@ -127,31 +133,47 @@ pub async fn call(
     }
 }
 
-fn audit(ctx: &Ctx<'_>, tool: &str, host: &str, bytes: usize, outcome: &str) {
+/// A `web_request` event. `host` is named as the guard allows: a host whose
+/// name holds a withheld value is never written to the log.
+fn audit(ctx: &Ctx<'_>, guard: &Guard, tool: &str, host: &str, bytes: usize, outcome: &str) {
     ctx.record(AuditEvent::WebRequest {
         tool: tool.into(),
-        host: host.into(),
+        host: guard.name(host),
         bytes: bytes as u64,
         outcome: outcome.into(),
     });
 }
 
-/// The outbound check for text going to `hosts`, before any of them is
-/// contacted; audited (once per host) when it refuses.
-fn checked(ctx: &Ctx<'_>, tool: &str, hosts: &[String], text: &str) -> Result<String, String> {
-    let destination = hosts.join(", ");
-    ctx.presenter
-        .check_outbound(&destination, text)
-        .map_err(|reason| {
-            ctx.record(AuditEvent::OutboundRefused {
-                channel: tool.into(),
-                destination: destination.clone(),
-                reason: reason.clone(),
-            });
+/// A failed request as the frontier sees it (the guard recorded a refusal).
+fn failed(ctx: &Ctx<'_>, guard: &Guard, tool: &str, hosts: &[String], e: WebError) -> String {
+    match &e {
+        WebError::NotSent(r) => audit(ctx, guard, tool, &r.destination, 0, e.outcome()),
+        _ => {
             for host in hosts {
-                audit(ctx, tool, host, 0, "refused_outbound");
+                audit(ctx, guard, tool, host, 0, e.outcome());
             }
-            format!("not sent: {reason}")
+        }
+    }
+    e.to_string()
+}
+
+/// The check of text going to `hosts`, once for all of them, before any is
+/// contacted (each request is checked again as a whole when it is made); the
+/// guard records a refusal, and each host gets a `web_request` event.
+fn checked(
+    ctx: &Ctx<'_>,
+    guard: &Guard,
+    tool: &str,
+    hosts: &[String],
+    text: &str,
+) -> Result<(), String> {
+    guard
+        .check_text(tool, &hosts.join(", "), text)
+        .map_err(|r| {
+            for host in hosts {
+                audit(ctx, guard, tool, host, 0, "refused_outbound");
+            }
+            format!("not sent: {}", r.reason)
         })
 }
 
@@ -177,16 +199,14 @@ async fn fetch(ctx: &Ctx<'_>, web: &Web, args: &Map<String, Value>) -> Result<St
         .ok()
         .and_then(|u| u.host_str().map(str::to_owned))
         .unwrap_or_else(|| "web".into());
-    let url = checked(ctx, FETCH, std::slice::from_ref(&host), raw)?;
-    let page = match web.fetch(&url).await {
+    let guard = ctx.presenter.outbound_guard();
+    let page = match web.fetch(&guard, raw).await {
         Ok(p) => p,
-        Err(e) => {
-            audit(ctx, FETCH, &host, 0, e.outcome());
-            return Err(e.to_string());
-        }
+        Err(e) => return Err(failed(ctx, &guard, FETCH, &[host], e)),
     };
     audit(
         ctx,
+        &guard,
         FETCH,
         &host,
         page.bytes,
@@ -270,14 +290,18 @@ async fn search(ctx: &Ctx<'_>, web: &Web, args: &Map<String, Value>) -> Result<S
         }
         _ => vec![backend.host()],
     };
-    let query = checked(ctx, SEARCH, &hosts, query)?;
-    match web.search_with(&query, count, names.as_deref()).await {
+    let guard = ctx.presenter.outbound_guard();
+    checked(ctx, &guard, SEARCH, &hosts, query)?;
+    match web
+        .search_with(&guard, query, count, names.as_deref())
+        .await
+    {
         Ok(searched) => {
             // One event per source: host, bytes, outcome; never the query.
             for r in &searched.requests {
-                audit(ctx, SEARCH, &r.host, r.bytes, r.outcome);
+                audit(ctx, &guard, SEARCH, &r.host, r.bytes, r.outcome);
             }
-            let text = duet_web::search::render(&query, &searched);
+            let text = duet_web::search::render(query, &searched);
             Ok(framed(
                 ctx.presenter,
                 &format!("{} search", backend.name()),
@@ -285,11 +309,6 @@ async fn search(ctx: &Ctx<'_>, web: &Web, args: &Map<String, Value>) -> Result<S
                 &text,
             ))
         }
-        Err(e) => {
-            for host in &hosts {
-                audit(ctx, SEARCH, host, 0, e.outcome());
-            }
-            Err(e.to_string())
-        }
+        Err(e) => Err(failed(ctx, &guard, SEARCH, &hosts, e)),
     }
 }
