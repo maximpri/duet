@@ -394,10 +394,15 @@ async fn a_one_shot_run_keeps_its_prompt_and_tools() {
     let body = f.frontier.body(0);
     let tools = tool_names(&body);
     assert!(!tools.contains(&"reply".into()) && !tools.contains(&"ask_operator".into()));
-    assert_eq!(
-        body["messages"][0]["content"].as_str().unwrap(),
-        duet_agent::prompt::system_prompt("ws", &[])
-    );
+    // The one-shot prompt, not the session's: this run offers no web tools,
+    // so the prompt is the one without them (it names only offered tools).
+    let system = body["messages"][0]["content"].as_str().unwrap();
+    assert_eq!(system, duet_agent::prompt::system_prompt("ws", &[], &[]));
+    assert!(!tools.iter().any(|t| t.starts_with("web_")));
+    // Changed on purpose (2026-09-26): effort matched to the request, and
+    // tidy work; `prompt::tests` pins the text.
+    assert!(system.contains("Building something new:") && system.contains("delete scratch files"));
+    assert!(!system.contains("web_fetch") && !system.contains("ask_operator"));
     assert!(!duet_agent::session::is_session(&f.run_dir));
 }
 

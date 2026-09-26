@@ -375,7 +375,7 @@ impl<'a> Session<'a> {
             interrupted,
             limits,
             conv: Conversation {
-                system: session_prompt(&name, &cfg.checks),
+                system: session_prompt(&name, &cfg.checks, &specs),
                 specs,
                 git_tools,
                 items: Vec::new(),

@@ -601,9 +601,10 @@ async fn drive(
         .file_name()
         .map_or("repository".into(), |n| n.to_string_lossy().into_owned());
     let git_tools = crate::git_tools::GitTools::for_run(git, cfg);
+    let specs = tool_specs(cfg, presenter, git_tools.as_ref());
     let mut conv = Conversation {
-        system: system_prompt(&name, &cfg.checks),
-        specs: tool_specs(cfg, presenter, git_tools.as_ref()),
+        system: system_prompt(&name, &cfg.checks, &specs),
+        specs,
         git_tools,
         items: Vec::new(),
         classes: HashMap::new(),
