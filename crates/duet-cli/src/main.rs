@@ -198,9 +198,10 @@ enum ConfigCmd {
         confirm: bool,
     },
     /// Point the local role at a known backend (Ollama, LM Studio, llama.cpp,
-    /// vLLM, oMLX, MLX) on loopback, or the frontier at a known provider
-    /// (zai, anthropic, openai: endpoint, model, key variable and dialect).
-    /// Without a name, lists the presets.
+    /// vLLM, oMLX, MLX) on loopback, the frontier at a known provider (zai,
+    /// anthropic, openai: endpoint, model, key variable and dialect), or web
+    /// search at a private SearXNG in Docker (searxng: prints the commands,
+    /// runs nothing). Without a name, lists the presets.
     Preset {
         name: Option<String>,
         /// Also set local.model (for a frontier preset: frontier.model instead
@@ -628,6 +629,7 @@ async fn prepare(
         );
     }
     let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
+    let frontier_key_env = cfg.str("frontier.api_key_env")?;
     // Every field from the configuration, not `..RunConfig::new`: a new field
     // is a compile error here until the CLI sets it.
     let run_cfg = RunConfig {
@@ -648,7 +650,14 @@ async fn prepare(
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
-        web: web::access(cfg)?,
+        web: web::access(
+            cfg,
+            // Local-only runs have no frontier.
+            (manifest.mode != Mode::LocalOnly).then(|| web::Frontier {
+                base_url: &manifest.frontier_url,
+                key_env: &frontier_key_env,
+            }),
+        )?,
         git_author: approve::git_author(cfg)?,
         mcp: mcp::start(
             cfg,

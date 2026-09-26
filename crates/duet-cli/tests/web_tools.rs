@@ -350,3 +350,277 @@ async fn pass_through_fetches_pages_framed_and_search_needs_a_backend() {
     .await;
     assert!(!tool_names(&bodies[0]).iter().any(|t| t.starts_with("web_")));
 }
+
+/// A search server speaking Z.ai's Web Search API (`POST /web_search`) and
+/// Wikipedia's (`GET /w/api.php`); every hit echoes the sensitive email. It
+/// records each request's first line, `Authorization` header and body.
+async fn search_server() -> (SocketAddr, Arc<Mutex<Vec<(String, String, String)>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let seen: Arc<Mutex<Vec<(String, String, String)>>> = Arc::default();
+    let log = seen.clone();
+    tokio::spawn(async move {
+        while let Ok((mut sock, _)) = listener.accept().await {
+            let log = log.clone();
+            tokio::spawn(async move {
+                let mut buf = Vec::new();
+                let mut tmp = [0u8; 4096];
+                while !buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match sock.read(&mut tmp).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => buf.extend_from_slice(&tmp[..n]),
+                    }
+                }
+                let end = buf.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                let head = String::from_utf8_lossy(&buf[..end]).into_owned();
+                let header = |name: &str| {
+                    head.lines()
+                        .filter_map(|l| l.split_once(':'))
+                        .find(|(k, _)| k.trim().eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.trim().to_owned())
+                        .unwrap_or_default()
+                };
+                let length: usize = header("content-length").parse().unwrap_or(0);
+                let mut body = buf[end..].to_vec();
+                while body.len() < length {
+                    match sock.read(&mut tmp).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => body.extend_from_slice(&tmp[..n]),
+                    }
+                }
+                let first = head.lines().next().unwrap_or_default().to_owned();
+                log.lock().unwrap().push((
+                    first.clone(),
+                    header("authorization"),
+                    String::from_utf8_lossy(&body).into_owned(),
+                ));
+                let reply = if first.contains("/w/api.php") {
+                    json!({"query": {"search": [{"ns": 0, "title": "The Adventures of Captain Comic",
+                        "snippet": format!("a 1988 platform game; fan mail to {EMAIL}")}]}})
+                } else {
+                    json!({"id": "t1", "search_result": [{"title": "The Adventures of Captain Comic",
+                        "link": "https://en.wikipedia.org/wiki/The_Adventures_of_Captain_Comic",
+                        "content": format!("a 1988 platform game; fan mail to {EMAIL}")}]})
+                }
+                .to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            });
+        }
+    });
+    (addr, seen)
+}
+
+fn searching(backend: Backend) -> Arc<Web> {
+    Arc::new(Web::new(WebConfig {
+        max_bytes: 100_000,
+        timeout: Duration::from_secs(5),
+        allowlist: Allowlist::default(),
+        search: Some(backend),
+    }))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hybrid_zai_and_wikipedia_searches_never_carry_sensitive_values_either_way() {
+    let (addr, seen) = search_server().await;
+    let key = "zai-run-key-40417";
+    let backends = [
+        Backend::Zai {
+            endpoint: url::Url::parse(&format!("http://{addr}/web_search")).unwrap(),
+            key: key.into(),
+            engine: "search_pro_jina".into(),
+        },
+        Backend::Wikipedia {
+            endpoint: url::Url::parse(&format!("http://{addr}/w/api.php")).unwrap(),
+        },
+    ];
+    for backend in backends {
+        let name = backend.name();
+        seen.lock().unwrap().clear();
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().canonicalize().unwrap();
+        let ws = workspace(&root);
+        let policy = Policy {
+            sensitive_globs: vec![".env*".into(), "data/**".into()],
+            command_output_sensitive: true,
+            detect_secrets: true,
+            detect_pii: true,
+            bulky_tokens: 2000,
+            bulky_file_tokens: 12000,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&root.join("run"), policy, None).unwrap();
+        engine.prime(
+            &ws,
+            &[".env".to_owned(), "data/customers.csv".to_owned()],
+            "",
+        );
+        let token = engine
+            .present(
+                &duet_boundary::view::Source::Other { label: "x".into() },
+                EMAIL.as_bytes(),
+            )
+            .trim()
+            .to_owned();
+        assert!(token.starts_with('⟨'), "{token}");
+        let script = vec![
+            (
+                "web_search",
+                json!({"query": format!("stripe key {SECRET}")}),
+            ),
+            (
+                "web_search",
+                json!({"query": format!("who is {}", EMAIL.to_uppercase())}),
+            ),
+            ("web_search", json!({"query": format!("who is {token}")})),
+            (
+                "web_search",
+                json!({"query": "Captain Comic 1988 PC game", "count": 3}),
+            ),
+            ("finish", json!({"summary": "looked it up"})),
+        ];
+        let (terminal, bodies, log) = run(
+            &root,
+            &ws,
+            engine.as_ref(),
+            Some(&engine),
+            Some(searching(backend)),
+            script,
+        )
+        .await;
+        assert!(
+            matches!(terminal, Terminal::Completed { .. }),
+            "{name}: {terminal:?}"
+        );
+        assert!(tool_names(&bodies[0]).contains(&"web_search".into()));
+        // Only the clean query left the host.
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1, "{name}: {requests:?}");
+        let (line, auth, body) = &requests[0];
+        match name {
+            "zai" => {
+                assert!(line.starts_with("POST /web_search"), "{line}");
+                assert_eq!(auth, &format!("Bearer {key}"));
+                assert!(body.contains("Captain Comic 1988 PC game"), "{body}");
+            }
+            _ => {
+                assert!(line.starts_with("GET /w/api.php?"), "{line}");
+                assert!(auth.is_empty());
+                assert!(
+                    line.contains("srsearch=Captain+Comic+1988+PC+game"),
+                    "{line}"
+                );
+            }
+        }
+        let all = bodies.concat();
+        for value in [SECRET, EMAIL, key] {
+            assert!(!all.contains(value), "{name}: {value} reached the frontier");
+        }
+        let last = bodies.last().unwrap();
+        assert_eq!(last.matches("not sent:").count(), 3, "{name}: {last}");
+        assert!(
+            all.contains("The Adventures of Captain Comic")
+                && all.contains("untrusted web content"),
+            "{name}: {all}"
+        );
+        let log_text = std::fs::read_to_string(&log).unwrap();
+        for value in [SECRET, EMAIL, key] {
+            assert!(
+                !log_text.contains(value),
+                "{name}: {value} in the audit log"
+            );
+        }
+        let events: Vec<AuditEvent> = read(&log)
+            .unwrap()
+            .into_iter()
+            .filter_map(|l| match l {
+                Line::Event(e) => Some(e.event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|e| matches!(e, AuditEvent::OutboundRefused { .. }))
+                .count(),
+            3,
+            "{name}"
+        );
+        assert!(
+            events.iter().any(|e| matches!(e,
+                AuditEvent::WebRequest { tool, host, outcome, .. }
+                    if tool == "web_search" && host == "127.0.0.1" && outcome == "ok")),
+            "{name}: {events:?}"
+        );
+        // Web events hold the host, never the query.
+        let web_events = serde_json::to_string(&events).unwrap();
+        assert!(!web_events.contains("Captain Comic"), "{name}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hybrid_coding_plan_search_results_are_presented_through_the_boundary() {
+    use duet_mcp::mock::{Answer, HttpMock, Mock};
+    let hits = json!([{"title": "The Adventures of Captain Comic",
+        "link": "https://en.wikipedia.org/wiki/The_Adventures_of_Captain_Comic",
+        "content": format!("a platform game; key {SECRET}; mail {EMAIL}")}]);
+    let mock = Mock {
+        canned: serde_json::to_string(&hits.to_string()).unwrap(),
+        ..Mock::default()
+    };
+    let server = HttpMock::start(mock.clone(), Answer::EventStream).await;
+    let d = tempfile::tempdir().unwrap();
+    let root = d.path().canonicalize().unwrap();
+    let ws = workspace(&root);
+    let policy = Policy {
+        sensitive_globs: vec![".env*".into(), "data/**".into()],
+        command_output_sensitive: true,
+        detect_secrets: true,
+        detect_pii: true,
+        ..Policy::default()
+    };
+    let engine = Engine::open(&root.join("run"), policy, None).unwrap();
+    engine.prime(
+        &ws,
+        &[".env".to_owned(), "data/customers.csv".to_owned()],
+        "",
+    );
+    let key = "zai-plan-run-key-993";
+    let script = vec![
+        ("web_search", json!({"query": format!("mail {EMAIL}")})),
+        ("web_search", json!({"query": "what is Captain Comic"})),
+        ("finish", json!({"summary": "done"})),
+    ];
+    let (terminal, bodies, log) = run(
+        &root,
+        &ws,
+        engine.as_ref(),
+        Some(&engine),
+        Some(searching(Backend::ZaiPlan {
+            endpoint: url::Url::parse(&server.url).unwrap(),
+            key: key.into(),
+        })),
+        script,
+    )
+    .await;
+    assert!(
+        matches!(terminal, Terminal::Completed { .. }),
+        "{terminal:?}"
+    );
+    // Only the clean query reached the server.
+    assert_eq!(
+        mock.calls(),
+        vec![json!({"search_query": "what is Captain Comic", "location": "us"})]
+    );
+    let all = bodies.concat();
+    for value in [SECRET, EMAIL, key] {
+        assert!(!all.contains(value), "{value} reached the frontier");
+    }
+    assert!(all.contains("The Adventures of Captain Comic"), "{all}");
+    let log_text = std::fs::read_to_string(&log).unwrap();
+    assert!(!log_text.contains(key) && !log_text.contains(EMAIL));
+}

@@ -536,16 +536,25 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyFalse,
         true,
-        "Offer the web tools (`web_fetch`, and `web_search` when a backend is set). Requests are made by the host, GET only, to public addresses only; pages are scanned like public content and shown as untrusted data. Commands keep no network either way."
+        "Offer the web tools (`web_fetch`, and `web_search` when a search backend is available, which with web.search.backend = `auto` is always). Requests are made by the host, GET only, to public addresses only; pages are scanned like public content and shown as untrusted data. Commands keep no network either way."
     ),
     s!(
         "web.search.backend",
-        Choice(&["brave", "searxng", "none"]),
-        r#""none""#,
+        Choice(&["auto", "brave", "searxng", "wikipedia", "zai", "none"]),
+        r#""auto""#,
         Owner,
         OnlyLaterChoice,
         true,
-        "Search backend for `web_search`: `searxng` (your own instance, web.search.searxng_url), `brave` (Brave Search API, key from web.search.brave_key_env) or `none` (no web_search tool). Queries are checked for sensitive values before they are sent."
+        "Search backend for `web_search`, listed from the most to the fewest recipients of queries: `auto` (`zai` when the frontier is Z.ai and its key is set, else `searxng` when web.search.searxng_url is set, else `brave` when its key is set, else `wikipedia`), `brave` (Brave Search API, key from web.search.brave_key_env), `searxng` (your own instance at web.search.searxng_url; `duet config preset searxng` sets one up), `wikipedia` (English Wikipedia's search: articles only, no key), `zai` (Z.ai's search with the frontier's key; see web.search.zai_engine) or `none` (no web_search tool). Queries are checked for sensitive values before they are sent; `duet doctor` shows the backend in use."
+    ),
+    s!(
+        "web.search.zai_engine",
+        Choice(&["auto", "plan", "search_pro_jina", "search-prime"]),
+        r#""auto""#,
+        Owner,
+        Any,
+        true,
+        "How the `zai` search backend searches: `plan` (the GLM Coding Plan's search server, counted in the plan's credits), `search_pro_jina` or `search-prime` (Z.ai's Web Search API with that engine, billed per search to the account balance, not by the plan) or `auto` (`plan` when the frontier is the coding plan endpoint, `search_pro_jina` otherwise). In tests (2026-09) `search_pro_jina` gave the most relevant hits, with page addresses; the plan's search often gave only a hit's site."
     ),
     s!(
         "web.search.searxng_url",
@@ -554,7 +563,7 @@ pub const REGISTRY: &[Setting] = &[
         Owner,
         Any,
         true,
-        "Base URL of a SearXNG instance with the JSON format enabled (for example http://127.0.0.1:8888); queries go to <url>/search."
+        "Base URL of a SearXNG instance with the JSON format enabled (for example http://127.0.0.1:8888; `duet config preset searxng` sets up a local one in Docker); queries go to <url>/search."
     ),
     s!(
         "web.search.brave_key_env",

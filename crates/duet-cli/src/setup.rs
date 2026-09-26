@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Owner setup: audited owner-config changes, local backend and frontier
-//! presets, and the no-config bootstrap that finds a local server on loopback for one run.
+//! Owner setup: audited owner-config changes, local backend, frontier and
+//! private-search presets, and the no-config bootstrap that finds a local
+//! server on loopback for one run.
 
 use crate::config_audit_path;
 use anyhow::Result;
@@ -81,11 +82,20 @@ pub fn preset(
             );
         }
         println!(
+            "\n{:<9} private web search: a SearXNG instance in Docker or OrbStack on 127.0.0.1:{SEARXNG_PORT} \
+(prints the commands; runs nothing)",
+            "searxng"
+        );
+        println!(
             "\nApply one with: duet config preset <name> [--model <id>] [--port <n>] --confirm\n\
-(--port applies to local backends only)"
+(--port applies to local backends and searxng)"
         );
         return Ok(0);
     };
+    if name.eq_ignore_ascii_case("searxng") {
+        anyhow::ensure!(model.is_none(), "--model does not apply to searxng");
+        return searxng(cfg, port.unwrap_or(SEARXNG_PORT), confirm);
+    }
     if let Some(f) = backends::frontier_preset(name) {
         anyhow::ensure!(
             port.is_none(),
@@ -143,6 +153,68 @@ pub fn preset(
         );
     }
     Ok(code)
+}
+
+/// The host port of the local SearXNG the `searxng` preset sets up.
+pub const SEARXNG_PORT: u16 = 8888;
+
+/// SearXNG's settings for Duet: its defaults, plus the JSON format that
+/// `web_search` reads and no rate limiter (one user, on loopback).
+fn searxng_settings(secret: &str) -> String {
+    format!(
+        "# SearXNG settings written by `duet config preset searxng`: SearXNG's defaults, plus the\n\
+# JSON format Duet's web_search reads. The container mounts this folder at /etc/searxng.\n\
+use_default_settings: true\n\
+server:\n  secret_key: \"{secret}\"\n  limiter: false\n  image_proxy: false\n\
+search:\n  formats:\n    - html\n    - json\n"
+    )
+}
+
+/// `duet config preset searxng`: points `web_search` at a SearXNG instance
+/// on `127.0.0.1:<port>` (through the audited owner-config path), writes its
+/// settings next to the owner config when there are none, and prints the
+/// command that starts it. Starting containers is left to the operator.
+fn searxng(cfg: &mut Config, port: u16, confirm: bool) -> Result<i32> {
+    let url = format!("http://127.0.0.1:{port}");
+    let changes = [
+        ("web.search.backend", Value::String("searxng".into())),
+        ("web.search.searxng_url", Value::String(url.clone())),
+    ];
+    let code = apply_owner(cfg, &changes, confirm)?;
+    if code != 0 {
+        return Ok(code);
+    }
+    let dir = cfg
+        .owner_path
+        .parent()
+        .map_or_else(
+            || std::path::PathBuf::from("."),
+            std::path::Path::to_path_buf,
+        )
+        .join("searxng");
+    let settings = dir.join("settings.yml");
+    if settings.exists() {
+        println!("kept {} (not overwritten)", settings.display());
+    } else {
+        std::fs::create_dir_all(&dir)?;
+        let secret = format!(
+            "{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
+        std::fs::write(&settings, searxng_settings(&secret))?;
+        println!("wrote {} (JSON format on)", settings.display());
+    }
+    println!(
+        "\nDuet does not start containers. Start SearXNG yourself (Docker or OrbStack), \
+listening on loopback only:\n\n  docker run -d --name duet-searxng --restart unless-stopped \\\n    \
+-p 127.0.0.1:{port}:8080 \\\n    -v \"{}:/etc/searxng\" \\\n    docker.io/searxng/searxng:latest\n\n\
+Then check it answers: duet doctor --online\n\
+Queries go from your machine to the search engines SearXNG is set up with, without an account \
+or key; stop it with: docker rm -f duet-searxng",
+        dir.display()
+    );
+    Ok(0)
 }
 
 /// The local endpoint chosen for one run when the owner configured none.

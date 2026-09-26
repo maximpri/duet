@@ -705,3 +705,131 @@ fn doctor_starts_configured_mcp_servers_and_config_lists_them() {
         "{list}"
     );
 }
+
+#[test]
+fn the_searxng_preset_sets_up_private_search_and_starts_nothing() {
+    let e = env();
+    assert!(text(&duet(&e, &["config", "preset"])).contains("searxng"));
+    // The instance's URL is a confirmed setting: refused, nothing written.
+    let refused = duet(&e, &["config", "preset", "searxng"]);
+    assert_eq!(refused.status.code(), Some(2), "{}", text(&refused));
+    assert!(!e.home.join("config.toml").exists() && !e.home.join("searxng").exists());
+    assert!(
+        !duet(
+            &e,
+            &["config", "preset", "searxng", "--model", "x", "--confirm"]
+        )
+        .status
+        .success()
+    );
+
+    let applied = duet(&e, &["config", "preset", "searxng", "--confirm"]);
+    assert!(applied.status.success(), "{}", text(&applied));
+    let out = text(&applied);
+    for want in [
+        "Duet does not start containers",
+        "docker run -d --name duet-searxng",
+        "-p 127.0.0.1:8888:8080",
+        "duet doctor --online",
+    ] {
+        assert!(out.contains(want), "{want}: {out}");
+    }
+    assert_eq!(
+        text(&duet(&e, &["config", "get", "web.search.backend"])).trim(),
+        "\"searxng\""
+    );
+    assert_eq!(
+        text(&duet(&e, &["config", "get", "web.search.searxng_url"])).trim(),
+        "\"http://127.0.0.1:8888\""
+    );
+    let settings_path = e.home.join("searxng/settings.yml");
+    let settings = std::fs::read_to_string(&settings_path).unwrap();
+    assert!(settings.contains("use_default_settings: true"));
+    assert!(settings.contains("    - json"), "{settings}");
+    let secret = settings
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("secret_key: "))
+        .unwrap()
+        .trim_matches('"')
+        .to_owned();
+    assert!(secret.len() == 64 && secret.bytes().all(|b| b.is_ascii_hexdigit()));
+    // Applying it again (another port) keeps the settings file.
+    let again = duet(
+        &e,
+        &["config", "preset", "searxng", "--port", "8899", "--confirm"],
+    );
+    assert!(text(&again).contains("kept"), "{}", text(&again));
+    assert_eq!(std::fs::read_to_string(&settings_path).unwrap(), settings);
+    // Both applications recorded both settings.
+    let log = e.home.join("state/config-audit.jsonl");
+    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 4 });
+
+    // Offline, doctor names the instance without contacting it.
+    let (_, report) = doctor(&e, &[], &[]);
+    assert_eq!(status(&report, "web search"), "pass", "{report}");
+    let d = detail(&report, "web search");
+    assert!(
+        d.contains("searxng at http://127.0.0.1:8899") && d.contains("not contacted"),
+        "{d}"
+    );
+}
+
+#[test]
+fn doctor_names_the_search_backend_and_who_receives_the_queries() {
+    let e = env();
+    let no_brave = ("BRAVE_API_KEY", "");
+    // Nothing configured: the keyless fallback.
+    let (_, report) = doctor(&e, &[], &[no_brave]);
+    assert_eq!(status(&report, "web search"), "pass", "{report}");
+    let d = detail(&report, "web search");
+    assert!(d.contains("wikipedia") && d.contains("Wikimedia"), "{d}");
+    // The default frontier (the coding plan) with its key: the plan's search.
+    let (_, report) = doctor(&e, &[], &[no_brave, ("ZAI_API_KEY", "zk-doctor-1")]);
+    let d = detail(&report, "web search");
+    assert!(
+        d.contains("GLM Coding Plan") && d.contains("already receives the run"),
+        "{d}"
+    );
+    assert!(!report.to_string().contains("zk-doctor-1"));
+    // An explicit backend without its key warns with a fix; `none` skips.
+    owner_config(&e, "[web.search]\nbackend = \"brave\"\n");
+    let (_, report) = doctor(&e, &[], &[no_brave]);
+    assert_eq!(status(&report, "web search"), "warn", "{report}");
+    assert!(detail(&report, "web search").contains("$BRAVE_API_KEY is not set"));
+    owner_config(&e, "[web.search]\nbackend = \"none\"\n");
+    let (_, report) = doctor(&e, &[], &[]);
+    assert_eq!(status(&report, "web search"), "skip", "{report}");
+    owner_config(&e, "[web]\nenabled = false\n");
+    let (_, report) = doctor(&e, &[], &[]);
+    assert_eq!(status(&report, "web search"), "skip", "{report}");
+}
+
+#[test]
+fn online_doctor_asks_the_owners_searxng_for_json() {
+    let e = env();
+    let reply = chat_reply(4800);
+    let results = r#"{"query":"duet","results":[{"title":"Duet","url":"https://example.org/","content":"x"}]}"#;
+    let server = MockServer::start(&[
+        ("GET /v1/models", 200, LISTING),
+        ("POST /v1/chat/completions", 200, &reply),
+        ("GET /search?q=duet&format=json", 200, results),
+    ]);
+    let searx = |url: &str| {
+        owner_config(
+            &e,
+            &format!(
+                "[frontier]\nbase_url = \"{u}\"\n[local]\nbase_url = \"{u}\"\nmodel = \"coder\"\n\
+[web.search]\nbackend = \"searxng\"\nsearxng_url = \"{url}\"\n",
+                u = server.base_url()
+            ),
+        )
+    };
+    searx(&format!("http://127.0.0.1:{}", server.port));
+    let (_, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert_eq!(status(&report, "web search"), "pass", "{report}");
+    assert!(detail(&report, "web search").contains("answered a test query (1 results)"));
+    // An instance without the JSON format answers 403 (here: 404).
+    searx(&format!("http://127.0.0.1:{}/nojson", server.port));
+    let (_, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
+    assert_eq!(status(&report, "web search"), "warn", "{report}");
+}

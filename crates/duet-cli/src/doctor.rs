@@ -161,6 +161,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
             out.push(approval(c));
             out.push(detection_rules(duet_boundary::rules::imported()));
             out.push(language_servers(c));
+            out.push(web_search(c, online).await);
             out.extend(frontier(c, online).await);
             out.extend(local(c, online).await);
             out.extend(mcp_servers(c, ws, online).await);
@@ -1097,6 +1098,69 @@ fn language_servers(c: &Config) -> Check {
         detail.push_str(&format!("; not found: {}", missing.join(", ")));
     }
     check(NAME, Status::Pass, detail)
+}
+
+/// The search backend runs get (`web.search.backend`), who receives the
+/// queries, and with `--online` whether the owner's SearXNG answers JSON (the
+/// only backend queried: the others are third parties, some paid per search).
+async fn web_search(c: &Config, online: bool) -> Check {
+    const NAME: &str = "web search";
+    match c.bool("web.enabled") {
+        Ok(true) => {}
+        Ok(false) => return check(NAME, Status::Skip, "web.enabled is off: no web tools"),
+        Err(e) => return check(NAME, Status::Fail, e.to_string()),
+    }
+    let (base_url, key_env) = match (c.str("frontier.base_url"), c.str("frontier.api_key_env")) {
+        (Ok(b), Ok(k)) => (b, k),
+        (Err(e), _) | (_, Err(e)) => return check(NAME, Status::Fail, e.to_string()),
+    };
+    let frontier = crate::web::Frontier {
+        base_url: &base_url,
+        key_env: &key_env,
+    };
+    let choice = match crate::web::choose(c, Some(frontier), &|name| std::env::var(name).ok()) {
+        Ok(ch) => ch,
+        Err(e) => {
+            return check(NAME, Status::Fail, format!("{e:#}"))
+                .fix("correct web.search.searxng_url (an http or https URL)");
+        }
+    };
+    if let Some(problem) = &choice.problem {
+        return check(NAME, Status::Warn, choice.detail.clone()).fix(if problem.contains("$") {
+            "export the key variable named above, or: duet config set web.search.backend '\"auto\"' --confirm"
+        } else {
+            "duet config preset searxng --confirm, or: duet config set web.search.backend '\"auto\"' --confirm"
+        });
+    }
+    let Some(backend) = choice.backend else {
+        return check(NAME, Status::Skip, choice.detail);
+    };
+    if !matches!(backend, duet_web::Backend::Searxng { .. }) {
+        return check(NAME, Status::Pass, choice.detail);
+    }
+    if !online {
+        return check(
+            NAME,
+            Status::Pass,
+            format!("{}; not contacted (--online asks it)", choice.detail),
+        );
+    }
+    let web = duet_web::Web::new(duet_web::WebConfig {
+        max_bytes: 5_000_000,
+        timeout: ONLINE_TIMEOUT,
+        allowlist: duet_web::guard::Allowlist::default(),
+        search: Some(backend),
+    });
+    match web.search("duet", 3).await {
+        Ok(r) => check(
+            NAME,
+            Status::Pass,
+            format!("{}; answered a test query ({} results)", choice.detail, r.len()),
+        ),
+        Err(e) => check(NAME, Status::Warn, format!("{}; test query: {e}", choice.detail)).fix(
+            "start it (`duet config preset searxng` prints the command) and enable the JSON format (search.formats: [html, json] in its settings.yml)",
+        ),
+    }
 }
 
 fn sandbox() -> Check {
