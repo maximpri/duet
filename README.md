@@ -170,7 +170,7 @@ well as Duet's own audit log, records everything sent to the provider.
 | Does sensitive data leave? | **0 canaries** in 18 of 18 Duet runs in the latest quality gate. The same frontier model alone sent **3,133 canaries** on the same tasks, in every run |
 | Does protected code leave? | **0** protected-source canaries in the IP gate, against 102 hits for the frontier alone |
 | Is the work as good? | Yes, within the pre-set margin. Two blind judges from different model families scored 20.1 vs 20.2 out of 30, and hidden tests passed 96.7% vs 95.9% |
-| What does it cost? | About **1.6–1.8×** the frontier alone in the latest batches (1.5–2.4× across all), and it is slower. Privacy costs extra frontier turns, because the frontier has to ask about data it cannot read |
+| What does it cost? | Frontier spend about **1.45–1.5×** the frontier alone on small-to-large tasks (1.6–1.8× including an upper-bound estimate of the local model's electricity), and about **0.87×** on the largest tasks; the ratios hold when the same tokens are priced at flagship models. It is slower. Privacy costs extra frontier turns, because the frontier has to ask about data it cannot read |
 
 How Duet looks for its own weaknesses:
 
