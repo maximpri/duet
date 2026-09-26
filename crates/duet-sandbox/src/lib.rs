@@ -1767,8 +1767,9 @@ mod tests {
 
     #[tokio::test]
     async fn credential_stores_in_the_home_directory_are_unreadable() {
-        let (d, ws) = setup();
-        let home = d.path().canonicalize().unwrap().join("home");
+        let (_d, ws) = setup();
+        // Inside the workspace: bubblewrap hides the rest of /tmp.
+        let home = ws.join("home");
         for (p, text) in [
             (".npmrc", "//registry.npmjs.org/:_authToken=npm_Tk7Qx2Lp9\n"),
             (

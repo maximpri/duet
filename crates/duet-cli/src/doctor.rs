@@ -159,6 +159,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
         Some(c) => {
             out.push(posture(c));
             out.push(approval(c));
+            out.push(command_network(c));
             out.push(detection_rules(duet_boundary::rules::imported()));
             out.push(language_servers(c));
             out.push(web_search(c, online).await);
@@ -405,6 +406,45 @@ fn approval(c: &Config) -> Check {
             format!("{other}: every command and write waits for y/N; runs need a terminal"),
         ),
     }
+}
+
+/// Commands' network (`sandbox.network`, `sandbox.registries`).
+fn command_network(c: &Config) -> Check {
+    let mut result = match c.str("sandbox.network").unwrap_or_default().as_str() {
+        "off" => check(
+            "command network",
+            Status::Pass,
+            "off: sandboxed commands have no network (package installs fail)",
+        ),
+        "all" => check(
+            "command network",
+            Status::Pass,
+            "all: sandboxed commands reach any host, except sensitive_data commands and checks that \
+             can read protected source (none)",
+        ),
+        _ => match c
+            .list("sandbox.registries")
+            .map_err(|e| e.to_string())
+            .and_then(|l| duet_egress::Hosts::parse(&l).map(|_| l.len()))
+        {
+            Ok(n) => check(
+                "command network",
+                Status::Pass,
+                format!(
+                    "registries: sandboxed commands reach the {n} hosts in sandbox.registries \
+                     through duet's egress proxy (every connection audited), nothing else; \
+                     sensitive_data commands and checks that can read protected source have none"
+                ),
+            ),
+            Err(e) => check("command network", Status::Fail, e).fix(
+                "correct sandbox.registries in the owner config (host names, *.domain, :port)",
+            ),
+        },
+    };
+    if let Some(note) = c.notes.iter().find(|n| n.contains("sandbox.network")) {
+        result.detail.push_str(&format!("; {note}"));
+    }
+    result
 }
 
 /// The imported detection rules: their version, how many are in use, and any

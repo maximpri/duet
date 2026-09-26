@@ -130,9 +130,10 @@ fn help_for(tab: Tab) -> &'static str {
     match tab {
         Tab::Limits => {
             "Budgets and bounds for each run: frontier spend, wall clock, finish attempts, command timeouts, \
-the checks run at finish, context masking, sandbox network access, operator approval \
+the checks run at finish, context masking, commands' network (sandbox.network: off, registries through \
+the egress proxy, or all; sandbox.registries owner only), operator approval \
 (oversight.approve, owner only) and language servers (lsp.*; lsp.servers owner only). A project may only lower \
-budgets and may only turn the sandbox network and language servers off."
+budgets, tighten the sandbox network and turn language servers off."
         }
         _ => {
             "Retention of raw run data (handles, transcripts, vault) and of audit logs. x purges the raw data \

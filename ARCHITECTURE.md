@@ -45,7 +45,8 @@ duet-boundary                → duet-provider, duet-fs
 duet-mcp                     (leaf: MCP client, JSON-RPC 2.0 over stdio and streamable HTTP; reqwest)
 duet-web                     → duet-mcp   (host-side HTTP for the web tools; reqwest, url, ipnet)
 duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
-duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp   (not duet-provider)
+duet-egress                  → duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
+duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
@@ -59,7 +60,8 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 |---|---|---|
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
-| `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
+| `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
+| `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
 | `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends (Z.ai: the coding plan's search server through `duet-mcp`, or the Web Search API; SearXNG; Brave; Wikipedia, paced to one request a second) | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
@@ -375,6 +377,32 @@ coding plan's search server for a coding-plan frontier, else the Web Search API;
 same function feeds `duet doctor`'s "web search" check, and the tool's description says whether it
 searches the web or Wikipedia only.
 
+### 5.6b Commands' network (egress proxy)
+
+`sandbox.network` (`RunConfig.network`, `crates/duet-agent/src/egress.rs`): `off`, `registries`
+(the default) or `all`. `tools::sandboxed` picks each command's `duet_sandbox::Network`: a
+`sensitive_data` command gets `Off`, and so does a check when the presenter lets checks read more
+than ordinary commands (protected source); ordinary commands, sub-agents' read-only commands and
+the other checks get the run's mode. With `registries`, the run's `duet_egress::Proxy` is created
+on the first such command (its events go to the run's audit log as `egress`), and each command gets
+its own `Route`, dropped when the command ends:
+
+```
+command ── HTTPS_PROXY=http://127.0.0.1:<port> ──► route ──► Proxy::serve
+  Seatbelt:   TCP to the proxy's host loopback port (and free development ports), nothing else
+  bubblewrap: own network namespace; `duet __sandbox-bridge` listens on its 127.0.0.1, and hands
+              each connection to the host over a channel (the helper's stdin, SCM_RIGHTS)
+Proxy::serve: head (CONNECT host:port | GET/HEAD http://...) → Hosts::allows → resolve (only a
+  listed name) → every address checked (duet_web::guard) → connect → CONNECT: 200, ClientHello's
+  server name == host, then bytes both ways | GET: one rewritten request, the response → Event
+```
+
+The agent also denies every command `duet_sandbox::home_secrets` (credential stores and shell
+histories under `$HOME`), and gives commands with network package caches in the run's scratch
+directory (`egress::cache_env`; `CARGO_HOME` seeded with links to the operator's crates). A refused
+request is noted at the end of the command's output (`[sandbox] the egress proxy refused: ...`).
+`run_command`'s description names the run's mode (the tool set stays fixed for the run).
+
 ### 5.7 Git history and commits
 
 The git tools (`crates/duet-agent/src/git_tools.rs`; `GitTools`, decided once per run or session in
@@ -630,10 +658,12 @@ git; reset behaviour defined per entry).
   workspace is read-only to them, `Spec.read_only`), a separate one for `sensitive_data` commands that no
   other sandboxed process (command, check, MCP server) can read (`tools::hidden_from_processes`), where
   their cargo builds go too (`CARGO_TARGET_DIR`); sensitive and protected paths unreadable (deny-read) except for
-  `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; network off
-  unless allowed; tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
+  `sensitive_data` commands (whose placeholders are resolved locally), and protected source readable by the host's checks; credential
+  stores in the home directory unreadable to every command; network only through the egress proxy
+  by default (§5.6b), none for `sensitive_data` commands and checks that read protected source;
+  tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
   On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against
-  Unix sockets while the network is off, and `.git`/`.duet` entries a command created removed when
+  Unix sockets unless the network is unrestricted, and `.git`/`.duet` entries a command created removed when
   it ends. A sandbox that cannot start refuses the command.
 - **Git:** one helper; environment cleared; fsmonitor, hooks, filters and user/system config
   disabled.
@@ -648,12 +678,14 @@ git; reset behaviour defined per entry).
 ```rust
 struct Setting { key, kind: Bool | Int{min,max} | Float{min,max} | Str | List | Choice,
                  default, scope: Owner | Project,
-                 direction: Any | AddOnly | OnlyTrue | OnlyFalse | OnlyLower,
+                 direction: Any | AddOnly | RemoveOnly | OnlyTrue | OnlyFalse | OnlyLower | OnlyLaterChoice,
                  confirm: bool, help }
 ```
 
 Loading merges defaults → owner file → project file, rejecting owner-only keys in project files
-and any project value that loosens privacy; reading an unregistered key is an error. `duet config
+and any project value that loosens privacy; reading an unregistered key is an error. A value in a
+form an earlier version wrote is read as its current meaning with a note (`migrate`:
+`sandbox.network = true` / `false` read as `"all"` / `"off"`). `duet config
 list|get|set` and `duet tui` are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
 change that loosens privacy (a `confirm` setting, or a value against its direction) without
 `--confirm`, prints the diff and appends every applied change to the owner's `config-audit.jsonl`.
@@ -759,3 +791,6 @@ Each is backed by a test, except where noted.
    adapters).
 10. A sub-agent has no tool its parent lacks, cannot delegate, writes only through the journal
     within its paths (its commands cannot write the workspace), and its requests pass the same gate.
+11. A sandboxed command reaches no network but the egress proxy (and its own loopback servers)
+    unless `sandbox.network = "all"`; a `sensitive_data` command reaches none in any mode; the proxy
+    resolves only listed names and connects only to public addresses.

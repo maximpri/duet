@@ -168,9 +168,14 @@ async fn with_the_proxy_route_a_command_reaches_the_servers_it_starts() {
     // ephemeral port and on a development port.
     let host = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let host_port = host.local_addr().unwrap().port();
-    let dev_host = tokio::net::TcpListener::bind(("127.0.0.1", free_dev_port(0)))
-        .await
-        .unwrap();
+    let mut dev_host = None;
+    for p in duet_sandbox::DEV_PORTS.iter().flat_map(|&(a, b)| a..=b) {
+        if let Ok(l) = tokio::net::TcpListener::bind(("127.0.0.1", p)).await {
+            dev_host = Some(l);
+            break;
+        }
+    }
+    let dev_host = dev_host.expect("a free development port");
     let dev_host_port = dev_host.local_addr().unwrap().port();
     let port = free_dev_port(dev_host_port);
     let s = spec(&ws, network);

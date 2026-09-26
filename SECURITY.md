@@ -159,7 +159,10 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
   needs no confirmation.
 - **Project configuration can only tighten.** It can never set owner-only keys (endpoints,
   credentials, `local.allow_plaintext`, raw-output commands, secret sinks).
-- **Sandbox on, network off** for every command; sensitive paths unreadable to commands.
+- **Sandbox on, registries only** for every command: sensitive paths, `.git`, run state and the
+  credential stores in the home directory are unreadable to commands, and their only network is the
+  egress proxy to package registries (`sandbox.network = "registries"`); `sensitive_data` commands
+  and checks that can read protected source have none (see Command network).
 - **Images stay local.** `local.vision`, `frontier.vision` are off and `images.to_frontier` is
   `never`: in hybrid mode no image reaches the frontier unless the operator marks it public.
 
@@ -503,8 +506,10 @@ end-to-end command tests in `crates/duet-agent`): denied files and directories u
 `od`, `ls` and `cp`, through symlinks and through hard links made by the command; `.git`
 unreadable to ordinary commands, `.duet` unreadable to every command even with no deny list, and
 both never writable, at any depth; writes only in the
-workspace and the scratch `TMPDIR`; no network, including Unix sockets; the environment cleared to
-the allowlist; the whole process tree killed on timeout and on interrupt.
+workspace and the scratch `TMPDIR`; no network, including Unix sockets, or with the egress proxy's
+route only the proxy and the command's own loopback servers (`crates/duet-sandbox/tests/network.rs`,
+`crates/duet-agent/tests/egress.rs`); the credential stores of a home directory unreadable; the
+environment cleared to the allowlist; the whole process tree killed on timeout and on interrupt.
 
 - **macOS (Seatbelt)**: tested in the gate on every commit. A refused read prints "Operation not
   permitted".
@@ -517,8 +522,9 @@ the allowlist; the whole process tree killed on timeout and on interrupt.
   are mounted writable, every existing `.git` read-only again and every existing `.duet` covered
   by the unreadable stand-in below; each denied path is
   covered by an empty mode-000 file or directory, so a refused read prints "Permission denied";
-  commands hold no capabilities even when Duet runs as root; with the network off, a new network
-  namespace cuts off IP and a seccomp filter refuses `AF_UNIX` sockets and `io_uring`.
+  commands hold no capabilities even when Duet runs as root; unless the network is unrestricted
+  (`all`), a new network namespace cuts off IP (with the egress proxy, only the bridge helper's
+  channel to the host leads out) and a seccomp filter refuses `AF_UNIX` sockets and `io_uring`.
 - **Fail closed**: at run start (and in `duet doctor`) Duet starts bubblewrap once; if it is
   missing or cannot create its namespaces (a kernel or container that forbids unprivileged user
   namespaces), the run is refused with bubblewrap's error. Each command must also prove the
@@ -541,6 +547,79 @@ Linux differences and limits:
 - Tested in containers on one kernel (OrbStack's, AArch64), not yet on a distribution host with
   AppArmor user-namespace restrictions (such as Ubuntu 24.04); there Duet either works or refuses
   to run commands.
+
+## Command network (egress proxy)
+
+`sandbox.network` (default `registries`; `off` and `all` remain) decides what network sandboxed
+commands have. With `registries` a command reaches Duet's egress proxy (`crates/duet-egress`), which
+connects it to the hosts in `sandbox.registries` only, and servers the command itself starts on
+loopback; nothing else. Ordinary commands, sub-agents' read-only commands and checks get the mode; a
+`sensitive_data` command never has network, in any mode (it reads sensitive files), and neither
+does a check that can read protected source. MCP and language servers keep their own settings.
+
+**Why registries are safe to reach by default.** What a command can send is what it can read.
+Ordinary commands cannot read sensitive paths, protected source, `.git` or Duet's run state, nor
+the credential stores in the operator's home directory, so what they could carry to a registry is
+public workspace content, which the frontier already sees and could already send (in a `web_fetch`
+URL). What is left is a channel to registry operators (a request path lands in their logs) and,
+with credentials, publishing; the operator's credentials are unreadable to commands (`~/.npmrc`,
+`~/.cargo/credentials.toml`, `~/.pypirc`, `~/.gem/credentials`, `~/.m2/settings.xml`, `~/.netrc`,
+`~/.git-credentials`, `~/.config/gh`, `~/.ssh`, cloud credentials, coding agents' logins, shell
+histories and startup files, browser profiles: `HOME_SECRETS` in `crates/duet-sandbox`).
+
+| Threat | What stops it |
+|---|---|
+| A command sends data to a host of its choosing | The sandbox lets it reach only the proxy: under Seatbelt TCP to the proxy's loopback port and to free development ports (below), no other address, no UDP, no Unix socket; under bubblewrap it keeps its own network namespace, and a helper inside (`duet __sandbox-bridge`) hands each connection to the host over a socket pair (the seccomp filter against creating `AF_UNIX` sockets stays on). The proxy connects only to a host on the list with an allowed port (443 and 80 unless an entry names one), and a command that ignores the proxy variables reaches nothing |
+| DNS as a channel (`c2VjcmV0.attacker.example`) | Commands have no resolver (no UDP, no route); the proxy resolves only names on the list, so a name off it is refused without a lookup |
+| A listed name leading into the LAN, loopback or a cloud metadata service | Every address of the name is checked with the web tools' classes (private, loopback, link-local, CGNAT, unique-local, IPv4 embedded in IPv6, ...); one bad address refuses the name; metadata addresses always; the connection goes to a checked address |
+| Another site behind the same CDN as a registry | Plain HTTP: one `GET` or `HEAD`, no body, `Host` set from the target, the connection closed after the response. A tunnel must start with a TLS ClientHello whose server name is the tunnel's host, or it is closed unforwarded |
+| Uploads and publishing | Plain-HTTP uploads are refused. Inside TLS the proxy sees no method; publishing needs credentials, and the operator's are unreadable to commands |
+| Host services on loopback (a local database, Redis, a local proxy, the local model server) | bubblewrap: a separate network namespace, so the host's loopback does not exist for commands. Seatbelt: the only loopback ports a command may connect to are the proxy's and the development ports (`DEV_PORTS`: 3000-3099, 4000-4099, 5000-5099, 5173-5199, 7000-7099, 8000-8099, 9000-9099 and a few more) that no process on the host listened on when the command started (`lsof`, plus `netstat` where it reports every user's sockets) |
+| A command that reads sensitive data or protected source sends it | `sensitive_data` commands never have network; checks that can read protected source have none; the decision is made per command by the host (`tools::sandboxed`), not by the command |
+| Poisoning the operator's package caches (code the operator later builds outside the sandbox) | The home directory stays unwritable. Commands with network get package caches in the run's scratch directory; `CARGO_HOME` there is seeded with links to the crates the operator's cargo home holds, which a command can read but not write |
+| Hiding what crossed | Every connection is an `egress` audit event: host, port, bytes each way, `allowed`, `refused` (with the rule) or `failed`; never a path, a query or content. A refused request is also noted in the command's output |
+
+**Loosening.** `sandbox.network` goes `off` < `registries` < `all`; the owner loosens with
+`--confirm` (audited), a project may only tighten. `sandbox.registries` is owner-only; adding a host
+loosens (`--confirm`), removing one does not. The booleans of earlier versions still read (`true`
+as `all`, `false` as `off`), with a note, so an owner who had turned the network off keeps it off.
+
+**Default list.** crates.io (index and downloads), npm and yarn's mirror, PyPI (index and files),
+the Go module proxy and checksum database, Maven Central, the Gradle plugin portal, RubyGems, and
+GitHub's download hosts (`codeload.github.com`, `objects.githubusercontent.com`,
+`release-assets.githubusercontent.com`). Not `github.com`: besides downloads it takes `git push`
+and other writes with a token, and no default install path needs it (npm's `github:` dependencies
+come from codeload; Go modules from the proxy); an owner who needs git dependencies adds it.
+`crates.io` is listed for `cargo search` and `cargo info`; it is also crates.io's publishing API,
+as `registry.npmjs.org` and `rubygems.org` are their registries' (see the limits below).
+
+Known limits:
+
+- Host level only, no TLS interception. A request path to an allowed registry can carry what the
+  command can read to that registry's logs, and with credentials the command is given in its own
+  text (an attacker's token, not the operator's) it could publish a package holding it. What a
+  command can read is public workspace content and the rest of the home directory beyond the
+  credential list (other projects, documents): the home directory is not hidden wholesale, and the
+  list is of well-known places, not a guarantee. Use `off` on a machine whose home directory holds
+  data that must not reach a registry.
+- Inside a tunnel the proxy checks the TLS server name, not the HTTP `Host` header, which is
+  encrypted: a CDN that routes by `Host` regardless of the server name could serve another of its
+  sites through an allowed registry's name.
+- Seatbelt cannot give commands loopback of their own: a server a command starts on a port outside
+  the development ports (a test server on a random port) is unreachable to it on macOS (use `all`);
+  a host service that starts listening on a development port while a command runs, or one of
+  another user that `lsof` cannot see, is reachable to it; and a server a command binds to all
+  addresses can be reached from the local network while the command runs. Seatbelt does not
+  reliably apply a `deny` for one port after an `allow` for all loopback ports (found while
+  testing: for some ports the deny is ignored, deterministically), so the rules are a positive
+  list.
+- The proxy's loopback port (macOS) accepts connections from any local process while its command
+  runs; they have network of their own anyway.
+- A registry on a private address (an intranet mirror) is refused; `all` is the way to reach it.
+  Private registries that need the token in `~/.npmrc` do not work from commands.
+- Tools that ignore the proxy variables fail (fail closed). Java tools get the proxy through
+  `MAVEN_OPTS` and `GRADLE_OPTS`, best effort.
+- Package caches last for the run: npm, pip and the others download again in the next run.
 
 ## Web tools
 
@@ -867,7 +946,8 @@ such instructions; the frontier may follow them. What that can and cannot achiev
 **Still possible.** A steered frontier can change any Open source file (including inserting
 malicious code the owner later runs outside the sandbox), run arbitrary commands inside the sandbox,
 ask the local model questions about sensitive content with `ask_local`, and run `sensitive_data`
-commands, and send what it knows (never a known sensitive value) to public hosts in `web_fetch` URLs
+commands, send what ordinary commands can read to the listed package registries (see Command
+network), and send what it knows (never a known sensitive value) to public hosts in `web_fetch` URLs
 and `web_search` queries (see Web tools) and in arguments to public MCP servers (see MCP servers). With `oversight.approve = "risky"` the operator is asked before `sensitive_data` commands,
 protected edits and writes outside ordinary source and test files. Local answers are derived from sensitive content by design and can convey meaning in
 paraphrase; the protected-source limits above apply. **Review the diff before running, committing or
@@ -877,7 +957,9 @@ deploying what a run produced.**
 - Reading sensitive paths or protected source in the working tree through commands (OS sandbox),
   in any encoding, including committed copies in `.git`; reading Duet's own run state in `.duet/`
   from any command, `sensitive_data` included.
-- Network access from commands (sandbox; `sandbox.network` is off and a project cannot turn it on).
+- Network access from commands beyond the listed package registries (sandbox and egress proxy;
+  `sandbox.network` is `registries` and a project cannot loosen it), and any network from a
+  `sensitive_data` command or a check that can read protected source.
 - Writing `.git` or `.duet` (policy, audit log, vault, run state) from tools or commands.
 - Sending a known sensitive value, a detected secret or personal datum, or a copied span of
   sensitive content to the frontier: every request, including text the frontier wrote itself, goes
@@ -945,6 +1027,7 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-019 | Filter and final check disagreeing on values the filter found | CWE-696 Incorrect Behavior Order (consequence: a run ended `failed`; not a leak) | The outbound filter sanitized a request item by item: detectors re-ran on messages and tool results, and known values were replaced in the model's own messages. A value the detectors found in a later item joined the vault after the earlier items were done, so it stayed in them, and the final check, which reads the whole request, blocked it and ended the run. Context masking set it off in an XL calibration run (X2, hybrid, seed 2, build `14f1066`) after 139 requests and 65 minutes: the stub replacing an old command result quoted the command, the entropy detector took a test-suite path in it (`…/groups/function-fromMillis/case000`) for a secret, and the same path in the model's own earlier tool calls stayed; the run's code passed 42 of 55 hidden tests and scored 0. `read_file` set it off on the next request as well, since its result names the path it read. Nothing was sent (fail-closed) | Two passes: detectors first, then every value known by then replaced in every string of the request (system prompt, tool descriptions, every field of every item, replayed reasoning, JSON inside strings), read exactly as the check reads it; a property test holds "the check passes what the filter returns" for any request. A request the check still refuses is sent with each part that holds a value withheld (`send_withheld` event), and only one that still fails ends the run (`d1470f2`) |
 | DUET-2026-020 | Final check reading the wire format as content | CWE-697 Incorrect Comparison (consequence: every request blocked; not a leak) | The final check searched the whole serialized body, keys and structure included, for every vault value of 6+ bytes. A `.env` value that spells part of the wire format (`required` in every tool schema, `assistant`, `function`, the model's name as `LLM_MODEL=`) would block every request of the run, and no filter can change the format. Found by the property test written for DUET-2026-019, not observed in a run | The check reads the body string by string and skips the body's framing: the strings the same request's body has with all content blanked (keys, roles, block types, the model's name, call ids, tool names and schemas); content keeps being checked (`d1470f2`) |
 | DUET-2026-021 | Random keys taken for identifiers | CWE-183 Permissive List of Allowed Inputs (consequence CWE-201) | The entropy detector passed any token holding `__` (meant for dunder names) and any letters-only token whose capitals looked like camel case, so about 1% of random URL-safe base64 keys and 0.6% of random letter keys were sent as written, in public content and in the frontier's own text, unless another detector knew their format or a key-like name stood next to them. Found by the random-token measurement written while fixing the detector's false positives on paths and build output (seen in a live run, 2026-09-26), not observed in a run | The exemptions are gone; an identifier is recognized by its word shape (camel case with acronyms, words of one or two letters only those identifiers use, at most two capitals in five letters) and a long token by its parts; a seeded test over a million random tokens of five alphabets bounds those not withheld whole (55 measured; 3,177 before) |
+| DUET-2026-022 | Network for commands that read sensitive data | CWE-284 Improper Access Control (consequence CWE-201) | With `sandbox.network = true`, `sensitive_data` commands (which read sensitive files) and checks (which read protected source) had the same unrestricted network as ordinary commands, so a steered frontier could send sensitive data or protected source from them; and every command could read the credential stores in the operator's home directory (registry tokens, keys, cloud credentials, shell histories) and print or send them. Found in review while adding the egress proxy, not observed in a run | `sensitive_data` commands never have network, in any mode; checks that can read protected source have none; the credential stores in the home directory (`HOME_SECRETS`) are unreadable to every command; the default network is registries only, through the audited egress proxy |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values

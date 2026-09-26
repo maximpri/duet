@@ -187,10 +187,37 @@ other than an ordinary source or test file; with `all`, before every command and
 is returned to the model as a tool error, and every decision is in the run's audit log. A run with
 approval on and no terminal refuses to start. Details: [SECURITY.md](../SECURITY.md) (Oversight).
 
+**Network for commands** (`sandbox.network`; default `registries`): commands reach the package
+registries in `sandbox.registries` through Duet's egress proxy, so `npm install`, `cargo add`,
+`pip install`, `go get` and the like work; the defaults are crates.io, npm (and yarn's mirror),
+PyPI, the Go module proxy and checksum database, Maven Central, the Gradle plugin portal, RubyGems
+and GitHub's download hosts (release assets and source archives; not github.com, which also takes
+pushes). Any other host is refused, and the command's output ends with what was refused
+(`[sandbox] the egress proxy refused: example.com:443 ...`). A server a command starts on
+localhost is reachable from the same command (under bubblewrap on any port; on macOS on the usual
+development ports, 3000-3099, 4000-4099, 5000-5099, 5173-5199, 7000-7099, 8000-8099, 9000-9099
+and a few others, when nothing on your machine already listens there, so a test server on a
+random port needs `all` there). `"off"` gives commands no network; `"all"` gives them all of it
+(`duet config set sandbox.network '"all"' --confirm`). Whatever the mode, a `sensitive_data`
+command has no network, nor does a check that can read protected source. Add a registry (owner
+config only; adding asks for `--confirm`, removing does not):
+`duet config set sandbox.registries '["registry.npmjs.org", "npm.pkg.github.com"]' --confirm`
+(host names, `*.domain`, optionally `:port`; without a port 443 and 80). A registry on a private
+address (an intranet mirror) is refused; use `all` for it. Package caches are kept per run in its
+scratch directory (npm, pip and the others download again in a new run; cargo reuses the crates
+your own `~/.cargo` holds, which commands can read but never write). Commands cannot read the
+credential stores in your home directory (`~/.npmrc`, `~/.cargo/credentials.toml`, `~/.ssh`,
+`~/.aws`, shell histories and startup files, browser profiles; the list is `HOME_SECRETS` in
+`crates/duet-sandbox`), so a token in `~/.npmrc` is not available to them. Each connection is an
+`egress` event in the run's audit log (host, port, bytes each way, allowed or refused; never a
+path). `cargo new` makes no `.git` in commands (they may not create one). An owner config from an
+earlier version with `sandbox.network = true` or `false` still works: it reads as `"all"` or
+`"off"` and Duet prints a note. Details: [SECURITY.md](../SECURITY.md) (Command network).
+
 **Web tools** (`web.*` settings; on by default): the frontier gets `web_fetch` (a public page
 as text; HTML is converted with links kept; `start_line`/`end_line` read part of a long page) and
 `web_search` (title, URL and snippet per result). Requests are made by the host, never by commands
-(commands still have no network): `GET` only (a search backend's own API may `POST`),
+(commands' own network is `sandbox.network`, below): `GET` only (a search backend's own API may `POST`),
 `http`/`https`, public addresses only (checked after DNS and on every redirect), at most
 `web.max_bytes` per response and `web.timeout_secs` per request.
 

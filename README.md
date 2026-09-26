@@ -112,7 +112,13 @@ its output is treated as data:
 
 - **Commands cannot read sensitive files.** Every command the agent runs is sandboxed (Seatbelt on
   macOS, bubblewrap with seccomp on Linux). Sensitive paths and `.git` are unreadable to ordinary
-  commands, no command can read Duet's own state, and the network is off by default.
+  commands, no command can read Duet's own state or the credential stores in your home directory
+  (`~/.npmrc`, `~/.ssh`, `~/.aws`, shell histories, ...).
+- **Commands reach package registries, and nothing else.** By default a command's only network is
+  Duet's egress proxy, which lets `npm install`, `cargo add` or `pip install` through to the
+  registries you allow and refuses every other host, private addresses and mismatched TLS names;
+  each connection is in the audit log. What a command could send there is what it can read, which
+  excludes everything sensitive. A command marked `sensitive_data` has no network at all.
 - **Sensitive commands keep their output local.** A command that genuinely needs the real data,
   such as running the program on a production sample, is marked `sensitive_data`. Its output stays
   local behind a handle, and every file it writes becomes sensitive too, so derived data can't
@@ -149,6 +155,7 @@ are sandboxed, every use is audited, and side effects need approval.
 | Git history and commits | A file that is sensitive today stays protected in every past revision, and old commits are scanned for secrets. Commits include only files Duet wrote, never sensitive ones, and in a conversation each one waits for your yes |
 | Project instructions (`DUET.md`) | Scanned like any repository file before the frontier reads them; they guide how Duet works in a repository but can never change its settings, policy or sandbox |
 | Sub-agents | They share the same engine, vault and audit chain, and get no more than their parent |
+| Package installs | Commands reach only the registries in `sandbox.registries` (crates.io, npm, PyPI, Go, Maven Central, RubyGems, GitHub downloads) through an audited proxy; `sandbox.network = "off"` takes even that away, `"all"` opens everything (with `--confirm`) |
 | Images | Images can't be text-scanned, so the local model describes them unless you mark one public |
 
 ### 7. Secure by default, and the owner decides

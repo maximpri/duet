@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Runs the Linux (bubblewrap) sandbox, agent and boundary tests (and their lints) in
+# Runs the Linux (bubblewrap) sandbox, agent, boundary and egress tests (and their lints) in
 # Docker, in four setups:
 #   privileged    --privileged; tests run as a non-root user
 #   unprivileged  no added capabilities, tests as a non-root user; bubblewrap
@@ -24,7 +24,7 @@ prefix=duet-linux-check
 image=$prefix:local
 volume=$prefix-target
 base=${DUET_LINUX_BASE:-rust:1-bookworm}
-crates=(-p duet-sandbox -p duet-agent -p duet-boundary)
+crates=(-p duet-sandbox -p duet-agent -p duet-boundary -p duet-egress)
 keep=false
 rmi_base=false
 for arg in "$@"; do
@@ -82,6 +82,7 @@ run_mode() {
             exec runuser -u "$DUET_USER" -- env HOME=/home/duet PATH=/usr/local/cargo/bin:/usr/bin:/bin \
                 RUSTUP_HOME=/usr/local/rustup CARGO_HOME=/target/cargo-home \
                 CARGO_TARGET_DIR=/target/build ${DUET_EXPECT_NO_NAMESPACES:+DUET_EXPECT_NO_NAMESPACES=1} \
+                DUET_SANDBOX_BRIDGE=/target/build/debug/duet-sandbox-bridge \
                 cargo "$@"' bash "$@"
 }
 
@@ -89,6 +90,10 @@ status=0
 run_mode privileged clippy --locked "${crates[@]}" --all-targets -- -D warnings || status=1
 run_mode privileged test --locked --no-fail-fast "${crates[@]}" || status=1
 run_mode unprivileged test --locked --no-fail-fast "${crates[@]}" || status=1
+# The egress bridge with duet itself as the helper, through the frontier loop.
+for mode in privileged unprivileged; do
+    run_mode "$mode" test --locked -p duet-cli --test registry_network || status=1
+done
 run_mode no-namespaces test --locked -p duet-sandbox fail_closed || status=1
 # Last: files it creates in the volume belong to root.
 run_mode root test --locked --no-fail-fast "${crates[@]}" || status=1
