@@ -221,7 +221,9 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
 fn read_file(ctx: &Ctx<'_>, args: &Map<String, Value>) -> Result<String, String> {
     let raw = string_arg(args, "path")?;
     let rel = duet_fs::normalize_relative(raw).map_err(fs_err)?;
-    if !ctx.presenter.path_visible(&rel) {
+    // `.duet` (raw handles, the vault, transcripts) and `.git` (committed
+    // copies) are run state, never workspace content.
+    if duet_fs::is_reserved(&rel) || !ctx.presenter.path_visible(&rel) {
         return Err(format!("{raw} is not available"));
     }
     let bytes = duet_fs::read_file(ctx.workspace, &rel, MAX_READ_BYTES).map_err(fs_err)?;
@@ -1121,6 +1123,65 @@ mod sensitive_command_tests {
             out.contains("scratch-ok") && out.contains("public"),
             "{out}"
         );
+    }
+
+    #[tokio::test]
+    async fn read_file_never_reads_run_state_or_git_internals() {
+        // An ordinary command's `$TMPDIR` names the run, so the frontier can
+        // know where its run state is; the raw handles there hold what no
+        // detector recognizes (a date of birth).
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = ws.join(".duet/runs/r1");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(ws.join(".git")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(ws.join(".git/config"), "[core]\n").unwrap();
+        let row = "id,born,total\n1,1987-03-14,8977066\n";
+        std::fs::write(ws.join("data/orders.csv"), row).unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            command_output_sensitive: true,
+            detect_pii: true,
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy, None).unwrap();
+        let git = Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(30),
+            network: &crate::egress::Network::Off,
+            checks: &[],
+            audit: None,
+            interrupted: None,
+            web: None,
+            git_tools: None,
+            lsp: None,
+        };
+        let shown = call(&mut ctx, "read_file", json!({"path": "data/orders.csv"})).await;
+        assert!(
+            shown.contains("h1") && !shown.contains("1987-03-14"),
+            "{shown}"
+        );
+        assert!(run.join("handles/h1").is_file());
+        for path in [
+            ".duet/runs/r1/handles/h1",
+            "./.duet/runs/r1/vault.json",
+            ".git/config",
+        ] {
+            let out = call(&mut ctx, "read_file", json!({"path": path})).await;
+            assert!(out.contains("is not available"), "{path}: {out}");
+            assert!(
+                !out.contains("1987-03-14") && !out.contains("[core]"),
+                "{out}"
+            );
+        }
     }
 
     #[tokio::test]

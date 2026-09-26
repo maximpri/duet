@@ -418,7 +418,7 @@ fn target(
     positions: bool,
 ) -> Result<Target, Fail> {
     let rel = duet_fs::normalize_relative(raw).map_err(fs_err)?;
-    if !ctx.presenter.path_visible(&rel) {
+    if duet_fs::is_reserved(&rel) || !ctx.presenter.path_visible(&rel) {
         return Err(Fail::Refused(format!("{raw} is not available")));
     }
     if ctx.presenter.path_sensitive(&rel) {

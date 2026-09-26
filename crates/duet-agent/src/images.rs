@@ -154,7 +154,7 @@ pub fn read(
         Ok(rel) => rel,
         Err(e) => return Placed::failed(e.to_string()),
     };
-    if !presenter.path_visible(&rel) {
+    if duet_fs::is_reserved(&rel) || !presenter.path_visible(&rel) {
         return Placed::failed(format!("{raw} is not available"));
     }
     let bytes = match duet_fs::read_file(&cfg.workspace, &rel, MAX_INPUT_BYTES) {
