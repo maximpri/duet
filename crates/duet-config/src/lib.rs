@@ -577,6 +577,15 @@ pub const REGISTRY: &[Setting] = &[
         "Fraction of context.compact_at a compaction brings the conversation down to (the recent turns kept verbatim fill it)."
     ),
     s!(
+        "context.condense_output",
+        Bool,
+        "true",
+        Project,
+        Any,
+        false,
+        "Show test, build and install output condensed: failing tests with their assertions, the first error of each kind with its location, and the summary counts; passing tests, progress and repeated lines are left out. The whole output stays readable with read_raw. Privacy mode only, and only for output the frontier may see: output held as sensitive is never condensed, and pass-through mode shows output as it is."
+    ),
+    s!(
         "sandbox.network",
         Choice(&["all", "registries", "off"]),
         r#""registries""#,

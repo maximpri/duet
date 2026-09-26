@@ -250,6 +250,70 @@ async fn a_file_derived_into_target_stays_sensitive_when_read() {
     f.assert_no_leak(&f.canaries([]));
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_public_test_printing_customer_data_is_condensed_without_it() {
+    // A public test copied a customer's row into its fixture. Its run's
+    // output (command output under the shipped policy) is shown condensed,
+    // the failure kept, and the whole output read back with read_raw: the
+    // values stay replaced in both.
+    for (i, local) in LOCALS.into_iter().enumerate() {
+        let f = Fixture::new(
+            &format!("condensed-{i}"),
+            "Fix the failing refund test.",
+            local,
+        );
+        let c = &CUSTOMERS[1];
+        let mut script = String::from("echo; echo 'running 41 tests'\n");
+        for k in 0..40 {
+            script.push_str(&format!("echo 'test refunds::case_{k:02} ... ok'\n"));
+        }
+        script.push_str(&format!(
+            "echo 'test refunds::refund_to_card ... FAILED'; echo; echo 'failures:'; echo\n\
+echo '---- refunds::refund_to_card stdout ----'\n\
+echo \"thread 'refunds::refund_to_card' panicked at tests/refunds.rs:31:5:\"\n\
+echo 'assertion `left == right` failed: refund for {} <{}>'\n\
+echo '  left: \"{}\"'; echo ' right: \"none\"'; echo; echo 'failures:'\n\
+echo '    refunds::refund_to_card'; echo\n\
+echo 'test result: FAILED. 40 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s'\n\
+exit 101\n",
+            c.name, c.email, c.card
+        ));
+        std::fs::create_dir_all(f.ws.join("tests")).unwrap();
+        std::fs::write(f.ws.join("tests/refunds.sh"), script).unwrap();
+        f.script(vec![
+            Step::Call("run_command", json!({"command": "sh tests/refunds.sh"})),
+            Step::From(Box::new(|body| {
+                let shown = body["messages"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .rev()
+                    .find(|m| m["role"] == "tool")
+                    .and_then(|m| m["content"].as_str())
+                    .unwrap_or_default();
+                let handle = shown.split_whitespace().next().unwrap_or_default();
+                (
+                    "read_raw",
+                    json!({"handle": handle, "start_line": 1, "end_line": 60}),
+                )
+            })),
+            Step::Call("finish", json!({"summary": "Found the failing refund."})),
+        ]);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        let shown = &f.results_of("run_command")[0];
+        assert!(shown.contains("condensed (cargo test)"), "{shown}");
+        assert!(
+            shown.contains("refunds::refund_to_card ... FAILED"),
+            "{shown}"
+        );
+        let read = &f.results_of("read_raw")[0];
+        assert!(read.contains("refunds::case_05 ... ok"), "{read}");
+        f.assert_no_leak(&f.canaries([]));
+    }
+}
+
 /// Ten `ask_local` calls about one card number, each a narrow question: the
 /// first digit, the last four, the length, then digits 2 to 8 one by one.
 fn probing() -> Fixture {

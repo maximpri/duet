@@ -444,6 +444,7 @@ fn toolchain_output_reaches_the_frontier_without_placeholders() {
         custom_patterns: list("sensitivity.custom_patterns"),
         bulky_tokens: cfg.int("sensitivity.bulky_tokens").unwrap() as usize,
         bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens").unwrap() as usize,
+        condense_output: flag("context.condense_output"),
         ..Policy::default()
     };
     let (ws, run) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());

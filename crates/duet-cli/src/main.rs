@@ -460,6 +460,7 @@ fn policy(cfg: &Config) -> Result<Policy> {
         custom_patterns: cfg.list("sensitivity.custom_patterns")?,
         bulky_tokens: cfg.int("sensitivity.bulky_tokens")? as usize,
         bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens")? as usize,
+        condense_output: cfg.bool("context.condense_output")?,
         local_brief: cfg.bool("sensitivity.local_brief")?,
         local_pii_pass: cfg.bool("sensitivity.local_pii_pass")?,
         interface_only: cfg.list("ip.interface_only")?,
