@@ -63,7 +63,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
-| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends (Z.ai: the coding plan's search server through `duet-mcp`, or the Web Search API; SearXNG; Brave; Wikipedia, paced to one request a second) | Decide what the frontier sees, or read the workspace |
+| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `duet-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
@@ -397,7 +397,8 @@ everything. A refusal is a tool error and an `outbound_refused` audit event (cha
 reason; never the text). The method is generic so other third-party channels (MCP) use it too.
 
 The web tools (`crates/duet-agent/src/web.rs` over `duet-web`): `web_fetch {url, start_line?,
-end_line?}` always, `web_search {query, count?}` only with a usable backend, both fixed at run start
+end_line?}` always, `web_search {query, count?, sources?}` only with a usable backend (`sources`
+only for the native backend, an enum of the run's sources), both fixed at run start
 (`RunConfig.web`; `None` when `web.enabled` is off). Flow: check the URL or query → `duet-web`
 fetches (resolve, check every address, pin, follow at most 5 checked redirects, cap, convert) →
 `Presenter::present(Source::Web { url }, text)` (public-untrusted: scanned and tokenized like public
@@ -405,12 +406,23 @@ content, offloaded to a handle when bulky) → framed between markers with a per
 saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
 
 The search backend is chosen once per run in `crates/duet-cli/src/web.rs` (`choose`) from
-`web.search.backend` (`auto` by default), the run's frontier (its URL from the run manifest; none
-in local-only runs) and the environment: Z.ai when it is the frontier and its key is set (the
-coding plan's search server for a coding-plan frontier, else the Web Search API; see
-`web.search.zai_engine`), else the owner's SearXNG, else Brave with its key, else Wikipedia. The
-same function feeds `duet doctor`'s "web search" check, and the tool's description says whether it
-searches the web or Wikipedia only.
+`web.search.backend` (`auto` by default), `web.search.sources`, the workspace root (its manifest
+files pick the package registries), the run's frontier (its URL from the run manifest; none in
+local-only runs) and the environment. `auto` is the native backend; SearXNG, Brave, Wikipedia
+alone and Z.ai (with the frontier's key when Z.ai is the frontier; `web.search.zai_engine`) only
+when named. The same function feeds `duet doctor`'s "web search" check, and the tool's description
+says what the backend searches (for native: each source, which are asked by default and which on
+request).
+
+A native search (`crates/duet-web/src/search/native.rs`): the agent resolves the sources to ask
+(the frontier's `sources` or the defaults), checks the query once against all their hosts, then
+`Web::search_with` asks each source in parallel under its own deadline: answer kept for the run? →
+the service's pacer (one request at a time per service, its interval, GitHub's per-minute budget,
+any backoff a source asked for; a turn too far off skips the source) → the guarded client (address
+checked and pinned, no redirects, capped, gzip decoded) → the source's parser. Lists merge by rank
+(every source's first result, then every second; a page seen once), and each source's report
+(host, bytes, outcome, note) becomes one `web_request` audit event and a line of the rendered
+reply, which is presented as `Source::Web` like any result.
 
 ### 5.6b Commands' network (egress proxy)
 

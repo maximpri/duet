@@ -216,26 +216,60 @@ earlier version with `sandbox.network = true` or `false` still works: it reads a
 
 **Web tools** (`web.*` settings; on by default): the frontier gets `web_fetch` (a public page
 as text; HTML is converted with links kept; `start_line`/`end_line` read part of a long page) and
-`web_search` (title, URL and snippet per result). Requests are made by the host, never by commands
+`web_search` (title, URL, snippet and source per result). Requests are made by the host, never by commands
 (commands' own network is `sandbox.network`, below): `GET` only (a search backend's own API may `POST`),
 `http`/`https`, public addresses only (checked after DNS and on every redirect), at most
 `web.max_bytes` per response and `web.timeout_secs` per request.
 
-Search works without setup. `web.search.backend = "auto"` (the default) picks the first that is
-available, and `duet doctor` shows which one runs get and who receives the queries:
+Search works without setup, and Duet runs it itself: with `web.search.backend = "auto"` (the
+default, the `native` backend) the host asks public sources that publish an API for automated
+use, in parallel, with no search provider in between, and merges their answers (each source's
+first result, then each source's second, a page listed twice shown once). Every source asked
+receives the query and your address, so a search now reaches several parties; `duet doctor`
+("web search") lists them.
 
-| Backend | When `auto` picks it | Who receives the queries | Cost |
+| Source | What it finds | Asked | Service and limit (without a key) |
 |---|---|---|---|
-| `zai` | the frontier is Z.ai and its key (`frontier.api_key_env`) is set (never in local-only runs) | Z.ai, the frontier provider that already receives the run | coding plan: the plan's search server, counted in the plan's credits; otherwise the Web Search API, billed per search to the account balance (`web.search.zai_engine`) |
-| `searxng` | `web.search.searxng_url` is set | your instance, which passes queries on to the engines it is set up with | none |
-| `brave` | the key in `$BRAVE_API_KEY` is set | Brave | Brave's plan |
-| `wikipedia` | nothing else is available | the Wikimedia Foundation (English Wikipedia's search: articles only, not the whole web) | none, no key |
+| `stackoverflow` | Stack Overflow questions (answers, score, tags) | by default | Stack Exchange API; 300 requests a day per address |
+| `wikipedia` | English Wikipedia articles | by default | MediaWiki API; one request at a time, one a second |
+| `github` | GitHub repositories | by default | GitHub REST search, never with a token; 10 searches a minute |
+| `crates`, `npm`, `pypi` | packages (`pypi`: an exact name only) | by default when the workspace root has a `Cargo.toml`, a `package.json`, or a Python project file (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile`); otherwise on request | crates.io one request a second; npm's registry search; PyPI's JSON API |
+| `github_issues` | GitHub issues and pull requests (error messages, bug reports) | on request | shares GitHub's 10 a minute |
+| `serverfault`, `superuser`, `askubuntu`, `unix` | those Stack Exchange sites | on request | shares Stack Exchange's quota |
+| `hackernews` | Hacker News stories and their discussions | on request | Algolia's HN Search API; 10,000 an hour |
+| `arxiv` | arXiv papers | on request | arXiv API; one request every 3 seconds |
+
+The frontier picks sources per search (`web_search {query, count?, sources?}`); the tool's
+description lists the run's sources. Each result shows its source, and the reply starts with what
+every source did (its result count, "answered earlier" for an answer kept from earlier in the run,
+"skipped" when a rate limit or a source's requested pause would make it wait, "timed out"). A
+source gets 10 seconds (or `web.timeout_secs` when shorter), so a slow one never holds up the
+others. Stack Overflow and GitHub match every word: a few distinctive words (a name, an error
+message) find more than a sentence. Google, Bing and DuckDuckGo are never asked: they publish no
+API for this, and Duet does not scrape their result pages.
+
+`web.search.sources` chooses the sources (owner only, confirmed): `["auto"]` (the default: the
+table above), `auto` plus names to ask those by default too, or names alone to allow only those.
+
+Other backends are used only when the owner names them in `web.search.backend`; `auto` never picks
+them (earlier versions picked Z.ai for a Z.ai frontier, a SearXNG instance whose URL was set, or
+Brave when its key was set; runs and `duet doctor` now name those settings as unused):
+
+| Backend | Who receives the queries | Cost |
+|---|---|---|
+| `native` (`auto`) | each source asked (above) | none, no key |
+| `searxng` | your instance at `web.search.searxng_url`, which passes queries on to the engines it is set up with | none |
+| `brave` | Brave (key in `$BRAVE_API_KEY`) | Brave's plan |
+| `wikipedia` | the Wikimedia Foundation (English Wikipedia's search only) | none, no key |
+| `zai` | Z.ai (with a Z.ai frontier, the provider that already receives the run) | coding plan: the plan's search server, counted in the plan's credits; otherwise the Web Search API, billed per search to the account balance (`web.search.zai_engine`) |
 
 ```sh
-duet doctor                                                               # "web search": the backend in use
+duet doctor                                                               # "web search": the backend, its sources and their hosts
+duet config set web.search.sources '["auto", "github_issues"]' --confirm  # also ask GitHub's issue search by default
+duet config set web.search.sources '["wikipedia", "stackoverflow"]' --confirm  # only these two
 duet config preset searxng --confirm       # private search: settings for a local SearXNG + the docker command
 duet config set web.search.backend '"brave"' --confirm                    # Brave Search API; key in $BRAVE_API_KEY
-duet config set web.search.zai_engine '"search_pro_jina"' --confirm        # Z.ai's per-search API instead of the plan
+duet config set web.search.backend '"zai"' --confirm                      # Z.ai's search (the plan's server with a coding-plan frontier)
 duet config set web.search.backend '"none"'                               # no web_search
 duet config set web.allowlist_private '["wiki.corp", "10.20.0.0/16"]' --confirm   # intranet hosts for web_fetch
 duet config set --project web.enabled false                              # no web tools in this repository
@@ -257,19 +291,20 @@ duet doctor --online        # the "web search" check sends it one test query
 Duet never starts the container itself. Queries then leave your machine only as SearXNG's own
 requests to the engines it is set up with: from your address, without an account or key.
 
-**Z.ai search.** With the default frontier (the GLM Coding Plan), `zai` searches through the plan's
-Web Search server: no extra key, counted in the plan's credits (1.2 credits a search as of
-2026-09). Its results vary: often only a hit's site is given (marked "the site only" in the
-results), and technical queries sometimes get unrelated hits. Z.ai's Web Search API
+**Z.ai search** (`web.search.backend = "zai"`). With the default frontier (the GLM Coding
+Plan), `zai` searches through the plan's Web Search server: no extra key, counted in the plan's
+credits (1.2 credits a search as of 2026-09). Its results vary: often only a hit's site is given
+(marked "the site only" in the results), and technical queries sometimes get unrelated hits. Z.ai's Web Search API
 (`web.search.zai_engine = "search_pro_jina"` or `"search-prime"`) gave better results with page
 addresses in tests, but it is billed per search ($0.01 as listed in 2026-09) to the account's
 balance, which the coding plan does not cover; without a balance it answers that the account has
 none.
 
 In hybrid mode a URL or query holding a placeholder or a known sensitive value is refused before
-anything is sent, and fetched content and results are scanned like public content and shown as
-untrusted data. Every call is an audit event (host, bytes, outcome). Details:
-[SECURITY.md](../SECURITY.md) (Web tools).
+anything is sent (for a native search, before any source is contacted), and fetched content and
+results are scanned like public content and shown as untrusted data. Every call is an audit event
+(host, bytes, outcome; a native search one per source asked). Native sources are held to the same
+address rules as `web_fetch`. Details: [SECURITY.md](../SECURITY.md) (Web tools).
 
 **Git tools** (when the workspace is a git repository; see Without git above): `git_status`, `git_log {path?, rev?,
 max_count?}` (hash, date, author, subject; at most 100), `git_show {rev, path?}` (a commit's

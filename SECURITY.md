@@ -633,7 +633,9 @@ Known limits:
 
 `web_fetch` and `web_search` (`web.enabled`, on by default; a project may turn them off) make
 host-side HTTP requests for the frontier. They are a channel out (URL, query) and a channel in
-(pages, results).
+(pages, results). By default `web_search` is executed by the host itself (the native backend):
+Duet's own code asks public sources with open APIs, with no search provider in between, so each
+source asked receives the query.
 
 | Threat | What stops it |
 |---|---|
@@ -641,22 +643,40 @@ host-side HTTP requests for the frontier. They are a channel out (URL, query) an
 | Server-side request forgery: the host reaching loopback services, the LAN, cloud metadata | `http`/`https` only, no credentials in URLs, `GET` only; every resolved address is checked (loopback, private, link-local, CGNAT, unique-local, multicast, reserved, IPv4 embedded in IPv6) and the connection is pinned to the checked address, so DNS rebinding cannot swap it; every redirect is checked the same way (at most 5); no proxy from the environment. `web.allowlist_private` (owner only, confirmed) opens named intranet hosts or networks; metadata addresses (169.254.169.254, fd00:ec2::254, 100.100.100.200, ...) stay refused |
 | A page carries instructions (prompt injection) or sensitive-looking data | Content is presented as `Source::Web`: scanned and tokenized like public content (values already in the vault are replaced too), offloaded when bulky, and framed as untrusted data between markers the page cannot forge (random tag per call) |
 | Huge or binary responses | Body cut at `web.max_bytes` (not downloaded further, marked truncated); binary types refused; `web.timeout_secs` per request including redirects |
-| A search key leaking or going to the wrong provider | Keys are read from environment variables (Brave: `web.search.brave_key_env`; Z.ai: `frontier.api_key_env` when the frontier is Z.ai, else `ZAI_API_KEY`, so another provider's key is never sent to Z.ai), sent only in a header to their own endpoint, and never written to config, logs, errors or the audit log |
-| Queries reaching a recipient the owner did not choose | `web.search.backend = "auto"` picks Z.ai only when Z.ai is already the run's frontier (never in local-only runs), then the owner's SearXNG, then Brave only when its key is set, then Wikipedia; each run prints the backend and `duet doctor` names it and who receives the queries (table below); `none` turns search off |
-| A backend's reply smuggling text past the boundary | Results are presented as `Source::Web` like pages; a refused request is reported by status and a known error code only, never by the reply's text |
+| A search key leaking or going to the wrong provider | The default (native) search uses no key at all: GitHub is always asked without a token (a `GITHUB_TOKEN` in the environment is never read). Other keys are read from environment variables (Brave: `web.search.brave_key_env`; Z.ai: `frontier.api_key_env` when the frontier is Z.ai, else `ZAI_API_KEY`, so another provider's key is never sent to Z.ai), sent only in a header to their own endpoint, and never written to config, logs, errors or the audit log |
+| Queries reaching a recipient the owner did not choose | `web.search.backend = "auto"` is the native backend; SearXNG, Brave, Wikipedia alone and Z.ai are used only when the owner names them in `web.search.backend` (a SearXNG URL, a Brave key or a Z.ai frontier alone selects nothing). The native backend asks only the sources in `web.search.sources`; the frontier may narrow them per search (`sources`) but never add one outside that list. Each run prints the backend and its sources and `duet doctor` names them and who receives the queries (table below); `none` turns search off |
+| A native search query reaching a source before it is checked | The whole query is checked once, against every host that would receive it (the sources the search will ask), before any source is contacted; a refusal is one `outbound_refused` event and a `refused_outbound` `web_request` event per host. An unknown source name is refused before anything is sent |
+| The native backend reaching internal addresses | Each source's host goes through the fetch guard: resolved, every address checked (a source whose name resolves to a private, loopback or metadata address is refused) and the connection pinned; no redirects are followed |
+| A source abused or blocking the run (rate limits, slow answers) | One request at a time per service with its documented interval (Wikipedia 1 s, crates.io 1 s, arXiv 3 s, the others 1 s), GitHub's 10 searches a minute counted locally, a `429` (with `Retry-After`, else 30 s doubling to 15 minutes), GitHub's exhausted budget and Stack Exchange's `backoff`, spent quota and throttle violations waited out for that service only; answers kept for the run (no identical request twice); each source has its own time (10 s, or `web.timeout_secs` when shorter) and a source that would have to wait is skipped and named as such, so a slow or limited source never holds up the others |
+| A backend's or source's reply smuggling text past the boundary | Results are presented as `Source::Web` like pages; a refused request is reported by status and a known error code only, never by the reply's text. Compressed replies are decompressed only up to `web.max_bytes` |
 
 Who receives `web_search` queries, per backend (`duet doctor` shows the one in use):
 
 | Backend | Recipient | Identity sent |
 |---|---|---|
-| `zai` (default when Z.ai is the frontier) | Z.ai, the frontier provider, which already receives everything the frontier sees: no new recipient. Coding plan: its Web Search server (`api.z.ai/api/mcp/web_search_prime`); otherwise the Web Search API (`api.z.ai/api/paas/v4/web_search`) | the frontier's key |
+| `native` (the default: `auto`) | **several parties: every source asked receives the query.** By default Stack Exchange (`api.stackexchange.com`), the Wikimedia Foundation (`en.wikipedia.org`), GitHub (`api.github.com`) and the package registry of each language at the workspace root (crates.io, `registry.npmjs.org`, `pypi.org`); when the frontier names them, other Stack Exchange sites, GitHub's issue search, Algolia's Hacker News search (`hn.algolia.com`) and arXiv (`export.arxiv.org`) | your IP address, to each; a User-Agent naming Duet and its repository; no key, no token, no cookies |
 | `searxng` | your instance, which forwards the query to the engines it is set up with (Google, Bing, DuckDuckGo, ... by default) | your IP address, to those engines; no account |
 | `brave` | Brave Search API | your Brave key |
-| `wikipedia` (the keyless fallback) | the Wikimedia Foundation (`en.wikipedia.org`) | your IP address; a User-Agent naming Duet and its repository, nothing about you |
+| `wikipedia` | the Wikimedia Foundation (`en.wikipedia.org`) | your IP address; a User-Agent naming Duet and its repository, nothing about you |
+| `zai` (only when named) | Z.ai; when Z.ai is the frontier provider it already receives everything the frontier sees. Coding plan: its Web Search server (`api.z.ai/api/mcp/web_search_prime`); otherwise the Web Search API (`api.z.ai/api/paas/v4/web_search`) | the frontier's key |
+
+The native backend asks only sources that publish an API for automated use, under their terms
+(checked 2026-09-26): the MediaWiki Action API (Wikimedia's robot policy: one request at a time,
+under 5 a second, an identifying User-Agent), the Stack Exchange API (300 requests a day per
+address without a key; `backoff` honoured; results name Stack Exchange as the source), GitHub's
+REST search (10 a minute unauthenticated), the crates.io API (at most one request a second, a
+User-Agent with a way to reach the authors), npm's documented registry search, PyPI's JSON API
+(exact names; PyPI has no search API), Algolia's Hacker News API (10,000 an hour) and the arXiv
+API (one request every three seconds, one connection). It never scrapes the result pages of
+general search engines (Google, Bing, DuckDuckGo): they offer no API for this without an account,
+their terms forbid automated queries of those pages, and their markup changes without notice.
+MDN's site search is left out too (its `robots.txt` disallows `/api/`), as is docs.rs (no search
+API).
 
 Audit: each call is a `web_request` event with the tool, host, bytes and outcome; never the URL's
 path or the query (the request record of the turn that asked for it holds the tool call, as for
-every tool).
+every tool). A native search is one event per source asked (`ok`, `cached`, `throttled`,
+`backoff`, `rate_limited`, `not_applicable`, `timeout`, `refused`, ...).
 
 **Known limits.** The web widens who can receive what the frontier knows: from the frontier
 provider to any public host. A steered frontier (prompt injection in a page or in the repository)
@@ -665,9 +685,16 @@ only values Duet knows (the vault, copied spans) are stopped. Turn the web off
 (`web.enabled = false`) for repositories where that matters; `oversight.approve` does not ask about
 web requests. HTML conversion is a small in-crate scanner: unusual markup may lose structure (never
 safety). Only UTF-8 and Latin-1 bodies are decoded; others are shown lossily. A ranged `web_fetch`
-fetches the page again. The search backends are fixed endpoints (the owner's SearXNG instance, or
-a known provider) and are not subject to the address check. The Wikipedia fallback searches
-encyclopedia articles only, so the frontier may search less well than with a whole-web backend.
+fetches the page again. The single search backends are fixed endpoints (the owner's SearXNG
+instance, or a known provider) and are not subject to the address check; the native backend's
+sources are. The native backend spreads each query over several parties instead of one: each of
+Stack Exchange, Wikimedia, GitHub and a registry learns the query and the host's address, and a
+steered frontier can direct a query at any source the owner allows (restrict
+`web.search.sources`, or name one backend, to narrow that). Its sources are not a web search:
+registries and GitHub answer by names and descriptions, Stack Overflow and GitHub match every
+word, and pages that are only on the open web are not found (`web_fetch` reads a known address).
+Its rate limits are counted per run: parallel runs on one machine share the services' per-address
+budgets (Stack Exchange's 300 a day, GitHub's 10 a minute) without knowing of each other.
 Z.ai's coding-plan search is reached through Duet's MCP client, which, unlike the web tools' own
 client, honours an `HTTPS_PROXY` in the environment. The outbound check applies to Z.ai queries too,
 although Z.ai already receives the run as the frontier. Z.ai's API data terms (checked 2026-09-26)

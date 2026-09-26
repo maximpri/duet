@@ -151,7 +151,7 @@ are sandboxed, every use is audited, and side effects need approval.
 | Capability | How the premise holds |
 |---|---|
 | Sessions (`duet chat`) and steering | Your messages are sanitized like the task, and what you see shows your real values, also as replies stream in; nothing on your screen is stored anew or sent |
-| Web search and fetch | Search works without setup (Z.ai's own search when Z.ai is your frontier, else Wikipedia; or your own SearXNG: `duet config preset searxng`). Queries and URLs with a protected value are refused; internal network addresses are unreachable |
+| Web search and fetch | Search works without setup and Duet runs it itself: it asks public sources with open APIs (Stack Overflow, Wikipedia, GitHub, your languages' package registries) directly, with no search provider in between; each source asked sees the query, and `duet doctor` lists them. Your own SearXNG, Brave or Z.ai's search only when you choose one. Queries and URLs with a protected value are refused before anything is sent; internal network addresses are unreachable |
 | MCP servers (plugins) | Sandboxed. A server you mark sensitive (your database) returns results that stay local behind handles; public servers never receive protected values |
 | Language servers | Answers are shown the same way as the file they come from; sensitive files are never opened for them |
 | Git history and commits | A file that is sensitive today stays protected in every past revision, and old commits are scanned for secrets. Commits include only files Duet wrote, never sensitive ones, and in a conversation each one waits for your yes |
