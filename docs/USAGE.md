@@ -467,8 +467,8 @@ lines stays readable to commands even under a sensitivity glob (a `.csv` under `
 long as it holds exactly those lines.
 
 The output of a `sensitive_data` command is shown with every value masked (up to 80 lines):
-values as shapes, secrets as `•••`, words kept when they are the public files', the task's or the
-command's own, numbers of up to two digits as written while `sensitivity.masked_numbers` (24 per
+values as shapes, secrets as `•••`, words kept when they are the public files', the task's, the
+command's own or common toolchain words (`passed`, `expected`), numbers of up to two digits as written while `sensitivity.masked_numbers` (24 per
 run) lasts, other numbers as `9`s. A short output (at most 200 characters: a count, a match, a yes
 or no) is a probe of the data: the run shows at most `sensitivity.output_probes` (12) of them, then
 withholds each (the view no longer depends on it; each probe is an `output_probe` audit event). A

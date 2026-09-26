@@ -632,7 +632,10 @@ about sensitive data, 37 (48%) answered by the views and 20 (26%) partly (counts
 the categorical values, which stay withheld); 20 need prose or values the views never show
 (tickets, security reviews); 3 of 24 calls unnecessary outright and 6 more but for withheld values;
 no canary of the runs' manifests in any view. The S1 probes sought what the task note's outline now
-states. *Open:* the head-to-head (on and off, Gate 2 and X1/X2, with and without a local model).
+states. Live, one seed (`results/twins-s1-nolocal`, `duet-hybrid-nolocal`, glm-5.3-flash): S1 took
+the `.env` layout from the outline and ran one `sensitive_data` command instead of 34 probes: 19
+requests (32), $0.018 ($0.038), 244 s (614 s), 9/9 hidden tests, 0 leaks. *Open:* the head-to-head
+(on and off, Gate 2 and X1/X2, with and without a local model).
 
 ### M5 — Public benchmark (days 32–35)
 

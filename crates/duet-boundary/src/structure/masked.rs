@@ -2,9 +2,10 @@
 //! Text with every value replaced by its shape.
 //!
 //! A word is kept as written only when it is vocabulary the frontier
-//! already has: a word of the public files or the task (and, for a
-//! command's output, a word of the command itself), and not a word that
-//! occurs in values of sensitive data. Everything else is a value: known
+//! already has: a word of the public files or the task, a word of
+//! toolchains' own output ([`TOOL_WORDS`]: `passed`, `panicked`,
+//! `expected`), and for a command's output a word of the command itself;
+//! and not a word that occurs as a value of sensitive data. Everything else is a value: known
 //! and detected values, other words and every number become shapes (`Aa`,
 //! `a.a99@a-999.a`, `9999`). Dates keep their layout (`9999-99-99T99:99:99Z`).
 //!
@@ -21,6 +22,136 @@ use crate::detect::Kind;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
+
+/// Words of test runners', compilers' and shells' own output: vocabulary,
+/// not data (a repository too small to use them keeps them still). A word
+/// that is a value of the data is masked all the same.
+pub const TOOL_WORDS: &[&str] = &[
+    "a",
+    "actual",
+    "an",
+    "and",
+    "as",
+    "assert",
+    "assertion",
+    "at",
+    "be",
+    "by",
+    "call",
+    "can",
+    "cannot",
+    "caused",
+    "code",
+    "col",
+    "column",
+    "compiled",
+    "compiling",
+    "debug",
+    "debuginfo",
+    "denied",
+    "dev",
+    "directory",
+    "done",
+    "duration",
+    "error",
+    "errors",
+    "exception",
+    "exit",
+    "expected",
+    "fail",
+    "failed",
+    "failure",
+    "failures",
+    "false",
+    "fatal",
+    "file",
+    "filtered",
+    "finished",
+    "for",
+    "found",
+    "from",
+    "got",
+    "has",
+    "ignored",
+    "in",
+    "info",
+    "invalid",
+    "is",
+    "it",
+    "last",
+    "left",
+    "line",
+    "main",
+    "measured",
+    "missing",
+    "ms",
+    "nan",
+    "no",
+    "none",
+    "not",
+    "null",
+    "of",
+    "ok",
+    "on",
+    "open",
+    "optimized",
+    "or",
+    "out",
+    "panic",
+    "panicked",
+    "pass",
+    "passed",
+    "passing",
+    "pending",
+    "permission",
+    "profile",
+    "property",
+    "read",
+    "received",
+    "recent",
+    "release",
+    "required",
+    "result",
+    "results",
+    "right",
+    "run",
+    "running",
+    "skip",
+    "skipped",
+    "stack",
+    "status",
+    "succeeded",
+    "success",
+    "such",
+    "suite",
+    "suites",
+    "syntax",
+    "target",
+    "test",
+    "tests",
+    "the",
+    "thread",
+    "time",
+    "to",
+    "todo",
+    "token",
+    "total",
+    "trace",
+    "traceback",
+    "true",
+    "type",
+    "undefined",
+    "unexpected",
+    "unknown",
+    "unoptimized",
+    "value",
+    "want",
+    "warn",
+    "warning",
+    "warnings",
+    "was",
+    "with",
+];
 
 /// A number shown as written must be at most this many digits.
 pub const SMALL_NUMBER_DIGITS: usize = 2;
@@ -133,8 +264,8 @@ fn mask_line(
                 key.push('9');
             } else if t.chars().any(char::is_alphanumeric) {
                 let lower = t.to_lowercase();
-                let keep =
-                    extra.contains(&lower) || (k.public_word(&lower) && !k.data_word(&lower));
+                let known = k.public_word(&lower) || TOOL_WORDS.contains(&lower.as_str());
+                let keep = extra.contains(&lower) || (known && !k.data_word(&lower));
                 if keep {
                     shown.push_str(t);
                     key.push_str(t);
@@ -323,9 +454,40 @@ mod tests {
         );
         assert_eq!(
             out,
-            "exit code 1\n--- stdout ---\nentries: 67\nError: invalid token at position 999 a Aa <a@a-9.a>\nstatus a 99.99 9\n"
+            "exit code 1\n--- stdout ---\nentries: 67\nError: invalid token at position 999 for Aa <a@a-9.a>\nstatus a 99.99 9\n"
         );
         assert_eq!((b.shown, b.masked, b.left), (1, 2, 0));
+    }
+
+    #[test]
+    fn toolchain_words_are_kept_unless_they_are_values_of_the_data() {
+        struct Pending;
+        impl Knowledge for Pending {
+            fn values(&self, _: &str) -> Vec<(usize, usize, Kind)> {
+                Vec::new()
+            }
+            fn public_word(&self, _: &str) -> bool {
+                false
+            }
+            fn data_word(&self, w: &str) -> bool {
+                w == "pending"
+            }
+        }
+        let mut b = Budget {
+            left: 9,
+            shown: 0,
+            masked: 0,
+        };
+        let out = mask(
+            "test result: ok. 1 passed; 0 failed; 2 pending\nstatus pending\n",
+            "cargo test",
+            &Pending,
+            &mut b,
+        );
+        assert_eq!(out, "test result: ok. 1 passed; 0 failed; 2 a\nstatus a\n");
+        let mut sorted = TOOL_WORDS.to_vec();
+        sorted.sort_unstable();
+        assert_eq!(sorted, TOOL_WORDS, "kept sorted");
     }
 
     #[test]
