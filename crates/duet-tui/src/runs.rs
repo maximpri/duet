@@ -471,6 +471,10 @@ fn feeds_from(
                 AuditEvent::BlockedSend { check } => {
                     withheld.push(format!("#{} blocked send: {check}", e.seq))
                 }
+                AuditEvent::SendWithheld { check, parts } => withheld.push(format!(
+                    "#{} sent with {parts} part(s) withheld: {check} refused them",
+                    e.seq
+                )),
                 AuditEvent::SensitiveCommand {
                     command,
                     derived_files,

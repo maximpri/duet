@@ -20,7 +20,7 @@ use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
 use crate::images::{ImageRequest, Route};
 use crate::local::LocalReader;
-use crate::model::{Image, Item, Request, ToolSpec, sniff};
+use crate::model::{Image, ToolSpec, sniff};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
 use crate::probing::{self, Tally};
@@ -36,8 +36,11 @@ use std::sync::{Arc, LazyLock, Mutex};
 mod code_nav;
 mod history;
 mod image;
+mod outbound;
 mod pii_pass;
 mod protected;
+
+pub use outbound::PART_WITHHELD;
 
 static NAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b\p{Lu}\p{Ll}+(?:[ '-]\p{Lu}\p{Ll}+)+\b").expect("static regex")
@@ -1506,8 +1509,8 @@ ask_local for details):\n{brief}"
     /// The outbound filter and check backed by this engine.
     pub fn outbound(self: &Arc<Self>) -> (Box<dyn OutboundFilter>, Box<dyn OutboundCheck>) {
         (
-            Box::new(Sanitize(self.clone())),
-            Box::new(NoKnownValues(self.clone())),
+            Box::new(outbound::Sanitize(self.clone())),
+            Box::new(outbound::NoKnownValues(self.clone())),
         )
     }
 }
@@ -1940,179 +1943,6 @@ and are never resolved for {destination}",
     }
 }
 
-/// Outbound filter: sanitizes every item again (idempotent). The model's own
-/// messages get known values replaced too: it can reconstruct a value it never
-/// saw verbatim (from character codes, a reformatted number), and history must
-/// not carry that value back out.
-struct Sanitize(Arc<Engine>);
-
-impl OutboundFilter for Sanitize {
-    fn name(&self) -> &'static str {
-        "sanitize"
-    }
-
-    fn apply(&self, request: &mut Request) -> Vec<String> {
-        let mut notes = Vec::new();
-        let mut st = self.0.lock();
-        for item in &mut request.items {
-            let text = match item {
-                Item::User { text } => text,
-                Item::ToolResult { content, .. } => content,
-                // An image is routed before it joins the conversation; one
-                // that was not routed to the frontier is dropped here (and
-                // the check below refuses any that remains).
-                Item::Images { images, .. } => {
-                    let before = images.len();
-                    images.retain(|img| st.frontier_images.contains(&img.sha256));
-                    if images.len() < before {
-                        notes.push(format!(
-                            "withheld {} image(s) not approved for the frontier",
-                            before - images.len()
-                        ));
-                    }
-                    continue;
-                }
-                Item::Assistant {
-                    text,
-                    reasoning,
-                    tool_calls,
-                    replay,
-                } => {
-                    let mut replaced = 0;
-                    for t in std::iter::once(text)
-                        .chain(reasoning.iter_mut())
-                        .chain(tool_calls.iter_mut().map(|c| &mut c.raw_arguments))
-                    {
-                        let (cleaned, n) = st.vault.tokenize(t);
-                        if n > 0 {
-                            *t = cleaned;
-                            replaced += n;
-                        }
-                    }
-                    for call in tool_calls.iter_mut() {
-                        if let Ok(mut parsed) = serde_json::from_str::<Value>(&call.raw_arguments) {
-                            // Arguments are JSON: a value holding `"` or `\` is
-                            // escaped in the raw text, where it does not match.
-                            let n = tokenize_json(&st.vault, &mut parsed);
-                            if n > 0 {
-                                call.raw_arguments = parsed.to_string();
-                                replaced += n;
-                            }
-                            if let Value::Object(args) = parsed {
-                                call.arguments = args;
-                            }
-                        }
-                    }
-                    if replaced > 0 {
-                        // Signed or encrypted reasoning cannot be edited; it is
-                        // dropped with the edited turn rather than replayed.
-                        *replay = None;
-                        notes.push(format!(
-                            "replaced {replaced} known value(s) in the model's own message"
-                        ));
-                    }
-                    continue;
-                }
-            };
-            let cleaned = self.0.sanitize(&mut st, text, "outbound", false);
-            let (cleaned, spans) = st.overlap.redact(&cleaned);
-            let (cleaned, _) = Engine::ip_redact(&mut st, &cleaned);
-            if cleaned != *text {
-                notes.push(format!(
-                    "replaced sensitive content ({spans} copied span(s))"
-                ));
-                *text = cleaned;
-            }
-        }
-        notes
-    }
-}
-
-/// Replaces known values in every string (and key) of `v`; returns how many.
-fn tokenize_json(vault: &Vault, v: &mut Value) -> usize {
-    match v {
-        Value::String(s) => {
-            let (t, n) = vault.tokenize(s);
-            if n > 0 {
-                *s = t;
-            }
-            n
-        }
-        Value::Array(a) => a.iter_mut().map(|x| tokenize_json(vault, x)).sum(),
-        Value::Object(m) => {
-            let mut n = 0;
-            let entries: Vec<(String, Value)> = std::mem::take(m).into_iter().collect();
-            for (k, mut x) in entries {
-                let (k, kn) = vault.tokenize(&k);
-                n += kn + tokenize_json(vault, &mut x);
-                m.insert(k, x);
-            }
-            n
-        }
-        _ => 0,
-    }
-}
-
-/// The body as text, then each string in it that is itself JSON (tool-call
-/// arguments), decoded and re-serialized, so a value escaped once more inside
-/// it (`\"`, `\\`, `\u` escapes) is seen in its plain spelling.
-fn searchable(body: &Value, out: &mut Vec<String>) {
-    fn nested(v: &Value, out: &mut Vec<String>, depth: usize) {
-        match v {
-            Value::String(s) if depth < 4 => {
-                if let Ok(inner @ (Value::Object(_) | Value::Array(_) | Value::String(_))) =
-                    serde_json::from_str::<Value>(s)
-                {
-                    out.push(inner.to_string());
-                    if let Value::String(t) = &inner {
-                        out.push(t.clone());
-                    }
-                    nested(&inner, out, depth + 1);
-                }
-            }
-            Value::Array(a) => a.iter().for_each(|x| nested(x, out, depth)),
-            Value::Object(m) => m.values().for_each(|x| nested(x, out, depth)),
-            _ => {}
-        }
-    }
-    out.push(body.to_string());
-    nested(body, out, 0);
-}
-
-/// Final check: no value in the vault may appear anywhere in the body.
-struct NoKnownValues(Arc<Engine>);
-
-impl OutboundCheck for NoKnownValues {
-    fn name(&self) -> &'static str {
-        "known-values"
-    }
-
-    fn check(&self, body: &Value) -> Result<(), String> {
-        let st = self.0.lock();
-        let mut texts = Vec::new();
-        searchable(body, &mut texts);
-        // Tokens are Duet's own text: a value that also spells part of one (a
-        // key name, a kind tag) is not disclosed by sending the token.
-        let texts: Vec<String> = texts.iter().map(|t| st.vault.strip_tokens(t)).collect();
-        match known_value_in(&st, &texts, false) {
-            Some(what) => Err(format!("{what} would have been sent")),
-            None => Ok(()),
-        }
-    }
-
-    /// Only images routed to the frontier may be sent.
-    fn check_images(&self, digests: &[String]) -> Result<(), String> {
-        let st = self.0.lock();
-        match digests.iter().find(|d| !st.frontier_images.contains(*d)) {
-            Some(d) => Err(format!(
-                "an image not approved for the frontier (sha256 {}) would have been sent",
-                &d[..d.len().min(12)]
-            )),
-            None => Ok(()),
-        }
-    }
-}
-
 /// The first vault value (6 characters or longer) found in `texts`, plain or
 /// JSON-escaped, described as "a <kind> value from <origin>". With
 /// `fold_case`, letter case is ignored (a URL's host is case-insensitive).
@@ -2214,6 +2044,7 @@ fn percent_decoded(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Item, Request};
     use std::path::PathBuf;
 
     const KEY: &str = "sk_live_Qm8vT2xW9pL4nR7kZ3cY6bH1";
@@ -2694,6 +2525,7 @@ mod tests {
 #[cfg(test)]
 mod prime_tests {
     use super::*;
+    use crate::model::{Item, Request};
 
     #[test]
     fn primed_values_are_replaced_in_any_later_output() {

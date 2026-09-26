@@ -90,10 +90,15 @@ pub const FIXED_MARKERS: &[&str] = &[
     crate::engine::FRAGMENT,
     crate::reencoded::ENCODED,
     crate::probing::WITHHELD,
+    crate::engine::PART_WITHHELD,
 ];
 
 /// Values shorter than this are never replaced (too many false positives).
 pub const MIN_VALUE_BYTES: usize = 4;
+/// Values this long or longer are what the final outbound check refuses to
+/// send ([`Vault::disclosed_in`]); shorter ones occur in ordinary text too
+/// often to block a request on.
+pub const CHECKED_VALUE_BYTES: usize = 6;
 
 impl Vault {
     /// Opens the run's vault, creating it if absent.
@@ -313,6 +318,27 @@ impl Vault {
         }
         out.push_str(&text[last..]);
         out
+    }
+
+    /// The first value of [`CHECKED_VALUE_BYTES`] or more (an alias too) that
+    /// occurs in `text` outside the known tokens and Duet's fixed markers,
+    /// with its entry: what the final outbound check refuses to send. Text
+    /// [`Vault::tokenize`] returned never holds one, since it replaces every
+    /// value of [`MIN_VALUE_BYTES`] or more and never rewrites a token.
+    pub fn disclosed_in(&self, text: &str) -> Option<(&str, &Entry)> {
+        let m = self.matcher();
+        let ac = m.overlapping.as_ref()?;
+        // Tokens and markers all start with the opening bracket.
+        let stripped = if text.contains(OPEN) {
+            std::borrow::Cow::Owned(self.strip_tokens(text))
+        } else {
+            std::borrow::Cow::Borrowed(text)
+        };
+        ac.find_overlapping_iter(stripped.as_ref())
+            .map(|hit| m.values[hit.pattern().as_usize()].as_str())
+            .find(|v| v.len() >= CHECKED_VALUE_BYTES)
+            .and_then(|v| self.by_value.get_key_value(v))
+            .map(|(v, e)| (v.as_str(), e))
     }
 
     /// Whether `text` is exactly a known token or one of Duet's fixed markers.

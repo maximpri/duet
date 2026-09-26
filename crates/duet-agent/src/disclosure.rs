@@ -17,7 +17,8 @@
 //! - Views (from the cost ledger): tool results shown as a handle and local
 //!   summary, as placeholders, as local answers, as protected skeletons or
 //!   notices, or as a bulky preview.
-//! - Events (from the audit log): blocked sends by check, sandbox denials,
+//! - Events (from the audit log): blocked sends by check, requests sent with
+//!   the parts a check refused withheld, sandbox denials,
 //!   `sensitive_data` commands and the files they marked, protected edits,
 //!   approval decisions, `ask_local` questions that probed a value piece by
 //!   piece and the pieces withheld from their answers.
@@ -98,6 +99,10 @@ pub struct Disclosure {
     pub protected_lines_withheld: u64,
     /// Requests refused by an outbound check (not sent), by check.
     pub blocked_sends: BTreeMap<String, u64>,
+    /// Requests an outbound check refused after filtering that were sent
+    /// with the parts that held a value withheld, by check.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub withheld_sends: BTreeMap<String, u64>,
     pub sandbox_denials: u64,
     pub sensitive_data_runs: u64,
     /// Files marked sensitive because a `sensitive_data` command wrote them.
@@ -167,6 +172,9 @@ impl Disclosure {
                     }
                     AuditEvent::BlockedSend { check } => {
                         *d.blocked_sends.entry(check.clone()).or_default() += 1;
+                    }
+                    AuditEvent::SendWithheld { check, .. } => {
+                        *d.withheld_sends.entry(check.clone()).or_default() += 1;
                     }
                     AuditEvent::SandboxDenial { .. } => d.sandbox_denials += 1,
                     AuditEvent::SensitiveCommand { derived_files, .. } => {
@@ -323,6 +331,13 @@ everything the model read was sent to the frontier unfiltered. Nothing below was
         row(&mut out, "requests blocked (not sent)", blocked);
         for (check, n) in &self.blocked_sends {
             row(&mut out, &format!("  by {check}"), *n);
+        }
+        if !self.withheld_sends.is_empty() {
+            let withheld: u64 = self.withheld_sends.values().sum();
+            row(&mut out, "requests sent with parts withheld", withheld);
+            for (check, n) in &self.withheld_sends {
+                row(&mut out, &format!("  refused first by {check}"), *n);
+            }
         }
         row(&mut out, "sandbox denials", self.sandbox_denials);
         row(

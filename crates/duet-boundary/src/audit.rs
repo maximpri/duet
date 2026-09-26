@@ -66,6 +66,10 @@ pub enum AuditEvent {
     },
     /// A request was blocked by an outbound check (the check's name only).
     BlockedSend { check: String },
+    /// A request an outbound check refused after filtering was sent with
+    /// `parts` parts of it withheld (the filters' stricter pass), and passed
+    /// every check. What was sent is the next request record.
+    SendWithheld { check: String, parts: u32 },
     /// The local model changed protected source through `edit_protected`.
     ProtectedEdit {
         path: String,
@@ -227,6 +231,7 @@ impl AuditEvent {
             AuditEvent::SandboxDenial { .. } => "sandbox_denial",
             AuditEvent::SensitiveCommand { .. } => "sensitive_command",
             AuditEvent::BlockedSend { .. } => "blocked_send",
+            AuditEvent::SendWithheld { .. } => "send_withheld",
             AuditEvent::ProtectedEdit { .. } => "protected_edit",
             AuditEvent::Approval { .. } => "approval",
             AuditEvent::ConfigChange { .. } => "config_change",

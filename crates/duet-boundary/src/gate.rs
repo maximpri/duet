@@ -5,10 +5,19 @@
 //! only be built by [`OutboundGate::wrap`]; every request is passed through the
 //! gate's filters, and the exact bytes sent are appended to the audit log
 //! (images as digests of their data).
+//!
+//! A request a check refuses after filtering is not sent. The filters then
+//! withhold every part of it that holds what the checks refuse
+//! ([`OutboundFilter::withhold`]); if the checks pass that, it is sent instead
+//! and the audit log records a `send_withheld` event, so a part the filter
+//! could not clean costs that part, not the run. Only a request that still
+//! fails ends in [`GateError::Blocked`].
 
 use crate::audit::{AuditEvent, AuditHandle, AuditLog};
 use duet_fs::FsError;
-use duet_provider::{ChatProvider, Item, ProviderError, Request, Response};
+use duet_provider::{ChatProvider, Item, ProviderError, Request, Response, ToolCall, ToolSpec};
+use serde_json::Value;
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A transformation applied to every outbound request before it is sent.
@@ -16,6 +25,114 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 pub trait OutboundFilter: Send + Sync {
     fn name(&self) -> &'static str;
     fn apply(&self, request: &mut Request) -> Vec<String>;
+    /// The stricter pass, after a check refused the filtered request:
+    /// replaces each part of it that still holds what the checks refuse (a
+    /// message, a tool result, a call's arguments) by a marker, instead of
+    /// rewriting it. Returns how many parts it withheld; zero when it found
+    /// none (the request then stays blocked).
+    fn withhold(&self, _request: &mut Request) -> usize {
+        0
+    }
+}
+
+/// The strings of a request body that are its framing, not its content: every
+/// key and string value in the body of [`framing_request`] (the body's keys,
+/// roles and block types, the model's name, call ids, tool names and
+/// parameter schemas). A check may skip a string of the body that is framing:
+/// a sensitive value that happens to spell one (a `.env` value `required`,
+/// the model's name) is not disclosed by the wire format.
+#[derive(Debug, Default)]
+pub struct Framing(HashSet<String>);
+
+impl Framing {
+    /// The keys and strings of `body`, the body of a [`framing_request`].
+    pub fn of(body: &Value) -> Self {
+        fn collect(v: &Value, out: &mut HashSet<String>) {
+            match v {
+                Value::String(s) => {
+                    out.insert(s.clone());
+                }
+                Value::Array(a) => a.iter().for_each(|x| collect(x, out)),
+                Value::Object(m) => m.iter().for_each(|(k, x)| {
+                    out.insert(k.clone());
+                    collect(x, out);
+                }),
+                _ => {}
+            }
+        }
+        let mut out = HashSet::new();
+        collect(body, &mut out);
+        Self(out)
+    }
+
+    pub fn contains(&self, s: &str) -> bool {
+        self.0.contains(s)
+    }
+}
+
+/// What stands for each text in a [`framing_request`]: not empty, so every
+/// dialect lays the request out as it does the real one, and too short to
+/// hold a value the checks look for.
+const BLANK: &str = "\u{0}";
+
+/// `request` with all its content blanked: the system prompt, every text,
+/// reasoning and tool result, tool descriptions, the name and arguments of
+/// every call and replayed reasoning blocks. What its body still holds is the
+/// wire format's own text and what is fixed for a run (tool names and
+/// schemas, call ids, image digests, settings).
+pub fn framing_request(request: &Request) -> Request {
+    let blank = |s: &str| match s.is_empty() {
+        true => String::new(),
+        false => BLANK.to_owned(),
+    };
+    let items = request
+        .items
+        .iter()
+        .map(|item| match item {
+            Item::User { text } => Item::User { text: blank(text) },
+            Item::ToolResult { call_id, content } => Item::ToolResult {
+                call_id: call_id.clone(),
+                content: blank(content),
+            },
+            Item::Assistant {
+                text,
+                reasoning,
+                tool_calls,
+                ..
+            } => Item::Assistant {
+                text: blank(text),
+                reasoning: reasoning.as_deref().map(blank),
+                tool_calls: tool_calls
+                    .iter()
+                    .map(|c| ToolCall {
+                        id: c.id.clone(),
+                        name: blank(&c.name),
+                        arguments: serde_json::Map::new(),
+                        raw_arguments: "{}".into(),
+                    })
+                    .collect(),
+                replay: None,
+            },
+            Item::Images { .. } => item.clone(),
+        })
+        .collect();
+    Request {
+        system: blank(&request.system),
+        items,
+        tools: request
+            .tools
+            .iter()
+            .map(|t| ToolSpec {
+                name: t.name.clone(),
+                description: blank(&t.description),
+                parameters: t.parameters.clone(),
+            })
+            .collect(),
+        max_output_tokens: request.max_output_tokens,
+        temperature: request.temperature,
+        response_schema: request.response_schema.clone(),
+        extra: request.extra.clone(),
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +154,11 @@ pub trait OutboundCheck: Send + Sync {
     /// `Err(reason)` blocks the request. `body` is the body as sent, with
     /// image data replaced by digests (see [`duet_provider::image::redact`]).
     fn check(&self, body: &serde_json::Value) -> Result<(), String>;
+    /// [`Self::check`] with the body's [`Framing`], which the gate always
+    /// gives. By default the framing is not used.
+    fn check_framed(&self, body: &serde_json::Value, _framing: &Framing) -> Result<(), String> {
+        self.check(body)
+    }
     /// The digests of the images in the request, in order; `Err(reason)`
     /// blocks it.
     fn check_images(&self, _digests: &[String]) -> Result<(), String> {
@@ -146,27 +268,80 @@ impl GatedFrontier {
                     .map(|d| format!("{}: {d}", f.name())),
             );
         }
-        let cfg = self.provider.config();
-        // Checks and the audit log see the body with each image's data
-        // replaced by its digest: image data is not text, and the log never
-        // holds it. The provider sends the body with the images.
-        let (body, images) = duet_provider::image::redact(&self.provider.body(&outbound));
-        for c in &self.gate.checks {
-            if let Err(reason) = c.check(&body).and_then(|()| c.check_images(&images)) {
-                self.gate.audit.record(AuditEvent::BlockedSend {
-                    check: c.name().to_owned(),
-                });
-                return Err(GateError::Blocked {
-                    filter: c.name(),
-                    reason,
-                });
+        let body = match self.checked(&outbound) {
+            Ok(body) => body,
+            Err((check, reason)) => {
+                // What the filters left is withheld part by part and checked
+                // again; a request is blocked only if that does not pass.
+                let mut parts = 0;
+                for f in &self.gate.filters {
+                    let n = f.withhold(&mut outbound);
+                    if n > 0 {
+                        interventions.push(format!(
+                            "{}: withheld {n} part(s) the {check} check refused",
+                            f.name()
+                        ));
+                    }
+                    parts += n;
+                }
+                let again = match parts {
+                    0 => Err((
+                        check,
+                        format!("{reason}; no part of the request could be withheld instead"),
+                    )),
+                    _ => self.checked(&outbound).map_err(|(c, r)| {
+                        (
+                            c,
+                            format!("{r}, even with {parts} part(s) of the request withheld"),
+                        )
+                    }),
+                };
+                match again {
+                    Ok(body) => {
+                        self.gate.audit.record(AuditEvent::SendWithheld {
+                            check: check.to_owned(),
+                            parts: u32::try_from(parts).unwrap_or(u32::MAX),
+                        });
+                        body
+                    }
+                    Err((filter, reason)) => {
+                        self.gate.audit.record(AuditEvent::BlockedSend {
+                            check: filter.to_owned(),
+                        });
+                        return Err(GateError::Blocked { filter, reason });
+                    }
+                }
             }
-        }
+        };
+        let cfg = self.provider.config();
         self.gate
             .audit
             .append(&cfg.base_url, &cfg.model, body, interventions.clone())?;
         let response = self.provider.create(&outbound).await?;
         Ok((response, interventions))
+    }
+
+    /// The body the checks and the audit log see, or the first check that
+    /// refuses it and why. They see it with each image's data replaced by its
+    /// digest: image data is not text, and the log never holds it. The
+    /// provider sends the body with the images.
+    fn checked(&self, outbound: &Request) -> Result<Value, (&'static str, String)> {
+        let (body, images) = duet_provider::image::redact(&self.provider.body(outbound));
+        if self.gate.checks.is_empty() {
+            return Ok(body);
+        }
+        let framing = Framing::of(
+            &duet_provider::image::redact(&self.provider.body(&framing_request(outbound))).0,
+        );
+        for c in &self.gate.checks {
+            if let Err(reason) = c
+                .check_framed(&body, &framing)
+                .and_then(|()| c.check_images(&images))
+            {
+                return Err((c.name(), reason));
+            }
+        }
+        Ok(body)
     }
 }
 
@@ -317,5 +492,150 @@ mod tests {
             }
         );
         assert!(!std::fs::read_to_string(&p).unwrap().contains(".env"));
+    }
+
+    const VALUE: &str = "s3cr3t-value";
+
+    /// Refuses a body with [`VALUE`] in it; records the framing it is given.
+    #[derive(Default)]
+    struct NoValue(std::sync::Arc<std::sync::Mutex<Vec<bool>>>);
+    impl OutboundCheck for NoValue {
+        fn name(&self) -> &'static str {
+            "no-value"
+        }
+        fn check(&self, body: &serde_json::Value) -> Result<(), String> {
+            match body.to_string().contains(VALUE) {
+                true => Err("the value would have been sent".into()),
+                false => Ok(()),
+            }
+        }
+        fn check_framed(&self, body: &serde_json::Value, framing: &Framing) -> Result<(), String> {
+            // The framing holds the wire format's words, never the content.
+            self.0
+                .lock()
+                .unwrap()
+                .push(framing.contains("user") && !framing.contains(&format!("use {VALUE}")));
+            self.check(body)
+        }
+    }
+
+    /// Changes nothing, then withholds user text holding [`VALUE`] (or, with
+    /// `leave`, claims to without doing it).
+    struct Withholds {
+        leave: bool,
+    }
+    impl OutboundFilter for Withholds {
+        fn name(&self) -> &'static str {
+            "withholds"
+        }
+        fn apply(&self, _request: &mut Request) -> Vec<String> {
+            Vec::new()
+        }
+        fn withhold(&self, request: &mut Request) -> usize {
+            let mut n = 0;
+            for item in &mut request.items {
+                if let Item::User { text } = item
+                    && text.contains(VALUE)
+                {
+                    if !self.leave {
+                        *text = "[withheld]".into();
+                    }
+                    n += 1;
+                }
+            }
+            n
+        }
+    }
+
+    fn events(p: &std::path::Path) -> Vec<AuditEvent> {
+        read(p)
+            .unwrap()
+            .into_iter()
+            .filter_map(|l| match l {
+                Line::Event(e) => Some(e.event),
+                Line::Request(_) => None,
+            })
+            .collect()
+    }
+
+    fn with_value() -> Request {
+        Request {
+            items: vec![
+                Item::User {
+                    text: format!("use {VALUE}"),
+                },
+                Item::User {
+                    text: "and keep this".into(),
+                },
+            ],
+            ..Request::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_part_a_check_refuses_is_withheld_and_the_request_sent() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("audit.jsonl");
+        let sent = Recording::default();
+        let framed = NoValue::default();
+        let provider = ChatProvider::new(
+            ProviderConfig::new("https://f.example/v1", "m", Role::Frontier),
+            Box::new(sent.clone()),
+        )
+        .unwrap();
+        let seen = framed.0.clone();
+        let gated = OutboundGate::new(AuditLog::open(&p).unwrap())
+            .with_filter(Box::new(Withholds { leave: false }))
+            .with_check(Box::new(framed))
+            .wrap(provider);
+        let (_, interventions) = gated.create(&with_value()).await.unwrap();
+        let wire = String::from_utf8(sent.0.lock().unwrap()[0].clone()).unwrap();
+        assert!(
+            !wire.contains(VALUE) && wire.contains("and keep this"),
+            "{wire}"
+        );
+        assert_eq!(
+            interventions,
+            ["withholds: withheld 1 part(s) the no-value check refused"]
+        );
+        assert_eq!(
+            events(&p),
+            [AuditEvent::SendWithheld {
+                check: "no-value".into(),
+                parts: 1
+            }]
+        );
+        assert_eq!(*seen.lock().unwrap(), [true, true], "checked twice, framed");
+        assert_eq!(
+            crate::audit::verify(&p).unwrap(),
+            crate::audit::Verification::Intact { records: 2 }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_request_still_refused_after_withholding_is_blocked_with_why() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("audit.jsonl");
+        let provider = ChatProvider::new(
+            ProviderConfig::new("https://f.example/v1", "m", Role::Frontier),
+            Box::new(Unreachable),
+        )
+        .unwrap();
+        let gated = OutboundGate::new(AuditLog::open(&p).unwrap())
+            .with_filter(Box::new(Withholds { leave: true }))
+            .with_check(Box::new(NoValue::default()))
+            .wrap(provider);
+        let err = gated.create(&with_value()).await.unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "request blocked by no-value: the value would have been sent, even with 1 part(s) \
+of the request withheld"
+        );
+        assert_eq!(
+            events(&p),
+            [AuditEvent::BlockedSend {
+                check: "no-value".into()
+            }]
+        );
     }
 }
