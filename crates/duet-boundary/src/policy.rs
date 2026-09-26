@@ -75,6 +75,29 @@ pub struct Policy {
     pub local_vision: bool,
     /// `images.to_frontier`: which images the frontier may receive itself.
     pub images_to_frontier: crate::images::ToFrontier,
+    /// Structure views, synthetic samples, masked output and the probe
+    /// budget for short output of commands that read sensitive data.
+    pub structure: StructureSettings,
+}
+
+/// What the frontier is shown of the structure of sensitive data (see
+/// [`crate::structure`]). The default shows nothing new and sets no probe
+/// budget; `duet` reads the shipped values from the configuration.
+#[derive(Debug, Clone, Default)]
+pub struct StructureSettings {
+    /// Structure views of sensitive content, a structure outline in the task
+    /// note and masked output of commands that read sensitive data
+    /// (`sensitivity.structure_views`).
+    pub views: bool,
+    /// Records a synthetic sample may hold (`sensitivity.synthetic_rows`);
+    /// 0: none are made.
+    pub synthetic_rows: usize,
+    /// Small numbers masked output may show as written over a run
+    /// (`sensitivity.masked_numbers`).
+    pub masked_numbers: u32,
+    /// Short outputs of commands that read sensitive data shown over a run
+    /// (`sensitivity.output_probes`); `None`: no budget.
+    pub output_probes: Option<u32>,
 }
 
 /// How much of a protected source file the frontier may see.

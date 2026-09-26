@@ -379,6 +379,24 @@ impl Vault {
         self.by_value.iter().map(|(v, e)| (v.as_str(), e))
     }
 
+    /// Where known values (4+ bytes) occur in `text`, leftmost longest and
+    /// not overlapping, with their kind; tokens already in the text are
+    /// skipped, as [`Vault::tokenize`] skips them.
+    pub fn spans(&self, text: &str) -> Vec<(usize, usize, Kind)> {
+        let m = self.matcher();
+        let Some(ac) = &m.automaton else {
+            return Vec::new();
+        };
+        ac.find_iter(text)
+            .filter_map(|hit| {
+                m.replacement[hit.pattern().as_usize()].as_ref()?;
+                let value = &text[hit.start()..hit.end()];
+                let kind = self.by_value.get(value)?.kind;
+                Some((hit.start(), hit.end(), kind))
+            })
+            .collect()
+    }
+
     /// Every distinct value (4+ bytes) that occurs in `text` as written, with
     /// its entry. Overlapping occurrences count, so a surname inside a full
     /// name is found too.

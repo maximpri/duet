@@ -346,6 +346,42 @@ pub const REGISTRY: &[Setting] = &[
         "The local model reads the free text of public content (docs, comments, web pages, public tool results) and marks people's names and postal addresses, which no pattern finds; they become placeholders like detected values. Costs local model time on every such result."
     ),
     s!(
+        "sensitivity.structure_views",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        true,
+        "Sensitive files and the output of sensitive_data commands come with a structure view computed here without a model: format, records, schema (JSON paths, columns, keys, log line templates), types, value shapes (letters as A/a, digits as 9, date layouts as pictures), presence, null and empty counts, distinct-count buckets, lengths and anomalies; counts and shapes, never values. The task note gets an outline of the sensitive files, and short sensitive_data output is shown with every value masked by its shape."
+    ),
+    s!(
+        "sensitivity.synthetic_rows",
+        Int { min: 0, max: 200 },
+        "20",
+        Project,
+        OnlyLower,
+        true,
+        "Records a synthetic sample may hold: synthetic_sample(handle, rows) returns a rule-generated fake of a sensitive data file (same schema, formats, lengths, nulls and quoting; valid dates, card numbers and IBANs; no real value, checked before it is shown), usable as a test fixture, and the file's view shows its first record. 0 turns samples off."
+    ),
+    s!(
+        "sensitivity.masked_numbers",
+        Int { min: 0, max: 1000 },
+        "24",
+        Project,
+        OnlyLower,
+        true,
+        "Small numbers (0-99) masked sensitive_data output may show as written over a run; every other number, and small ones past this budget, show as their shape (9 per digit). Numbers carry information one comparison at a time, so they are counted."
+    ),
+    s!(
+        "sensitivity.output_probes",
+        Int { min: 0, max: 1000 },
+        "12",
+        Project,
+        OnlyLower,
+        true,
+        "Short outputs (at most 200 characters) of sensitive_data commands shown over a run. Each is a probe of the data (a count, a match, a yes or no); past this budget such output is withheld and the view does not depend on it. Every probe is an output_probe audit event."
+    ),
+    s!(
         "sensitivity.bulky_file_tokens",
         Int {
             min: 256,

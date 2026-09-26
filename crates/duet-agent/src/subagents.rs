@@ -86,6 +86,7 @@ const READ_TOOLS: &[&str] = &[
     "read_raw",
     "run_command",
     "search",
+    "synthetic_sample",
     crate::web::FETCH,
     crate::web::SEARCH,
 ];

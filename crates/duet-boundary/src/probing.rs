@@ -422,6 +422,13 @@ pub enum Scope {
 pub struct Tally {
     shown: BTreeMap<String, BTreeSet<String>>,
     probes: BTreeMap<String, u32>,
+    /// Short outputs of commands that read sensitive data seen over the run
+    /// (each a probe; see `structure::masked`).
+    #[serde(default)]
+    output_probes: u32,
+    /// Small numbers masked output showed as written over the run.
+    #[serde(default)]
+    numbers: u32,
 }
 
 /// Values (token, value) holding `piece`.
@@ -447,6 +454,23 @@ impl Tally {
         self.shown
             .get(token)
             .map_or(0, |s| s.iter().map(|p| p.chars().count()).sum())
+    }
+
+    /// Records one more short output of a command that read sensitive data;
+    /// returns how many the run has had and whether it is within `budget`.
+    pub fn output_probe(&mut self, budget: u32) -> (u32, bool) {
+        self.output_probes += 1;
+        (self.output_probes, self.output_probes <= budget)
+    }
+
+    /// Small numbers masked output may still show as written under `budget`.
+    pub fn numbers_left(&self, budget: u32) -> u32 {
+        budget.saturating_sub(self.numbers)
+    }
+
+    /// Records `n` small numbers shown as written.
+    pub fn numbers_shown(&mut self, n: u32) {
+        self.numbers += n;
     }
 
     /// Records one more probe of `handle`; returns how many it has had.

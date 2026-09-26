@@ -93,7 +93,7 @@ fn describe(call: &ToolCall) -> String {
         "run_command" => arg("command").map(|c| format!("`{c}`")),
         "search" => arg("pattern").map(|p| format!("`{p}`")),
         "list_files" => arg("dir"),
-        "ask_local" => arg("handle"),
+        "ask_local" | "synthetic_sample" => arg("handle"),
         "read_raw" => arg("handle").map(|h| match (num("start_line"), num("end_line")) {
             (None, None) => h,
             (s, e) => format!(

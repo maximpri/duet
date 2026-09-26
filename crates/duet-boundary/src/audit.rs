@@ -210,6 +210,34 @@ pub enum AuditEvent {
         withheld: u32,
         count: u32,
     },
+    /// A command that read sensitive data (`sensitive_data`) printed a short
+    /// output (a few lines): a probe of the data, like a narrow question to
+    /// the local model. `count` is the run's probes so far; past `budget`
+    /// (`sensitivity.output_probes`) the output is withheld (`shown` false)
+    /// and the frontier's view does not depend on it. Holds counts, never
+    /// the command or the output.
+    OutputProbe {
+        count: u32,
+        budget: u32,
+        shown: bool,
+    },
+    /// Masked output of a command that read sensitive data showed `shown`
+    /// small numbers as written; `left` remain in the run's budget
+    /// (`sensitivity.masked_numbers`). Never the numbers.
+    MaskedNumbers {
+        handle: String,
+        shown: u32,
+        left: u32,
+    },
+    /// A synthetic sample (twin) of the content under `handle` was asked
+    /// for: `outcome` is `shown` (with `records` records), or `withheld`
+    /// when a check found a known value or a copied span in it (nothing was
+    /// shown), or `unsupported`. Never the sample.
+    SyntheticSample {
+        handle: String,
+        records: u32,
+        outcome: String,
+    },
     /// Project instructions were given to the frontier at the start of a
     /// run or session: `origin` is `project` (the repository's `DUET.md`,
     /// presented like any public file) or `owner` (the owner's own file).
@@ -277,6 +305,9 @@ impl AuditEvent {
             AuditEvent::Instructions { .. } => "instructions",
             AuditEvent::Egress { .. } => "egress",
             AuditEvent::Compaction { .. } => "compaction",
+            AuditEvent::OutputProbe { .. } => "output_probe",
+            AuditEvent::MaskedNumbers { .. } => "masked_numbers",
+            AuditEvent::SyntheticSample { .. } => "synthetic_sample",
         }
     }
 }

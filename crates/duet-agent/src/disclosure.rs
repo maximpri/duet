@@ -121,9 +121,24 @@ pub struct Disclosure {
     /// Pieces of values withheld from those answers.
     #[serde(default)]
     pub local_pieces_withheld: u64,
+    /// Short outputs of `sensitive_data` commands (probes of the data), and
+    /// how many of them were withheld past the run's budget.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub output_probes: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub output_probes_withheld: u64,
+    /// Synthetic samples shown, and withheld by their checks.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub synthetic_samples: u64,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub synthetic_samples_withheld: u64,
     /// How tool results were shown; `None` when the run's ledger is unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub views: Option<Views>,
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl Disclosure {
@@ -213,6 +228,15 @@ impl Disclosure {
                         d.local_probes += 1;
                         d.local_pieces_withheld += u64::from(*withheld);
                     }
+                    AuditEvent::OutputProbe { shown, .. } => {
+                        d.output_probes += 1;
+                        d.output_probes_withheld += u64::from(!*shown);
+                    }
+                    AuditEvent::SyntheticSample { outcome, .. } => match outcome.as_str() {
+                        "shown" => d.synthetic_samples += 1,
+                        "withheld" => d.synthetic_samples_withheld += 1,
+                        _ => {}
+                    },
                     AuditEvent::RunEnd { .. }
                     | AuditEvent::EndpointTrust { .. }
                     | AuditEvent::ConfigChange { .. }
@@ -226,7 +250,8 @@ impl Disclosure {
                     | AuditEvent::SubagentEnd { .. }
                     | AuditEvent::Instructions { .. }
                     | AuditEvent::Egress { .. }
-                    | AuditEvent::Compaction { .. } => {}
+                    | AuditEvent::Compaction { .. }
+                    | AuditEvent::MaskedNumbers { .. } => {}
                 },
             }
         }
@@ -368,6 +393,26 @@ everything the model read was sent to the frontier unfiltered. Nothing below was
             "pieces of values withheld from answers",
             self.local_pieces_withheld,
         );
+        if self.output_probes > 0 {
+            row(
+                &mut out,
+                "short sensitive_data outputs (probes)",
+                self.output_probes,
+            );
+            row(
+                &mut out,
+                "  withheld past the budget",
+                self.output_probes_withheld,
+            );
+        }
+        if self.synthetic_samples + self.synthetic_samples_withheld > 0 {
+            row(&mut out, "synthetic samples shown", self.synthetic_samples);
+            row(
+                &mut out,
+                "synthetic samples withheld by their checks",
+                self.synthetic_samples_withheld,
+            );
+        }
         if self.approvals.asked > 0 {
             out.push_str(&format!(
                 "  {:<44} {} ({} approved, {} denied)\n",

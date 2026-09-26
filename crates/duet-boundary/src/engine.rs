@@ -40,6 +40,7 @@ mod image;
 mod outbound;
 mod pii_pass;
 mod protected;
+mod structure;
 
 pub use outbound::PART_WITHHELD;
 
@@ -282,6 +283,8 @@ struct State {
     /// Characters of each value local output has shown, and probes of each
     /// handle (persisted, so a resumed run keeps the budget spent).
     probes: Tally,
+    /// Structure views and samples (see `engine/structure.rs`).
+    structure: structure::StructureState,
 }
 
 /// Values the operator typed: each placeholder is also a handle for
@@ -315,6 +318,8 @@ pub struct Engine {
     last_class: Mutex<Option<ViewClass>>,
     /// Security events decided here, for the run's audit log.
     events: Mutex<Vec<AuditEvent>>,
+    /// Files written from synthetic samples only (see `engine/structure.rs`).
+    fixtures: Mutex<structure::Fixtures>,
 }
 
 pub const MAX_KEY_LINES: usize = 12;
@@ -391,6 +396,7 @@ impl Engine {
             probes_file: run_dir.join("probes.json"),
             last_class: Mutex::new(None),
             events: Mutex::new(Vec::new()),
+            fixtures: Mutex::new(structure::Fixtures::open(run_dir)),
             state: Mutex::new(State {
                 vault: Vault::open(&run_dir.join("vault.json"))?,
                 handles: HandleStore::open(&run_dir.join("handles"))?,
@@ -413,6 +419,7 @@ impl Engine {
                     .ok()
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
+                structure: structure::StructureState::open(run_dir),
             }),
         }))
     }
@@ -430,6 +437,7 @@ impl Engine {
     /// recognizes is then replaced wherever it appears, including in what the
     /// operator types.
     pub fn prime(&self, workspace: &Path, all_files: &[String], objective: &str) -> usize {
+        self.structure_prime(workspace);
         let files = &self.ip_split(all_files);
         {
             let mut st = self.lock();
@@ -574,11 +582,14 @@ impl Engine {
         } else {
             let _ = self.sanitize(st, text, &label, true);
         }
+        self.index_structure(st, path, text);
     }
 
-    /// Sensitive by policy, or derived from sensitive data by a command.
+    /// Sensitive by policy (unless it is a fixture written from synthetic
+    /// samples and still holds exactly that), or derived from sensitive data
+    /// by a command.
     fn is_sensitive(&self, path: &Path) -> bool {
-        self.policy.is_sensitive_path(path)
+        (self.policy.is_sensitive_path(path) && !self.is_fixture(path))
             || self
                 .derived
                 .lock()
@@ -853,7 +864,24 @@ impl Engine {
 
     /// Sensitive content: handle, sanitized error lines, local summary.
     fn handle_view(&self, source_label: &str, text: &str) -> String {
+        self.handle_view_as(source_label, text, structure::Origin::Other)
+    }
+
+    /// [`Self::handle_view`] of content from `origin`: with structure views
+    /// on, a command's short output is a probe and its output is shown
+    /// masked, and content with a structure gets its structure view (in
+    /// place of the map of repeated line shapes) and a data file the first
+    /// record of its synthetic sample.
+    fn handle_view_as(
+        &self,
+        source_label: &str,
+        text: &str,
+        origin: structure::Origin<'_>,
+    ) -> String {
         self.set_class(ViewClass::HandleSummary);
+        if let Some(withheld) = self.probe_gate(text, origin) {
+            return withheld;
+        }
         let handle = {
             let mut st = self.lock();
             st.overlap.add_sensitive(text);
@@ -884,7 +912,15 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             error_lines.len(),
             handle.id
         );
-        if !error_lines.is_empty() {
+        let masked = match origin {
+            structure::Origin::Command(command) => {
+                self.masked_section(&mut st, &handle.id, source_label, text, command)
+            }
+            _ => None,
+        };
+        if let Some(m) = &masked {
+            out.push_str(m);
+        } else if !error_lines.is_empty() {
             out.push_str("Error lines (sensitive values replaced):\n");
             for (n, l) in error_lines.iter().take(MAX_KEY_LINES) {
                 let shown: String = l.chars().take(300).collect();
@@ -897,8 +933,21 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
                 out.push_str(&format!("  … {} more\n", error_lines.len() - MAX_KEY_LINES));
             }
         }
-        if lines.len() > PATTERN_MIN_LINES {
-            out.push_str(&self.line_patterns(&mut st, &lines, source_label));
+        let structure = match masked {
+            Some(_) => None,
+            None => self.structure_section(&mut st, text, origin),
+        };
+        match structure {
+            Some(view) => out.push_str(&view),
+            None if masked.is_none() && lines.len() > PATTERN_MIN_LINES => {
+                out.push_str(&self.line_patterns(&mut st, &lines, source_label));
+            }
+            None => {}
+        }
+        if let structure::Origin::File(path) = origin
+            && let Some(sample) = self.inline_sample(&mut st, &handle.id, source_label, text, path)
+        {
+            out.push_str(&sample);
         }
         match digest {
             Some(Ok(d)) => {
@@ -1525,6 +1574,43 @@ value; run_command with sensitive_data resolves placeholders in the command on t
         Ok(self.clean_public(&mut st, &chunk, &info.source))
     }
 
+    /// `text` with its placeholders resolved for a write to `path` (see
+    /// [`Presenter::resolve_for_write`]).
+    fn resolve_placeholders(&self, path: &Path, text: &str) -> Result<String, String> {
+        self.ip_guard_write(path)?;
+        let st = self.lock();
+        let sink = self.policy.is_secret_sink(path) || self.is_sensitive(path);
+        for token in Vault::tokens_in(text) {
+            match st.vault.value_of(&token) {
+                None => {
+                    return Err(format!(
+                        "{token} is not a known placeholder; it cannot be written"
+                    ));
+                }
+                Some((_, entry)) if !sink => {
+                    let key = token
+                        .trim_matches(|c| c == '⟨' || c == '⟩')
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or("VALUE")
+                        .split('#')
+                        .next()
+                        .unwrap_or("VALUE")
+                        .to_owned();
+                    return Err(format!(
+                        "{token} holds a {} value and may only be written into secret files ({}); \
+in {} read it at runtime instead (for example from the environment variable {key}).",
+                        entry.kind.tag(),
+                        self.policy.secret_sinks.join(", "),
+                        path.display()
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+        Ok(st.vault.detokenize(text).0)
+    }
+
     /// What the local model did since the last call (`None` without a local model).
     pub fn take_local_stats(&self) -> Option<crate::local::CallStats> {
         self.local.as_ref().map(LocalReader::take_stats)
@@ -1542,7 +1628,8 @@ value; run_command with sensitive_data resolves placeholders in the command on t
     }
 
     /// The notes the task gets: the sensitive paths (commands cannot read
-    /// them), the protected ones and the local brief, if any.
+    /// them), their structure outline, the protected ones and the local
+    /// brief, if any.
     fn task_notes_of(st: &State) -> String {
         let mut out = String::new();
         if !st.sensitive_files.is_empty() {
@@ -1564,6 +1651,7 @@ handle for ask_local; run_command with sensitive_data runs programs on them): {}
                 paths.join(", ")
             ));
         }
+        out.push_str(&Self::outline_note(st));
         out.push_str(&Self::ip_note(st));
         if let Some(brief) = &st.brief {
             out.push_str(&format!(
@@ -1598,9 +1686,11 @@ impl Presenter for Engine {
                     self.set_class(ViewClass::Tokenized);
                     let mut st = self.lock();
                     st.overlap.add_sensitive(&text);
-                    self.tokenized_view(&mut st, &label, &text)
+                    let mut view = self.tokenized_view(&mut st, &label, &text);
+                    view.push_str(&self.env_formats(&mut st, path, &text));
+                    view
                 } else {
-                    self.handle_view(&label, &text)
+                    self.handle_view_as(&label, &text, structure::Origin::File(path))
                 }
             }
             Source::GitHistory { rev, path } => self.history_view(rev, path.as_deref(), &text),
@@ -1657,7 +1747,7 @@ impl Presenter for Engine {
                     let mut st = self.lock();
                     st.overlap.add_sensitive(&text);
                 }
-                self.handle_view(&label, &text)
+                self.handle_view_as(&label, &text, structure::Origin::Command(command))
             }
             Source::Checks if self.policy.command_output_sensitive => {
                 self.command_view("check output", None, &text)
@@ -1875,6 +1965,24 @@ at most {MAX_RAW_LINES} lines per call)."
                 }, "required": ["handle"]}),
             },
         ];
+        let rows = self.policy.structure.synthetic_rows;
+        if rows > 0 {
+            tools.push(ToolSpec {
+                name: "synthetic_sample".into(),
+                description: format!(
+                    "A synthetic sample of a sensitive data file held under a handle (CSV, TSV, JSON, JSON lines, \
+XML, fixed-width, KEY=value): its records with every value replaced by a rule-generated fake of the same shape \
+(same schema, formats, lengths, nulls, quoting and edge cases; dates valid; card numbers and IBANs pass their \
+checks). No real value is in it (checked before it is shown), so it is not sensitive: use it to see how the data \
+is written or as a test fixture. At most {rows} records."
+                ),
+                parameters: json!({"type": "object", "properties": {
+                    "handle": {"type": "string", "description": "The handle of a sensitive file's view, such as h3."},
+                    "rows": {"type": "integer", "minimum": 1, "maximum": rows,
+                        "description": "Records to include (default 5): the first, then records whose fields show other shapes, nulls or missing keys, then the next ones."}
+                }, "required": ["handle"]}),
+            });
+        }
         tools.extend(self.ip_tools());
         tools
     }
@@ -1883,6 +1991,9 @@ at most {MAX_RAW_LINES} lines per call)."
         let (result, class) = match name {
             "ask_local" => (self.ask_local(args), ViewClass::LocalAnswer),
             "read_raw" => (self.read_raw(args), ViewClass::Raw),
+            "synthetic_sample" if self.policy.structure.synthetic_rows > 0 => {
+                (self.synthetic_sample(args), ViewClass::Tokenized)
+            }
             _ => return None,
         };
         if result.is_ok() {
@@ -1922,38 +2033,9 @@ at most {MAX_RAW_LINES} lines per call)."
     }
 
     fn resolve_for_write(&self, path: &Path, text: &str) -> Result<String, String> {
-        self.ip_guard_write(path)?;
-        let st = self.lock();
-        let sink = self.policy.is_secret_sink(path) || self.is_sensitive(path);
-        for token in Vault::tokens_in(text) {
-            match st.vault.value_of(&token) {
-                None => {
-                    return Err(format!(
-                        "{token} is not a known placeholder; it cannot be written"
-                    ));
-                }
-                Some((_, entry)) if !sink => {
-                    let key = token
-                        .trim_matches(|c| c == '⟨' || c == '⟩')
-                        .split(':')
-                        .nth(1)
-                        .unwrap_or("VALUE")
-                        .split('#')
-                        .next()
-                        .unwrap_or("VALUE")
-                        .to_owned();
-                    return Err(format!(
-                        "{token} holds a {} value and may only be written into secret files ({}); \
-in {} read it at runtime instead (for example from the environment variable {key}).",
-                        entry.kind.tag(),
-                        self.policy.secret_sinks.join(", "),
-                        path.display()
-                    ));
-                }
-                Some(_) => {}
-            }
-        }
-        Ok(st.vault.detokenize(text).0)
+        let resolved = self.resolve_placeholders(path, text)?;
+        self.note_fixture(path, &resolved);
+        Ok(resolved)
     }
 
     /// Refuses text for a third party that carries a placeholder (never

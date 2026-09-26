@@ -470,6 +470,12 @@ fn policy(cfg: &Config) -> Result<Policy> {
             &cfg.str("images.to_frontier")?,
         )
         .unwrap_or_default(),
+        structure: duet_boundary::policy::StructureSettings {
+            views: cfg.bool("sensitivity.structure_views")?,
+            synthetic_rows: cfg.int("sensitivity.synthetic_rows")? as usize,
+            masked_numbers: cfg.int("sensitivity.masked_numbers")? as u32,
+            output_probes: Some(cfg.int("sensitivity.output_probes")? as u32),
+        },
     })
 }
 

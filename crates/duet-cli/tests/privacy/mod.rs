@@ -307,6 +307,12 @@ fn shipped_policy(owner: &Path) -> Policy {
             &cfg.str("images.to_frontier").unwrap(),
         )
         .unwrap(),
+        structure: duet_boundary::policy::StructureSettings {
+            views: flag("sensitivity.structure_views"),
+            synthetic_rows: cfg.int("sensitivity.synthetic_rows").unwrap() as usize,
+            masked_numbers: cfg.int("sensitivity.masked_numbers").unwrap() as u32,
+            output_probes: Some(cfg.int("sensitivity.output_probes").unwrap() as u32),
+        },
     }
 }
 
