@@ -219,7 +219,9 @@ as text; HTML is converted with links kept; `start_line`/`end_line` read part of
 `web_search` (title, URL, snippet and source per result). Requests are made by the host, never by commands
 (commands' own network is `sandbox.network`, below): `GET` only (a search backend's own API may `POST`),
 `http`/`https`, public addresses only (checked after DNS and on every redirect), at most
-`web.max_bytes` per response and `web.timeout_secs` per request.
+`web.max_bytes` per response and `web.timeout_secs` per request. `web_fetch` does not read the
+result pages of general search engines (Google, Bing, DuckDuckGo and the like): searching is
+`web_search`'s job.
 
 Search works without setup, and Duet runs it itself: with `web.search.backend = "auto"` (the
 default, the `native` backend) the host asks public sources that publish an API for automated
@@ -300,8 +302,11 @@ addresses in tests, but it is billed per search ($0.01 as listed in 2026-09) to 
 balance, which the coding plan does not cover; without a balance it answers that the account has
 none.
 
-In hybrid mode a URL or query holding a placeholder or a known sensitive value is refused before
-anything is sent (for a native search, before any source is contacted), and fetched content and
+In hybrid mode a URL or query holding a placeholder or a known sensitive value, in any part of the
+request and in any spelling the check reads (encoded, spelled out, cut into parts, as digits of a
+withheld number), is refused before its name is resolved or anything is sent (for a native search,
+before any source is contacted; every request duet makes to a third party goes through one checked
+client), and fetched content and
 results are scanned like public content and shown as untrusted data. Every call is an audit event
 (host, bytes, outcome; a native search one per source asked). Native sources are held to the same
 address rules as `web_fetch`. Details: [SECURITY.md](../SECURITY.md) (Web tools).

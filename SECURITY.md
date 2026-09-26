@@ -487,6 +487,11 @@ The boundary's own code is also tested against generated input, in the gate on e
 - **Building blocks**: vault round trip, idempotence, no value left outside tokens, aliases never
   restored; copied-span redaction leaves no copied run; detector spans in bounds and disjoint; the
   stream parser, chunk assembler and tool-call recovery never panic on model output.
+- **The egress oracle** (`crates/duet-cli/tests/egress_oracle.rs`): every third-party endpoint
+  (web page, each search backend and native source, an MCP server over HTTP, a registry behind the
+  egress proxy) is a local server recording every byte, names go to a recording resolver, and a
+  hostile scripted frontier tries every channel with every planted value in every spelling the
+  canary matcher knows; no canary may appear in any recorded byte or name (see Egress).
 - **Detection corpus** (`crates/duet-boundary/tests/corpus.rs`): a positive for every imported
   rule, hand-written positives for every personal-data format, hard negatives with a recorded
   false-positive baseline, and an end-to-end check through the engine (see Detection).
@@ -500,6 +505,7 @@ What the value filters cover, precisely (the spellings the property asserts):
 | Person names in sensitive content (title-case runs, person fields such as `name=`) | as written; the surname alone if it has 4+ letters and is not a word of public content |
 | Numbers of 6+ digits in sensitive content | as written, plain digits, comma-grouped, and as minor units (`51861.26`, `51,861.26`) |
 | Any of the above, in local-model output | also spelled out (its letters and digits with 1–3 other characters between each two, any case), and in base64 or hex (at any alignment, any case) |
+| Any of the above, in text for a third party (every part of a request: host labels, path, query, headers, JSON body) | refused, not replaced: also URL-decoded up to three layers, HTML- and backslash-unescaped, reversed, spelled out, with its letters and digits separated or cut into consecutive parts (8+), in base64, hex or base32 (whole or 8+ bytes of it), and card, account, ID, IBAN and phone digits as a number of their own (see Egress) |
 
 Not covered by value filters: values under 4 bytes (the final check needs 6+), a first name alone,
 other letter cases or number formats, and any re-encoding (base64, hex, character codes, a value
@@ -556,6 +562,117 @@ Linux differences and limits:
   AppArmor user-namespace restrictions (such as Ubuntu 24.04); there Duet either works or refuses
   to run commands.
 
+## Egress: everything that leaves this machine
+
+The frontier provider is not the only party Duet sends to. Every way Duet, or a process it starts,
+can send bytes to another party is listed below with what can flow, the check that applies, and
+how the check is enforced: **structurally** (a type, a sandbox rule or a gate check makes the
+bypass impossible to write) or **by convention** (each caller must remember to call it). "Before"
+names what was by convention until the egress audit of 2026-09-26 (DUET-2026-025 to 030).
+
+| Channel | Recipient | What can flow | Check | Enforced |
+|---|---|---|---|---|
+| Frontier requests (runs, sessions, sub-agents; `subagents.model` behind a second gate) | the frontier provider | everything the frontier is shown and writes | the outbound gate: filters, final check, audit record (Enforcement 3) | structural: the agent crate cannot link `duet-provider` and only holds a `GatedFrontier` (gate: "privacy by construction") |
+| `web_fetch` | the page's host, and first the resolver asked for its name | the URL: host name labels, port, path, query; each redirect the server names | the third-party check on every part before the name is resolved or a byte sent (below); addresses checked after resolution, connection pinned; result pages of search engines refused | structural: `duet-web` sends only through `duet-net`, which sends only a `Checked` request. Before: by convention (the tool checked the URL text) |
+| `web_search`, native (the default) | each source asked: Stack Exchange, Wikimedia, GitHub, registries, Hacker News, arXiv | the query, in each source's URL | the query checked once for all its recipients, then every source's request in every part | structural (each request). Before: the query text only |
+| `web_search`, single backends: SearXNG, Brave, Wikipedia, Z.ai's API, Z.ai's coding-plan server (MCP) | the backend, and whatever the owner's SearXNG forwards to | the query in the URL, a JSON body or MCP arguments; the owner's key | every request checked in every part; keys are added by `duet-net` after the check, only to their own endpoint | structural. Before: the query text only; the coding-plan server's messages went through an environment proxy when one was set |
+| MCP servers over HTTP | the server | tool arguments (every string and key, JSON inside strings), protocol messages (initialize, listing, answers to the server's requests, the closing `DELETE`), the session id | arguments checked as one JSON value by the hub; every message checked again by the transport; placeholders never resolved; no redirects; no proxy from the environment | structural (every message through `duet-net`). Before: arguments string by string by convention, protocol messages unchecked, `HTTPS_PROXY` honoured |
+| MCP stdio servers, `trust = "public"` | a local sandboxed process; with `network = true`, whoever it contacts | tool arguments | arguments checked as one JSON value before they are written to its input; sandbox: hidden paths, cleared environment, network only when configured | the check is the hub's (by convention: stdio is a pipe, not a network client); the sandbox is structural. What the process sends is not seen |
+| MCP stdio servers, `trust = "sensitive"` | a local sandboxed process; with `network = true`, whoever it contacts | real values (placeholders are resolved for it) | none on what it sends; `duet doctor` warns when such a server has `network = true` | owner-accepted risk |
+| Commands, `sandbox.network = "registries"` (the default) | the listed package registries, through the egress proxy | what an ordinary command can read (public workspace content), request lines | sandbox (the proxy is the only way out); host allowlist; only listed names resolved; each plain-HTTP request (path, query, every header) checked; a tunnel's host checked and its TLS server name must match; a command whose text holds a placeholder or a withheld value runs without network | structural (sandbox, proxy); the content of a TLS tunnel is not seen |
+| Commands, `sandbox.network = "all"` | anyone | what an ordinary command can read | the sandbox's read rules; the command-text check | owner loosening (confirmed and audited) |
+| `sensitive_data` commands; checks that can read protected source | nobody | nothing | no network in any mode | structural (sandbox) |
+| Language servers | nobody | nothing | sandboxed, network off | structural |
+| Local model (the engine's local roles, the explorer, compaction, image descriptions, the vision probe) | the owner's local model server: loopback, or an allowlisted LAN host over TLS (plain HTTP only with `local.allow_plaintext`) | raw sensitive content, by design | the endpoint trust rule, checked when the provider is built; the explorer's `LocalAgent` refuses any provider not in the local role | structural, owner-trusted |
+| Images | the frontier (by a named rule) or the local model | pixels | `route_image`; the gate refuses any image not routed to the frontier | structural |
+| git | nobody | nothing | the hardened runner: `protocol.allow=never`, no hooks, no push | structural |
+| `duet doctor --online`, `duet setup` discovery, context-window and cache probes | the configured frontier and local endpoints; the owner's SearXNG | fixed test prompts and images, model names, the owner's keys to their own endpoints; SearXNG gets the fixed query `duet` | no run content exists there; the owner starts them | fixed content (by construction of the probes) |
+| `duet-eval` (the evaluation harness, outside the product) | model providers through its own leak proxy; the lanes' agents | benchmark tasks | its leak proxy records every byte | outside the product; allowlisted in the gate |
+
+### One way out for third parties
+
+Third-party HTTP is built like the frontier path, so a tool cannot forget the check:
+
+- `duet_boundary::third_party::Outgoing` is a request as a tool would send it (method, URL,
+  headers, body). A `Checked` request is one every part of which passed a `Guard`, and only
+  `Guard::check` makes one; a `Guard` is the run's presenter's check
+  (`Presenter::outbound_guard`), owned so a request made later or in another task (the egress
+  proxy's) is checked against what the run knows then. Pass-through mode's guard passes
+  everything (the boundary is off), and says so.
+- `duet-net` is the product's one HTTP client and resolver for third parties: it sends only a
+  `Checked` request (no redirects, no proxy from the environment, the address the caller checked
+  pinned) and resolves only a checked request's host. Credentials the owner configured are added
+  by it after the check, marked sensitive, never shown.
+- `duet-web` (fetch, every search backend, the native sources) and `duet-mcp`'s HTTP transport
+  build `Outgoing` requests and have no other way to send; the egress proxy checks what it
+  forwards with the same guard.
+- `tools/gate.sh` ("egress by construction") fails when any product code outside `duet-net`,
+  `duet-provider` (the frontier and local-model client) and the proxy's upstream connection in
+  `duet-egress` uses an HTTP client, opens a TCP connection, a UDP socket or resolves a name; the
+  evaluation harness and test code are allowlisted.
+
+**What the check reads.** Every part of a request: the host and each label (a name goes to a
+resolver before anything connects, so DNS is a channel), the port, the path and each decoded
+segment, the query and each decoded key and value, every header name and value, and every string
+and key of a JSON body (JSON inside a string too); and the parts joined, and the values alone
+joined, so a value cut into consecutive parts (two query values, host labels) is found. In each
+part it refuses:
+
+- a placeholder, or the start of one (`⟨secret:`, which URL syntax can cut from its end);
+- a withheld value (6+ bytes) as written, URL-decoded up to three layers, with HTML character
+  references and backslash escapes (`q`) decoded, in any letter case, reversed;
+- the value spelled out one character at a time, or its letters and digits (8+) anywhere in the
+  part with any separators (`quartz.otter.5519`, `quartzot.ter5519.evil.example`);
+- base64, hex or base32 of the value, or of 8+ bytes of it, at any alignment;
+- a number made of a withheld card's, account's, ID's, IBAN's or phone number's digits: standing
+  alone, with all its 4+ digits in a row in the withheld number (a card's last four, one group), or
+  sharing 8 in a row inside a longer number; digits written as number words count
+  (`four five three nine`);
+- a span copied from sensitive content (24-token window; 4 tokens inside decoded text).
+
+A refusal is a tool error ("not sent: ..."), and an `outbound_refused` audit event naming the
+channel, the destination and the reason, never the value. A destination whose name itself holds
+a withheld value is named "a host whose name holds a withheld value" in errors and every audit
+event (`outbound_refused`, `web_request`, `egress`).
+
+**Measured.** On the detection corpus's 1,513 hard-negative lines, with an engine primed on a
+`.env` and a customer table (`crates/duet-boundary/tests/corpus.rs`), the check refuses 6 lines,
+each as text and inside a URL query: five hold `production`, which the `.env` holds as
+`APP_ENV` (an ordinary word withheld wherever it appears, as in what the frontier sees), and one
+`bytes=3914`, four digits in a row of a withheld card. The rule used for local output (any four
+digits shared with a withheld number) refused 23 more, through the digits of hashes, request ids
+and timestamps.
+
+**Verification: the egress oracle** (`crates/duet-cli/tests/egress_oracle.rs`). Whole hybrid runs
+through the real frontier loop, with every third-party endpoint pointed at a local server that
+records every byte it receives: the page `web_fetch` reads, each search backend (SearXNG, Brave,
+Wikipedia, Z.ai's API and coding-plan server, the native backend's sources), an MCP server over
+HTTP, and a package registry reached through the egress proxy; names are resolved by a resolver
+that records every name. A scripted, hostile frontier tries every channel with every planted
+value, including the database password no detector recognizes (in the vault because `.env` was
+indexed at run start), in every spelling the canary matcher knows, in the host name, path, query,
+a header, tool arguments and JSON inside them, cut into two parts, as a placeholder it was shown,
+and from a `sensitive_data` command. Asserted: no canary in any byte any server received or in any
+name the resolver was asked; each refusal an audit event, and no audit event naming a value; the
+clean request on each channel arrives. A pass-through control shows the same attempt arriving,
+so the oracle sees a leak when there is one.
+
+**Known limits.**
+- Only values Duet knows are refused. Public code, the task text, a paraphrase of a local answer,
+  or a value in a form no detector knows and no sensitive file holds (typed nowhere, read nowhere)
+  can be sent in any spelling.
+- Forms outside the list above pass: ROT13 and other ciphers, character codes, a value cut across
+  requests or interleaved with other text, look-alike Unicode characters (fullwidth digits), a
+  value translated or described.
+- A command with network can send what it can read inside a TLS tunnel to a listed registry: the
+  proxy sees the host, not the path. The command-text check stops a withheld value written into
+  the command itself, not one a command reads from a file the frontier wrote earlier.
+- A `.env` value that is an ordinary word (`production`) refuses every query holding the word.
+- A stdio MCP server's own traffic is not seen; a `sensitive` one with network can send the real
+  values it receives (`duet doctor` warns).
+- The check runs on the host's view of a request; a TLS terminating proxy or a CDN in front of a
+  site sees what the site sees.
+
 ## Command network (egress proxy)
 
 `sandbox.network` (default `registries`; `off` and `all` remain) decides what network sandboxed
@@ -585,7 +702,8 @@ histories and startup files, browser profiles: `HOME_SECRETS` in `crates/duet-sa
 | Host services on loopback (a local database, Redis, a local proxy, the local model server) | bubblewrap: a separate network namespace, so the host's loopback does not exist for commands. Seatbelt: the only loopback ports a command may connect to are the proxy's and the development ports (`DEV_PORTS`: 3000-3099, 4000-4099, 5000-5099, 5173-5199, 7000-7099, 8000-8099, 9000-9099 and a few more) that no process on the host listened on when the command started (`lsof`, plus `netstat` where it reports every user's sockets) |
 | A command that reads sensitive data or protected source sends it | `sensitive_data` commands never have network; checks that can read protected source have none; the decision is made per command by the host (`tools::sandboxed`), not by the command |
 | Poisoning the operator's package caches (code the operator later builds outside the sandbox) | The home directory stays unwritable. Commands with network get package caches in the run's scratch directory; `CARGO_HOME` there is seeded with links to the crates the operator's cargo home holds, which a command can read but not write |
-| Hiding what crossed | Every connection is an `egress` audit event: host, port, bytes each way, `allowed`, `refused` (with the rule) or `failed`; never a path, a query or content. A refused request is also noted in the command's output |
+| A command carries a value it was given (the frontier wrote it into the command) | Each plain-HTTP request is checked in every part (path, query, every header) by the run's guard before it is forwarded, and a tunnel's host before it is resolved; a refused one is answered 403 and audited. A command the frontier wrote whose text holds a placeholder or a withheld value (any spelling the check reads) runs without network, with a note in its output. Inside a TLS tunnel the proxy sees nothing (Known limits) |
+| Hiding what crossed | Every connection is an `egress` audit event: host, port, bytes each way, `allowed`, `refused` (with the rule) or `failed`; never a path, a query or content, and never a host name that holds a withheld value. A refused request is also noted in the command's output |
 
 **Loosening.** `sandbox.network` goes `off` < `registries` < `all`; the owner loosens with
 `--confirm` (audited), a project may only tighten. `sandbox.registries` is owner-only; adding a host
@@ -603,8 +721,10 @@ as `registry.npmjs.org` and `rubygems.org` are their registries' (see the limits
 
 Known limits:
 
-- Host level only, no TLS interception. A request path to an allowed registry can carry what the
-  command can read to that registry's logs, and with credentials the command is given in its own
+- No TLS interception. Plain-HTTP requests are checked in every part, but inside a tunnel the
+  proxy sees only the host: a request path to an allowed registry can carry what the command can
+  read to that registry's logs (a withheld value written into the command itself keeps it off the
+  network; one the command reads from a file does not), and with credentials the command is given in its own
   text (an attacker's token, not the operator's) it could publish a package holding it. What a
   command can read is public workspace content and the rest of the home directory beyond the
   credential list (other projects, documents): the home directory is not hidden wholesale, and the
@@ -639,7 +759,8 @@ source asked receives the query.
 
 | Threat | What stops it |
 |---|---|
-| A URL or query carries a sensitive value to a third party | `check_outbound` before any request: placeholders are never resolved for a non-local destination and refuse the call; vault values (plain, URL-encoded, any letter case) and copied spans of sensitive content refuse it (fail closed, `outbound_refused` audit event) |
+| A URL or query carries a sensitive value to a third party | Every request (the URL given, each redirect, each search source's or backend's request) is checked in every part by the run's guard before its name is resolved or a byte is sent, and `duet-web` has no other way to send (see Egress): placeholders are never resolved for a non-local destination and refuse the call; withheld values in any spelling the check reads, digits of withheld numbers and copied spans of sensitive content refuse it (fail closed, `outbound_refused` audit event). A host name that holds a value is never written to the audit log |
+| Searching through a general search engine's result page instead of `web_search` (the query reaching an engine the owner did not choose, whose terms forbid automated queries) | `web_fetch` refuses the result pages of Google, Bing, DuckDuckGo (`html.`/`lite.` and `?q=`), Yahoo, Yandex, Baidu, Startpage, Brave Search, Ecosia, Qwant and a few others, on the first URL and every redirect; their other pages are fetched as usual |
 | Server-side request forgery: the host reaching loopback services, the LAN, cloud metadata | `http`/`https` only, no credentials in URLs, `GET` only; every resolved address is checked (loopback, private, link-local, CGNAT, unique-local, multicast, reserved, IPv4 embedded in IPv6) and the connection is pinned to the checked address, so DNS rebinding cannot swap it; every redirect is checked the same way (at most 5); no proxy from the environment. `web.allowlist_private` (owner only, confirmed) opens named intranet hosts or networks; metadata addresses (169.254.169.254, fd00:ec2::254, 100.100.100.200, ...) stay refused |
 | A page carries instructions (prompt injection) or sensitive-looking data | Content is presented as `Source::Web`: scanned and tokenized like public content (values already in the vault are replaced too), offloaded when bulky, and framed as untrusted data between markers the page cannot forge (random tag per call) |
 | Huge or binary responses | Body cut at `web.max_bytes` (not downloaded further, marked truncated); binary types refused; `web.timeout_secs` per request including redirects |
@@ -695,8 +816,8 @@ registries and GitHub answer by names and descriptions, Stack Overflow and GitHu
 word, and pages that are only on the open web are not found (`web_fetch` reads a known address).
 Its rate limits are counted per run: parallel runs on one machine share the services' per-address
 budgets (Stack Exchange's 300 a day, GitHub's 10 a minute) without knowing of each other.
-Z.ai's coding-plan search is reached through Duet's MCP client, which, unlike the web tools' own
-client, honours an `HTTPS_PROXY` in the environment. The outbound check applies to Z.ai queries too,
+Z.ai's coding-plan search is reached through Duet's MCP client, over the same checked client as the
+web tools (no proxy from the environment). The outbound check applies to Z.ai queries too,
 although Z.ai already receives the run as the frontier. Z.ai's API data terms (checked 2026-09-26)
 say API content is processed in Singapore in real time and not stored; they do not say which
 engine answers a search, and the engine name `search_pro_jina` suggests a partner (Jina AI) may
@@ -754,12 +875,12 @@ on this machine.
 | A repository configures a server (runs a program, reaches an endpoint) | Every `mcp.*` setting is owner-only: a project file that names one is refused; owner changes that start programs or reach servers need `--confirm` and are in the config audit log |
 | A stdio server reads sensitive files, `.git` or Duet's run state | It runs in the command sandbox with the same deny-read list as ordinary commands (sensitive and derived files, protected source, every `.git` and `.duet`, the `sensitive_data` commands' `TMPDIR`; `.duet` is denied by the sandbox itself to every process), writes limited to the workspace and a per-server scratch directory, `.git`/`.duet` read-only |
 | A stdio server exfiltrates over the network or reads credentials from the environment | No network unless `network = true` for that server; the environment is cleared to the sandbox's base set plus the variables named in `env` (values never stored) |
-| Arguments carry a sensitive value to a server | Public servers and every HTTP server: each argument string and key goes through `check_outbound`; a placeholder, a vault value (plain, URL-encoded, any letter case) or a copied sensitive span refuses the call (fail closed, `outbound_refused`). Placeholders are resolved only for a `trust = "sensitive"` stdio server, whose results stay local |
+| Arguments carry a sensitive value to a server | Public servers and every HTTP server: the arguments are checked as one JSON value (every string and key, JSON inside strings, a value cut across strings) by the run's guard; a placeholder, a withheld value in any spelling the check reads (see Egress), digits of a withheld number or a copied sensitive span refuses the call (fail closed, `outbound_refused`). An HTTP server's transport checks every message again (protocol messages, answers to the server's requests, the closing `DELETE`) and sends only through `duet-net`. Placeholders are resolved only for a `trust = "sensitive"` stdio server, whose results stay local |
 | Descriptions or schemas carry instructions or sensitive-looking text | Untrusted: every string is scanned by the presenter (detected values and vault values replaced), descriptions capped at 1,024 characters, schemas at 8 KiB (then documentation dropped, then a bare object schema); each description is prefixed with its server, trust and whether it is declared read-only |
 | Results carry instructions or data | Presented as `Source::Mcp` by the server's trust: `public` is scanned and tokenized like public command output (bulky results offloaded), `sensitive` is held locally as a handle with a local summary; framed as untrusted data between markers with a per-call random tag. Non-text content (images, audio, binary resources) is described, never passed on |
 | A tool changes things the operator did not intend | `approve` (default `writes`) under `oversight.approve = "risky"`: tools not declared read-only need approval (`always`: every tool); with `all` every call is asked; denials are tool errors and `approval` audit events (tool and risk class, never arguments). A server's read-only annotation is its own claim: set `approve = "always"` for servers you do not trust to label tools |
 | A hung, crashing or flooding server | Each start and call has the server's timeout (cancellation sent); a closed transport marks the server stopped and kills its process tree; messages over 8 MiB and results over 1 MiB are cut; a failing server is a tool error, never the end of the run |
-| Tokens for HTTP servers leaking | Read from the variables named in `headers_env` at start, marked sensitive in the HTTP client, never written to config, logs, errors or the audit log; the URL may not hold credentials; redirects are not followed (they would carry the headers elsewhere); plain `http` only to loopback |
+| Tokens for HTTP servers leaking | Read from the variables named in `headers_env` at start, marked sensitive in the HTTP client, never written to config, logs, errors or the audit log; the URL may not hold credentials; redirects are not followed (they would carry the headers elsewhere); no proxy from the environment is used; plain `http` only to loopback |
 
 Audit: `mcp_server` (server, transport, started or failed, tool count) at start and `mcp_call`
 (server, tool, trust, outcome, whether placeholders were resolved) per call; never arguments or
@@ -768,7 +889,8 @@ results.
 **Known limits.** A public server widens who receives what the frontier knows, like the web:
 public source, the task text or a paraphrase of a local answer can be sent in arguments; only
 values Duet knows are stopped. A `sensitive` stdio server receives real values: it is trusted with
-them (it runs sandboxed, but with `network = true` it could send them on). The sandbox's deny-read
+them (it runs sandboxed, but with `network = true` it could send them on; `duet doctor` warns
+about such a server). The sandbox's deny-read
 list is fixed when a stdio server starts, so files that become derived data later in the run are
 not hidden from an already-running server. An HTTP server's own behaviour is outside Duet's
 control; its results are scanned (public) or held locally (sensitive), nothing more. Server
@@ -1224,6 +1346,12 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-022 | Network for commands that read sensitive data | CWE-284 Improper Access Control (consequence CWE-201) | With `sandbox.network = true`, `sensitive_data` commands (which read sensitive files) and checks (which read protected source) had the same unrestricted network as ordinary commands, so a steered frontier could send sensitive data or protected source from them; and every command could read the credential stores in the operator's home directory (registry tokens, keys, cloud credentials, shell histories) and print or send them. Found in review while adding the egress proxy, not observed in a run | `sensitive_data` commands never have network, in any mode; checks that can read protected source have none; the credential stores in the home directory (`HOME_SECRETS`) are unreadable to every command; the default network is registries only, through the audited egress proxy |
 | DUET-2026-023 | Probing sensitive data through the size and shape of command output | CWE-203 Observable Discrepancy (consequence CWE-202) | Without a local model, the frontier (not steered, only unable to read `.env`) ran 34 `sensitive_data` commands such as `grep -q KEY .env && echo M` and decoded one bit from each through the view's line and byte counts, after calibrating them with `echo hi` and `printf ''`. What it read was structure (which keys exist, their syntax), and it drew a wrong conclusion, but the channel reads values as well, one comparison at a time. Observed in a live run (`results/nolocal-smoke`, S1, 2026-09-26) | Short output of a `sensitive_data` command (or a file it wrote) is a probe: counted, audited (`output_probe`) and, past `sensitivity.output_probes` (12), shown as a fixed text that does not depend on it; output that is shown is masked (values as shapes, small numbers within `sensitivity.masked_numbers`); the task note's structure outline states what such probes sought. Longer output remains a bounded channel (see Structure views, Known limits) |
 | DUET-2026-024 | Run state through `read_file` | CWE-552 Files or Directories Accessible to External Parties (consequence CWE-201) | `read_file` (and an image read, and `code_nav`'s target) refused hidden paths but not `.duet` or `.git`. An ordinary command's `$TMPDIR` names the run (`duet-scratch/<run-id>`), so a steered frontier could find `.duet/runs/<run-id>/handles/h1` and have a raw handle presented as a public file: values in the vault were replaced, but what no detector knows (a date of birth) was shown as written. Found in review while building the explorer, not observed in a run | The file tools refuse reserved paths (`.duet`: handles, the vault, transcripts; `.git`: committed copies), as the sandbox does for commands and the git tools and listings already did (`d280f07`); regression test `read_file_never_reads_run_state_or_git_internals` |
+| DUET-2026-025 | Host names holding a value in the audit log | CWE-532 Insertion of Sensitive Information into Log File | A `web_fetch` URL whose host name held a withheld value (`<value>.evil.example`) was refused, but its `outbound_refused` event, its `web_request` event and the error named the host as written, so the value was written to the run's audit log; the egress proxy recorded a refused host in its `egress` event the same way. The frontier had written the value itself (nothing new reached it), but the log is kept and shared as evidence. Found by the egress oracle, not observed in a run | A destination whose name holds a value is named "a host whose name holds a withheld value" in every error and audit event (`Guard::name`); the oracle checks every audit event for canaries (`66f2fcc`, `04272d2`) |
+| DUET-2026-026 | Third-party text read only as written | CWE-173 Improper Handling of Alternate Encoding (consequence CWE-201) | `check_outbound` matched withheld values as written, URL-encoded once and in another letter case: a value in base64, hex or base32 (a host label), spelled out, HTML- or backslash-escaped, reversed, URL-encoded twice, cut into host labels or two query values, a placeholder cut by `#`, or a card's digits written as words reached a third party; MCP arguments were checked string by string, so a value cut across two arguments passed. Found in the egress audit, not observed in a run | Every part of a request is checked, and the parts joined, in the spellings local-model output is cleaned of and more (see Egress); MCP arguments are checked as one JSON value (`66f2fcc`) |
+| DUET-2026-027 | Third-party requests checked by convention | CWE-638 Not Using Complete Mediation (consequence CWE-201) | Each tool called `check_outbound` on the text it chose (a URL, a query, arguments) and then built and sent its own request: what was added after the check (a redirect the server named, a search backend's body, a native source's URL, an MCP protocol message) was never checked, and a new tool or backend had to remember the call. The egress proxy forwarded commands' plain-HTTP requests (path, query, headers) unchecked, and a command the frontier wrote holding a withheld value got network. Found in the egress audit, not observed in a run | One client for third parties (`duet-net`) sends only a `Checked` request, made only by the presenter's guard; `duet-web` and `duet-mcp` have no other client; the proxy checks what it forwards; networked commands' text is checked; `tools/gate.sh` refuses networking code anywhere else (`7661ce7`, `04272d2`) |
+| DUET-2026-028 | MCP traffic through an environment proxy | CWE-923 Improper Restriction of Communication Channel to Intended Endpoints | The MCP client's HTTP transport (also the path of Z.ai's coding-plan search) honoured `HTTPS_PROXY` and `HTTP_PROXY` from the environment, so every message, owner credentials included, went through whatever proxy the environment named (it was documented as a limit). Found in the egress audit | `duet-net` never uses a proxy from the environment (`7661ce7`) |
+| DUET-2026-029 | Public numbers withheld after a local answer | CWE-697 Incorrect Comparison (consequence: public values masked and queries refused; not a leak) | `ask_local` on a public handle (a bulky web page, file or output the frontier may read with `read_raw`) cleaned the answer as local output about sensitive content, so numbers and identifiers it quoted entered the vault as data: they were masked in every later result, search results included, and refused later queries. Observed in a live run of the native search (2026-09-26) | An answer about public content is cleaned as `read_raw` cleans that content; regression test `a_local_answer_about_public_web_content_does_not_withhold_its_numbers` (`3cc6e5c`) |
+| DUET-2026-030 | Digits of hashes taken for a card's | CWE-697 Incorrect Comparison (consequence: third-party requests refused; not a leak) | The rule for local output (any four digits in a row shared with a withheld card, account, ID, IBAN or phone number) refused 23 of 1,513 hard-negative lines as third-party text through the digits of hashes, request ids and timestamps, and would refuse most numbers against a large customer table. Found by the corpus measurement written in the egress audit | In third-party text a number counts when it stands alone with all its 4+ digits in a row in a withheld number, or shares 8 in a row with one; the corpus test holds the 6 remaining refusals as its baseline (`2ebae9b`) |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values

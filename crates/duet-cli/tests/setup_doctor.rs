@@ -852,3 +852,49 @@ fn online_doctor_asks_the_owners_searxng_for_json() {
     let (_, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
     assert_eq!(status(&report, "web search"), "warn", "{report}");
 }
+
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn doctor_warns_about_a_sensitive_stdio_server_with_network() {
+    // A server trusted with sensitive data gets real values (placeholders
+    // resolved); with network it can send them anywhere, and no outbound
+    // check sees what it sends: an owner-accepted risk, named by doctor.
+    let e = env();
+    let server = |trust: &str, network: bool| {
+        format!(
+            "command = \"/bin/sh\"\nargs = [\"-c\", {}]\ntrust = \"{trust}\"\nnetwork = {network}\n",
+            toml::Value::String(duet_mcp::mock::SH_SERVER.into())
+        )
+    };
+    owner_config(
+        &e,
+        &format!(
+            "[mcp.servers.vault]\n{}\n[mcp.servers.local]\n{}\n[mcp.servers.open]\n{}",
+            server("sensitive", true),
+            server("sensitive", false),
+            server("public", true)
+        ),
+    );
+    let (_, report) = doctor(&e, &[], &[]);
+    let warnings: Vec<String> = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["name"] == "mcp" && c["status"] == "warn")
+        .map(|c| c["detail"].as_str().unwrap().to_owned())
+        .collect();
+    assert!(
+        warnings.iter().any(|d| d.contains("`vault`")
+            && d.contains("network = true")
+            && d.contains("real values")),
+        "{warnings:?}"
+    );
+    // A sensitive server without network, and a public one (its arguments
+    // are checked), are not flagged.
+    assert!(
+        !warnings
+            .iter()
+            .any(|d| d.contains("`local`") || d.contains("`open`")),
+        "{warnings:?}"
+    );
+}

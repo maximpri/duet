@@ -12,7 +12,7 @@ decides every step and writes all code in Open paths. A **local model** (loopbac
 owner-allowlisted host) is the only model that ever reads sensitive content; it writes digests and
 briefs, answers questions and rewrites protected files on request, has no tools and never decides.
 Between the two sits the **boundary**, and between Duet and the network sits a single **outbound
-gate**.
+gate** for the frontier and a single **checked client** (`duet-net`) for every other party (§5.6).
 
 ```
                       ┌─────────────────────────────────────────────┐
@@ -42,10 +42,11 @@ gate**.
 duet-provider    duet-fs    duet-sandbox                  (leaf crates)
 duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
-duet-mcp                     (leaf: MCP client, JSON-RPC 2.0 over stdio and streamable HTTP; reqwest)
-duet-web                     → duet-mcp   (host-side HTTP for the web tools; reqwest, url, ipnet)
+duet-net                     → duet-boundary   (the one HTTP client and resolver for third parties; reqwest)
+duet-mcp                     → duet-boundary, duet-net   (MCP client, JSON-RPC 2.0 over stdio and streamable HTTP)
+duet-web                     → duet-boundary, duet-net, duet-mcp   (host-side HTTP for the web tools; url, ipnet)
 duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
-duet-egress                  → duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
+duet-egress                  → duet-boundary, duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
 duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
@@ -61,13 +62,14 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
-| `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
+| `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, each plain request and tunnel host checked by the run's guard, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
+| `duet-net` | The product's one HTTP client and resolver for third parties: sends only a `duet_boundary::third_party::Checked` request (no redirects, no proxy from the environment, a checked address pinned), adds owner credentials after the check, resolves only a checked request's host | Build a request itself, or send anything unchecked |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
-| `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `duet-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
-| `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
+| `duet-web` | Every request checked by the caller's `Guard` and sent through `duet-net`; guarded `GET` fetch (search-engine result pages refused) (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `duet-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
+| `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; the HTTP transport checks every message with the `Guard` it was opened with and sends through `duet-net`; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
-| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
+| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
 | `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
@@ -94,11 +96,16 @@ trait Presenter { fn present(&self, &Source, &[u8]) -> String;   // what the fro
                   fn extra_tools(&self) -> Vec<ToolSpec>; fn call_tool(..); fn resolve_for_write(..);
                   fn hidden_from_commands(..) -> Vec<PathBuf>; fn mark_sensitive(..);
                   fn check_outbound(&self, destination, text) -> Result<String, String>;
+                  fn outbound_guard(&self) -> third_party::Guard;   // owned check for third parties
                   fn route_image(&self, &ImageRequest) -> Route; .. }   // Frontier | Describe | Refuse
 struct Engine;         // the hybrid Presenter; PassThrough is the no-op one
 // handles render as "h12"; placeholders as "⟨secret:DB_URL#1⟩", "⟨email:email#4⟩", "⟨body:h7⟩"
 struct OutboundGate;   fn wrap(self, p: ChatProvider) -> GatedFrontier
 struct GatedFrontier;  // only type the agent can call the frontier through
+// duet-boundary::third_party (third parties: web pages, search sources, MCP over HTTP, the proxy)
+struct Outgoing { method, url, headers, body }   // a request before the check
+struct Checked;        // made only by Guard::check; the only thing duet-net sends
+struct Guard;          // a presenter's check, owned: check(), check_text(), check_value(), name()
 
 // duet-agent
 fn run(cfg, frontier: &GatedFrontier, presenter: &dyn Presenter, git, resume, interrupted)
@@ -389,18 +396,38 @@ placeholders; they are matched against the real text.
 
 ### 5.6 Third-party channels (web)
 
-Text the frontier sends to anyone other than the frontier provider goes through
-`Presenter::check_outbound(destination, text)` before any request: the engine refuses a
-placeholder (never resolved for a non-local destination), a vault value (as written,
-URL-encoded or in another letter case) or a copied span of sensitive content; pass-through allows
-everything. A refusal is a tool error and an `outbound_refused` audit event (channel, destination,
-reason; never the text). The method is generic so other third-party channels (MCP) use it too.
+Everything sent to anyone other than the frontier provider and the local model is checked by the
+boundary in every part, and the check is a type, as the gate is for the frontier
+(`crates/duet-boundary/src/third_party.rs`, `engine/third_party.rs`; SECURITY.md, Egress):
+
+```
+tool ── Outgoing {method, url, headers, body} ──► Guard::check ──► Checked ──► duet_net::Client::send
+          (duet-web, duet-mcp, the proxy)          (run's presenter:            (the only sender;
+                                                    Presenter::outbound_guard)   credentials added here)
+duet_net::lookup(resolver, &Checked)  ◄── the only name resolution for web tools: a checked host only
+```
+
+`Guard` holds the presenter's policy (the engine, weakly: a guard that outlives its run refuses
+everything); `Checked` has no public constructor, and `duet-net` builds no request itself. The
+engine's policy (`Engine::third_party_refusal`) reads the parts of a request (`Texts::of_request`:
+host and labels, port, path and segments, query keys and values, headers, JSON strings and keys,
+JSON inside strings; and the parts joined, and the values alone joined) for placeholders and
+their starts, withheld values in every spelling it reads (as written, URL-, HTML- and
+backslash-decoded, any case, reversed, spelled out, by skeleton across separators and parts,
+base64/hex/base32 whole or in part: `reencoded::outbound_forms`, `base32_decodings`,
+`spelled_digits`, `Vault::find_lowered`/`find_skeleton`/`find_window`), numbers made of a
+withheld number's digits, and copied spans. `Presenter::check_outbound(destination, text)` is the
+same check on one text. A refusal is recorded by the guard (`outbound_refused`, destination named
+by `Guard::name`, never a value) and is a tool error; pass-through's guard passes everything.
+`tools/gate.sh` ("egress by construction") keeps HTTP clients, sockets and resolver calls out of
+every product crate but `duet-net`, `duet-provider` and the proxy's upstream connection.
 
 The web tools (`crates/duet-agent/src/web.rs` over `duet-web`): `web_fetch {url, start_line?,
 end_line?}` always, `web_search {query, count?, sources?}` only with a usable backend (`sources`
 only for the native backend, an enum of the run's sources), both fixed at run start
-(`RunConfig.web`; `None` when `web.enabled` is off). Flow: check the URL or query → `duet-web`
-fetches (resolve, check every address, pin, follow at most 5 checked redirects, cap, convert) →
+(`RunConfig.web`; `None` when `web.enabled` is off). Flow: the presenter's guard → `duet-web`
+fetches (a search engine's result page refused; each hop checked by the guard, then resolved,
+every address checked, pinned; at most 5 redirects; capped; converted) →
 `Presenter::present(Source::Web { url }, text)` (public-untrusted: scanned and tokenized like public
 content, offloaded to a handle when bulky) → framed between markers with a per-call random tag
 saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
@@ -415,8 +442,9 @@ says what the backend searches (for native: each source, which are asked by defa
 request).
 
 A native search (`crates/duet-web/src/search/native.rs`): the agent resolves the sources to ask
-(the frontier's `sources` or the defaults), checks the query once against all their hosts, then
-`Web::search_with` asks each source in parallel under its own deadline: answer kept for the run? →
+(the frontier's `sources` or the defaults), checks the query once against all their hosts with the
+guard, then `Web::search_with` asks each source in parallel under its own deadline: the source's
+request built and checked by the guard → answer kept for the run? →
 the service's pacer (one request at a time per service, its interval, GitHub's per-minute budget,
 any backoff a source asked for; a turn too far off skips the source) → the guarded client (address
 checked and pinned, no redirects, capped, gzip decoded) → the source's parser. Lists merge by rank
@@ -439,10 +467,16 @@ command ── HTTPS_PROXY=http://127.0.0.1:<port> ──► route ──► Pro
   Seatbelt:   TCP to the proxy's host loopback port (and free development ports), nothing else
   bubblewrap: own network namespace; `duet __sandbox-bridge` listens on its 127.0.0.1, and hands
               each connection to the host over a channel (the helper's stdin, SCM_RIGHTS)
-Proxy::serve: head (CONNECT host:port | GET/HEAD http://...) → Hosts::allows → resolve (only a
-  listed name) → every address checked (duet_web::guard) → connect → CONNECT: 200, ClientHello's
-  server name == host, then bytes both ways | GET: one rewritten request, the response → Event
+Proxy::serve: head (CONNECT host:port | GET/HEAD http://...) → the run's guard (the tunnel's
+  host; every part of the rewritten plain request) → Hosts::allows → resolve (only a listed
+  name) → every address checked (duet_web::guard) → connect → CONNECT: 200, ClientHello's server
+  name == host, then bytes both ways | GET: one rewritten request, the response → Event (a host
+  the guard refuses is named by `Guard::name`)
 ```
+
+Before any of that, `tools::sandboxed` checks the command line of an ordinary or read-only
+command that would have network (`registries` or `all`) with the guard; one holding a placeholder
+or a withheld value runs with network off and a note in its output.
 
 The agent also denies every command `duet_sandbox::home_secrets` (credential stores and shell
 histories under `$HOME`), and gives commands with network package caches in the run's scratch
@@ -507,8 +541,11 @@ object). `tool_specs` adds them to the fixed, sorted tool set.
 
 A call (`work` in `run.rs` routes names the hub owns): approval via `Hub::action` and
 `oversight::decide` (the server's `approve` under `oversight.approve`) → outbound: for a
-`sensitive` stdio server every argument string is detokenized; for any other server every string
-(and key) goes through `check_outbound` (refusal: tool error + `outbound_refused`) → `tools/call`
+`sensitive` stdio server every argument string is detokenized; for any other server the arguments
+are checked as one JSON value by the presenter's guard (`Guard::check_value`; refusal: tool error
++ `outbound_refused`, drained into the run's log at once) → `tools/call` (over HTTP every message
+is checked again by the transport's guard and sent through `duet-net`; a refusal there is
+`McpError::NotSent`)
 with the server's timeout, abandoned on interrupt → the rendered text through
 `present(Source::Mcp { trust })` (public: scanned like public command output, bulky offloaded;
 sensitive: handle and local summary), framed between random-tag markers as data → an `mcp_call`
@@ -979,3 +1016,7 @@ Each is backed by a test, except where noted.
 11. A sandboxed command reaches no network but the egress proxy (and its own loopback servers)
     unless `sandbox.network = "all"`; a `sensitive_data` command reaches none in any mode; the proxy
     resolves only listed names and connects only to public addresses.
+12. No product code sends to a third party except `duet-net`, which sends only a `Checked`
+    request, and only `Guard::check` (a presenter's policy over every part of the request) makes
+    one; the other code that opens connections is `duet-provider` (the frontier and the local
+    model) and the egress proxy's upstream (gate: "egress by construction"; the egress oracle).
