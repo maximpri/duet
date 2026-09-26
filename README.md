@@ -1,4 +1,4 @@
-# Duet
+# Duet Core
 
 **Frontier-level coding, with your sensitive information read only by a model on your own hardware.**
 
@@ -324,6 +324,21 @@ run in the gate with small case counts; `PROPTEST_CASES` raises them. Fuzzing is
 gate (it needs time, and cargo-fuzz needs a nightly toolchain; without one `tools/fuzz.sh` builds
 the targets on stable).
 
+## Editions
+
+**Duet Core** (this repository) is open source under GPL-3.0-or-later: the agent, the security
+engine, the sandbox, the outbound gate and the audit log — everything described above.
+
+**Duet Enterprise** is a separate commercial edition for organisations that need to *mandate* and
+*prove* how AI coding handles restricted data: an organisation-signed policy enforced on every
+developer machine (developers cannot loosen it), a signed receipt per session showing what each
+outside party received, an independent verifier, SIEM/GRC export, fleet management and compliance
+reports. It is planned, not yet built.
+
 ## License
 
-GPL-3.0-or-later.
+Duet Core is licensed under the GNU General Public License v3.0 or later ([LICENSE](LICENSE)).
+
+The copyright holder also licenses Duet Core under separate commercial terms for Duet Enterprise
+(dual licensing). To keep that possible, contributions are accepted only under a contributor
+licence agreement; see [CONTRIBUTING.md](CONTRIBUTING.md).

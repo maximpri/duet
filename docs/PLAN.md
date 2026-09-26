@@ -66,6 +66,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 | 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
+| 2026-09-26 | Two editions (operator): this repository is **Duet Core**, open source under GPL-3.0-or-later; **Duet Enterprise** (`../duet_enterprise`, commercial) holds the whole policy-enforced, attestable-sessions feature (organisation-signed policy, signed session receipts, verifier, SIEM/GRC export, fleet management). Enterprise links Core's crates under the copyright holder's separate licence (dual licensing), so Core contributions require a CLA and `deny.toml` forbids third-party GPL crates. Core is prepared for publication now and published after the red-team pass and acceptance. See "Duet Core publication" and "Extension points for Enterprise" |
 | 2026-09-26 | Local security review is part of the product (operator): one SAST engine with two entry points — an **auditor** of duet's own changes at `finish` (first) and a **scanner** of the whole repository (`duet scan`, second). Three layers: deterministic rules find candidate paths and known patterns; the local model judges every candidate and is the only reviewer of protected code and privacy flows; an optional fresh-context frontier second opinion for high-severity or uncertain findings on open code. Only rule-confirmed high-severity paths can block. The local layer's value is measured on public vulnerable-code benchmarks before it is trusted. See M5.3 |
 | 2026-09-26 | Web search is executed by the host itself (operator): duet's own code queries sources with official open APIs from the operator's machine (no search-provider API by default, no HTML scraping of general search engines); z.ai search and SearXNG/Brave remain explicit owner choices |
 | 2026-09-26 | Cost with security (operator: "yes"): the local model returns to cutting frontier cost, now aimed at the measured driver — frontier turns × context size (XL: 159 turns, ~120K tokens resent per turn, input ≈ 90% of frontier cost; privacy mode's `ask_local` round trips are 23% of S–L tool calls). Rule: offload only what removes frontier turns or shrinks context; never add turns; the local model never decides; everything it produces passes the boundary. See M5.2 |
@@ -724,6 +725,35 @@ on normal diffs from recorded benchmark runs; time per review. If the local laye
 open code, its role narrows to protected code and privacy flows.
 
 Order: after the M5.2 head-to-head, the host-native web search and the single egress choke point.
+
+### Duet Core publication (prepared now, published after the red team and acceptance)
+
+- [x] `LICENSE` (GPL-3.0 text) and SPDX headers on every file (gate-checked).
+- [x] README names the editions and the dual-licensing arrangement; `CONTRIBUTING.md` requires a CLA.
+- [x] `deny.toml` forbids third-party GPL/LGPL/AGPL-only crates (dual licensing); Duet's own
+      unpublished crates are exempt.
+- [ ] CLA text drafted with legal counsel and linked from `CONTRIBUTING.md`.
+- [ ] Security contact in `SECURITY.md` (placeholder by earlier operator decision) and
+      `security.txt` filled in.
+- [ ] History scan for real secrets across all commits (planted canaries in the dogfood tasks are
+      synthetic; confirm nothing else), and for personal data beyond the operator's commit identity.
+- [ ] Name and trademark check for "Duet" in the developer-tools space.
+- [ ] Remove or document machine-specific paths (e.g. the operator's LAN model host in eval lane
+      definitions).
+- [ ] Red-team pass (SbD-2) done and advisories published; acceptance (docs/ACCEPTANCE.md) green.
+- [ ] Choose the host (account/organisation) and push; enable signed releases (SBOM, SSH signature).
+
+### Extension points for Enterprise (Core, GPL)
+
+Generic, documented hooks that Duet Enterprise builds on and that are useful on their own:
+1. An additional top-precedence configuration layer with tighten-only merge (e.g. an
+   organisation policy file), verified by a caller-supplied check.
+2. An audit-event subscriber API (the events Core already records, never content).
+3. A run/session end hook carrying the terminal state and the audit chain head.
+
+The single egress choke point (in progress) is the other Core dependency: an Enterprise receipt's
+claim that nothing else left is only as strong as Core's guarantee that every outbound path goes
+through one checked channel.
 
 ### M5 — Public benchmark (days 32–35)
 
