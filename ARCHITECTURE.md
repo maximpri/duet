@@ -67,7 +67,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
-| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
+| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
@@ -122,8 +122,10 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
    honours `.gitignore`/`.ignore` (`duet_git::walk`), plus the sensitive files it does not list — an ignored
    `.env`, logs, databases — found by the walk that builds the commands' deny list, ≤64 MB of
    those in total; ≤2 MB per file) is read once: its values enter the vault and its
-   text the copied-span index. The task gets a note naming the sensitive paths (commands cannot
-   read them) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
+   text the copied-span index (and, with `sensitivity.structure_views`, its string values the
+   masked-output index and its structure an outline). The task gets a note naming the sensitive
+   paths (commands cannot read them), the outline of each file the policy makes sensitive (≤4,000
+   characters) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
    task (≤3 local calls, values withheld, cleaned like any local output).
    The first message is the project instructions (`instructions::block`: the owner's `DUET.md`
    sanitized like an operator message, then the repository's `DUET.md` presented as
@@ -267,7 +269,8 @@ itself (test data) are shown as written unless the same value is in the vault.
 |---|---|
 | Raw (public) | the content, with detected and known values replaced and copied sensitive spans removed |
 | Tokenized (secret-bearing files) | structure intact, every value → placeholder |
-| HandleSummary (sensitive files, large command output, `sensitive_data` output) | handle + size + up to 12 error lines (sanitized) + repeated line shapes for texts over 40 lines (digits as `#`, values as `⟨…⟩`) + local summary and facts |
+| HandleSummary (sensitive files, large command output, `sensitive_data` output) | handle + size + up to 12 error lines (sanitized) + repeated line shapes for texts over 40 lines (digits as `#`, values as `⟨…⟩`) + local summary and facts. With `sensitivity.structure_views` (§5.12): the structure view (or a log's line templates) in place of the line shapes and, for a data file, the first record of its synthetic sample; for `sensitive_data` output up to 80 lines, the masked output in place of the error lines; short `sensitive_data` output past its budget: a fixed text, no handle |
+| Tokenized: synthetic sample (`synthetic_sample`) | the file's records with every value a rule-generated fake, checked before it is shown |
 | Command output ≤ 6,000 chars (not allowlisted) | shown sanitized, no local call |
 | Condensed (public command and check output, and the ≤ 6,000-char output above, in a recognized format; `context.condense_output`) | handle line + the condensed view (kept lines in order; each omitted run one `[lines a-b omitted: …]` marker; a sum of passing `test result` lines) + `condensed from N lines; read_raw(handle=…)`; the whole output is sanitized first and the public handle keeps that sanitized text; no local call; recorded as BulkyHandle |
 | BulkyHandle (public) | handle + first 40 lines + deterministic outline (declarations; error/warning lines and last 20 lines of output; counts per directory/file for listings and searches) + local summary of command output only (never of source); `read_raw` ranges (≤500 lines, default 200, sanitized) |
@@ -620,6 +623,51 @@ text when primed. A sub-agent runs the same `work` loop, so its `read_file` on a
 same path into its own conversation; its configuration keeps `frontier.vision` only when the
 parent's model drives it and never carries the operator's attachments.
 
+### 5.12 Structure views, synthetic samples, masked output
+
+`crates/duet-boundary/src/structure/` (pure: parsing, profiles, shapes, dates, twins, masking,
+over a `Knowledge` trait) and `engine/structure.rs` (the engine's `Knowledge`: vault spans, the
+public and schema words, the values of structured sensitive data; state, checks, audit).
+
+```
+prime / mark_sensitive ─ index_structure(path, text)
+    string values of JSON/CSV/TSV/JSONL/XML/fixed-width → data values (4+ chars, Aho-Corasick,
+    whole words, case ignored) and one-word values → data words
+    policy-sensitive, not rewritten by a command → outline (format, layout, fields and types) → task note
+read_file (numbered) → present(File) → handle_view_as(File)
+    strip line numbers → probe_gate (a short file a sensitive command wrote) → handle
+    → error lines → profile(text, path): detect format → parse with spans → per-field stats
+      → render (fields, shapes, pictures, anomalies; a log: layout, levels, line templates)
+    → inline_sample (policy-sensitive data file): twin(rows = 1) → checks → first record
+run_command(sensitive_data) → present(SensitiveCommand) → handle_view_as(Command)
+    probe_gate: ≤200 program characters → output_probe {count, budget, shown}; past
+      sensitivity.output_probes → fixed text (no handle, size, exit code, local call)
+    → masked_section (≤80 lines, ≤6,000 chars): sanitize (vault learns its values) →
+      mask: value spans (vault, data values) as shapes (secrets •••), dates by layout, words kept
+      only if public/schema/command words and not data words, numbers per the aggregate rule
+      (0-99 while sensitivity.masked_numbers lasts) → masked_numbers event
+synthetic_sample {handle, rows} → policy-sensitive file only → twin(text, path, seed, rows)
+    per value: fake = f(shape, kind, first position, seed); redrawn while it holds a known value
+    records: the first, then greedy cover of (path, shape class, null, missing) features
+    check: no vault value (JSON literals aside), no copied span → else withheld (3 seeds)
+    shown: its lines → fixture set, its header → public text, its detected fakes → authored
+resolve_for_write(path, content) → note_fixture: every line from a sample shown and path under a
+    sensitivity glob → fixtures.json {path: sha256}; is_sensitive(path) is false while the file's
+    bytes hash to that digest
+```
+
+Formats: JSON (records: the array itself, or the longest array of objects under a top-level key),
+JSON lines, delimited text (delimiter sniffed, RFC 4180 quoting, header detected), `KEY=value`,
+fixed-width (columns from blank gaps), simple XML (records: the root's children), logs (timestamp
+or level at line start) and other text (templates only). Dates are recognized by layout
+(`dates.rs`: ISO, compact `yyyyMMddHHmmss`, day/month orders, month names, zones) and generated in
+the same layout. Fakes: cards Luhn-valid with a drawn network prefix for their length; IBANs for a
+registry country of the same length, mod-97 valid; ids and phone numbers searched until the
+detectors recognize them; emails at `.test`; numbers with the same digits, decimals, sign, epoch
+plausibility and side of 2^53; letters pronounceable with the same case and UTF-8 length.
+The seed is drawn per run (`sample-seed`); equal values get equal fakes; a larger sample starts
+with the smaller one's records.
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -692,7 +740,11 @@ git; reset behaviour defined per entry).
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
-    probes.json               characters of each value local answers showed; probes per handle
+    probes.json               characters of each value local answers showed; probes per handle;
+                              short sensitive outputs and small masked numbers shown
+    sample-seed               seed of the run's synthetic samples
+    fixtures.json             files written from sample lines only → digest of that content
+    rewritten.json            files `sensitive_data` commands wrote (no outline or sample of them)
     operator.json             placeholders of operator-typed values → the handle of their message
     spill-<uuid>.txt          long command outputs
     diff-<uuid>.tmp           private copy of a file while `diff` compares it outside git (removed)

@@ -93,11 +93,14 @@ pub(super) struct StructureState {
 }
 
 /// Files written with sample lines only: path → SHA-256 of that content
-/// (persisted in `fixtures.json`), and the workspace they are in.
+/// (persisted in `fixtures.json`), and the workspace they are in; and the
+/// files a command that read sensitive data wrote (persisted in
+/// `rewritten.json`), whose content that command chose.
 #[derive(Default)]
 pub(super) struct Fixtures {
     files: BTreeMap<PathBuf, String>,
     workspace: Option<PathBuf>,
+    rewritten: std::collections::BTreeSet<PathBuf>,
 }
 
 fn line_hash(line: &str) -> u64 {
@@ -135,12 +138,15 @@ impl StructureState {
 
 impl Fixtures {
     pub(super) fn open(run_dir: &Path) -> Self {
+        let read = |name: &str| std::fs::read(run_dir.join(name)).ok();
         Self {
-            files: std::fs::read(run_dir.join("fixtures.json"))
-                .ok()
+            files: read("fixtures.json")
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or_default(),
             workspace: None,
+            rewritten: read("rewritten.json")
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default(),
         }
     }
 }
@@ -308,14 +314,40 @@ impl Engine {
         }
     }
 
-    /// Indexes a sensitive file for the structure views: the words of its
-    /// values, and its outline for the task note.
+    /// Whether `path` is sensitive by policy and not written by a command
+    /// that read sensitive data: content the frontier did not choose, of
+    /// which outlines and samples may be made.
+    fn primary(&self, path: &Path) -> bool {
+        self.policy.is_sensitive_path(path) && !self.fixtures().rewritten.contains(path)
+    }
+
+    /// Files a command that read sensitive data wrote: from now on their
+    /// content is the command's, not the data's.
+    pub(super) fn note_rewritten(&self, paths: &[PathBuf]) {
+        let mut f = self.fixtures();
+        let before = f.rewritten.len();
+        f.rewritten.extend(paths.iter().cloned());
+        if f.rewritten.len() != before {
+            let _ = duet_fs::private::write_private(
+                &self.run_dir().join("rewritten.json"),
+                &serde_json::to_vec(&f.rewritten).unwrap_or_default(),
+            );
+        }
+    }
+
+    /// Indexes a sensitive file for the structure views: the values it
+    /// holds, and (a file the policy makes sensitive) its outline for the
+    /// task note.
     pub(super) fn index_structure(&self, st: &mut State, path: &Path, text: &str) {
         if !self.policy.structure.views {
             return;
         }
         st.structure
             .note_values(structure::values(text, Some(path)));
+        if !self.primary(path) {
+            st.structure.outline.remove(&path.display().to_string());
+            return;
+        }
         let outline =
             profile::profile(text, Some(path), &Known(st)).map(|p| p.outline(OUTLINE_FILE_CHARS));
         if let Some(o) = outline {
@@ -353,11 +385,12 @@ never values; read_file shows each in full):",
         let what = match origin {
             Origin::Command(command) => format!("Output of `{command}`"),
             Origin::File(path)
-                if self
-                    .derived
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .contains(path) =>
+                if self.fixtures().rewritten.contains(path)
+                    || self
+                        .derived
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .contains(path) =>
             {
                 format!(
                     "{} (written by a command that read sensitive data)",
@@ -526,7 +559,7 @@ the command kept; numbers 0-99 as written while sensitivity.masked_numbers lasts
         let rows = self.policy.structure.synthetic_rows;
         if !self.policy.structure.views
             || rows == 0
-            || !self.policy.is_sensitive_path(path)
+            || !self.primary(path)
             || !structure::detect(text, Some(path)).has_records()
         {
             return None;
@@ -583,14 +616,7 @@ not sensitive; {more}):\n{}\n",
             return Err(format!("{id} holds public content: read it with read_raw"));
         }
         let path = super::origin_path(&info.source).map(Path::new);
-        let sensitive_file = path.is_some_and(|p| {
-            self.policy.is_sensitive_path(p)
-                && !self
-                    .derived
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .contains(p)
-        });
+        let sensitive_file = path.is_some_and(|p| self.primary(p));
         if !sensitive_file {
             return Err(format!(
                 "{id} is not a sensitive file ({}): samples are made of the data files themselves, not of \
@@ -670,6 +696,7 @@ mod tests {
     use super::*;
     use crate::policy::{Policy, StructureSettings};
     use crate::view::{Presenter, Source};
+    use std::path::PathBuf;
     use std::sync::Arc;
 
     const NAMES: [&str; 3] = ["Vakdril Thorsko", "Orla Brennvik", "Ysolde Marrquin"];
@@ -968,6 +995,25 @@ mod tests {
         let w = e.resolve_for_write(other, &mixed).unwrap();
         std::fs::write(ws.join(other), w).unwrap();
         assert!(e.path_sensitive(other));
+    }
+
+    #[test]
+    fn a_data_file_a_command_rewrote_gets_no_sample_or_outline() {
+        let (_d, ws, e) = primed(views(Some(0)));
+        std::fs::write(ws.join("data/customers.csv"), "M\n").unwrap();
+        e.mark_sensitive(&ws, &[PathBuf::from("data/customers.csv")]);
+        assert!(!e.task_notes().contains("data/customers.csv:"));
+        // Its short content is a probe (budget 0: withheld).
+        let view = read(&e, "data/customers.csv", "M\n");
+        assert!(view.contains("withheld"), "{view}");
+        let _ = read(&e, "data/customers.csv", &csv().repeat(3));
+        let r = e
+            .call_tool(
+                "synthetic_sample",
+                serde_json::json!({"handle": "h1"}).as_object().unwrap(),
+            )
+            .unwrap();
+        assert!(r.unwrap_err().contains("not a sensitive file"));
     }
 
     #[test]

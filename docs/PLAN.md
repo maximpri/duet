@@ -607,6 +607,33 @@ test output with `| tail`, and most command output is file reading). *Open:* the
 (setting on and off, Gate 2 and X1/X2); telling the frontier that test output arrives condensed, so
 it stops cutting it with `| tail` (a prompt that depends on the setting).
 
+*Built (branch `twins`), item 4:* `duet-boundary/src/structure/` (pure: format detection for JSON,
+JSON lines, CSV/TSV and other delimiters, `KEY=value`, fixed-width, simple XML, logs; parsers that
+keep every value's span; per-field profiles; shape masks; date layouts as pictures; twins; masking)
+and `engine/structure.rs`. `sensitivity.structure_views` (on): a sensitive file's view gets its
+structure view (in place of the repeated line shapes; logs their line templates) and a data file
+the first record of its synthetic sample; `.env` views how each value is written; the task note an
+outline of every policy-sensitive file. `synthetic_sample {handle, rows?}` (`sensitivity.
+synthetic_rows`, 20): records chosen to cover the file's shapes, nulls and missing keys, every value
+a fake that depends on its shape, kind, first position and the run's seed only (valid dates, Luhn
+cards, mod-97 IBANs, detector-checked ids, `.test` emails), redrawn while it holds a known value,
+then checked whole (no vault value, no copied span; fail-closed, audited); its detected fakes are
+the frontier's own, and a file written from its lines only is a fixture, readable to commands under
+a sensitivity glob while its content is exactly that. Masked output of `sensitive_data` commands (up
+to 80 lines): values (vault, and every string value of the structured sensitive files as a whole
+word) as shapes, secrets as `•••`, words kept only when public, schema or the command's; the
+aggregate rule: numbers 0-99 as written within `sensitivity.masked_numbers` (24 per run), all else
+as `9`s. Answering the `duet-hybrid-nolocal` smoke (S1: 34 `grep -q KEY .env && echo M` probes
+decoded from byte counts; DUET-2026-023): a short output (≤200 characters) is a probe, counted
+(`output_probe`) and past `sensitivity.output_probes` (12) replaced by a fixed text, with or
+without a local model. Offline check on the three X2 hybrid runs (`results/structure-views-x2`:
+views, samples and the runs' `sensitive_data` outputs replayed): of the 77 `ask_local` questions
+about sensitive data, 37 (48%) answered by the views and 20 (26%) partly (counts and formats, not
+the categorical values, which stay withheld); 20 need prose or values the views never show
+(tickets, security reviews); 3 of 24 calls unnecessary outright and 6 more but for withheld values;
+no canary of the runs' manifests in any view. The S1 probes sought what the task note's outline now
+states. *Open:* the head-to-head (on and off, Gate 2 and X1/X2, with and without a local model).
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

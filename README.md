@@ -85,8 +85,8 @@ card or account number is protected even if its checksum fails, and so is any lo
 | What is in your repository | What the frontier receives |
 |---|---|
 | `DATABASE_URL=postgres://app:s3cr3t@db.internal/prod` | `DATABASE_URL=⟨secret:DATABASE_URL#1⟩`. When it writes code or config with the placeholder, Duet fills in the real value locally, and only where a secret belongs |
-| `data/customers.csv` (40,000 rows) | A handle, the file's shape, error lines with values replaced, and a summary written by the local model. It asks the local model questions (`ask_local`) instead of reading rows |
-| `logs/prod.log` | The same: a handle, repeated line shapes and a local summary |
+| `data/customers.csv` (40,000 rows) | A handle, the file's structure (columns, types, value shapes such as `9999-99-99` or `Aa Aa`, null and empty counts, anomalies; never a value), a synthetic record with the same formats, and a summary written by the local model. `synthetic_sample` gives more fake records to use as test fixtures; it asks the local model questions (`ask_local`) instead of reading rows |
+| `logs/prod.log` | A handle, its line templates (values and unknown words as shapes) and a local summary |
 | A card number you type in the task | `⟨card:card#1⟩`, which the frontier can ask the local model about. Your own screen shows the real value |
 | `src/pricing/engine.rs` marked **interface-only** | Signatures, types and doc comments; function bodies withheld |
 | `src/pricing/model.rs` marked **sealed** | Only that it exists |
@@ -121,8 +121,10 @@ its output is treated as data:
   excludes everything sensitive. A command marked `sensitive_data` has no network at all.
 - **Sensitive commands keep their output local.** A command that genuinely needs the real data,
   such as running the program on a production sample, is marked `sensitive_data`. Its output stays
-  local behind a handle, and every file it writes becomes sensitive too, so derived data can't
-  leak through a second, ordinary read.
+  local behind a handle (shown with every value masked by its shape), and every file it writes
+  becomes sensitive too, so derived data can't leak through a second, ordinary read. A short
+  output (a count, a match, a yes or no) is a probe of the data: a run shows a dozen, then
+  withholds them.
 
 ### 5. One gate, fail-closed, with evidence
 

@@ -440,11 +440,41 @@ does that, through the same `--confirm` and audit path as any endpoint change.
 **Privacy mode without a local model.** `duet config set local.enabled false` (a repository's own
 config may set it too) runs hybrid mode with no local model: nothing is probed or contacted, no
 model reads sensitive content, and the frontier sees it only as handles (their error lines with
-values replaced, and line shapes). `ask_local` and `edit_protected` are refused, and the task tells
+values replaced, and line shapes or structure views) and synthetic samples. `ask_local` and `edit_protected` are refused, and the task tells
 the frontier so. Local-only mode, and `sensitivity.local_pii_pass` (which would otherwise be skipped
 without a word), refuse to start. Turning it back on lets a local model read sensitive content
 again, so it needs `--confirm`. The work is harder for the frontier without answers about the
 data; the evaluation lane `duet-hybrid-nolocal` measures by how much.
+
+**Structure of sensitive data** (`sensitivity.structure_views`, on by default; hybrid mode). The
+frontier is told how sensitive data is laid out without seeing it, computed here without a model:
+the task note outlines each sensitive file (`data/orders.json: JSON, an object; its records are the
+84 elements of \`orders\`: orders[].placed_at (string, date-time yyyy-MM-dd'T'HH:mm:ss'Z'), …`),
+and a file's view shows its structure: per field the type, how often it is present, null or empty,
+a bucket of distinct values, lengths and shapes (`9999-99-99`, `Aa Aa`, `a.a99@a-999.a`; date
+layouts as pictures), and anomalies (two date layouts in one field, integers above 2^53, embedded
+delimiters and quotes, keys named `__proto__`). A log shows its line templates; a `.env` file how
+each value is written (`integer, 3 digits`, `double-quoted; exported; secret-like, 32 chars`).
+Counts and shapes, never values.
+
+A data file's view also holds the first record of its **synthetic sample**, and
+`synthetic_sample(handle="h3", rows=10)` gives more (`sensitivity.synthetic_rows`, 20 at most;
+0 turns samples off): the file's records with every value replaced by a generated fake of the same
+shape (valid dates in the same layout, card numbers and IBANs that pass their checks, emails at
+`.test`, the same nulls, missing keys, quoting and delimiters), checked before it is shown to hold
+no real value. It is not sensitive: use it as a test fixture. A fixture file made only of sample
+lines stays readable to commands even under a sensitivity glob (a `.csv` under `tests/`) for as
+long as it holds exactly those lines.
+
+The output of a `sensitive_data` command is shown with every value masked (up to 80 lines):
+values as shapes, secrets as `•••`, words kept when they are the public files', the task's or the
+command's own, numbers of up to two digits as written while `sensitivity.masked_numbers` (24 per
+run) lasts, other numbers as `9`s. A short output (at most 200 characters: a count, a match, a yes
+or no) is a probe of the data: the run shows at most `sensitivity.output_probes` (12) of them, then
+withholds each (the view no longer depends on it; each probe is an `output_probe` audit event). A
+project may lower all of these; raising them, or turning views on again, needs `--confirm`.
+`cargo run -p duet-boundary --example structure_report -- <workspace> <task file> <state dir>`
+prints what the frontier would be shown of a workspace's sensitive files.
 
 **Condensed command output.** In hybrid mode, test, build and install output the frontier may see
 is shown condensed (`context.condense_output`, on by default): failing tests with their assertion

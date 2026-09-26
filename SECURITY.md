@@ -11,9 +11,9 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 |---|---|---|
 | Secrets and credentials (`.env*`, keys, tokens, connection strings, secrets detected in any file) | Sensitive | Placeholders such as `⟨secret:DB_URL#1⟩` |
 | Personal data (email, phone numbers including international ones, card, US/UK/EU national IDs with their check digits, IBAN of every registry country, IPv4 and IPv6, labelled postal addresses, names in data files; account, card and ID numbers labelled as such, whatever their checksum; optionally names and addresses in public prose) | Sensitive | Placeholders, or a handle with a local summary |
-| Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + local summary; answers via `ask_local` |
-| Logs (`logs/**`, `*.log`) | Sensitive | Handle + local summary |
-| Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + local summary |
+| Data files and databases (`data/**`, `*.csv`, `*.db`, `*.sqlite`, `*.parquet`) | Sensitive | Handle + structure view (formats, counts, shapes; no values) + first record of a synthetic sample + local summary; answers via `ask_local`; more fake records via `synthetic_sample` ([Structure views](#structure-views-synthetic-samples-and-masked-output)) |
+| Logs (`logs/**`, `*.log`) | Sensitive | Handle + line templates (values and words outside the public vocabulary as shapes) + local summary |
+| Output of commands that read sensitive files, and files those commands write | Sensitive | Handle + the output with every value masked (when short enough) + local summary; a short output is a probe, counted and withheld past `sensitivity.output_probes` |
 | Other command output, including `git log` / `git show` | Scanned | Shown with detected and known values and copied spans replaced (over 6,000 characters: handle + summary); test, build and install output condensed, the whole behind `read_raw` ([Condensed command output](#condensed-command-output)) |
 | Large public results (files, allowlisted command output, searches, listings) | Public | Handle + first lines and outline; ranges on request (`read_raw`), scanned like any public content |
 | Source code marked Interface-only | Protected | Signatures, types and doc comments; bodies withheld |
@@ -25,7 +25,10 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
   frontier-quality work. Mark paths Interface-only or Sealed to withhold them.
 - **The task description** you give Duet, and the architecture visible in skeletons.
 - **Existence and shape of sensitive content**: that a key named `DB_URL` exists, a file's column
-  count, how many errors a log contains.
+  count, how many errors a log contains; and, with structure views (on by default), each field's
+  format: the shape of its values (letter case, digit counts, punctuation; date layouts), their
+  length range, how often a field is present, null or empty, a bucket of how many distinct values
+  it has, and in a synthetic sample which records share a value or lack a key.
 - **Paraphrase**: short local answers can convey meaning that no filter recognizes as copied text.
   Answers are length-capped, schema-bound and logged.
 - **The local machine, the local model server and the operator.** Duet does not defend against a
@@ -112,7 +115,10 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    `starts with 45`) are withheld, and in answers each value may show at most 2 characters in short
    pieces over the run. An `ask_local` question for characters of a value by position or piece is
    put to the local model as a question about the value's format, and is recorded in the audit log
-   (`local_probe`, with a running count per handle).
+   (`local_probe`, with a running count per handle). **Structure views, synthetic samples and
+   masked output** are made here without a model and show shapes and counts, never values; short
+   output of a `sensitive_data` command is a probe, counted and withheld past a budget (see
+   [Structure views](#structure-views-synthetic-samples-and-masked-output)).
 3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
    including the frontier's own text and tool-call arguments (known values and their other
    spellings re-tokenized, detectors re-run), copied spans of sensitive content (≈24+ tokens) are
@@ -353,6 +359,8 @@ value, a placeholder's name, a command or a path:
 | Requests changed by the outbound filter; requests blocked, by check; requests sent with parts withheld, by the check that refused them first | audit records, `blocked_send` events and `outbound_refused` events (as `outbound:<tool>`), `send_withheld` events |
 | Sandbox denials, `sensitive_data` commands and files they marked, protected edits, approvals | audit events |
 | `ask_local` questions probing a value, pieces of values withheld from answers | `local_probe` audit events |
+| Short `sensitive_data` outputs (probes), and those withheld past the budget | `output_probe` audit events |
+| Synthetic samples shown, and withheld by their checks | `synthetic_sample` audit events |
 
 A passthrough run is reported as having the boundary off, with nothing withheld. A run without a
 `summary.json` (interrupted, or purged) is reported from its audit log alone.
@@ -827,6 +835,64 @@ Gradle, eslint, tsc, pytest, unittest, jest, vitest, mocha, go and the package m
 checked on synthetic output in each tool's format; the recorded runs held only cargo and
 `node --test` output.
 
+## Structure views, synthetic samples and masked output
+
+The frontier learns how sensitive data is laid out without reading it (`sensitivity.structure_views`,
+on by default; hybrid mode only), so it needs fewer `ask_local` round trips and can write fixtures
+that look like the real data. All of it is computed on this machine without a model
+(`crates/duet-boundary/src/structure/`, `engine/structure.rs`):
+
+- **Structure view**, in the view of a sensitive file (in place of the map of repeated line shapes)
+  and as an outline in the task note: format, records, schema (JSON paths, columns, `.env` keys, XML
+  element paths), types, each field's value shapes (letters as `A`/`a`, digits as `9`, punctuation
+  kept; `2026-09-01` is `9999-99-99`, dates by their layout `yyyy-MM-dd HH:mm:ss.SSS`), presence,
+  null and empty counts, a distinct-count bucket (`2-5`, `21-100`, `all distinct`), length ranges
+  and anomalies (mixed types or layouts in one field, integers above 2^53, embedded delimiters and
+  quotes, line breaks, duplicate rows or keys, keys named like built-in object members, encoding).
+  A log gets its line templates: lines that share a masked shape, with counts.
+- **Synthetic sample** (`synthetic_sample {handle, rows?}`, and the first record in the file's
+  view; `sensitivity.synthetic_rows`): the file's records (the first, then records whose fields
+  show other shapes, nulls or missing keys) with every value replaced by a rule-generated fake of
+  the same shape: valid dates in the same layout, card numbers passing Luhn, IBANs passing mod-97,
+  national ids and phone numbers the detectors still recognize, emails at `.test`, integers on the
+  same side of 2^53; layout, key order, quoting and delimiters as in the file.
+- **Masked output**: the output of a `sensitive_data` command (up to 80 lines and 6,000
+  characters) with every value replaced by its shape, in place of its error lines.
+
+| Threat | What stops it |
+|---|---|
+| A value reaches the frontier in a structure view | A view holds counts, shape masks, date pictures and names of schema. A value a detector finds, or the vault knows, is shaped by its runs (`Aa Aa`, `a.a99@a-999.a`: no letter counts of a person's name); a secret only by its length and character kinds (`32 chars: A-Z a-z 0-9 _`), a URL with its password withheld; free text by its runs. A key that looks like data (four or more digits in a row, a known or detected value, not identifier-like) is shown as `*`. Distinct counts are buckets. Only files the policy makes sensitive get an outline in the task note, not files a command derived |
+| A value reaches the frontier in a synthetic sample | A fake is a function of its value's shape and kind, of the position where the value first occurs in the file and of the run's seed (`sample-seed`, private): never of the value's characters, so no number of samples can be inverted to a value. A fake that holds a known value or a value of the structured sensitive data is drawn again. Before a sample is shown, a check refuses it when it holds any vault value (JSON's `true`, `false`, `null` aside) or a span copied from sensitive content (the gate's 24-token window; a verbatim header row counts as shown schema): it is then withheld, the frontier is told so, and a `synthetic_sample` event with outcome `withheld` is recorded (fail-closed). Comments of `.env` files are dropped. Samples are made of policy-sensitive files only, never of command output or derived files, whose content a command controls |
+| A sample's detected fakes (a card number, a phone number) are taken for real values and withheld, or block the run | Every value the detectors find in a sample shown is noted as the frontier's own (as for its own writes), so the gate shows it as written and does not vault it |
+| A fixture written from a sample stays unreadable to the program that tests it (`tests/fixtures/customers.csv` matches `*.csv`) | A file matching a sensitivity glob whose every line comes from samples shown in this run (checked on the content being written, placeholders resolved) is a fixture: readable to commands and shown as content, for as long as its bytes are exactly those (a digest is compared on every check, so any other change, a failed write or a command's, makes it sensitive again). A file a `sensitive_data` command wrote (derived) stays sensitive; placeholders cannot be written into a fixture (it is not a secret sink); protected paths are never fixtures |
+| A command that reads sensitive data is used to read it out one comparison at a time (`grep -q KEY .env && echo M`, a count): the channel `ask_local` probing has (DUET-2026-014), without a local model | The frontier chooses the program, so any view of its output carries bits. **Short output** (at most 200 characters of the program's own output, none at all included) is a **probe**: each is counted over the run and audited (`output_probe`: count, budget, shown), and past `sensitivity.output_probes` (12) its view is a fixed text naming the command, with no size, exit code, handle or local summary, so it no longer depends on the output. The same holds for reading a short file such a command wrote. Output that is shown comes masked: known and detected values and every value of the structured sensitive files (as whole words, case ignored) as shapes, secrets as `•••`, words kept only when they are the public files' or the task's or the command's own and no one-word value of the data, dates by their layout |
+| Numbers carry information one comparison at a time | **The aggregate rule**: in masked output a number is shown as written only if it is a whole number of at most two digits standing alone (a count, a small index), and only while the run's budget of such numbers lasts (`sensitivity.masked_numbers`, 24); every other number, and small ones past the budget, is its shape (`9` per digit), decimals always. Each output that showed some is a `masked_numbers` event (how many, how many are left). A fragment of four digits of a withheld number is replaced first, as in every sensitive text |
+
+Audit: `output_probe {count, budget, shown}`, `masked_numbers {handle, shown, left}`,
+`synthetic_sample {handle, records, outcome}`; counts and outcomes, never a value, command or
+sample. The disclosure report counts probes (and those withheld) and samples (shown, withheld).
+
+**Known limits.**
+- Shapes are information: a field's length range and digit counts, a name's case pattern, which
+  records of a sample share a value or lack a key. A value that is its own format (a 3-digit
+  number, a one-character code) is known up to its digits or letters. Secrets are shown by length
+  and character kinds only, which a value's own format may make telling (a 4-digit PIN).
+- A word of the public files or the task (or of the command) is shown as written in masked output
+  and line templates unless it is a one-word value of structured sensitive data: a first name
+  that is also a word of the code, printed alone by a program, passes, as it does in sensitive
+  error lines. Values of unstructured sensitive text (a log's own words) are not known as values.
+- The probe budget counts short outputs. A hostile frontier can pad a probe into a longer output
+  (a hundred fixed lines and one that differs), whose masked view is still a channel, bounded by
+  what it shows (80 lines of shapes); so is a long output's line count, and a file name a command
+  creates (names of derived files are listed). `oversight.approve = "risky"` asks before every
+  `sensitive_data` command, and every such command is in the audit log. Output within the budget
+  is also summarized by the local model when there is one.
+- Line templates show only lines two or more lines share; one-off lines (prose, reviews,
+  tickets) stay behind the handle, as do values.
+- The fixture rule reads the file on each check of its path; a fixture edited back to exactly its
+  checked content is a fixture again. After a resume, samples must be asked for again before new
+  fixtures are recognized (the lines of samples shown are kept in memory only).
+
 ## Images
 
 `read_file` on an image, `duet run --image` / `--image-public`, and `/image` in sessions bring
@@ -1089,6 +1155,7 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-020 | Final check reading the wire format as content | CWE-697 Incorrect Comparison (consequence: every request blocked; not a leak) | The final check searched the whole serialized body, keys and structure included, for every vault value of 6+ bytes. A `.env` value that spells part of the wire format (`required` in every tool schema, `assistant`, `function`, the model's name as `LLM_MODEL=`) would block every request of the run, and no filter can change the format. Found by the property test written for DUET-2026-019, not observed in a run | The check reads the body string by string and skips the body's framing: the strings the same request's body has with all content blanked (keys, roles, block types, the model's name, call ids, tool names and schemas); content keeps being checked (`d1470f2`) |
 | DUET-2026-021 | Random keys taken for identifiers | CWE-183 Permissive List of Allowed Inputs (consequence CWE-201) | The entropy detector passed any token holding `__` (meant for dunder names) and any letters-only token whose capitals looked like camel case, so about 1% of random URL-safe base64 keys and 0.6% of random letter keys were sent as written, in public content and in the frontier's own text, unless another detector knew their format or a key-like name stood next to them. Found by the random-token measurement written while fixing the detector's false positives on paths and build output (seen in a live run, 2026-09-26), not observed in a run | The exemptions are gone; an identifier is recognized by its word shape (camel case with acronyms, words of one or two letters only those identifiers use, at most two capitals in five letters) and a long token by its parts; a seeded test over a million random tokens of five alphabets bounds those not withheld whole (55 measured; 3,177 before) |
 | DUET-2026-022 | Network for commands that read sensitive data | CWE-284 Improper Access Control (consequence CWE-201) | With `sandbox.network = true`, `sensitive_data` commands (which read sensitive files) and checks (which read protected source) had the same unrestricted network as ordinary commands, so a steered frontier could send sensitive data or protected source from them; and every command could read the credential stores in the operator's home directory (registry tokens, keys, cloud credentials, shell histories) and print or send them. Found in review while adding the egress proxy, not observed in a run | `sensitive_data` commands never have network, in any mode; checks that can read protected source have none; the credential stores in the home directory (`HOME_SECRETS`) are unreadable to every command; the default network is registries only, through the audited egress proxy |
+| DUET-2026-023 | Probing sensitive data through the size and shape of command output | CWE-203 Observable Discrepancy (consequence CWE-202) | Without a local model, the frontier (not steered, only unable to read `.env`) ran 34 `sensitive_data` commands such as `grep -q KEY .env && echo M` and decoded one bit from each through the view's line and byte counts, after calibrating them with `echo hi` and `printf ''`. What it read was structure (which keys exist, their syntax), and it drew a wrong conclusion, but the channel reads values as well, one comparison at a time. Observed in a live run (`results/nolocal-smoke`, S1, 2026-09-26) | Short output of a `sensitive_data` command (or a file it wrote) is a probe: counted, audited (`output_probe`) and, past `sensitivity.output_probes` (12), shown as a fixed text that does not depend on it; output that is shown is masked (values as shapes, small numbers within `sensitivity.masked_numbers`); the task note's structure outline states what such probes sought. Longer output remains a bounded channel (see Structure views, Known limits) |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values

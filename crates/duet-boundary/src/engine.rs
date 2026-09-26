@@ -338,8 +338,8 @@ const MAX_BRIEF_CALLS: usize = 3;
 const BRIEF_FILE_CHARS: usize = 20_000;
 /// Told to the frontier in a run without a local model.
 const NO_LOCAL_NOTE: &str = "\n\nThis run has no local model: ask_local and edit_protected are refused, and a \
-handle of sensitive content shows only the lines and line shapes given with it. Work from those, from command \
-output and from synthetic fixtures.";
+handle of sensitive content shows only what is given with it (lines, line shapes, a structure view). Work from \
+those, from command output and from synthetic fixtures.";
 /// Questions answered per `ask_local` call.
 pub const MAX_QUESTIONS: usize = 6;
 /// Lines `read_raw` returns when no end is given, and at most per call.
@@ -1920,6 +1920,7 @@ impl Presenter for Engine {
                 );
             }
         }
+        self.note_rewritten(paths);
         // Every file the command wrote is indexed now, whether it was
         // sensitive before or not: a file indexed at run start (or by an
         // earlier command) may hold new values.
