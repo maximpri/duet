@@ -71,6 +71,14 @@ fn settle(app: &mut App) {
 }
 
 fn fixture(owner: &str, project: &str) -> (TempDir, App) {
+    fixture_with(owner, project, None)
+}
+
+fn fixture_with(
+    owner: &str,
+    project: &str,
+    policy: Option<std::sync::Arc<dyn duet_config::PolicySource>>,
+) -> (TempDir, App) {
     let d = tempfile::tempdir().unwrap();
     let ws = d.path().join("ws");
     std::fs::create_dir_all(ws.join(".duet")).unwrap();
@@ -80,6 +88,7 @@ fn fixture(owner: &str, project: &str) -> (TempDir, App) {
         project: ws.join(".duet/config.toml"),
         state: d.path().join("state"),
         workspace: ws,
+        policy,
     };
     if !owner.is_empty() {
         std::fs::write(&paths.owner, owner).unwrap();
@@ -239,6 +248,37 @@ fn tightening_applies_directly_and_is_audited() {
             if key == "limits.frontier_usd" && file == "owner")
     );
     assert!(render(&mut app).contains("recorded in the config audit log"));
+}
+
+#[test]
+fn a_policy_layer_bounds_what_the_settings_screens_change() {
+    let d = tempfile::tempdir().unwrap();
+    let file = d.path().join("policy.toml");
+    std::fs::write(
+        &file,
+        "[policy]\nname = \"team\"\n[limits]\nfrontier_usd = 2.0\n",
+    )
+    .unwrap();
+    let source = std::sync::Arc::new(duet_config::PolicyFile::new(&file));
+    let (_d, mut app) = fixture_with("[limits]\nfrontier_usd = 9.0\n", "", Some(source));
+    select(&mut app, "limits.frontier_usd");
+    let out = render(&mut app);
+    assert!(out.contains("from: policy"), "{out}");
+    assert!(out.contains("policy: the policy bounds it at 2.0"), "{out}");
+    // Past the policy: refused, nothing written or recorded.
+    key(&mut app, KeyCode::Enter);
+    retype(&mut app, "3.0");
+    key(&mut app, KeyCode::Enter);
+    assert!(app.status().starts_with("refused:"), "{}", app.status());
+    assert!(app.status().contains("team"), "{}", app.status());
+    assert!(config_audit(&app).is_empty());
+    // Within it: applied.
+    key(&mut app, KeyCode::Enter);
+    retype(&mut app, "1.0");
+    key(&mut app, KeyCode::Enter);
+    let cfg = app.paths.load_config().unwrap();
+    assert_eq!(cfg.float("limits.frontier_usd").unwrap(), 1.0);
+    assert_eq!(cfg.origin("limits.frontier_usd"), Some(Origin::Owner));
 }
 
 #[test]

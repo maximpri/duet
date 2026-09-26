@@ -12,13 +12,14 @@ use crate::runs::RunView;
 use crate::settings;
 use duet_boundary::audit::record_config_change;
 use duet_boundary::policy::Policy;
-use duet_config::{Config, Kind, Proposal, Setting, Target, parse_value};
+use duet_config::{Config, Kind, PolicySource, Proposal, Setting, Target, parse_value};
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use std::path::PathBuf;
+use std::sync::Arc;
 use toml::Value;
 
 /// Where the TUI reads and writes.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Paths {
     /// The workspace (canonical, as `duet` resolves it).
     pub workspace: PathBuf,
@@ -28,6 +29,21 @@ pub struct Paths {
     pub project: PathBuf,
     /// The owner's state directory (config audit log, audit anchors).
     pub state: PathBuf,
+    /// The policy layer above both files, from a program that embeds Duet
+    /// (`duet_config::policy`); `duet tui` has none.
+    pub policy: Option<Arc<dyn PolicySource>>,
+}
+
+impl std::fmt::Debug for Paths {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Paths")
+            .field("workspace", &self.workspace)
+            .field("owner", &self.owner)
+            .field("project", &self.project)
+            .field("state", &self.state)
+            .field("policy", &self.policy.is_some())
+            .finish()
+    }
 }
 
 impl Paths {
@@ -38,7 +54,13 @@ impl Paths {
             workspace,
             owner: duet_config::owner_config_path(),
             state: duet_config::owner_state_dir(),
+            policy: None,
         }
+    }
+
+    /// The configuration as runs see it: both files and the policy layer.
+    pub fn load_config(&self) -> Result<Config, duet_config::ConfigError> {
+        Config::load_with(&self.owner, Some(&self.project), self.policy.as_deref())
     }
 
     pub fn config_audit(&self) -> PathBuf {
@@ -168,7 +190,7 @@ pub struct App {
 
 impl App {
     pub fn new(paths: Paths, services: Services) -> anyhow::Result<Self> {
-        let cfg = Config::load(&paths.owner, Some(&paths.project))?;
+        let cfg = paths.load_config()?;
         let mut app = Self {
             paths,
             cfg,
@@ -1022,7 +1044,7 @@ impl App {
             ),
             Err(e) => format!("not applied: {e}"),
         };
-        match Config::load(&self.paths.owner, Some(&self.paths.project)) {
+        match self.paths.load_config() {
             Ok(c) => self.cfg = c,
             Err(e) => self
                 .status

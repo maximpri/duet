@@ -16,6 +16,10 @@ toml.workspace = true
 thiserror.workspace = true
 regex.workspace = true
 duet-fs.workspace = true
+# The policy layer: its digest, and its description for programs that embed Duet.
+sha2.workspace = true
+hex.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

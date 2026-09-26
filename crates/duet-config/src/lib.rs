@@ -8,9 +8,17 @@
 //! Files: owner `~/.config/duet/config.toml` (trusted) and project
 //! `.duet/config.toml` (untrusted). A project file may never set owner-only keys
 //! and may only change a setting in the direction that tightens privacy.
+//!
+//! A program that embeds Duet may add a policy layer above both
+//! ([`Config::load_with`], [`policy`]): every setting it holds bounds every
+//! other layer. Duet's own command line loads none.
 
+pub mod policy;
+
+pub use policy::{Policy, PolicyError, PolicyFile, PolicyMeta, PolicySource};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use toml::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -158,6 +166,15 @@ pub const REGISTRY: &[Setting] = &[
         OnlyFalse,
         true,
         "The frontier model accepts images. Pass-through: images are sent when true and refused when false. Hybrid: the frontier gets an image itself only when it is public (images.to_frontier, or attached with --image-public), never from a sensitive path. The anthropic and openai presets turn it on; `duet doctor --online` tests it."
+    ),
+    s!(
+        "frontier.allow_passthrough",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        true,
+        "Allow `--mode passthrough` in `duet run` and `duet chat`: the privacy boundary off, everything the model reads sent to the frontier unfiltered (each use still needs --no-privacy). false refuses such runs and sessions, and resuming one. A project may turn it off for its repository; turning it back on is the owner's, confirmed."
     ),
     s!(
         "local.enabled",
@@ -1074,6 +1091,18 @@ pub enum ConfigError {
     Parse(String, String),
     #[error(transparent)]
     Fs(#[from] duet_fs::FsError),
+    /// A change or override the policy layer does not allow.
+    #[error("{key} = {value} is not allowed by the policy {policy}: {rule}")]
+    Policy {
+        key: String,
+        value: String,
+        policy: String,
+        rule: String,
+    },
+    /// A policy source is configured but its policy cannot be used: nothing
+    /// runs until it can (fail closed).
+    #[error("{0}; duet does not run without its policy")]
+    PolicyLoad(PolicyError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1081,6 +1110,9 @@ pub enum Origin {
     Default,
     Owner,
     Project,
+    /// The policy layer set it: it is fixed, or another layer's value was
+    /// looser than the policy allows (see [`policy`]).
+    Policy,
 }
 
 #[derive(Debug, Clone)]
@@ -1090,8 +1122,12 @@ pub struct Config {
     pub owner_path: PathBuf,
     pub project_path: Option<PathBuf>,
     /// Values read in a deprecated form and what they now mean (see
-    /// [`migrate`]), for the operator.
+    /// [`migrate`]), and values the policy layer overrode, for the operator.
     pub notes: Vec<String>,
+    /// The policy layer, when one was loaded.
+    policy: Option<Arc<Policy>>,
+    /// Keys whose owner or project value the policy layer replaced.
+    policy_overrides: Vec<String>,
 }
 
 /// A value written in a form an earlier version used, as it reads now, and a
@@ -1364,6 +1400,26 @@ pub struct Change {
 impl Config {
     /// Merges defaults, the owner file and (optionally) a project file.
     pub fn load(owner_path: &Path, project_path: Option<&Path>) -> Result<Self, ConfigError> {
+        Self::load_with(owner_path, project_path, None)
+    }
+
+    /// Like [`Config::load`], with the policy layer of `policy` above the
+    /// files (see [`policy`]). A source that fails to load or verify its
+    /// policy, or a policy that is not valid, is
+    /// [`ConfigError::PolicyLoad`]: the caller must not run without it.
+    pub fn load_with(
+        owner_path: &Path,
+        project_path: Option<&Path>,
+        policy: Option<&dyn PolicySource>,
+    ) -> Result<Self, ConfigError> {
+        let policy = match policy.map(PolicySource::load).transpose() {
+            Ok(loaded) => loaded
+                .flatten()
+                .map(|(text, meta)| Policy::parse(&text, meta))
+                .transpose()
+                .map_err(ConfigError::PolicyLoad)?,
+            Err(e) => return Err(ConfigError::PolicyLoad(e)),
+        };
         let mut values: BTreeMap<String, (Value, Origin)> = REGISTRY
             .iter()
             .filter(|s| !is_template(s.key))
@@ -1422,11 +1478,50 @@ impl Config {
                 }
             }
         }
+        let policy_overrides = match &policy {
+            Some(p) => bound_by(p, &mut values, &mut notes, owner_path, project_path),
+            None => Vec::new(),
+        };
         Ok(Self {
             values,
             owner_path: owner_path.to_path_buf(),
             project_path: project_path.map(Path::to_path_buf),
             notes,
+            policy: policy.map(Arc::new),
+            policy_overrides,
+        })
+    }
+
+    /// The policy layer, when one was loaded.
+    pub fn policy(&self) -> Option<&Policy> {
+        self.policy.as_deref()
+    }
+
+    /// Keys whose owner or project value the policy layer replaced (each
+    /// also has a note).
+    pub fn policy_overrides(&self) -> &[String] {
+        &self.policy_overrides
+    }
+
+    /// How the policy layer bounds `key`, for the operator (`duet config
+    /// list`, `duet doctor`); `None` without a policy or when it does not
+    /// hold the key.
+    pub fn policy_rule(&self, key: &str) -> Option<String> {
+        self.policy.as_ref()?.rule(key)
+    }
+
+    /// Whether the policy layer allows `value` for `key` in place of the
+    /// configured value: for command-line overrides (`--frontier-url`) and
+    /// values found at run time. Always `Ok` without a policy.
+    pub fn allows(&self, key: &str, value: &Value) -> Result<(), ConfigError> {
+        let Some(p) = &self.policy else {
+            return Ok(());
+        };
+        p.allows(key, value).map_err(|rule| ConfigError::Policy {
+            key: key.into(),
+            value: value.to_string(),
+            policy: p.meta().to_string(),
+            rule,
         })
     }
 
@@ -1500,6 +1595,7 @@ impl Config {
         let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
+        self.allows(key, &value)?;
         let old = self.current(key, s);
         let weakens = match target {
             Target::Owner => loosening(s, &old, &value),
@@ -1568,6 +1664,7 @@ impl Config {
         let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
+        self.allows(key, &value)?;
         let old = self.current(key, s);
         let weakens = loosening(s, &old, &value);
         if let (Some(w), false) = (&weakens, confirmed) {
@@ -1587,11 +1684,13 @@ impl Config {
         })
     }
 
-    /// Sets a value in the owner file (validated; written atomically).
+    /// Sets a value in the owner file (validated, within the policy layer;
+    /// written atomically).
     pub fn set_owner(&mut self, key: &str, value: Value) -> Result<(), ConfigError> {
         let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
+        self.allows(key, &value)?;
         let mut entries = read_file(&self.owner_path)?;
         entries.retain(|(k, _)| k != key);
         entries.push((key.to_owned(), value.clone()));
@@ -1620,6 +1719,7 @@ impl Config {
             });
         }
         validate(s, &value)?;
+        self.allows(key, &value)?;
         tightens(s, &self.current(key, s), &value).map_err(|rule| ConfigError::Loosening {
             file,
             key: key.into(),
@@ -1633,6 +1733,54 @@ impl Config {
         self.values.insert(key.to_owned(), (value, Origin::Project));
         Ok(())
     }
+}
+
+/// Applies the policy layer to the merged values: a fixed key takes the
+/// policy's value, any other the tighter of the two (see [`policy`]). Values
+/// the owner or project set that give way are noted for the operator; their
+/// keys are returned.
+fn bound_by(
+    p: &Policy,
+    values: &mut BTreeMap<String, (Value, Origin)>,
+    notes: &mut Vec<String>,
+    owner_path: &Path,
+    project_path: Option<&Path>,
+) -> Vec<String> {
+    let mut overridden = Vec::new();
+    for (key, bound) in p.values() {
+        // A template instance the other layers do not configure stays absent.
+        let (Some((lower, origin)), Some(s)) = (values.get(key).cloned(), setting(key)) else {
+            continue;
+        };
+        let fixed = p.fixes(key);
+        let effective = if fixed {
+            bound.clone()
+        } else {
+            policy::tightest(s, bound, &lower)
+        };
+        let changed = !policy::same(&effective, &lower);
+        let file = match origin {
+            Origin::Owner => Some(owner_path.display().to_string()),
+            Origin::Project => project_path.map(|p| p.display().to_string()),
+            Origin::Default | Origin::Policy => None,
+        };
+        if let (true, Some(file)) = (changed, file) {
+            notes.push(format!(
+                "{file}: {key} = {lower} {} the policy {}; {effective} applies",
+                if fixed {
+                    "is fixed by"
+                } else {
+                    "is looser than"
+                },
+                p.meta()
+            ));
+            overridden.push(key.clone());
+        }
+        if changed || fixed {
+            values.insert(key.clone(), (effective, Origin::Policy));
+        }
+    }
+    overridden
 }
 
 fn write_entries(path: &Path, entries: &[(String, Value)]) -> Result<(), ConfigError> {

@@ -164,6 +164,12 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect) {
         Line::from(format!("from: {}{file}", origin_name(origin))),
         Line::from(format!("scope: {}", scope_text(s))),
     ];
+    if let Some(rule) = app.cfg.policy_rule(s.key) {
+        lines.push(Line::styled(
+            format!("policy: {rule}"),
+            Style::new().fg(Color::Yellow),
+        ));
+    }
     if s.confirm {
         lines.push(Line::styled(
             "loosening it needs confirmation, shows a policy diff and is audited",

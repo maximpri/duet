@@ -16,6 +16,7 @@ pub(crate) fn origin_name(origin: Option<Origin>) -> &'static str {
         Some(Origin::Default) | None => "default",
         Some(Origin::Owner) => "owner",
         Some(Origin::Project) => "project",
+        Some(Origin::Policy) => "policy",
     }
 }
 
