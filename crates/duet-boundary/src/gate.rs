@@ -237,6 +237,18 @@ impl GatedFrontier {
         &self.gate.audit
     }
 
+    /// `request` as the filters leave it: the form in which it is sent,
+    /// without checking, auditing or sending it. What Duet gives another
+    /// model of the conversation (context compaction's local summary) is
+    /// taken from this form, never from the conversation as it is kept.
+    pub fn as_sent(&self, request: &Request) -> Request {
+        let mut outbound = request.clone();
+        for f in &self.gate.filters {
+            let _ = f.apply(&mut outbound);
+        }
+        outbound
+    }
+
     /// Filters, checks, audits, then sends. Whatever the dialect, the filters
     /// and checks see Duet's own request and the exact body that is sent. If
     /// the provider refuses replayed reasoning, the request is sent once more

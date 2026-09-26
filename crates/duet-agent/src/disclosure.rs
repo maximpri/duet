@@ -225,7 +225,8 @@ impl Disclosure {
                     | AuditEvent::SubagentStart { .. }
                     | AuditEvent::SubagentEnd { .. }
                     | AuditEvent::Instructions { .. }
-                    | AuditEvent::Egress { .. } => {}
+                    | AuditEvent::Egress { .. }
+                    | AuditEvent::Compaction { .. } => {}
                 },
             }
         }

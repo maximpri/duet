@@ -135,6 +135,15 @@ pub struct Implemented {
     pub summary: String,
 }
 
+/// A working summary the local model wrote of the older part of a
+/// conversation (context compaction), and the local seconds it took.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Condensed {
+    /// The summary, cleaned as local-model output; `Err` says why there is none.
+    pub summary: Result<String, String>,
+    pub seconds: f64,
+}
+
 pub trait Presenter: Send + Sync {
     /// Text shown to the frontier for `bytes` produced by `source`.
     fn present(&self, source: &Source, bytes: &[u8]) -> String;
@@ -233,6 +242,18 @@ pub trait Presenter: Send + Sync {
     /// Placeholders are never resolved here: the third party is not local.
     fn check_outbound(&self, _destination: &str, text: &str) -> Result<String, String> {
         Ok(text.to_owned())
+    }
+    /// Whether [`Self::condense`] can write a summary (a local model is
+    /// configured). Pass-through has none.
+    fn can_condense(&self) -> bool {
+        false
+    }
+    /// A working summary of `conversation`, the older part of a frontier
+    /// conversation in the form it was sent (after the outbound filter),
+    /// written by the local model and cleaned as local-model output (see
+    /// `duet_agent::compaction`). `None` when there is no local model.
+    fn condense(&self, _conversation: &str) -> Option<Condensed> {
+        None
     }
     /// Where an image goes (see [`crate::images`]). Without the boundary: to
     /// the frontier when it accepts images. The engine records an image it

@@ -234,6 +234,20 @@ pub enum AuditEvent {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         reason: String,
     },
+    /// The local model condensed the older part of a conversation into a
+    /// working summary (context compaction): `outcome` is `compacted` or
+    /// `failed` (the conversation was left as it was). `child` names a
+    /// sub-agent's conversation. Counts and sizes only, never the summary
+    /// (the request that carries it is recorded like any other).
+    Compaction {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        child: Option<String>,
+        outcome: String,
+        items: usize,
+        tokens_before: u64,
+        tokens_after: u64,
+        local_seconds: f64,
+    },
 }
 
 impl AuditEvent {
@@ -262,6 +276,7 @@ impl AuditEvent {
             AuditEvent::LocalProbe { .. } => "local_probe",
             AuditEvent::Instructions { .. } => "instructions",
             AuditEvent::Egress { .. } => "egress",
+            AuditEvent::Compaction { .. } => "compaction",
         }
     }
 }

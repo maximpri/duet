@@ -1090,6 +1090,24 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         (out, n)
     }
 
+    /// A working summary the local model wrote of conversation the frontier
+    /// was already sent (context compaction), as it may be shown. Its input
+    /// held no raw sensitive content, so what the filter looks for is a value
+    /// the model writes anyway (recalled, echoed from an injection, invented):
+    /// runs copied from sensitive content (the strict local window), values
+    /// spelled out or encoded, detected and vault values, protected code, and
+    /// digits of withheld numbers. The name and number heuristics for text
+    /// about sensitive content are not applied: here they would vault the
+    /// frontier's own identifiers and replace them in every later request.
+    fn clean_condensed(&self, st: &mut State, text: &str) -> String {
+        let s = st.overlap.redact_strict(text).0;
+        let s = Self::respell(st, &s);
+        let s = self.sanitize(st, &s, "compaction", false);
+        let s = st.overlap.redact(&s).0;
+        let (s, _) = Self::ip_redact(st, &s);
+        redact_fragments(&st.vault, &s).0
+    }
+
     /// Public text as it may be shown: detected values replaced, copied
     /// sensitive spans removed.
     fn clean_public(&self, st: &mut State, text: &str, origin: &str) -> String {
@@ -1955,6 +1973,22 @@ and are never resolved for {destination}",
     /// The hybrid rule (see [`crate::images`] and `engine/image.rs`).
     fn route_image(&self, image: &ImageRequest<'_>) -> Route {
         self.image_route(image)
+    }
+
+    fn can_condense(&self) -> bool {
+        self.local.is_some()
+    }
+
+    fn condense(&self, conversation: &str) -> Option<crate::view::Condensed> {
+        let local = self.local.as_ref()?;
+        let started = std::time::Instant::now();
+        let written = Self::block_on(local.condense(conversation));
+        let seconds = started.elapsed().as_secs_f64();
+        let summary = match written {
+            Ok(text) => Ok(self.clean_condensed(&mut self.lock(), &text)),
+            Err(e) => Err(e.message.chars().take(200).collect()),
+        };
+        Some(crate::view::Condensed { summary, seconds })
     }
 }
 
