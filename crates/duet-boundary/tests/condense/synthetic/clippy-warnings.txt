@@ -1,0 +1,83 @@
+$ cargo clippy --all-targets
+exit code 0
+--- stderr ---
+    Checking ledger-tools v0.2.0 (/work/ws)
+warning: this `.clone()` is redundant: `row` is not used afterwards
+  --> src/report.rs:14:17
+   |
+14 |     let owned = row.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `row`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+   = note: `#[warn(clippy::redundant_clone)]` on by default
+
+warning: this `.clone()` is redundant: `total` is not used afterwards
+  --> src/report.rs:27:17
+   |
+27 |     let owned = total.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `total`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `line` is not used afterwards
+  --> src/report.rs:45:17
+   |
+45 |     let owned = line.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `line`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `cell` is not used afterwards
+  --> src/export.rs:9:17
+   |
+9 |     let owned = cell.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `cell`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `record` is not used afterwards
+  --> src/export.rs:31:17
+   |
+31 |     let owned = record.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `record`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `field` is not used afterwards
+  --> src/export.rs:58:17
+   |
+58 |     let owned = field.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `field`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `entry` is not used afterwards
+  --> src/import.rs:22:17
+   |
+22 |     let owned = entry.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `entry`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: this `.clone()` is redundant: `value` is not used afterwards
+  --> src/import.rs:40:17
+   |
+40 |     let owned = value.clone();
+   |                 ^^^^^^^^^^^ help: remove this: `value`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_clone
+
+warning: manual implementation of `Option::map`
+  --> src/import.rs:61:5
+   |
+61 | /     match header {
+62 | |         Some(h) => Some(h.trim().to_owned()),
+63 | |         None => None,
+64 | |     }
+   | |_____^ help: try: `header.map(|h| h.trim().to_owned())`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#manual_map
+   = note: `#[warn(clippy::manual_map)]` on by default
+
+warning: `ledger-tools` (lib) generated 9 warnings (run `cargo clippy --fix --lib -p ledger-tools` to apply 8 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.87s

@@ -1,0 +1,50 @@
+$ pnpm install
+exit code 1
+--- stdout ---
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 37, reused 35, downloaded 2, added 30
+Progress: resolved 74, reused 70, downloaded 4, added 60
+Progress: resolved 111, reused 105, downloaded 6, added 90
+Progress: resolved 148, reused 140, downloaded 8, added 120
+Progress: resolved 185, reused 175, downloaded 10, added 150
+Progress: resolved 222, reused 210, downloaded 12, added 180
+Progress: resolved 259, reused 245, downloaded 14, added 210
+Progress: resolved 296, reused 280, downloaded 16, added 240
+Progress: resolved 333, reused 315, downloaded 18, added 270
+Progress: resolved 370, reused 350, downloaded 20, added 300
+Progress: resolved 407, reused 385, downloaded 22, added 330
+Progress: resolved 444, reused 420, downloaded 24, added 360
+Progress: resolved 481, reused 455, downloaded 26, added 390
+Progress: resolved 518, reused 490, downloaded 28, added 420
+Progress: resolved 555, reused 525, downloaded 30, added 450
+Packages: +612
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ WARN  deprecated inflight@1.0.6: This module is not supported, and leaks memory.
+ WARN  deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+ WARN  deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+Progress: resolved 612, reused 580, downloaded 32, added 612, done
+
+dependencies:
++ @tanstack/react-query 5.59.0
++ react 18.3.1
++ react-dom 18.3.1
++ react-router-dom 6.27.0
++ zod 3.23.8
++ zustand 5.0.0
+
+devDependencies:
++ @types/react 18.3.11
++ @vitejs/plugin-react 4.3.2
++ eslint 9.12.0
++ typescript 5.6.3
++ vite 5.4.8
++ vitest 2.1.2
+
+ ERR_PNPM_PEER_DEP_ISSUES  Unmet peer dependencies
+
+.
+└─┬ react-beautiful-dnd 13.1.1
+  ├── ✕ unmet peer react@"^16.8.5 || ^17.0.0 || ^18.0.0": found 19.0.0
+  └── ✕ unmet peer react-dom@"^16.8.5 || ^17.0.0 || ^18.0.0": found 19.0.0
+
+Done in 8.4s

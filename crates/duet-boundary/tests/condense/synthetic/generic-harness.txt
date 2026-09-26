@@ -1,0 +1,49 @@
+$ ./run-golden-tests.sh
+exit code 1
+--- stdout ---
+[ OK ] case_001_render
+[ OK ] case_002_roundtrip
+[ OK ] case_003_escape
+[ OK ] case_004_unicode
+[ OK ] case_005_parse
+[ OK ] case_006_render
+[ OK ] case_007_roundtrip
+[ OK ] case_008_escape
+[ OK ] case_009_unicode
+[ OK ] case_010_parse
+[ OK ] case_011_render
+[ OK ] case_012_roundtrip
+[ OK ] case_013_escape
+[ OK ] case_014_unicode
+[ OK ] case_015_parse
+[ OK ] case_016_render
+[FAIL] case_017_roundtrip
+    expected: "<p>a &amp; b</p>"
+    actual:   "<p>a & b</p>"
+[ OK ] case_018_escape
+[ OK ] case_019_unicode
+[ OK ] case_020_parse
+[ OK ] case_021_render
+[ OK ] case_022_roundtrip
+[ OK ] case_023_escape
+[ OK ] case_024_unicode
+[ OK ] case_025_parse
+[ OK ] case_026_render
+[ OK ] case_027_roundtrip
+[ OK ] case_028_escape
+[ OK ] case_029_unicode
+[ OK ] case_030_parse
+[ OK ] case_031_render
+[ OK ] case_032_roundtrip
+[FAIL] case_033_escape
+    expected: "<p>a &amp; b</p>"
+    actual:   "<p>a & b</p>"
+[ OK ] case_034_unicode
+[ OK ] case_035_parse
+[ OK ] case_036_render
+[ OK ] case_037_roundtrip
+[ OK ] case_038_escape
+[ OK ] case_039_unicode
+[ OK ] case_040_parse
+
+38 passed, 2 failed (40 cases, 0.84s)

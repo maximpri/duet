@@ -1,0 +1,106 @@
+$ npx eslint src
+exit code 1
+--- stdout ---
+
+/work/ws/src/api/client.ts
+  20:10  error  'AxiosError' is defined but never used  @typescript-eslint/no-unused-vars
+  27:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  32:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  48:8  warning  Unexpected console statement  no-console
+  53:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  61:7  warning  Unexpected console statement  no-console
+  68:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/api/orders.ts
+  12:8  warning  Unexpected console statement  no-console
+  27:6  warning  Unexpected console statement  no-console
+  32:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  51:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  68:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  86:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  104:8  warning  Unexpected console statement  no-console
+
+/work/ws/src/api/customers.ts
+  14:9  warning  Unexpected console statement  no-console
+  34:10  warning  Unexpected console statement  no-console
+  52:6  warning  Unexpected console statement  no-console
+  59:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/api/invoices.ts
+  17:12  warning  Unexpected console statement  no-console
+  34:6  warning  Unexpected console statement  no-console
+  48:10  warning  Unexpected console statement  no-console
+  67:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/components/OrderRow.tsx
+  9:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  21:6  warning  Unexpected console statement  no-console
+  26:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  39:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  57:11  warning  Unexpected console statement  no-console
+  72:12  warning  Unexpected console statement  no-console
+
+/work/ws/src/components/OrderTable.tsx
+  12:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  31:9  warning  Unexpected console statement  no-console
+  39:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  55:12  warning  Unexpected console statement  no-console
+  61:11  warning  Unexpected console statement  no-console
+
+/work/ws/src/components/CustomerCard.tsx
+  15:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  32:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  44:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  59:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  75:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  83:7  warning  Unexpected console statement  no-console
+  94:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/components/InvoiceView.tsx
+  22:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  31:5  warning  Unexpected console statement  no-console
+  39:10  warning  Unexpected console statement  no-console
+
+/work/ws/src/stores/cart.ts
+  17:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  37:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  42:13  warning  Unexpected console statement  no-console
+  58:11  warning  Unexpected console statement  no-console
+  65:11  warning  Unexpected console statement  no-console
+  70:8  warning  Unexpected console statement  no-console
+  88:10  warning  Unexpected console statement  no-console
+
+/work/ws/src/stores/session.ts
+  8:7  warning  Unexpected console statement  no-console
+  15:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  19:8  warning  Unexpected console statement  no-console
+  35:9  warning  Unexpected console statement  no-console
+  50:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  69:12  warning  Unexpected console statement  no-console
+  87:9  warning  Unexpected console statement  no-console
+
+/work/ws/src/util/format.ts
+  11:10  warning  Unexpected console statement  no-console
+  23:15  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  32:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/util/dates.ts
+  23:13  warning  Unexpected console statement  no-console
+  27:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  40:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  46:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/pages/Checkout.tsx
+  23:7  warning  Unexpected console statement  no-console
+  38:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  58:8  warning  Unexpected console statement  no-console
+  68:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  84:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+
+/work/ws/src/pages/Account.tsx
+  13:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  28:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  32:1  warning  Missing return type on function  @typescript-eslint/explicit-function-return-type
+  51:10  warning  Unexpected console statement  no-console
+
+✖ 73 problems (2 errors, 71 warnings)

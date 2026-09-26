@@ -1,0 +1,46 @@
+$ npm install --loglevel http
+exit code 1
+--- stderr ---
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated glob@7.2.3: Glob versions prior to v9 are no longer supported
+npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+npm warn deprecated @humanwhocodes/config-array@0.11.14: Use @eslint/config-array instead
+npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+npm warn deprecated eslint@8.57.0: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+npm http fetch GET 200 https://registry.npmjs.org/pkg-0 40ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-1 43ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-2 46ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-3 49ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-4 52ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-5 55ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-6 58ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-7 61ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-8 64ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-9 67ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-10 70ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-11 73ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-12 76ms (cache revalidated)
+npm http fetch GET 200 https://registry.npmjs.org/pkg-13 79ms (cache revalidated)
+npm error code ERESOLVE
+npm error ERESOLVE unable to resolve dependency tree
+npm error
+npm error While resolving: storefront@2.4.0
+npm error Found: react@19.1.0
+npm error node_modules/react
+npm error   react@"^19.1.0" from the root project
+npm error
+npm error Could not resolve dependency:
+npm error peer react@"^17.0.0 || ^18.0.0" from react-beautiful-dnd@13.1.1
+npm error node_modules/react-beautiful-dnd
+npm error   react-beautiful-dnd@"^13.1.1" from the root project
+npm error
+npm error Fix the upstream dependency conflict, or retry
+npm error this command with --force or --legacy-peer-deps
+npm error to accept an incorrect (and potentially broken) dependency resolution.
+npm error
+npm error
+npm error For a full report see:
+npm error /Users/dev/.npm/_logs/2026-09-26T10_20_11_402Z-eresolve-report.txt
+npm error A complete log of this run can be found in: /Users/dev/.npm/_logs/2026-09-26T10_20_11_402Z-debug-0.log

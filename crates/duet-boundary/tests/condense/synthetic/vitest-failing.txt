@@ -1,0 +1,106 @@
+$ npx vitest run
+exit code 1
+--- stdout ---
+
+ RUN  v2.1.8 /work/ws
+
+ ✓ src/lib/currency.test.ts (17 tests) 93ms
+ ✓ src/lib/tax.test.ts (14 tests) 24ms
+ ✓ src/lib/validate.test.ts (10 tests) 30ms
+ ✓ src/lib/url.test.ts (10 tests) 124ms
+ ✓ src/lib/storage.test.ts (9 tests) 90ms
+ ✓ src/lib/retry.test.ts (9 tests) 127ms
+ ✓ src/lib/queue.test.ts (22 tests) 160ms
+ ✓ src/stores/orders.test.ts (3 tests) 126ms
+ ✓ src/stores/customers.test.ts (23 tests) 92ms
+ ✓ src/stores/ui.test.ts (23 tests) 25ms
+ ✓ src/components/Button.test.tsx (24 tests) 34ms
+ ✓ src/components/Modal.test.tsx (15 tests) 55ms
+ ✓ src/components/Table.test.tsx (18 tests) 49ms
+ ✓ src/components/Pager.test.tsx (16 tests) 89ms
+ ✓ src/components/Toast.test.tsx (5 tests) 105ms
+ ✓ src/hooks/useOrders.test.ts (17 tests) 106ms
+ ✓ src/hooks/useDebounce.test.ts (5 tests) 44ms
+ ✓ src/hooks/useSession.test.ts (8 tests) 36ms
+ ✓ src/pages/Checkout.test.tsx (3 tests) 42ms
+ ✓ src/pages/Account.test.tsx (21 tests) 123ms
+ ✓ src/pages/Orders.test.tsx (23 tests) 41ms
+ ✓ src/lib/date.test.ts (14 tests) 12ms
+ ✓ src/lib/money.test.ts (22 tests) 9ms
+ ✓ src/lib/slug.test.ts (6 tests) 3ms
+ ✓ src/stores/cart.test.ts (18 tests) 41ms
+ ✓ src/stores/session.test.ts (9 tests) 17ms
+ ✓ src/components/Price.test.tsx (7 tests) 88ms
+ ✓ src/components/Badge.test.tsx (4 tests) 35ms
+ ❯ src/api/orders.test.ts (11 tests | 2 failed) 64ms
+   ✓ lists orders newest first
+   ✓ paginates with a cursor
+   × includes refunded orders when asked 12ms
+     → expected [ { id: 'o-1', status: 'paid' } ] to deep equal [ { id: 'o-1', status: 'paid' }, { id: 'o-2', status: 'refunded' } ]
+   ✓ filters by status
+   × rejects an invalid cursor 3ms
+     → promise resolved "{ items: [], next: null }" instead of rejecting
+   ✓ maps API errors
+   ✓ retries on 503
+   ✓ gives up after three retries
+   ✓ sends the auth header
+   ✓ omits empty query params
+   ✓ decodes dates
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/api/orders.test.ts > orders api > includes refunded orders when asked
+AssertionError: expected [ { id: 'o-1', status: 'paid' } ] to deep equal [ { id: 'o-1', status: 'paid' }, …(1) ]
+
+- Expected
++ Received
+
+  [
+    {
+      "id": "o-1",
+      "status": "paid",
+    },
+-   {
+-     "id": "o-2",
+-     "status": "refunded",
+-   },
+  ]
+
+ ❯ src/api/orders.test.ts:38:27
+     36|   it("includes refunded orders when asked", async () => {
+     37|     const orders = await listOrders({ includeRefunded: true });
+     38|     expect(orders.items).toEqual([
+       |                           ^
+     39|       { id: "o-1", status: "paid" },
+     40|       { id: "o-2", status: "refunded" },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  src/api/orders.test.ts > orders api > rejects an invalid cursor
+AssertionError: promise resolved "{ items: [], next: null }" instead of rejecting
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+{
+  "items": [],
+  "next": null,
+}
+
+ ❯ src/api/orders.test.ts:57:5
+     55|   it("rejects an invalid cursor", async () => {
+     56|     await expect(listOrders({ cursor: "%%%" }))
+     57|       .rejects.toThrow("invalid cursor");
+       |     ^
+     58|   });
+     59| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+ Test Files  1 failed | 28 passed (29)
+      Tests  2 failed | 402 passed (404)
+   Start at  14:02:11
+   Duration  2.84s (transform 610ms, setup 0ms, collect 1.91s, tests 269ms, environment 3.12s, prepare 1.02s)

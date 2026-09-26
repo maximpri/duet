@@ -1,0 +1,48 @@
+$ go test -v ./...
+exit code 1
+--- stdout ---
+=== RUN   TestAddItem
+--- PASS: TestAddItem (0.00s)
+=== RUN   TestRemoveItem
+--- PASS: TestRemoveItem (0.00s)
+=== RUN   TestTotals
+--- PASS: TestTotals (0.00s)
+=== RUN   TestDiscounts
+--- PASS: TestDiscounts (0.00s)
+=== RUN   TestCurrencyRounding
+--- PASS: TestCurrencyRounding (0.00s)
+PASS
+ok  	example.com/shop/cart	0.04s
+=== RUN   TestReserve
+--- PASS: TestReserve (0.00s)
+=== RUN   TestRelease
+--- PASS: TestRelease (0.00s)
+=== RUN   TestLowStock
+--- SKIP: TestLowStock (0.00s)
+    inventory_test.go:61: needs a seeded database
+=== RUN   TestMergeSKUs
+--- PASS: TestMergeSKUs (0.00s)
+PASS
+ok  	example.com/shop/inventory	0.09s
+=== RUN   TestCreate
+--- PASS: TestCreate (0.00s)
+=== RUN   TestCancel
+--- PASS: TestCancel (0.00s)
+=== RUN   TestRefund
+--- PASS: TestRefund (0.00s)
+=== RUN   TestSplitShipments
+=== RUN   TestSplitShipments/single_warehouse
+=== RUN   TestSplitShipments/two_warehouses
+    orders_test.go:88: shipments = 1, want 2
+--- FAIL: TestSplitShipments (0.00s)
+    --- PASS: TestSplitShipments/single_warehouse (0.00s)
+    --- FAIL: TestSplitShipments/two_warehouses (0.00s)
+=== RUN   TestCouponOnce
+--- FAIL: TestCouponOnce (0.01s)
+    orders_test.go:131: second redeem: got err = <nil>, want ErrCouponUsed
+    orders_test.go:132: order total = 8100, want 9000
+FAIL
+FAIL	example.com/shop/orders	0.014s
+?   	example.com/shop/cmd/shopd	[no test files]
+?   	example.com/shop/internal/version	[no test files]
+FAIL

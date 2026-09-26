@@ -1,0 +1,172 @@
+$ npx mocha
+exit code 2
+--- stdout ---
+
+
+  Inventory
+    ✔ creates a stock item
+    ✔ updates a stock item
+    ✔ deletes a stock item
+    ✔ lists stock items
+    ✔ validates a stock item
+    ✔ rejects a stock item
+    ✔ paginates stock items (205ms)
+    ✔ sorts stock items
+    ✔ filters stock items
+    ✔ exports stock items
+    ✔ imports stock items
+    ✔ merges stock items
+
+  Pricing
+    ✔ creates a price rule
+    ✔ updates a price rule (117ms)
+    ✔ deletes a price rule
+    ✔ lists price rules
+    1) caps the discount at 50%
+    ✔ rejects a price rule
+    ✔ paginates price rules
+    ✔ sorts price rules
+    ✔ filters price rules (242ms)
+    ✔ exports price rules
+    ✔ imports price rules
+    ✔ merges price rules
+
+  Orders
+    ✔ creates a order
+    ✔ updates a order
+    ✔ deletes a order
+    ✔ lists orders (64ms)
+    ✔ validates a order
+    ✔ rejects a order
+    ✔ paginates orders
+    ✔ sorts orders
+    ✔ filters orders
+    ✔ exports orders
+    ✔ imports orders (77ms)
+    2) applies the coupon once
+
+  Customers
+    ✔ creates a customer
+    ✔ updates a customer
+    ✔ deletes a customer
+    ✔ lists customers
+    ✔ validates a customer
+    ✔ rejects a customer (88ms)
+    ✔ paginates customers
+    ✔ sorts customers
+    ✔ filters customers
+    ✔ exports customers
+    ✔ imports customers
+    ✔ merges customers
+
+  Invoices
+    ✔ creates a invoice (227ms)
+    ✔ updates a invoice
+    ✔ deletes a invoice
+    ✔ lists invoices
+    ✔ validates a invoice
+    ✔ rejects a invoice
+    ✔ paginates invoices
+    ✔ sorts invoices (69ms)
+    ✔ filters invoices
+    ✔ exports invoices
+    ✔ imports invoices
+    ✔ merges invoices
+
+  Payments
+    ✔ creates a payment
+    ✔ updates a payment
+    ✔ deletes a payment (299ms)
+    ✔ lists payments
+    ✔ validates a payment
+    ✔ rejects a payment
+    ✔ paginates payments
+    ✔ sorts payments
+    ✔ filters payments
+    ✔ exports payments (149ms)
+    ✔ imports payments
+    ✔ merges payments
+
+  Shipping
+    ✔ creates a shipment
+    ✔ updates a shipment
+    ✔ deletes a shipment
+    ✔ lists shipments
+    ✔ validates a shipment (59ms)
+    ✔ rejects a shipment
+    ✔ paginates shipments
+    ✔ sorts shipments
+    ✔ filters shipments
+    ✔ exports shipments
+    ✔ imports shipments
+    ✔ merges shipments (84ms)
+
+  Returns
+    ✔ creates a return
+    ✔ updates a return
+    ✔ deletes a return
+    ✔ lists returns
+    ✔ validates a return
+    ✔ rejects a return
+    ✔ paginates returns (262ms)
+    ✔ sorts returns
+    ✔ filters returns
+    ✔ exports returns
+    ✔ imports returns
+    ✔ merges returns
+
+  Reports
+    ✔ creates a report
+    ✔ updates a report (254ms)
+    ✔ deletes a report
+    ✔ lists reports
+    ✔ validates a report
+    ✔ rejects a report
+    ✔ paginates reports
+    ✔ sorts reports
+    ✔ filters reports (75ms)
+    - exports reports
+    ✔ imports reports
+    ✔ merges reports
+
+  Search
+    ✔ creates a saved search
+    ✔ updates a saved search
+    ✔ deletes a saved search
+    ✔ lists saved searchs (163ms)
+    ✔ validates a saved search
+    ✔ rejects a saved search
+    ✔ paginates saved searchs
+    ✔ sorts saved searchs
+    ✔ filters saved searchs
+    ✔ exports saved searchs
+    ✔ imports saved searchs (86ms)
+    ✔ merges saved searchs
+
+
+  117 passing (1s)
+  1 pending
+  2 failing
+
+  1) Pricing
+       caps the discount at 50%:
+
+      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+4000 !== 5000
+
+      + expected - actual
+
+      -4000
+      +5000
+
+      at Context.<anonymous> (test/pricing.spec.js:44:14)
+      at process.processImmediate (node:internal/timers:483:21)
+
+  2) Orders
+       applies the coupon once:
+     Error: coupon SAVE10 already redeemed
+      at redeem (src/coupons.js:31:11)
+      at Order.applyCoupon (src/orders.js:88:5)
+      at Context.<anonymous> (test/orders.spec.js:57:13)
+      at process.processImmediate (node:internal/timers:483:21)

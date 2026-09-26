@@ -1,0 +1,113 @@
+$ cargo test --no-fail-fast
+exit code 101
+--- stdout ---
+
+running 24 tests
+test tax::rounds_half_even ... ok
+test tax::zero_rate_is_exempt ... ok
+test tax::reverse_charge_for_eu_b2b ... ok
+test money::parses_minor_units ... ok
+test money::rejects_three_decimals ... ok
+test money::formats_negative ... ok
+test invoice::numbering_is_gapless ... ok
+test tax::rounding_of_line_totals ... FAILED
+test invoice::credit_note_negates_lines ... ok
+test invoice::due_date_skips_weekends ... ok
+test invoice::totals_include_shipping ... ok
+test currency::converts_with_daily_rate ... ok
+test currency::rejects_unknown_code ... ok
+test pdf::renders_header ... ok
+test pdf::wraps_long_descriptions ... ok
+test pdf::embeds_logo ... ok
+test ledger::posts_to_receivables ... ok
+test ledger::balances_after_payment ... ok
+test ledger::partial_payment_leaves_open_item ... ok
+test export::csv_has_header ... ok
+test export::csv_escapes_quotes ... ok
+test export::datev_uses_semicolons ... ok
+test customer::validates_vat_id ... ok
+test customer::normalizes_country_code ... ok
+test pdf::renders_qr_code ... ignored, needs fonts
+
+failures:
+
+---- tax::rounding_of_line_totals stdout ----
+
+thread 'tax::rounding_of_line_totals' panicked at src/tax.rs:118:9:
+assertion `left == right` failed: line total must round half to even
+  left: 1235
+ right: 1234
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tax::rounding_of_line_totals
+
+test result: FAILED. 22 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 12 tests
+test create_invoice ... ok
+test list_invoices ... ok
+test get_invoice ... ok
+test update_draft ... ok
+test finalize_invoice ... ok
+test void_invoice ... ok
+test send_reminder ... ok
+test record_payment ... ok
+test refund_payment ... ok
+test list_customers ... ok
+test create_customer ... ok
+test delete_customer_with_open_items_is_refused ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+
+running 6 tests
+test issue_12_empty_invoice ... ok
+test issue_31_unicode_customer_name ... ok
+test issue_44_leap_day_due_date ... ok
+test issue_57_zero_quantity_line ... ok
+test issue_63_currency_mismatch_is_an_error ... FAILED
+test issue_70_duplicate_number_on_retry ... ok
+
+failures:
+
+---- issue_63_currency_mismatch_is_an_error stdout ----
+
+thread 'issue_63_currency_mismatch_is_an_error' panicked at tests/regression.rs:88:5:
+expected Err(CurrencyMismatch { invoice: "EUR", payment: "USD" }), got Ok(Payment { id: 7, amount: 1200 })
+
+
+failures:
+    issue_63_currency_mismatch_is_an_error
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test src/money.rs - money::Money::parse (line 21) ... ok
+test src/tax.rs - tax::round (line 9) ... ok
+test src/lib.rs - (line 3) ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s
+--- stderr ---
+   Compiling libc v0.2.171
+   Compiling cfg-if v1.0.0
+   Compiling memchr v2.7.4
+   Compiling serde v1.0.219
+   Compiling serde_json v1.0.140
+   Compiling itoa v1.0.15
+   Compiling ryu v1.0.20
+   Compiling regex-syntax v0.8.5
+   Compiling aho-corasick v1.1.3
+   Compiling regex v1.11.1
+   Compiling invoicing v0.3.0 (/work/ws)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.02s
+     Running unittests src/lib.rs (target/debug/deps/invoicing-9c1f2a7e4b3d5a61)
+     Running tests/api.rs (target/debug/deps/api-1b2c3d4e5f607182)
+     Running tests/regression.rs (target/debug/deps/regression-5e4d3c2b1a098765)
+   Doc-tests invoicing
+error: 2 targets failed:
+    `--lib`
+    `--test regression`

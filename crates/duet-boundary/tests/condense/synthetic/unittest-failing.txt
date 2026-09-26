@@ -1,0 +1,62 @@
+$ python -m unittest -v
+exit code 1
+--- stderr ---
+test_add_item (tests.test_cart.CartTest.test_add_item) ... ok
+test_remove_item (tests.test_cart.CartTest.test_remove_item) ... ok
+test_quantity_limits (tests.test_cart.CartTest.test_quantity_limits) ... ok
+test_discount_codes (tests.test_cart.CartTest.test_discount_codes) ... ok
+test_empty_cart_total (tests.test_cart.CartTest.test_empty_cart_total) ... ok
+test_currency_rounding (tests.test_cart.CartTest.test_currency_rounding) ... ok
+test_load_defaults (tests.test_config.ConfigTest.test_load_defaults) ... ok
+test_load_config_from_env (tests.test_config.ConfigTest.test_load_config_from_env) ... ERROR
+test_load_config_file (tests.test_config.ConfigTest.test_load_config_file) ... ok
+test_invalid_port (tests.test_config.ConfigTest.test_invalid_port) ... ok
+test_slugify_basic (tests.test_text.SlugTest.test_slugify_basic) ... ok
+test_slugify_unicode (tests.test_text.SlugTest.test_slugify_unicode) ... ok
+test_slugify_keeps_digits (tests.test_text.SlugTest.test_slugify_keeps_digits) ... FAIL
+test_truncate_words (tests.test_text.SlugTest.test_truncate_words) ... ok
+test_title_case (tests.test_text.SlugTest.test_title_case) ... ok
+test_send_receipt (tests.test_mail.MailTest.test_send_receipt) ... ok
+test_retry_on_timeout (tests.test_mail.MailTest.test_retry_on_timeout) ... ok
+test_render_template (tests.test_mail.MailTest.test_render_template) ... ok
+test_attachments (tests.test_mail.MailTest.test_attachments) ... ok
+test_bounce_handling (tests.test_mail.MailTest.test_bounce_handling) ... skipped 'needs smtp server'
+test_parse_iso (tests.test_dates.DateTest.test_parse_iso) ... ok
+test_parse_us (tests.test_dates.DateTest.test_parse_us) ... ok
+test_business_days (tests.test_dates.DateTest.test_business_days) ... ok
+test_week_numbers (tests.test_dates.DateTest.test_week_numbers) ... ok
+
+======================================================================
+ERROR: test_load_config_from_env (tests.test_config.ConfigTest.test_load_config_from_env)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/ws/tests/test_config.py", line 44, in test_load_config_from_env
+    cfg = load_config(env={"APP_PORT": "8080"})
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/ws/app/config.py", line 61, in load_config
+    return Config(**_merge(defaults, _from_env(env)))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/ws/app/config.py", line 38, in _merge
+    merged.update(_coerce(key, value))
+                  ^^^^^^^^^^^^^^^^^^^
+  File "/work/ws/app/config.py", line 27, in _coerce
+    return {key: FIELD_TYPES[key](value)}
+                 ~~~~~~~~~~~^^^^^
+KeyError: 'app_port'
+
+======================================================================
+FAIL: test_slugify_keeps_digits (tests.test_text.SlugTest.test_slugify_keeps_digits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/work/ws/tests/test_text.py", line 19, in test_slugify_keeps_digits
+    self.assertEqual(slugify("Release 2.0 notes"), "release-2-0-notes")
+AssertionError: 'release-notes' != 'release-2-0-notes'
+- release-notes
++ release-2-0-notes
+?        ++++
+
+
+----------------------------------------------------------------------
+Ran 24 tests in 0.318s
+
+FAILED (failures=1, errors=1, skipped=1)

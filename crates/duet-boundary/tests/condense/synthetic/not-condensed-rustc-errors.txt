@@ -1,0 +1,101 @@
+$ cargo build --all-targets
+exit code 101
+--- stderr ---
+   Compiling proc-macro2 v1.0.95
+   Compiling unicode-ident v1.0.18
+   Compiling quote v1.0.40
+   Compiling syn v2.0.101
+   Compiling serde_derive v1.0.219
+   Compiling serde v1.0.219
+   Compiling shipping v0.1.0 (/work/ws)
+warning: unused import: `std::collections::HashMap`
+ --> src/rates.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `zone`
+  --> src/rates.rs:41:9
+   |
+41 |     let zone = lookup_zone(&parcel.destination);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_zone`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+error[E0308]: mismatched types
+  --> src/rates.rs:57:16
+   |
+52 | pub fn price(parcel: &Parcel) -> Cents {
+   |                                  ----- expected `Cents` because of return type
+...
+57 |         return parcel.weight_grams * RATE_PER_GRAM;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Cents`, found `u32`
+   |
+help: try wrapping the expression in `Cents`
+   |
+57 |         return Cents(parcel.weight_grams * RATE_PER_GRAM);
+   |                ++++++                                   +
+
+error[E0308]: mismatched types
+  --> src/rates.rs:63:5
+   |
+52 | pub fn price(parcel: &Parcel) -> Cents {
+   |                                  ----- expected `Cents` because of return type
+...
+63 |     base + surcharge
+   |     ^^^^^^^^^^^^^^^^ expected `Cents`, found `u32`
+   |
+help: try wrapping the expression in `Cents`
+   |
+63 |     Cents(base + surcharge)
+   |     ++++++                +
+
+error[E0308]: mismatched types
+   --> src/label.rs:112:24
+    |
+112 |     let height: u16 = layout.height();
+    |                 ---   ^^^^^^^^^^^^^^^ expected `u16`, found `u32`
+    |                 |
+    |                 expected due to this
+    |
+help: you can convert a `u32` to a `u16` and panic if the converted value doesn't fit
+    |
+112 |     let height: u16 = layout.height().try_into().unwrap();
+    |                                      ++++++++++++++++++++
+
+error[E0425]: cannot find value `MAX_WEIGHT` in this scope
+  --> src/validate.rs:18:26
+   |
+18 |     if parcel.weight_grams > MAX_WEIGHT {
+   |                              ^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this constant
+   |
+1  + use crate::limits::MAX_WEIGHT;
+   |
+
+Some errors have detailed explanations: E0308, E0425.
+For more information about an error, try `rustc --explain E0308`.
+warning: `shipping` (lib) generated 2 warnings
+error: could not compile `shipping` (lib) due to 4 previous errors; 2 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: unused import: `std::collections::HashMap`
+ --> src/rates.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `zone`
+  --> src/rates.rs:41:9
+   |
+41 |     let zone = lookup_zone(&parcel.destination);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_zone`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `shipping` (lib test) generated 2 warnings (2 duplicates)
+error: could not compile `shipping` (lib test) due to 4 previous errors; 2 warnings emitted

@@ -15,6 +15,7 @@
 
 use crate::audit::AuditEvent;
 use crate::bulky::{self, Shape};
+use crate::condense;
 use crate::detect::{CustomPatterns, Detectors, Kind, scan_each_in, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
@@ -924,11 +925,15 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
     }
 
     /// Command output: small output is shown with known values, detected
-    /// secrets/PII and copied sensitive text replaced (no local call); large
-    /// output goes to a handle with a summary.
-    fn command_view(&self, label: &str, text: &str) -> String {
+    /// secrets/PII and copied sensitive text replaced (no local call), and
+    /// condensed when its format is recognized; large output goes to a handle
+    /// with a summary. `command` is `None` for the host's checks.
+    fn command_view(&self, label: &str, command: Option<&str>, text: &str) -> String {
         if text.len() > INLINE_OUTPUT_CHARS {
             return self.handle_view(label, text);
+        }
+        if let Some(view) = self.condensed_view(label, command, text) {
+            return view;
         }
         let mut st = self.lock();
         let s = self.sanitize(&mut st, text, label, false);
@@ -1124,6 +1129,36 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
 
     fn offload(&self, text: &str) -> bool {
         bulky::is_bulky(text, self.policy.bulky_tokens)
+    }
+
+    /// Command or check output the frontier may be shown, condensed when its
+    /// format is recognized (`context.condense_output`, [`condense`]). The
+    /// whole output is sanitized first, so a value is judged with all its
+    /// context (a label on a line the view omits), and that sanitized text is
+    /// what the public handle keeps: `read_raw` returns nothing the frontier
+    /// could not have been shown whole. `None`: shown as before (`command`
+    /// `None`: the host's checks).
+    fn condensed_view(&self, label: &str, command: Option<&str>, text: &str) -> Option<String> {
+        if !self.policy.condense_output
+            || !condense::worth_trying(text)
+            || !command.is_none_or(condense::eligible)
+        {
+            return None;
+        }
+        let sanitized = {
+            let mut st = self.lock();
+            self.clean_public(&mut st, text, label)
+        };
+        let condensed = condense::condense(&sanitized, self.policy.bulky_tokens)?;
+        let handle = self
+            .lock()
+            .handles
+            .put_public(sanitized.as_bytes(), label, 1)
+            .ok()?;
+        self.set_class(ViewClass::BulkyHandle);
+        let mut st = self.lock();
+        let body = self.clean_public(&mut st, &condensed.text, label);
+        Some(condense::view(&handle.id, label, &condensed, &body))
     }
 
     /// Public but bulky content (`PublicBulky`): kept whole under a handle the
@@ -1614,7 +1649,7 @@ impl Presenter for Engine {
                 if self.policy.command_output_sensitive
                     && !self.policy.command_is_raw_ok(command) =>
             {
-                self.command_view(&format!("output of `{command}`"), &text)
+                self.command_view(&format!("output of `{command}`"), Some(command), &text)
             }
             Source::SensitiveCommand { command, .. } => {
                 let label = format!("output of `{command}` (ran with sensitive data)");
@@ -1625,20 +1660,22 @@ impl Presenter for Engine {
                 self.handle_view(&label, &text)
             }
             Source::Checks if self.policy.command_output_sensitive => {
-                self.command_view("check output", &text)
+                self.command_view("check output", None, &text)
             }
             // Public command output (allowlisted commands, or all output when
-            // command output is not treated as sensitive).
+            // command output is not treated as sensitive): condensed when its
+            // format is recognized, else offloaded when bulky.
             Source::Command { command, .. } | Source::Other { label: command }
                 if self.offload(&text) =>
             {
                 let label = format!("output of `{command}`");
                 self.local_pii_pass(&label, &text);
-                self.bulky_view(&label, &text, Shape::Output)
+                self.condensed_view(&label, Some(command), &text)
+                    .unwrap_or_else(|| self.bulky_view(&label, &text, Shape::Output))
             }
-            Source::Checks if self.offload(&text) => {
-                self.bulky_view("check output", &text, Shape::Output)
-            }
+            Source::Checks if self.offload(&text) => self
+                .condensed_view("check output", None, &text)
+                .unwrap_or_else(|| self.bulky_view("check output", &text, Shape::Output)),
             Source::FileList if self.offload(&text) => {
                 self.bulky_view("file list", &text, Shape::Listing)
             }
@@ -1673,8 +1710,18 @@ impl Presenter for Engine {
                 }
             }
             _ => {
-                if matches!(source, Source::Command { .. } | Source::Other { .. }) {
-                    self.local_pii_pass("tool output", &text);
+                let condensable = match source {
+                    Source::Command { command, .. } | Source::Other { label: command } => {
+                        self.local_pii_pass("tool output", &text);
+                        Some((format!("output of `{command}`"), Some(command.as_str())))
+                    }
+                    Source::Checks => Some(("check output".to_owned(), None)),
+                    _ => None,
+                };
+                if let Some((label, command)) = condensable
+                    && let Some(view) = self.condensed_view(&label, command, &text)
+                {
+                    return view;
                 }
                 let mut st = self.lock();
                 self.sanitize(&mut st, &text, "tool output", false)

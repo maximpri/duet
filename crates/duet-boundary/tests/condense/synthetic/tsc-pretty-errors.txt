@@ -1,0 +1,144 @@
+$ npx tsc --noEmit
+exit code 2
+--- stdout ---
+src/components/OrderRow.tsx:17:23 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+17     const refunded = order.refundedAt !== null;
+                         ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/components/OrderRow.tsx:41:30 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+41     const refunded = order.refundedAt !== null;
+                                ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/components/OrderTable.tsx:58:19 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+58     const refunded = order.refundedAt !== null;
+                     ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/components/OrderTable.tsx:90:27 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+90     const refunded = order.refundedAt !== null;
+                             ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/pages/Orders.tsx:33:15 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+33     const refunded = order.refundedAt !== null;
+                 ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/pages/Orders.tsx:120:22 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+120     const refunded = order.refundedAt !== null;
+                         ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/stores/orders.ts:44:17 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+44     const refunded = order.refundedAt !== null;
+                   ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/stores/orders.ts:81:9 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+81     const refunded = order.refundedAt !== null;
+           ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/api/orders.ts:51:19 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+51     const refunded = order.refundedAt !== null;
+                     ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/api/orders.ts:63:31 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+63     const refunded = order.refundedAt !== null;
+                                 ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/util/export.ts:12:26 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+12     const refunded = order.refundedAt !== null;
+                            ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/util/export.ts:29:14 - error TS2339: Property 'refundedAt' does not exist on type 'Order'. Did you mean 'refunded_at'?
+
+29     const refunded = order.refundedAt !== null;
+                ~~~~~~~~~~
+
+  src/types/order.ts:14:3
+    14   refunded_at: string | null;
+         ~~~~~~~~~~~
+    'refunded_at' is declared here.
+
+src/util/format.ts:9:20 - error TS2554: Expected 2 arguments, but got 1.
+
+9   return formatMoney(amount);
+                     ~~~~~~~~~~~~~~~~~~~
+
+  src/util/money.ts:3:40
+    3 export function formatMoney(amount: number, currency: string): string {
+                                             ~~~~~~~~~~~~~~~~
+    An argument for 'currency' was not provided.
+
+
+Found 13 errors in 7 files.
+
+Errors  Files
+     2  src/components/OrderRow.tsx:17
+     2  src/components/OrderTable.tsx:58
+     2  src/pages/Orders.tsx:33
+     2  src/stores/orders.ts:44
+     2  src/api/orders.ts:51
+     2  src/util/export.ts:12
+     1  src/util/format.ts:9

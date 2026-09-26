@@ -1,0 +1,254 @@
+$ cargo build --all-targets
+exit code 101
+--- stderr ---
+    Updating crates.io index
+     Locking 78 packages to latest compatible versions
+ Downloading crates ...
+  Downloaded proc-macro2 v1.0.95
+  Downloaded unicode-ident v1.0.18
+  Downloaded quote v1.0.40
+  Downloaded syn v2.0.101
+  Downloaded serde_derive v1.0.219
+  Downloaded serde v1.0.219
+  Downloaded serde_json v1.0.140
+  Downloaded itoa v1.0.15
+  Downloaded ryu v1.0.20
+  Downloaded memchr v2.7.4
+  Downloaded libc v0.2.171
+  Downloaded cfg-if v1.0.0
+  Downloaded once_cell v1.21.3
+  Downloaded log v0.4.27
+  Downloaded bitflags v2.9.0
+  Downloaded smallvec v1.15.0
+  Downloaded autocfg v1.4.0
+  Downloaded num-traits v0.2.19
+  Downloaded chrono v0.4.41
+  Downloaded iana-time-zone v0.1.63
+  Downloaded core-foundation-sys v0.8.7
+  Downloaded thiserror v2.0.12
+  Downloaded thiserror-impl v2.0.12
+  Downloaded anyhow v1.0.98
+  Downloaded tokio v1.45.0
+  Downloaded tokio-macros v2.5.0
+  Downloaded mio v1.0.3
+  Downloaded socket2 v0.5.9
+  Downloaded pin-project-lite v0.2.16
+  Downloaded bytes v1.10.1
+  Downloaded futures-core v0.3.31
+  Downloaded futures-util v0.3.31
+  Downloaded futures-task v0.3.31
+  Downloaded futures-sink v0.3.31
+  Downloaded futures-channel v0.3.31
+  Downloaded slab v0.4.9
+  Downloaded http v1.3.1
+  Downloaded httparse v1.10.1
+  Downloaded hyper v1.6.0
+  Downloaded tower v0.5.2
+  Downloaded tower-service v0.3.3
+  Downloaded tower-layer v0.3.3
+  Downloaded tracing v0.1.41
+  Downloaded tracing-core v0.1.33
+  Downloaded tracing-attributes v0.1.28
+  Downloaded percent-encoding v2.3.1
+  Downloaded form_urlencoded v1.2.1
+  Downloaded url v2.5.4
+  Downloaded idna v1.0.3
+  Downloaded utf8_iter v1.0.4
+  Downloaded regex v1.11.1
+  Downloaded regex-syntax v0.8.5
+  Downloaded regex-automata v0.4.9
+  Downloaded aho-corasick v1.1.3
+  Downloaded uuid v1.16.0
+  Downloaded getrandom v0.3.3
+  Downloaded rand v0.9.1
+  Downloaded rand_core v0.9.3
+  Downloaded rand_chacha v0.9.0
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded zerocopy v0.8.25
+  Downloaded sha2 v0.10.9
+  Downloaded digest v0.10.7
+  Downloaded block-buffer v0.10.4
+  Downloaded generic-array v0.14.7
+  Downloaded typenum v1.18.0
+  Downloaded crypto-common v0.1.6
+  Downloaded cpufeatures v0.2.17
+  Downloaded hex v0.4.3
+  Downloaded base64 v0.22.1
+  Downloaded toml v0.8.22
+  Downloaded toml_edit v0.22.26
+  Downloaded toml_datetime v0.6.9
+  Downloaded serde_spanned v0.6.8
+  Downloaded winnow v0.7.10
+  Downloaded indexmap v2.9.0
+  Downloaded hashbrown v0.15.3
+  Downloaded equivalent v1.0.2
+   Compiling proc-macro2 v1.0.95
+   Compiling unicode-ident v1.0.18
+   Compiling quote v1.0.40
+   Compiling syn v2.0.101
+   Compiling serde_derive v1.0.219
+   Compiling serde v1.0.219
+   Compiling serde_json v1.0.140
+   Compiling itoa v1.0.15
+   Compiling ryu v1.0.20
+   Compiling memchr v2.7.4
+   Compiling libc v0.2.171
+   Compiling cfg-if v1.0.0
+   Compiling once_cell v1.21.3
+   Compiling log v0.4.27
+   Compiling bitflags v2.9.0
+   Compiling smallvec v1.15.0
+   Compiling autocfg v1.4.0
+   Compiling num-traits v0.2.19
+   Compiling chrono v0.4.41
+   Compiling iana-time-zone v0.1.63
+   Compiling core-foundation-sys v0.8.7
+   Compiling thiserror v2.0.12
+   Compiling thiserror-impl v2.0.12
+   Compiling anyhow v1.0.98
+   Compiling tokio v1.45.0
+   Compiling tokio-macros v2.5.0
+   Compiling mio v1.0.3
+   Compiling socket2 v0.5.9
+   Compiling pin-project-lite v0.2.16
+   Compiling bytes v1.10.1
+   Compiling futures-core v0.3.31
+   Compiling futures-util v0.3.31
+   Compiling futures-task v0.3.31
+   Compiling futures-sink v0.3.31
+   Compiling futures-channel v0.3.31
+   Compiling slab v0.4.9
+   Compiling http v1.3.1
+   Compiling httparse v1.10.1
+   Compiling hyper v1.6.0
+   Compiling tower v0.5.2
+   Compiling tower-service v0.3.3
+   Compiling tower-layer v0.3.3
+   Compiling tracing v0.1.41
+   Compiling tracing-core v0.1.33
+   Compiling tracing-attributes v0.1.28
+   Compiling percent-encoding v2.3.1
+   Compiling form_urlencoded v1.2.1
+   Compiling url v2.5.4
+   Compiling idna v1.0.3
+   Compiling utf8_iter v1.0.4
+   Compiling regex v1.11.1
+   Compiling regex-syntax v0.8.5
+   Compiling regex-automata v0.4.9
+   Compiling aho-corasick v1.1.3
+   Compiling uuid v1.16.0
+   Compiling getrandom v0.3.3
+   Compiling rand v0.9.1
+   Compiling rand_core v0.9.3
+   Compiling rand_chacha v0.9.0
+   Compiling ppv-lite86 v0.2.21
+   Compiling zerocopy v0.8.25
+   Compiling sha2 v0.10.9
+   Compiling digest v0.10.7
+   Compiling block-buffer v0.10.4
+   Compiling generic-array v0.14.7
+   Compiling typenum v1.18.0
+   Compiling crypto-common v0.1.6
+   Compiling cpufeatures v0.2.17
+   Compiling hex v0.4.3
+   Compiling base64 v0.22.1
+   Compiling toml v0.8.22
+   Compiling toml_edit v0.22.26
+   Compiling toml_datetime v0.6.9
+   Compiling serde_spanned v0.6.8
+   Compiling winnow v0.7.10
+   Compiling indexmap v2.9.0
+   Compiling hashbrown v0.15.3
+   Compiling equivalent v1.0.2
+   Compiling shipping v0.1.0 (/work/ws)
+warning: unused import: `std::collections::HashMap`
+ --> src/rates.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `zone`
+  --> src/rates.rs:41:9
+   |
+41 |     let zone = lookup_zone(&parcel.destination);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_zone`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+error[E0308]: mismatched types
+  --> src/rates.rs:57:16
+   |
+52 | pub fn price(parcel: &Parcel) -> Cents {
+   |                                  ----- expected `Cents` because of return type
+...
+57 |         return parcel.weight_grams * RATE_PER_GRAM;
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Cents`, found `u32`
+   |
+help: try wrapping the expression in `Cents`
+   |
+57 |         return Cents(parcel.weight_grams * RATE_PER_GRAM);
+   |                ++++++                                   +
+
+error[E0308]: mismatched types
+  --> src/rates.rs:63:5
+   |
+52 | pub fn price(parcel: &Parcel) -> Cents {
+   |                                  ----- expected `Cents` because of return type
+...
+63 |     base + surcharge
+   |     ^^^^^^^^^^^^^^^^ expected `Cents`, found `u32`
+   |
+help: try wrapping the expression in `Cents`
+   |
+63 |     Cents(base + surcharge)
+   |     ++++++                +
+
+error[E0308]: mismatched types
+   --> src/label.rs:112:24
+    |
+112 |     let height: u16 = layout.height();
+    |                 ---   ^^^^^^^^^^^^^^^ expected `u16`, found `u32`
+    |                 |
+    |                 expected due to this
+    |
+help: you can convert a `u32` to a `u16` and panic if the converted value doesn't fit
+    |
+112 |     let height: u16 = layout.height().try_into().unwrap();
+    |                                      ++++++++++++++++++++
+
+error[E0425]: cannot find value `MAX_WEIGHT` in this scope
+  --> src/validate.rs:18:26
+   |
+18 |     if parcel.weight_grams > MAX_WEIGHT {
+   |                              ^^^^^^^^^^ not found in this scope
+   |
+help: consider importing this constant
+   |
+1  + use crate::limits::MAX_WEIGHT;
+   |
+
+Some errors have detailed explanations: E0308, E0425.
+For more information about an error, try `rustc --explain E0308`.
+warning: `shipping` (lib) generated 2 warnings
+error: could not compile `shipping` (lib) due to 4 previous errors; 2 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: unused import: `std::collections::HashMap`
+ --> src/rates.rs:3:5
+  |
+3 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused variable: `zone`
+  --> src/rates.rs:41:9
+   |
+41 |     let zone = lookup_zone(&parcel.destination);
+   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_zone`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: `shipping` (lib test) generated 2 warnings (2 duplicates)
+error: could not compile `shipping` (lib test) due to 4 previous errors; 2 warnings emitted

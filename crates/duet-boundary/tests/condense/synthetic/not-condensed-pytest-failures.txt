@@ -1,0 +1,72 @@
+$ python -m pytest
+exit code 1
+--- stdout ---
+============================= test session starts ==============================
+platform linux -- Python 3.12.4, pytest-8.3.2, pluggy-1.5.0
+rootdir: /work/ws
+configfile: pyproject.toml
+plugins: cov-5.0.0, anyio-4.4.0
+collected 64 items
+
+tests/test_api.py ..........                                             [ 15%]
+tests/test_billing.py ......F....                                        [ 32%]
+tests/test_calendar.py ...........                                       [ 50%]
+tests/test_exports.py .....s......                                       [ 68%]
+tests/test_parsing.py .......F.E                                         [ 84%]
+tests/test_rates.py ..........                                           [100%]
+
+==================================== ERRORS ====================================
+________________ ERROR at setup of test_import_rejects_bom _________________
+
+    @pytest.fixture
+    def sample_file(tmp_path):
+>       return write_sample(tmp_path / "in.csv", encoding="utf-8-sig")
+E       TypeError: write_sample() got an unexpected keyword argument 'encoding'
+
+tests/conftest.py:31: TypeError
+=================================== FAILURES ===================================
+_________________________ test_prorated_first_month __________________________
+
+    def test_prorated_first_month():
+        plan = Plan(monthly=Decimal("30.00"))
+        start = date(2026, 2, 15)
+>       assert plan.prorate(start) == Decimal("15.00")
+E       AssertionError: assert Decimal('14.00') == Decimal('15.00')
+E        +  where Decimal('14.00') = <bound method Plan.prorate of Plan(monthly=Decimal('30.00'))>(datetime.date(2026, 2, 15))
+E        +    where <bound method Plan.prorate of Plan(monthly=Decimal('30.00'))> = Plan(monthly=Decimal('30.00')).prorate
+
+tests/test_billing.py:48: AssertionError
+_________________________ test_parse_quoted_newlines __________________________
+
+    def test_parse_quoted_newlines():
+        rows = parse_csv(SAMPLE_WITH_NEWLINES)
+>       assert rows[1]["note"] == "first line\nsecond line"
+
+tests/test_parsing.py:77: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/parsing.py:40: in parse_csv
+    for record in _records(text):
+app/parsing.py:22: in _records
+    fields = _split(line)
+app/parsing.py:12: in _split
+    return line.split(",")
+E   AttributeError: 'NoneType' object has no attribute 'split'
+=============================== warnings summary ===============================
+tests/test_exports.py::test_xlsx_export
+  /work/ws/.venv/lib/python3.12/site-packages/openpyxl/packaging/core.py:99: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version.
+    now = datetime.datetime.utcnow()
+
+tests/test_exports.py::test_xlsx_export_with_styles
+  /work/ws/.venv/lib/python3.12/site-packages/openpyxl/packaging/core.py:99: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version.
+    now = datetime.datetime.utcnow()
+
+tests/test_exports.py::test_xlsx_multiple_sheets
+  /work/ws/.venv/lib/python3.12/site-packages/openpyxl/packaging/core.py:99: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version.
+    now = datetime.datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_billing.py::test_prorated_first_month - AssertionError: assert Decimal('14.00') == Decimal('15.00')
+FAILED tests/test_parsing.py::test_parse_quoted_newlines - AttributeError: 'NoneType' object has no attribute 'split'
+ERROR tests/test_parsing.py::test_import_rejects_bom - TypeError: write_sample() got an unexpected keyword argument 'encoding'
+============= 2 failed, 60 passed, 1 skipped, 3 warnings, 1 error in 2.41s =============

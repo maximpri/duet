@@ -1,0 +1,61 @@
+$ ./gradlew test
+exit code 1
+--- stdout ---
+Starting a Gradle Daemon (subsequent builds will be faster)
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :testClasses
+
+> Task :test
+
+MoneyTest > parsesMinorUnits() PASSED
+
+MoneyTest > rejectsThreeDecimals() PASSED
+
+MoneyTest > formatsNegative() PASSED
+
+TaxTest > roundsHalfEven() PASSED
+
+TaxTest > zeroRateIsExempt() PASSED
+
+TaxTest > reverseChargeForEuB2b() PASSED
+
+InvoiceTest > numberingIsGapless() PASSED
+
+InvoiceTest > creditNoteNegatesTotals() FAILED
+    org.opentest4j.AssertionFailedError: expected: <-12000> but was: <12000>
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+        at app//org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+        at app//org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+        at app//org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:166)
+        at app//org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:611)
+        at app//com.example.billing.InvoiceTest.creditNoteNegatesTotals(InvoiceTest.java:58)
+
+InvoiceTest > dueDateSkipsWeekend() PASSED
+
+InvoiceTest > totalsIncludeShipping() PASSED
+
+LedgerTest > postsToReceivables() PASSED
+
+LedgerTest > balancesAfterPayment() PASSED
+
+LedgerTest > partialPaymentLeavesOpenItem() SKIPPED
+
+12 tests completed, 1 failed, 1 skipped
+
+> Task :test FAILED
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: file:///work/ws/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to get full insights.
+
+BUILD FAILED in 9s
+4 actionable tasks: 4 executed

@@ -1,0 +1,73 @@
+$ node --test
+exit code 1
+--- stdout ---
+✔ parses an empty expression (0.360000ms)
+✔ parses a path (0.230000ms)
+✔ parses a filter (0.250000ms)
+✔ parses nested filters (0.310000ms)
+✔ evaluates numbers (0.270000ms)
+✔ evaluates strings (0.270000ms)
+✔ concatenates with & (0.290000ms)
+✔ sums an array (0.230000ms)
+✔ averages an array (0.270000ms)
+✔ counts items (0.220000ms)
+✔ formats integers (0.260000ms)
+✔ formats decimals (0.260000ms)
+✔ formats dates (0.230000ms)
+✖ formats a date with a picture string (1.203541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + '2026-9-5'
+  - '2026-09-05'
+
+      at TestContext.<anonymous> (/work/ws/test/datetime.test.js:41:10)
+      at Test.runInAsyncScope (node:async_hooks:211:14)
+      at Test.run (node:internal/test_runner/test:979:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:677:18) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '2026-9-5',
+    expected: '2026-09-05',
+    operator: 'strictEqual'
+  }
+
+✔ joins strings (0.230000ms)
+✔ splits strings (0.240000ms)
+✔ replaces with a regex (0.310000ms)
+✔ sorts ascending (0.250000ms)
+✔ sorts descending (0.260000ms)
+✔ groups by key (0.230000ms)
+✔ merges objects (0.240000ms)
+✔ handles undefined input (0.330000ms)
+✔ reports a syntax error position (0.410000ms)
+✔ reports an unknown function (0.370000ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 23
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 184.52
+
+✖ failing tests:
+
+test at test/datetime.test.js:38:1
+✖ formats a date with a picture string (1.203541ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + '2026-9-5'
+  - '2026-09-05'
+
+      at TestContext.<anonymous> (/work/ws/test/datetime.test.js:41:10)
+      at Test.runInAsyncScope (node:async_hooks:211:14)
+      at Test.run (node:internal/test_runner/test:979:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:677:18) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '2026-9-5',
+    expected: '2026-09-05',
+    operator: 'strictEqual'
+  }

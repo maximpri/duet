@@ -1,0 +1,81 @@
+$ pytest -v tests/
+exit code 1
+--- stdout ---
+============================= test session starts ==============================
+platform darwin -- Python 3.11.9, pytest-8.2.0, pluggy-1.5.0 -- /work/ws/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /work/ws
+collecting ... collected 38 items
+
+tests/test_scheduler.py::test_daily_job_runs_once PASSED     [  2%]
+tests/test_scheduler.py::test_weekly_job_skips_holidays PASSED [  5%]
+tests/test_scheduler.py::test_cron_parses_ranges PASSED      [  7%]
+tests/test_scheduler.py::test_cron_parses_steps PASSED       [ 10%]
+tests/test_scheduler.py::test_cron_rejects_seconds PASSED    [ 13%]
+tests/test_scheduler.py::test_timezone_dst_forward PASSED    [ 15%]
+tests/test_scheduler.py::test_timezone_dst_backward FAILED   [ 18%]
+tests/test_scheduler.py::test_retry_backoff_doubles PASSED   [ 21%]
+tests/test_scheduler.py::test_retry_gives_up_after_five PASSED [ 23%]
+tests/test_scheduler.py::test_queue_is_fifo PASSED           [ 26%]
+tests/test_scheduler.py::test_queue_drops_expired PASSED     [ 28%]
+tests/test_scheduler.py::test_lock_prevents_overlap PASSED   [ 31%]
+tests/test_scheduler.py::test_lock_released_on_error PASSED  [ 34%]
+tests/test_scheduler.py::test_metrics_count_runs PASSED      [ 36%]
+tests/test_scheduler.py::test_metrics_count_failures PASSED  [ 39%]
+tests/test_scheduler.py::test_calendar_first_monday PASSED   [ 42%]
+tests/test_scheduler.py::test_calendar_last_friday PASSED    [ 44%]
+tests/test_scheduler.py::test_calendar_business_days PASSED  [ 47%]
+tests/test_scheduler.py::test_job_timeout_kills_process PASSED [ 50%]
+tests/test_scheduler.py::test_job_env_is_isolated PASSED     [ 52%]
+tests/test_store.py::test_insert_and_fetch PASSED            [ 55%]
+tests/test_store.py::test_update_status PASSED               [ 57%]
+tests/test_store.py::test_delete_cascades PASSED             [ 60%]
+tests/test_store.py::test_migrations_apply_in_order PASSED   [ 63%]
+tests/test_store.py::test_migration_rollback PASSED          [ 65%]
+tests/test_store.py::test_concurrent_writers SKIPPED (needs postgres) [ 68%]
+tests/test_store.py::test_vacuum_keeps_recent PASSED         [ 71%]
+tests/test_store.py::test_export_json PASSED                 [ 73%]
+tests/test_store.py::test_export_csv PASSED                  [ 76%]
+tests/test_store.py::test_import_merges PASSED               [ 78%]
+tests/test_store.py::test_import_skips_duplicates FAILED     [ 81%]
+tests/test_store.py::test_index_used_for_status PASSED       [ 84%]
+tests/test_store.py::test_pagination_stable PASSED           [ 86%]
+tests/test_store.py::test_search_by_tag PASSED               [ 89%]
+tests/test_store.py::test_search_by_owner PASSED             [ 92%]
+tests/test_store.py::test_soft_delete_hidden PASSED          [ 94%]
+tests/test_store.py::test_restore_soft_deleted PASSED        [ 97%]
+tests/test_store.py::test_count_by_status PASSED             [100%]
+
+=================================== FAILURES ===================================
+_________________________ test_timezone_dst_backward _________________________
+
+    def test_timezone_dst_backward():
+        job = Job(cron="30 1 * * *", tz="America/New_York")
+>       assert job.next_runs(date(2026, 11, 1), n=2) == [dt(2026, 11, 1, 1, 30), dt(2026, 11, 2, 1, 30)]
+E       AssertionError: assert [datetime.datetime(2026, 11, 1, 1, 30), datetime.datetime(2026, 11, 1, 1, 30, fold=1)] == [datetime.datetime(2026, 11, 1, 1, 30), datetime.datetime(2026, 11, 2, 1, 30)]
+E         At index 1 diff: datetime.datetime(2026, 11, 1, 1, 30, fold=1) != datetime.datetime(2026, 11, 2, 1, 30)
+E         Full diff:
+E           [
+E               datetime.datetime(2026, 11, 1, 1, 30),
+E         -     datetime.datetime(2026, 11, 2, 1, 30),
+E         +     datetime.datetime(2026, 11, 1, 1, 30, fold=1),
+E           ]
+
+tests/test_scheduler.py:88: AssertionError
+________________________ test_import_skips_duplicates _________________________
+
+store = <app.store.Store object at 0x104f2a3d0>
+
+    def test_import_skips_duplicates(store):
+        store.import_rows(ROWS)
+        store.import_rows(ROWS)
+>       assert store.count() == len(ROWS)
+E       assert 12 == 6
+E        +  where 12 = <bound method Store.count of <app.store.Store object at 0x104f2a3d0>>()
+E        +  and   6 = len([{'id': 1, 'status': 'open'}, {'id': 2, 'status': 'open'}, {'id': 3, 'status': 'done'}, ...])
+
+tests/test_store.py:141: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_scheduler.py::test_timezone_dst_backward - AssertionError: assert [datetime.datetime(2026, 11, 1, 1, 30), datetime.dat...
+FAILED tests/test_store.py::test_import_skips_duplicates - assert 12 == 6
+=================== 2 failed, 35 passed, 1 skipped in 1.07s ====================

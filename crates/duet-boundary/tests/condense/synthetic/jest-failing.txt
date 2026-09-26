@@ -1,0 +1,88 @@
+$ npm test
+exit code 1
+--- stdout ---
+
+> storefront@2.4.0 test
+> jest
+--- stderr ---
+PASS src/cart/cart.test.ts
+PASS src/cart/discounts.test.ts
+PASS src/catalog/search.test.ts
+PASS src/catalog/filters.test.ts
+PASS src/account/profile.test.ts
+PASS src/account/orders.test.ts
+PASS src/util/format.test.ts
+PASS src/util/debounce.test.ts
+PASS src/api/client.test.ts
+FAIL src/checkout/shipping.test.ts
+  ● shipping › charges the flat rate below the free-shipping threshold
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 499
+    Received: 0
+
+      21 |   it("charges the flat rate below the free-shipping threshold", () => {
+      22 |     const cart = makeCart([{ sku: "A1", price: 2500, qty: 1 }]);
+    > 23 |     expect(shippingCost(cart, "DE")).toBe(499);
+         |                                      ^
+      24 |   });
+      25 |
+      26 |   it("is free at the threshold", () => {
+
+      at Object.<anonymous> (src/checkout/shipping.test.ts:23:38)
+      at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)
+      at new Promise (<anonymous>)
+      at callAsyncCircusFn (node_modules/jest-circus/build/utils.js:231:10)
+      at _callCircusTest (node_modules/jest-circus/build/run.js:316:40)
+      at _runTest (node_modules/jest-circus/build/run.js:252:3)
+
+  ● shipping › rejects unsupported countries
+
+    expect(received).toThrow(expected)
+
+    Expected substring: "unsupported country"
+    Received function did not throw
+
+      31 |   it("rejects unsupported countries", () => {
+      32 |     const cart = makeCart([{ sku: "A1", price: 2500, qty: 1 }]);
+    > 33 |     expect(() => shippingCost(cart, "XX")).toThrow("unsupported country");
+         |                                            ^
+      34 |   });
+      35 | });
+      36 |
+
+      at Object.<anonymous> (src/checkout/shipping.test.ts:33:44)
+      at Promise.then.completed (node_modules/jest-circus/build/utils.js:298:28)
+      at new Promise (<anonymous>)
+      at callAsyncCircusFn (node_modules/jest-circus/build/utils.js:231:10)
+
+PASS src/checkout/payment.test.ts
+PASS src/checkout/summary.test.ts
+
+Summary of all failing tests
+FAIL src/checkout/shipping.test.ts
+  ● shipping › charges the flat rate below the free-shipping threshold
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 499
+    Received: 0
+
+      at Object.<anonymous> (src/checkout/shipping.test.ts:23:38)
+
+  ● shipping › rejects unsupported countries
+
+    expect(received).toThrow(expected)
+
+    Expected substring: "unsupported country"
+    Received function did not throw
+
+      at Object.<anonymous> (src/checkout/shipping.test.ts:33:44)
+
+
+Test Suites: 1 failed, 11 passed, 12 total
+Tests:       2 failed, 131 passed, 133 total
+Snapshots:   4 passed, 4 total
+Time:        6.214 s
+Ran all test suites.

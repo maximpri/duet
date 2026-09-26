@@ -63,6 +63,9 @@ pub struct Policy {
     pub local_pii_pass: bool,
     /// Threshold for a public file the model explicitly read (`0` disables offloading).
     pub bulky_file_tokens: usize,
+    /// Test, build and install output the frontier may be shown is condensed
+    /// (`context.condense_output`; [`crate::condense`]).
+    pub condense_output: bool,
     /// Source the frontier sees as signatures only (`ip.interface_only`).
     pub interface_only: Vec<String>,
     /// Source whose content the frontier never sees (`ip.sealed`).

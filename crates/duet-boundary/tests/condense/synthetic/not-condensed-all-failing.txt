@@ -1,0 +1,40 @@
+$ cargo test --test headers
+exit code 101
+--- stdout ---
+running 3 tests
+test parse_header_line ... FAILED
+test parse_folded_line ... FAILED
+test parse_empty ... FAILED
+
+failures:
+
+---- parse_header_line stdout ----
+
+thread 'parse_header_line' panicked at tests/headers.rs:12:5:
+assertion `left == right` failed
+  left: Err(Malformed("header line without a colon"))
+ right: Ok(Header { name: "content-type", value: "text/plain" })
+
+---- parse_folded_line stdout ----
+
+thread 'parse_folded_line' panicked at tests/headers.rs:20:5:
+assertion `left == right` failed
+  left: Err(Malformed("header line without a colon"))
+ right: Ok(Header { name: "subject", value: "a folded subject line" })
+
+---- parse_empty stdout ----
+
+thread 'parse_empty' panicked at tests/headers.rs:27:5:
+assertion `left == right` failed
+  left: Ok([])
+ right: Err(Empty)
+
+
+failures:
+    parse_empty
+    parse_folded_line
+    parse_header_line
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+--- stderr ---
+error: test failed, to rerun pass `--test headers`
