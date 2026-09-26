@@ -790,6 +790,7 @@ mod tests {
         for required in [
             "duet-passthrough",
             "duet-hybrid",
+            "duet-hybrid-nolocal",
             "duet-local-only",
             "pi-glm",
             "claude-code",
@@ -808,6 +809,7 @@ mod tests {
         for (name, family) in [
             ("duet-passthrough", "zhipu"),
             ("duet-hybrid", "zhipu"),
+            ("duet-hybrid-nolocal", "zhipu"),
             ("pi-glm", "zhipu"),
             ("claude-code", "anthropic"),
             ("codex", "openai"),
@@ -866,6 +868,49 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn duet_lane_configs_are_valid_duet_owner_configs() {
+        // Loaded by Duet's own configuration loader: an unknown or misspelled
+        // key, or an invalid value, fails here instead of in every run.
+        let d = tempfile::tempdir().unwrap();
+        for lane in load_lanes(None).unwrap() {
+            for f in lane.files.iter().filter(|f| f.path.contains("duet-config")) {
+                let owner = d.path().join(format!("{}.toml", lane.name));
+                fs::write(&owner, &f.content).unwrap();
+                duet_config::Config::load(&owner, None)
+                    .unwrap_or_else(|e| panic!("{}: {e}", lane.name));
+            }
+        }
+    }
+
+    #[test]
+    fn the_nolocal_lane_is_hybrid_with_the_local_model_off() {
+        let lanes = load_lanes(None).unwrap();
+        let lane = find_lane(&lanes, "duet-hybrid-nolocal").unwrap();
+        let hybrid = find_lane(&lanes, "duet-hybrid").unwrap();
+        assert_eq!(lane.kind, LaneKind::Duet);
+        // The same run as duet-hybrid, frontier and objective alike.
+        assert_eq!(lane.argv, hybrid.argv);
+        assert_eq!(
+            (&lane.model, &lane.upstream),
+            (&hybrid.model, &hybrid.upstream)
+        );
+        // No LAN model host, no local key, no electricity charged.
+        assert!(!lane.uses_local_model());
+        assert!(lane.allow_hosts.is_empty());
+        assert_eq!(lane.env_passthrough, ["ZAI_API_KEY"]);
+        let [config] = lane.files.as_slice() else {
+            panic!("one owner config expected");
+        };
+        let owner: toml::Table = toml::from_str(&config.content).unwrap();
+        let local = owner["local"].as_table().unwrap();
+        assert_eq!(
+            local.get("enabled").and_then(toml::Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(local.len(), 1, "no local endpoint is configured: {local:?}");
     }
 
     #[test]

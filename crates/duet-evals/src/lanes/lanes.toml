@@ -59,6 +59,30 @@ allowlist = ["192.168.50.132:8080"]
 allow_plaintext = true
 '''
 
+# Privacy mode with no local model (M5.2): the same engine as duet-hybrid, with
+# `local.enabled = false`. Sensitive content reaches the frontier only as
+# handles (sanitized error lines and line shapes); ask_local and edit_protected
+# are refused. Paired with duet-hybrid it measures what the local model adds.
+# No LAN host is allowed and no local key is passed: nothing reaches a local model.
+[[lane]]
+name = "duet-hybrid-nolocal"
+kind = "duet"
+sandbox = false
+upstream = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3-flash"
+family = "zhipu"
+argv = ["{duet_bin}", "run", "--mode", "hybrid", "--frontier-url", "{proxy_url}",
+        "--frontier-model", "{model}", "--objective-file", "{run_dir}/objective.md"]
+env_passthrough = ["ZAI_API_KEY"]
+[lane.env]
+DUET_CONFIG_HOME = "{run_dir}/duet-config"
+[[lane.files]]
+path = "{run_dir}/duet-config/config.toml"
+content = '''
+[local]
+enabled = false
+'''
+
 [[lane]]
 name = "duet-local-only"
 kind = "duet"

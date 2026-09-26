@@ -560,6 +560,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "clap",
+ "duet-config",
  "duet-provider",
  "futures-util",
  "hex",
