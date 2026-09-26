@@ -554,6 +554,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "duet-egress"
+version = "0.1.0"
+dependencies = [
+ "duet-sandbox",
+ "duet-web",
+ "futures-util",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "duet-evals"
 version = "0.1.0"
 dependencies = [
