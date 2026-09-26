@@ -7,6 +7,7 @@
 use crate::dialect::{sorted_tools, split_extra};
 use crate::error::{ErrorKind, ProviderError};
 use crate::image::responses_part;
+use crate::live::Part as Live;
 use crate::types::{
     Item, Part, Piece, Replay, Request, Response, StopReason, ToolCall, Usage, UsageStatus,
     assistant_pieces, attached_to_previous, estimate_tokens, images_after,
@@ -165,6 +166,25 @@ fn text_of(v: &Value, key: &str) -> String {
 impl ResponsesAssembler {
     pub fn output_bytes(&self) -> usize {
         self.output_bytes
+    }
+
+    /// What the stream holds so far (see [`crate::live`]).
+    pub fn view(&self) -> Vec<(usize, Live<'_>)> {
+        self.items
+            .iter()
+            .map(|(i, slot)| {
+                let part = match slot.item.get("type").and_then(Value::as_str) {
+                    Some("function_call") => Live::Call {
+                        name: slot.item.get("name").and_then(Value::as_str).unwrap_or(""),
+                        arguments: &slot.arguments,
+                    },
+                    Some("reasoning") => Live::Reasoning(slot.reasoning.len()),
+                    _ if !slot.reasoning.is_empty() => Live::Reasoning(slot.reasoning.len()),
+                    _ => Live::Text(&slot.text),
+                };
+                (*i as usize, part)
+            })
+            .collect()
     }
 
     fn stream_error(&self, detail: &Value) -> ProviderError {

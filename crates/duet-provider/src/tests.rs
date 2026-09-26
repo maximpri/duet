@@ -308,6 +308,140 @@ async fn transport_error_mid_stream_retries() {
     );
 }
 
+/// Records what a tap sees, one line per event.
+#[derive(Default)]
+struct Watched(Mutex<Vec<String>>);
+
+impl crate::live::StreamTap for Watched {
+    fn event(&self, e: crate::live::StreamEvent<'_>) {
+        self.0.lock().unwrap().push(format!("{e:?}"));
+    }
+}
+
+const CALL_STREAM: &[&str] = &[
+    "data: {\"choices\":[{\"delta\":{\"content\":\"Look\"}}]}\n\n",
+    "data: {\"choices\":[{\"delta\":{\"content\":\"ing.\"}}]}\n\n",
+    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"reply\",\"arguments\":\"{\\\"message\\\":\\\"Do\"}}]}}]}\n\n",
+    "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"ne\\\"}\"}}]}}]}\n\n",
+    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n",
+    "data: [DONE]\n\n",
+];
+
+#[tokio::test]
+async fn a_tap_sees_each_attempt_as_it_streams_and_changes_nothing() {
+    let script = || {
+        Script::new(vec![
+            Scripted::Reply {
+                status: 200,
+                headers: vec![],
+                chunks: vec![
+                    Ok("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"),
+                    Err("connection reset"),
+                ],
+            },
+            Scripted::Reply {
+                status: 200,
+                headers: vec![],
+                chunks: CALL_STREAM.iter().map(|c| Ok(*c)).collect(),
+            },
+        ])
+    };
+    let (plain, tapped) = (script(), script());
+    let without = provider(&plain).create(&request()).await.unwrap();
+    let tap = Watched::default();
+    let with = provider(&tapped)
+        .create_with(&request(), Some(&tap))
+        .await
+        .unwrap();
+    assert_eq!(with, without);
+    assert_eq!(
+        *plain.bodies.lock().unwrap(),
+        *tapped.bodies.lock().unwrap()
+    );
+    assert_eq!(with.text, "Looking.");
+    assert_eq!(with.tool_calls[0].raw_arguments, "{\"message\":\"Done\"}");
+    assert_eq!(
+        *tap.0.lock().unwrap(),
+        [
+            "Attempt(1)",
+            "Text(\"x\")",
+            "End",
+            "Attempt(2)",
+            "Text(\"Look\")",
+            "Text(\"ing.\")",
+            "Call { index: 2, name: \"reply\" }",
+            "Arguments { index: 2, delta: \"{\\\"message\\\":\\\"Do\" }",
+            "Arguments { index: 2, delta: \"ne\\\"}\" }",
+            "End",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_tap_sees_anthropic_and_responses_streams() {
+    let anthropic = Script::new(vec![Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok(ANTHROPIC_OK[0]),
+            Ok(ANTHROPIC_OK[1]),
+            Ok(ANTHROPIC_OK[2]),
+            Ok(
+                "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"write_file\",\"input\":{}}}\n\n",
+            ),
+            Ok(
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\": \"}}\n\n",
+            ),
+            Ok(ANTHROPIC_OK[3]),
+            Ok(ANTHROPIC_OK[4]),
+        ],
+    }]);
+    let tap = Watched::default();
+    dialect_provider(&anthropic, crate::Dialect::Anthropic)
+        .create_with(&request(), Some(&tap))
+        .await
+        .unwrap();
+    assert_eq!(
+        *tap.0.lock().unwrap(),
+        [
+            "Attempt(1)",
+            "Text(\"hello\")",
+            "Call { index: 1, name: \"write_file\" }",
+            "Arguments { index: 1, delta: \"{\\\"path\\\": \" }",
+            "End",
+        ]
+    );
+    let responses = Script::new(vec![Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok(
+                "data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"function_call\",\"name\":\"reply\",\"call_id\":\"c\"}}\n\n",
+            ),
+            Ok(
+                "data: {\"type\":\"response.function_call_arguments.delta\",\"output_index\":0,\"delta\":\"{}\"}\n\n",
+            ),
+            Ok(
+                "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"output\":[]}}\n\n",
+            ),
+        ],
+    }]);
+    let tap = Watched::default();
+    dialect_provider(&responses, crate::Dialect::Responses)
+        .create_with(&request(), Some(&tap))
+        .await
+        .unwrap();
+    assert_eq!(
+        *tap.0.lock().unwrap(),
+        [
+            "Attempt(1)",
+            "Call { index: 0, name: \"reply\" }",
+            "Arguments { index: 0, delta: \"{}\" }",
+            "End",
+        ]
+    );
+}
+
 fn dialect_provider(script: &Script, dialect: crate::Dialect) -> ChatProvider {
     let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
     cfg.dialect = dialect;

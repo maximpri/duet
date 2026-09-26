@@ -10,6 +10,7 @@ pub mod dialect;
 pub mod endpoint;
 pub mod error;
 pub mod image;
+pub mod live;
 #[cfg(any(test, feature = "test-support"))]
 pub mod mock_http;
 pub mod price;

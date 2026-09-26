@@ -4,6 +4,7 @@
 use crate::dialect::Dialect;
 use crate::endpoint::check_local_endpoint;
 use crate::error::{ErrorKind, ProviderError, is_context_overflow};
+use crate::live::{Differ, StreamEvent, StreamTap};
 use crate::retry::{backoff, parse_retry_after};
 use crate::sse::SseDecoder;
 use crate::types::{AttemptUsage, Request, Response, Usage, UsageStatus, estimate_tokens};
@@ -225,17 +226,31 @@ impl ChatProvider {
     /// apart from the billed usage: in `Response::attempts` on success, and in
     /// `ProviderError::failed_usage` when the request fails in the end.
     pub async fn create(&self, req: &Request) -> Result<Response, ProviderError> {
+        self.create_with(req, None).await
+    }
+
+    /// [`ChatProvider::create`], with `tap` watching each attempt's stream as
+    /// it arrives (see [`crate::live`]). The request and the response are the
+    /// same as without it.
+    pub async fn create_with(
+        &self,
+        req: &Request,
+        tap: Option<&dyn StreamTap>,
+    ) -> Result<Response, ProviderError> {
         let mut attempts = AttemptUsage::default();
-        self.retrying(req, &mut attempts).await.map_err(|mut e| {
-            e.failed_usage = attempts.estimated_failed;
-            e
-        })
+        self.retrying(req, &mut attempts, tap)
+            .await
+            .map_err(|mut e| {
+                e.failed_usage = attempts.estimated_failed;
+                e
+            })
     }
 
     async fn retrying(
         &self,
         req: &Request,
         attempts: &mut AttemptUsage,
+        tap: Option<&dyn StreamTap>,
     ) -> Result<Response, ProviderError> {
         let body = serde_json::to_vec(&self.body(req))
             .map_err(|e| ProviderError::new(ErrorKind::Malformed, e.to_string()))?;
@@ -247,7 +262,10 @@ impl ChatProvider {
                 return Err(ProviderError::new(ErrorKind::Cancelled, "interrupted"));
             }
             attempts.attempts += 1;
-            let attempt = self.attempt(&url, &headers, &body, req);
+            if let Some(tap) = tap {
+                tap.event(StreamEvent::Attempt(attempts.attempts));
+            }
+            let attempt = self.attempt(&url, &headers, &body, req, tap);
             let result = match self.config.deadline {
                 Some(at) => match tokio::time::timeout_at(at, attempt).await {
                     Ok(r) => r,
@@ -327,6 +345,22 @@ impl ChatProvider {
         headers: &[(String, String)],
         body: &[u8],
         req: &Request,
+        tap: Option<&dyn StreamTap>,
+    ) -> Result<Response, ProviderError> {
+        let result = self.streamed(url, headers, body, req, tap).await;
+        if let Some(tap) = tap {
+            tap.event(StreamEvent::End);
+        }
+        result
+    }
+
+    async fn streamed(
+        &self,
+        url: &str,
+        headers: &[(String, String)],
+        body: &[u8],
+        req: &Request,
+        tap: Option<&dyn StreamTap>,
     ) -> Result<Response, ProviderError> {
         let reply = tokio::time::timeout(
             self.config.first_byte_timeout,
@@ -367,6 +401,7 @@ impl ChatProvider {
         }
         let mut decoder = SseDecoder::default();
         let mut assembler = self.config.dialect.assembler();
+        let mut differ = Differ::default();
         let mut first = true;
         loop {
             let deadline = if first {
@@ -395,9 +430,15 @@ impl ChatProvider {
             for event in decoder.push(&chunk) {
                 assembler.apply(&event.data)?;
             }
+            if let Some(tap) = tap {
+                differ.diff(&assembler.view(), tap);
+            }
         }
         for event in decoder.finish() {
             assembler.apply(&event.data)?;
+        }
+        if let Some(tap) = tap {
+            differ.finish(&assembler.view(), tap);
         }
         let recover = self
             .config

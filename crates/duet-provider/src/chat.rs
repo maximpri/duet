@@ -3,6 +3,7 @@
 
 use crate::error::{ErrorKind, ProviderError};
 use crate::image::chat_part;
+use crate::live::Part as Live;
 use crate::recover::recover_text_tool_call;
 use crate::types::{
     Item, Request, Response, StopReason, ToolCall, Usage, UsageStatus, attached_to_previous,
@@ -143,6 +144,24 @@ pub struct ChatAssembler {
 impl ChatAssembler {
     pub fn output_bytes(&self) -> usize {
         self.output_bytes
+    }
+
+    /// What the stream holds so far (see [`crate::live`]).
+    pub fn view(&self) -> Vec<(usize, Live<'_>)> {
+        let mut parts = vec![
+            (0, Live::Reasoning(self.reasoning.len())),
+            (1, Live::Text(&self.text)),
+        ];
+        parts.extend(self.calls.iter().map(|(i, c)| {
+            (
+                2 + i,
+                Live::Call {
+                    name: &c.name,
+                    arguments: &c.arguments,
+                },
+            )
+        }));
+        parts
     }
 
     /// Applies one `data:` payload.

@@ -6,6 +6,7 @@
 use crate::dialect::{sorted_tools, split_extra};
 use crate::error::{ErrorKind, ProviderError};
 use crate::image::anthropic_block;
+use crate::live::Part as Live;
 use crate::types::{
     Item, Part, Piece, Replay, Request, Response, StopReason, ToolCall, Usage, UsageStatus,
     assistant_pieces, attached_to_previous, estimate_tokens, images_after,
@@ -208,6 +209,25 @@ fn count(v: &Value, key: &str) -> Option<u64> {
 impl AnthropicAssembler {
     pub fn output_bytes(&self) -> usize {
         self.output_bytes
+    }
+
+    /// What the stream holds so far (see [`crate::live`]).
+    pub fn view(&self) -> Vec<(usize, Live<'_>)> {
+        self.blocks
+            .iter()
+            .filter_map(|(i, b)| {
+                let part = match b {
+                    Block::Text(t) => Live::Text(t),
+                    Block::Thinking { thinking, .. } => Live::Reasoning(thinking.len()),
+                    Block::ToolUse { name, json, .. } => Live::Call {
+                        name,
+                        arguments: json,
+                    },
+                    Block::Other(_) => return None,
+                };
+                Some((*i, part))
+            })
+            .collect()
     }
 
     fn merge_usage(&mut self, u: &Value) {

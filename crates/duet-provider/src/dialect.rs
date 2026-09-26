@@ -116,6 +116,15 @@ impl Assembler {
         }
     }
 
+    /// What the stream holds so far, part by part (see [`crate::live`]).
+    pub fn view(&self) -> Vec<(usize, crate::live::Part<'_>)> {
+        match self {
+            Self::Chat(a) => a.view(),
+            Self::Anthropic(a) => a.view(),
+            Self::Responses(a) => a.view(),
+        }
+    }
+
     /// Completes the response. Text tool-call recovery (`recover_from`)
     /// applies to Chat Completions only, which local servers speak.
     pub fn finish(
