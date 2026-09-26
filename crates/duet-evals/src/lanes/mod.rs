@@ -792,6 +792,7 @@ mod tests {
             "duet-hybrid",
             "duet-hybrid-nolocal",
             "duet-hybrid-compact",
+            "duet-hybrid-explore",
             "duet-local-only",
             "pi-glm",
             "claude-code",
@@ -913,6 +914,24 @@ mod tests {
             Some(false)
         );
         assert_eq!(local.len(), 1, "no local endpoint is configured: {local:?}");
+    }
+
+    #[test]
+    fn the_explore_lane_is_hybrid_with_the_explorer_on() {
+        let lanes = load_lanes(None).unwrap();
+        let lane = find_lane(&lanes, "duet-hybrid-explore").unwrap();
+        let hybrid = find_lane(&lanes, "duet-hybrid").unwrap();
+        // The same run as duet-hybrid: frontier, objective and local model.
+        assert_eq!(lane.argv, hybrid.argv);
+        assert_eq!(
+            (&lane.model, &lane.upstream, &lane.allow_hosts),
+            (&hybrid.model, &hybrid.upstream, &hybrid.allow_hosts)
+        );
+        let owner = |l: &Lane| -> toml::Table { toml::from_str(&l.files[0].content).unwrap() };
+        let (mine, theirs) = (owner(lane), owner(hybrid));
+        assert_eq!(mine["local"], theirs["local"]);
+        assert_eq!(mine["explore"]["enabled"].as_bool(), Some(true));
+        assert!(theirs.get("explore").is_none());
     }
 
     #[test]
