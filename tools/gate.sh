@@ -55,6 +55,30 @@ if grep -q "duet-provider" crates/duet-agent/Cargo.toml; then
     exit 1
 fi
 
+step "egress by construction"
+# Three places in the product open connections or resolve names (SECURITY.md,
+# Egress): duet-net, the one client for third parties (web pages, search
+# sources, MCP servers over HTTP), which sends only requests the boundary
+# checked; duet-provider, the frontier and local-model client, which the agent
+# reaches only through the outbound gate (see above); and the egress proxy's
+# upstream connection in duet-egress (commands' listed registries). Allowlisted
+# as well: duet-evals, the evaluation harness (it drives duet as a black box and
+# runs its own leak proxy), and test code (tests/, examples/, benches/, test
+# support modules). Anything else must go through duet-net.
+net='\breqwest::|\buse reqwest\b|\bhyper(_util)?::|\bureq::|\bisahc::|\bsurf::|\battohttpc::|TcpStream::connect|\bUdpSocket\b|\blookup_host\b|\bto_socket_addrs\b|\bsocket2::|getaddrinfo'
+hits=$( { grep -rnE "$net" crates --include='*.rs' \
+            | grep -vE '^crates/[^/]+/(tests|examples|benches)/' \
+            | grep -vE '^crates/(duet-net|duet-provider/src|duet-evals)/' \
+            | grep -vE '^crates/duet-egress/src/lib\.rs:' \
+            | grep -vE '/src/(tests|mock|mock_http)\.rs:';
+          grep -nE '^(reqwest|hyper|hyper-util|ureq|isahc|surf|attohttpc|socket2|trust-dns-resolver|hickory-resolver)\b' crates/*/Cargo.toml \
+            | grep -vE '^crates/(duet-net|duet-provider|duet-evals)/Cargo\.toml:'; } || true)
+if [ -n "$hits" ]; then
+    echo "networking outside duet-net, duet-provider and the egress proxy:" >&2
+    echo "$hits" >&2
+    exit 1
+fi
+
 step "provenance"
 # Duet contains no code, formats or names from other coding agents. The only
 # allowlisted places are the evaluation lane adapters, which launch them as
