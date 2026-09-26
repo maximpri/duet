@@ -131,10 +131,16 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
    they are offered) + fixed sorted tools + transcript
    (whole old turns replaced by stubs once over `context.mask_at` of the window).
 2. GatedFrontier.create(request)
-     OutboundGate filters: sanitize every item, including the frontier's own messages, reasoning
-       and tool-call arguments (known values → placeholders, detectors) → copied-span filter →
-       protected-code redaction
-     check: no vault value anywhere in the body; a hit blocks the send and ends the run (fail-closed)
+     OutboundGate filters (engine/outbound.rs), two passes: detectors, copied-span filter and
+       protected-code redaction on messages and tool results (new values join the vault); then
+       every value known by then replaced in every string of the request (system prompt, tool
+       descriptions, every field of every item including the frontier's own messages, reasoning
+       and tool-call arguments, replayed reasoning, JSON inside strings)
+     check: no vault value in any string of the body outside its framing (the strings of the
+       body of the same request with all content blanked, gate::framing_request); the filter
+       reads a request exactly as the check does (property: tests/outbound_agreement.rs)
+       refused → filters withhold each part still holding a value (PART_WITHHELD), check again:
+       passes → send_withheld event, sent; still refused → blocked_send, the run fails (fail-closed)
      → append AuditLog record → Provider.create
 3. Response parsed. `length`: no tool call executes; the frontier is told to continue in smaller
    steps. `content_filter`: Failed.
@@ -295,7 +301,7 @@ The gate applies filters to the request, then checks, then appends to the audit 
   substitution), interventions[]}`; `duet audit verify` recomputes the chain.
 - **Audit events** share the chain: run start (boundary on/off) and end, local-endpoint trust,
   sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
-  sends (check name), protected edits, images (origin, size, digest, destination, rule),
+  sends (check name), requests sent with parts withheld (check name, parts), protected edits, images (origin, size, digest, destination, rule),
   `ask_local` probes of a value (handle, rule, pieces withheld, count). Names, paths and outcomes
   only, never content.
 - **Images in the body:** checks and the audit record see each image's data replaced by a digest
@@ -634,7 +640,8 @@ event (which anchors the log's final head) written by `duet_agent::conclude`:
 
 - `Completed{summary}`: `finish` passed the checks.
 - `Failed{reason}`: the task cannot be completed as things stand: an error a retry cannot fix
-  (credentials, an invalid request, a context overflow), a send blocked by the outbound gate,
+  (credentials, an invalid request, a context overflow), a send the outbound gate still blocks
+  after withholding the parts that held a value,
   `content_filter`, repeated `length` stops or text-only turns, checks still failing after
   `limits.max_finish_attempts`, an interrupt (`interrupted; resume with duet resume`), or a
   panic anywhere in the run (`internal error: <message>`). `duet_agent::run` catches panics in the
@@ -705,7 +712,8 @@ Each is backed by a test, except where noted.
 3. The local provider's endpoint is loopback or owner-allowlisted, and a remote one uses TLS unless
    the owner set `local.allow_plaintext`.
 4. Project configuration cannot loosen privacy or set owner-only keys.
-5. The system prompt and tool list are byte-identical for every turn of a run.
+5. The system prompt and tool list are byte-identical for every turn of a run (as sent, they change
+   only if the vault learns a value they hold, which the gate then replaces).
 6. A tool call is never persisted or sent without its result.
 7. Every run ends in a `Terminal` state, with a summary and an audit end event, also on a panic;
    no run exits with pending writes unrecorded.

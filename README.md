@@ -123,8 +123,10 @@ its output is treated as data:
 Every request to the frontier passes one outbound gate:
 
 - **It is filtered and checked.** Known values and copied sensitive text are replaced in every
-  message, including the model's own earlier text and tool arguments. A final check refuses to send
-  if any known value remains.
+  message, including the model's own earlier text and tool arguments. A final check, which reads
+  the request exactly as the filter does, refuses to send if any known value remains; a part it
+  still refuses is withheld from the request (and the audit log says so), and only a request that
+  cannot be cleared that way stops the run.
 - **It is recorded.** Each request is written to a hash-chained audit log whose head is anchored
   outside the repository.
 - **You can inspect it:**

@@ -109,11 +109,25 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
 3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
    including the frontier's own text and tool-call arguments (known values and their other
    spellings re-tokenized, detectors re-run), copied spans of sensitive content (≈24+ tokens) are
-   removed, and a final check over the whole request blocks it if any known value remains: the
-   request is not sent and the run stops.
+   removed, and a final check over the whole request refuses it if any known value remains. The
+   filter and the check read a request the same way: every string of it (system prompt, tool
+   descriptions, every field of every item, replayed reasoning blocks) and every string and key
+   of JSON inside a string (tool-call arguments, a JSON tool result). The filter works in two
+   passes, detectors first and then every value known by then replaced everywhere, so a value
+   its detectors find in one item is also replaced in every other; a property test holds it to
+   "the check passes what the filter returns" for any request. The check skips only the body's
+   framing: the strings the same request's body has with all content blanked (keys, roles, block
+   types, the model's name, call ids, tool names and parameter schemas, which are fixed for a
+   run). If the check still refuses a filtered request, each part of it that holds a known value
+   (a message, a tool result, a call's arguments, reasoning) is replaced by
+   `⟨withheld:held-a-sensitive-value⟩` and the request is checked again: if that passes it is
+   sent and the audit log records a `send_withheld` event; otherwise it is not sent and the run
+   ends `failed` with the check's reason. Either way nothing the check refuses is sent; a part
+   the filter could not clean costs that part, not the run.
 4. **Hash-chained audit log** of every outbound request (placeholder-substituted) and of the
    security decisions taken during the run: local-endpoint trust, sandbox denials, `sensitive_data`
-   commands (command, exit code, files marked derived), blocked sends (which check), protected
+   commands (command, exit code, files marked derived), blocked sends (which check), requests
+   sent with parts withheld (which check, how many parts), protected
    edits, `ask_local` questions that probed a value (handle, rule, pieces withheld, count), operator approval decisions (tool, risk class, a write's path, approved or not),
    operator messages in a session (turn number and how many values became placeholders), run
    start (with whether the boundary is on) and end. Events hold names, paths and
@@ -306,7 +320,7 @@ value, a placeholder's name, a command or a path:
 | Protected bodies and constants | distinct `⟨body:…⟩` / `⟨value:…⟩` handles sent |
 | Protected code lines withheld | line markers in the distinct messages sent |
 | Sensitive results held locally, tokenized files, protected views, bulky previews, local answers | tool results by how they were shown (cost ledger) |
-| Requests changed by the outbound filter; requests blocked, by check | audit records, `blocked_send` events and `outbound_refused` events (as `outbound:<tool>`) |
+| Requests changed by the outbound filter; requests blocked, by check; requests sent with parts withheld, by the check that refused them first | audit records, `blocked_send` events and `outbound_refused` events (as `outbound:<tool>`), `send_withheld` events |
 | Sandbox denials, `sensitive_data` commands and files they marked, protected edits, approvals | audit events |
 | `ask_local` questions probing a value, pieces of values withheld from answers | `local_probe` audit events |
 
@@ -708,8 +722,20 @@ before. The ledger's image tokens are estimates (no provider reports them apart 
   measure what gets through. The detection corpus shows that each imported rule matches its own
   format, not that the formats are complete.
 - The remaining false positives are mostly base64 of public data (certificates, data URIs, public
-  keys) and ids inside URL paths, which the entropy detector cannot tell from secrets, and
-  placeholder values in credential assignments; each costs a placeholder.
+  keys), ids inside URL paths and long file paths that mix case and digits
+  (`test/test-suite/groups/function-fromMillis/case000`), which the entropy detector cannot tell
+  from secrets, and placeholder values in credential assignments; each costs a placeholder, also
+  in the frontier's own earlier messages once found (an edited turn's signed reasoning is then
+  not replayed).
+- The final check skips the body's framing by exact string: a content string identical to a
+  framing string (a role, a tool name, a call id) is not searched, and holds nothing the framing
+  does not. The Responses dialect's `prompt_cache_key` is a digest of the system prompt and tools,
+  so it is searched as content: a vault value that happens to occur among its 32 hex digits
+  (about two in a million per run for a 6-digit value) blocks every request, and withholding
+  cannot clear it.
+- A part withheld after the check refused a filtered request is gone from that request: the
+  frontier sees `⟨withheld:held-a-sensitive-value⟩` instead of the message, tool result or call's
+  arguments (reasoning is dropped), and repeats a call if it needs the result.
 - Imported rules: a keyword anywhere in a text enables a rule over all of it (as in gitleaks);
   gitleaks' decoding of base64, hex and percent-encoded text and its composite rules are not
   implemented (an unsupported field would be listed as partial); a rule with a path condition runs
@@ -834,8 +860,9 @@ deploying what a run produced.**
 ## Advisories and fixed leak classes
 
 Every disclosure path found is fixed at the class level, covered by a regression test, and published
-as an advisory with its CWE root cause. Classes fixed before the first public release, all found by
-Duet's own canary measurements:
+as an advisory with its CWE root cause; so is every class of false blocks (the fail-closed check
+stopping a run over a value that was not being disclosed), since each costs whole runs. Classes
+fixed before the first public release, all found by Duet's own canary measurements and runs:
 
 | ID | Class | Root cause (CWE) | What happened | Fix |
 |---|---|---|---|---|
@@ -858,6 +885,8 @@ Duet's own canary measurements:
 | DUET-2026-016 | Derived files in build output | CWE-284 Improper Access Control (consequence CWE-201) | Files a `sensitive_data` command wrote under `target/` or `node_modules/` (which the snapshot skips) were not marked derived, so a transformed copy there was read as public content. Found by the privacy scenarios, not observed in a run | Files there modified since the command started are derived and denied to commands by name; cargo builds of such a command go to its private scratch directory (`e1fe28a`, `15cc55a`) |
 | DUET-2026-017 | Unlabelled number in operator text | CWE-184 Incomplete List of Disallowed Inputs (consequence CWE-201) | A 17-digit number the operator typed with no label within three words, failing every checksum, was sent as typed. Found by the privacy scenarios, not observed in a run | Every 12–19 digit number in operator text (task, session, steering) is a placeholder (an `ask_local` handle) (`15cc55a`) |
 | DUET-2026-018 | Sensitive file diffed as public text | CWE-638 Not Using Complete Mediation (consequence CWE-201) | In a git repository `diff` showed the changes of every listed file, a tracked sensitive file included, through the generic sanitizer for public text: values it recognized became placeholders, but the file's lines, labels and anything no detector knows (a name, an internal code) were sent. A tracked customer file overwritten by a `sensitive_data` command showed its old rows and the new content's key name. Found in review while adding `diff` outside git repositories, not observed in a run | `diff` names changed sensitive files (policy or derived) and never diffs them for the frontier, in a repository and outside one, like `/diff` does for the operator; reserved paths are never listed as new files |
+| DUET-2026-019 | Filter and final check disagreeing on values the filter found | CWE-696 Incorrect Behavior Order (consequence: a run ended `failed`; not a leak) | The outbound filter sanitized a request item by item: detectors re-ran on messages and tool results, and known values were replaced in the model's own messages. A value the detectors found in a later item joined the vault after the earlier items were done, so it stayed in them, and the final check, which reads the whole request, blocked it and ended the run. Context masking set it off in an XL calibration run (X2, hybrid, seed 2, build `14f1066`) after 139 requests and 65 minutes: the stub replacing an old command result quoted the command, the entropy detector took a test-suite path in it (`…/groups/function-fromMillis/case000`) for a secret, and the same path in the model's own earlier tool calls stayed; the run's code passed 42 of 55 hidden tests and scored 0. `read_file` set it off on the next request as well, since its result names the path it read. Nothing was sent (fail-closed) | Two passes: detectors first, then every value known by then replaced in every string of the request (system prompt, tool descriptions, every field of every item, replayed reasoning, JSON inside strings), read exactly as the check reads it; a property test holds "the check passes what the filter returns" for any request. A request the check still refuses is sent with each part that holds a value withheld (`send_withheld` event), and only one that still fails ends the run (`d1470f2`) |
+| DUET-2026-020 | Final check reading the wire format as content | CWE-697 Incorrect Comparison (consequence: every request blocked; not a leak) | The final check searched the whole serialized body, keys and structure included, for every vault value of 6+ bytes. A `.env` value that spells part of the wire format (`required` in every tool schema, `assistant`, `function`, the model's name as `LLM_MODEL=`) would block every request of the run, and no filter can change the format. Found by the property test written for DUET-2026-019, not observed in a run | The check reads the body string by string and skips the body's framing: the strings the same request's body has with all content blanked (keys, roles, block types, the model's name, call ids, tool names and schemas); content keeps being checked (`d1470f2`) |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values
