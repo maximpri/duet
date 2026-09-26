@@ -521,7 +521,10 @@ a known provider) and are not subject to the address check. The Wikipedia fallba
 encyclopedia articles only, so the frontier may search less well than with a whole-web backend.
 Z.ai's coding-plan search is reached through Duet's MCP client, which, unlike the web tools' own
 client, honours an `HTTPS_PROXY` in the environment. The outbound check applies to Z.ai queries too,
-although Z.ai already receives the run as the frontier.
+although Z.ai already receives the run as the frontier. Z.ai's API data terms (checked 2026-09-26)
+say API content is processed in Singapore in real time and not stored; they do not say which
+engine answers a search, and the engine name `search_pro_jina` suggests a partner (Jina AI) may
+receive the query.
 
 ## Git tools
 
