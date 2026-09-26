@@ -55,6 +55,9 @@ pub enum Direction {
     /// Choices: only toward a later option (the options are listed from the
     /// least to the most strict).
     OnlyLaterChoice,
+    /// Lists of what is allowed: only removing entries tightens (adding
+    /// one loosens).
+    RemoveOnly,
 }
 
 pub struct Setting {
@@ -85,6 +88,20 @@ macro_rules! s {
 use Direction::*;
 use Kind::*;
 use Scope::*;
+
+/// Package registries commands reach by default (`sandbox.registries`): the
+/// hosts `cargo`, `npm`/`yarn`/`pnpm`, `pip`, `go`, Maven and Gradle, and
+/// `gem`/`bundle` download from, and GitHub's download hosts (release assets
+/// and source archives). Not github.com itself, which also takes pushes.
+const REGISTRY_HOSTS: &str = r#"[
+    "crates.io", "index.crates.io", "static.crates.io",
+    "registry.npmjs.org", "registry.yarnpkg.com",
+    "pypi.org", "files.pythonhosted.org",
+    "proxy.golang.org", "sum.golang.org",
+    "repo.maven.apache.org", "repo1.maven.org", "plugins.gradle.org", "plugins-artifacts.gradle.org",
+    "rubygems.org", "index.rubygems.org",
+    "codeload.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com",
+]"#;
 
 /// Defaults are TOML literals.
 pub const REGISTRY: &[Setting] = &[
@@ -531,12 +548,21 @@ pub const REGISTRY: &[Setting] = &[
     ),
     s!(
         "sandbox.network",
-        Bool,
-        "false",
+        Choice(&["all", "registries", "off"]),
+        r#""registries""#,
         Project,
-        OnlyFalse,
+        OnlyLaterChoice,
         true,
-        "Allow network access for sandboxed commands."
+        "Network for sandboxed commands and checks. `registries`: only through duet's egress proxy to the package registries in sandbox.registries (every connection audited as `egress`), plus servers the command starts on loopback. `off`: none. `all`: unrestricted (a command could send anything it can read anywhere). Commands run with sensitive_data, and checks that can read protected source, never get network. The old true and false still read as all and off."
+    ),
+    s!(
+        "sandbox.registries",
+        List,
+        REGISTRY_HOSTS,
+        Owner,
+        RemoveOnly,
+        true,
+        "Hosts sandboxed commands may reach through the egress proxy (sandbox.network = registries): host names, `*.domain` for the names under a domain, optionally `:port` (without one, 443 and 80). Only these names are resolved; an address that is private, loopback, link-local or a cloud metadata service is refused, and a TLS tunnel must name its host. github.com is not listed by default (it also accepts pushes); its download hosts are."
     ),
     s!(
         "web.enabled",
@@ -545,7 +571,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyFalse,
         true,
-        "Offer the web tools (`web_fetch`, and `web_search` when a search backend is available, which with web.search.backend = `auto` is always). Requests are made by the host, GET only, to public addresses only; pages are scanned like public content and shown as untrusted data. Commands keep no network either way."
+        "Offer the web tools (`web_fetch`, and `web_search` when a search backend is available, which with web.search.backend = `auto` is always). Requests are made by the host, GET only, to public addresses only; pages are scanned like public content and shown as untrusted data. Commands' own network is sandbox.network."
     ),
     s!(
         "web.search.backend",
@@ -926,6 +952,28 @@ pub struct Config {
     values: BTreeMap<String, (Value, Origin)>,
     pub owner_path: PathBuf,
     pub project_path: Option<PathBuf>,
+    /// Values read in a deprecated form and what they now mean (see
+    /// [`migrate`]), for the operator.
+    pub notes: Vec<String>,
+}
+
+/// A value written in a form an earlier version used, as it reads now, and a
+/// note saying so: `sandbox.network = true` is `"all"` and `false` is
+/// `"off"` (it was a boolean before the egress proxy). Anything else is
+/// returned as it is.
+pub fn migrate(key: &str, value: Value) -> (Value, Option<String>) {
+    match (key, &value) {
+        ("sandbox.network", Value::Boolean(b)) => {
+            let now = if *b { "all" } else { "off" };
+            (
+                Value::String(now.into()),
+                Some(format!(
+                    "sandbox.network = {b} is deprecated; it reads as \"{now}\" (write sandbox.network = \"{now}\", or \"registries\" for package registries only)"
+                )),
+            )
+        }
+        _ => (value, None),
+    }
 }
 
 fn default_value(s: &Setting) -> Value {
@@ -1011,6 +1059,25 @@ fn tightens(s: &Setting, base: &Value, new: &Value) -> Result<(), &'static str> 
             (Some(b), Some(n)) if n <= b => Ok(()),
             _ => Err("lower it"),
         },
+        RemoveOnly => {
+            let base: Vec<&str> = base
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect();
+            let added = new
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .any(|n| !base.contains(&n));
+            if added {
+                Err("remove entries, never add them")
+            } else {
+                Ok(())
+            }
+        }
         OnlyLaterChoice => {
             let Choice(opts) = s.kind else {
                 return Err("choose a stricter option");
@@ -1165,7 +1232,16 @@ impl Config {
             .filter(|s| !is_template(s.key))
             .map(|s| (s.key.to_owned(), (default_value(s), Origin::Default)))
             .collect();
+        let mut notes = Vec::new();
+        let mut migrated = |file: &Path, key: &str, v: Value| {
+            let (v, note) = migrate(key, v);
+            if let Some(n) = note {
+                notes.push(format!("{}: {n}", file.display()));
+            }
+            v
+        };
         for (key, v) in read_file(owner_path)? {
+            let v = migrated(owner_path, &key, v);
             let s = setting(&key)
                 .filter(|_| !is_template(&key))
                 .ok_or_else(|| {
@@ -1177,6 +1253,7 @@ impl Config {
         if let Some(pp) = project_path {
             let file = pp.display().to_string();
             for (key, v) in read_file(pp)? {
+                let v = migrated(pp, &key, v);
                 let s = setting(&key)
                     .ok_or_else(|| ConfigError::Unknown(format!("{key} in {file}")))?;
                 if s.scope == Owner {
@@ -1212,6 +1289,7 @@ impl Config {
             values,
             owner_path: owner_path.to_path_buf(),
             project_path: project_path.map(Path::to_path_buf),
+            notes,
         })
     }
 
@@ -1282,6 +1360,7 @@ impl Config {
         key: &str,
         value: Value,
     ) -> Result<Proposal, ConfigError> {
+        let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
         let old = self.current(key, s);
@@ -1349,6 +1428,7 @@ impl Config {
         value: Value,
         confirmed: bool,
     ) -> Result<Change, ConfigError> {
+        let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
         let old = self.current(key, s);
@@ -1372,6 +1452,7 @@ impl Config {
 
     /// Sets a value in the owner file (validated; written atomically).
     pub fn set_owner(&mut self, key: &str, value: Value) -> Result<(), ConfigError> {
+        let value = migrate(key, value).0;
         let s = concrete(key)?;
         validate(s, &value)?;
         let mut entries = read_file(&self.owner_path)?;
@@ -1385,6 +1466,7 @@ impl Config {
     /// Sets a value in the project file; refused unless the setting is
     /// project-scoped and the change tightens privacy.
     pub fn set_project(&mut self, key: &str, value: Value) -> Result<(), ConfigError> {
+        let value = migrate(key, value).0;
         let path = self
             .project_path
             .clone()
@@ -1871,5 +1953,102 @@ mod tests {
             let (_d, o, p) = files(bad, "");
             assert!(Config::load(&o, Some(&p)).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn sandbox_network_reads_old_booleans_and_loosens_only_with_confirmation() {
+        let v = |t: &str| parse_value(t).unwrap();
+        let c = Config::load(Path::new("/nonexistent/owner.toml"), None).unwrap();
+        assert_eq!(c.str("sandbox.network").unwrap(), "registries");
+        assert!(
+            c.list("sandbox.registries")
+                .unwrap()
+                .contains(&"index.crates.io".to_owned())
+        );
+        assert!(
+            !c.list("sandbox.registries")
+                .unwrap()
+                .contains(&"github.com".to_owned())
+        );
+
+        // Booleans from earlier versions: true is all, false is off, with a note.
+        for (text, now) in [("true", "all"), ("false", "off")] {
+            let (_d, o, p) = files(&format!("[sandbox]\nnetwork = {text}\n"), "");
+            let c = Config::load(&o, Some(&p)).unwrap();
+            assert_eq!(c.str("sandbox.network").unwrap(), now);
+            assert_eq!(c.notes.len(), 1, "{:?}", c.notes);
+            assert!(c.notes[0].contains("deprecated") && c.notes[0].contains(now));
+        }
+        let (_d, o, p) = files("", "[sandbox]\nnetwork = false\n");
+        let c = Config::load(&o, Some(&p)).unwrap();
+        assert_eq!(c.str("sandbox.network").unwrap(), "off");
+
+        // A project may only tighten: off always, registries only from all.
+        for (owner, project, ok) in [
+            ("", "\"off\"", true),
+            ("", "\"all\"", false),
+            ("", "true", false),
+            ("[sandbox]\nnetwork = \"off\"\n", "\"registries\"", false),
+            ("[sandbox]\nnetwork = \"all\"\n", "\"registries\"", true),
+        ] {
+            let (_d, o, p) = files(owner, &format!("[sandbox]\nnetwork = {project}\n"));
+            let loaded = Config::load(&o, Some(&p));
+            assert_eq!(loaded.is_ok(), ok, "{owner} / {project}: {loaded:?}");
+            if !ok {
+                assert!(matches!(loaded, Err(ConfigError::Loosening { .. })));
+            }
+        }
+
+        // The owner loosens with confirmation (off < registries < all).
+        let (_d, o, p) = files("", "");
+        let mut c = Config::load(&o, Some(&p)).unwrap();
+        for (from, to) in [("registries", "all"), ("off", "registries"), ("off", "all")] {
+            c.set_owner("sandbox.network", v(&format!("\"{from}\"")))
+                .unwrap();
+            assert!(
+                matches!(
+                    c.set_owner_checked("sandbox.network", v(&format!("\"{to}\"")), false),
+                    Err(ConfigError::NeedsConfirm { .. })
+                ),
+                "{from} -> {to}"
+            );
+        }
+        c.set_owner("sandbox.network", v("\"all\"")).unwrap();
+        let change = c
+            .set_owner_checked("sandbox.network", v("\"registries\""), false)
+            .unwrap();
+        assert!(change.weakens.is_none());
+        // `config set sandbox.network true` still works, as all.
+        let change = c
+            .set_owner_checked("sandbox.network", v("true"), true)
+            .unwrap();
+        assert_eq!(change.new, v("\"all\""));
+        assert!(change.weakens.is_some());
+        assert!(matches!(
+            c.set_owner_checked("sandbox.network", v("\"registry\""), true),
+            Err(ConfigError::Invalid { .. })
+        ));
+
+        // Registries: adding a host loosens, removing one tightens; owner only.
+        let hosts = c.list("sandbox.registries").unwrap();
+        let mut more = hosts.clone();
+        more.push("npm.pkg.github.com".into());
+        let as_value = |l: &[String]| Value::Array(l.iter().cloned().map(Value::String).collect());
+        assert!(matches!(
+            c.set_owner_checked("sandbox.registries", as_value(&more), false),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        let fewer = &hosts[1..];
+        assert!(
+            c.set_owner_checked("sandbox.registries", as_value(fewer), false)
+                .unwrap()
+                .weakens
+                .is_none()
+        );
+        let (_d, o, p) = files("", "[sandbox]\nregistries = []\n");
+        assert!(matches!(
+            Config::load(&o, Some(&p)),
+            Err(ConfigError::OwnerOnly { .. })
+        ));
     }
 }
