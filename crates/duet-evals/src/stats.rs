@@ -122,6 +122,17 @@ pub fn paired_ratio(pairs: &[(f64, f64)], iters: usize, alpha: f64, seed: u64) -
     })
 }
 
+/// The `q` quantile of `values` (linear interpolation between order
+/// statistics, as the bootstrap intervals use); `None` when there are none.
+pub fn percentile(values: &[f64], q: f64) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    Some(quantile(&sorted, q))
+}
+
 fn quantile(sorted: &[f64], q: f64) -> f64 {
     let pos = q * (sorted.len() - 1) as f64;
     let lo = pos.floor() as usize;

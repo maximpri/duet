@@ -10,6 +10,7 @@ mod judge;
 mod lanes;
 mod leakproxy;
 mod ledger;
+mod profile;
 mod report;
 mod stats;
 mod task;
@@ -114,6 +115,11 @@ enum Cmd {
         reference: String,
         #[arg(long, default_value = "crates/duet-evals/pricing.toml")]
         prices: PathBuf,
+        /// Also price every run's recorded tokens at these list prices (batch
+        /// report): `flagships` (glm-5.3, claude-opus-5-5, gpt-5.5), model names
+        /// in --prices, or the path of another price table.
+        #[arg(long = "project-prices", value_delimiter = ',')]
+        project_prices: Vec<String>,
     },
     /// Check lanes' prerequisites without calling any model: program and version,
     /// required environment (values never printed), login files, proxy routing,
@@ -333,6 +339,7 @@ async fn main() -> Result<()> {
             out,
             reference,
             prices,
+            project_prices,
         } => {
             let pairs = gate
                 .iter()
@@ -343,6 +350,10 @@ async fn main() -> Result<()> {
                 })
                 .collect::<Result<Vec<_>>>()?;
             if final_report {
+                ensure!(
+                    project_prices.is_empty(),
+                    "--project-prices applies to a batch report (run it per batch)"
+                );
                 let pairs = if pairs.is_empty() {
                     vec![("duet-hybrid".to_owned(), "duet-passthrough".to_owned())]
                 } else {
@@ -353,7 +364,7 @@ async fn main() -> Result<()> {
                 let [batch] = batches.as_slice() else {
                     bail!("several batches need --final");
                 };
-                batch_report(batch, &pairs)?;
+                batch_report(batch, &pairs, &reference, &prices, &project_prices)?;
             }
         }
         Cmd::Preflight {
@@ -393,7 +404,15 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn batch_report(batch: &Path, gate: &[(String, String)]) -> Result<()> {
+fn batch_report(
+    batch: &Path,
+    gate: &[(String, String)],
+    reference: &str,
+    prices: &Path,
+    project_prices: &[String],
+) -> Result<()> {
+    let prices = cost::PriceTable::load(prices)?;
+    let tables = profile::resolve_tables(project_prices, &prices)?;
     let records = report::load_records(batch)?;
     ensure!(!records.is_empty(), "no runs in {}", batch.display());
     let summaries = report::summarize(&records);
@@ -411,7 +430,23 @@ fn batch_report(batch: &Path, gate: &[(String, String)]) -> Result<()> {
         .iter()
         .filter(|r| r.invalid.is_none() && r.product_failure.is_some())
         .collect();
-    let md = report::render_markdown(&summaries, &verdicts, &invalid, &failed, &judging);
+    let mut md = report::render_markdown(&summaries, &verdicts, &invalid, &failed, &judging);
+    // The cost profile, and prices projected when asked (M5.2 instrumentation).
+    let profiles = profile::load_batch(batch, &records, &prices)?;
+    let lanes = profile::summarize_all(&profiles);
+    md.push_str(&profile::render_profile(&lanes));
+    let projections = (!tables.is_empty()).then(|| profile::project(&profiles, &tables, reference));
+    if let Some(p) = &projections {
+        md.push_str(&profile::render_projection(p));
+    }
+    fs::write(
+        batch.join("cost-profile.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "summaries": lanes,
+            "projections": projections,
+            "runs": profiles,
+        }))?,
+    )?;
     fs::write(batch.join("report.md"), &md)?;
     fs::write(
         batch.join("verdicts.json"),

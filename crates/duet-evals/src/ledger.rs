@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Classes in the order the report shows them (Duet's view class names).
 pub const CLASSES: &[(&str, &str)] = &[
@@ -44,16 +44,26 @@ pub struct DuetLedger {
     pub output_usd: f64,
 }
 
-/// The newest run summary Duet wrote in `workspace`, if any.
-fn newest_summary(workspace: &Path) -> Option<Value> {
+/// The directory of the newest Duet run in `workspace` that wrote a summary.
+pub fn newest_run_dir(workspace: &Path) -> Option<PathBuf> {
     let runs = workspace.join(".duet/runs");
-    let newest = fs::read_dir(runs)
+    fs::read_dir(runs)
         .ok()?
         .flatten()
-        .map(|e| e.path().join("summary.json"))
-        .filter_map(|p| Some((fs::metadata(&p).ok()?.modified().ok()?, p)))
-        .max()?
-        .1;
+        .map(|e| e.path())
+        .filter_map(|d| {
+            Some((
+                fs::metadata(d.join("summary.json")).ok()?.modified().ok()?,
+                d,
+            ))
+        })
+        .max()
+        .map(|(_, d)| d)
+}
+
+/// The newest run summary Duet wrote in `workspace`, if any.
+fn newest_summary(workspace: &Path) -> Option<Value> {
+    let newest = newest_run_dir(workspace)?.join("summary.json");
     serde_json::from_slice(&fs::read(newest).ok()?).ok()
 }
 

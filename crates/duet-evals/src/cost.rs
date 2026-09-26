@@ -126,13 +126,14 @@ pub fn usage_from_response(body: &str) -> Option<Usage> {
     Some(usage)
 }
 
-/// The `model` field of a captured request body.
+/// The `model` field of a captured request body. The rest of the body (the
+/// whole conversation, often hundreds of kilobytes) is skipped, not built.
 pub fn model_from_request(body: &str) -> Option<String> {
-    serde_json::from_str::<Value>(body)
-        .ok()?
-        .get("model")?
-        .as_str()
-        .map(str::to_owned)
+    #[derive(Deserialize)]
+    struct ModelOnly {
+        model: Option<String>,
+    }
+    serde_json::from_str::<ModelOnly>(body).ok()?.model
 }
 
 #[derive(Debug, Default)]
@@ -142,19 +143,40 @@ pub struct ProxyUsage {
     pub unreported_requests: u64,
 }
 
-/// Sums usage over every request/response pair a proxy session captured
-/// (a WebSocket client message paired with the server messages after it).
+/// One frontier request a proxy session captured, in order: the model it
+/// asked for and the usage its response reported (`None`: none reported).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestUsage {
+    pub model: String,
+    pub usage: Option<Usage>,
+}
+
+/// Every request/response pair a proxy session captured (a WebSocket client
+/// message paired with the server messages after it), in order.
+pub fn requests_from_proxy_log(log_dir: &Path) -> Result<Vec<RequestUsage>> {
+    let requests = crate::leakproxy::read_requests(log_dir)?;
+    Ok(requests
+        .into_iter()
+        .filter(|r| !r.is_open_handshake())
+        .map(|r| {
+            let req = fs::read_to_string(log_dir.join(format!("requests/{:05}.body", r.seq)))
+                .unwrap_or_default();
+            let resp = fs::read_to_string(log_dir.join(format!("responses/{:05}.body", r.seq)))
+                .unwrap_or_default();
+            RequestUsage {
+                model: model_from_request(&req).unwrap_or_else(|| "unknown".into()),
+                usage: usage_from_response(&resp),
+            }
+        })
+        .collect())
+}
+
+/// Sums usage over every request/response pair a proxy session captured.
 pub fn usage_from_proxy_log(log_dir: &Path) -> Result<ProxyUsage> {
     let mut out = ProxyUsage::default();
-    let requests = crate::leakproxy::read_requests(log_dir)?;
-    for r in requests.into_iter().filter(|r| !r.is_open_handshake()) {
-        let req = fs::read_to_string(log_dir.join(format!("requests/{:05}.body", r.seq)))
-            .unwrap_or_default();
-        let resp = fs::read_to_string(log_dir.join(format!("responses/{:05}.body", r.seq)))
-            .unwrap_or_default();
-        let model = model_from_request(&req).unwrap_or_else(|| "unknown".into());
-        match usage_from_response(&resp) {
-            Some(u) => out.by_model.entry(model).or_default().add(u),
+    for r in requests_from_proxy_log(log_dir)? {
+        match r.usage {
+            Some(u) => out.by_model.entry(r.model).or_default().add(u),
             None => out.unreported_requests += 1,
         }
     }
@@ -181,6 +203,23 @@ pub struct PriceTable {
     pub electricity_usd_per_kwh: f64,
 }
 
+impl Price {
+    /// Dollars for the input side of `usage`: uncached input, cache reads and
+    /// cache writes, each at its own rate.
+    pub fn input_usd(&self, usage: Usage) -> f64 {
+        let m = 1_000_000.0;
+        usage.uncached_input as f64 * self.input / m
+            + usage.cache_read as f64 * self.cache_read / m
+            + usage.cache_write as f64 * self.cache_write / m
+    }
+
+    /// Dollars for the output side of `usage` (reasoning tokens are part of
+    /// every provider's reported output, so they bill as output).
+    pub fn output_usd(&self, usage: Usage) -> f64 {
+        usage.output as f64 * self.output / 1_000_000.0
+    }
+}
+
 impl PriceTable {
     pub fn load(path: &Path) -> Result<Self> {
         let text =
@@ -188,19 +227,21 @@ impl PriceTable {
         Ok(toml::from_str(&text)?)
     }
 
-    /// Dollar cost of `usage` on `model`. Errors if the price is missing or unverified.
-    pub fn cost(&self, model: &str, usage: Usage) -> Result<f64> {
+    /// The verified price of `model`. Errors if it is missing or unverified.
+    pub fn verified(&self, model: &str) -> Result<&Price> {
         let Some(p) = self.prices.iter().find(|p| p.model == model) else {
             bail!("no price for model {model}");
         };
         if !p.verified {
             bail!("price for {model} is not verified ({})", p.source);
         }
-        let m = 1_000_000.0;
-        Ok(usage.uncached_input as f64 * p.input / m
-            + usage.cache_read as f64 * p.cache_read / m
-            + usage.cache_write as f64 * p.cache_write / m
-            + usage.output as f64 * p.output / m)
+        Ok(p)
+    }
+
+    /// Dollar cost of `usage` on `model`. Errors if the price is missing or unverified.
+    pub fn cost(&self, model: &str, usage: Usage) -> Result<f64> {
+        let p = self.verified(model)?;
+        Ok(p.input_usd(usage) + p.output_usd(usage))
     }
 
     /// Electricity cost of `busy_seconds` of local inference at `watts`.

@@ -560,6 +560,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "clap",
+ "duet-provider",
  "futures-util",
  "hex",
  "http-body-util",

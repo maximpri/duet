@@ -30,6 +30,9 @@ bytes = "1"
 
 [dev-dependencies]
 tempfile = "3"
+# Tests only: the harness never links Duet at run time; its price table is
+# checked against the agent's built-in, cited prices.
+duet-provider.workspace = true
 
 [[bin]]
 name = "duet-eval"
