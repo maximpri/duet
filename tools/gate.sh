@@ -57,15 +57,17 @@ fi
 
 step "provenance"
 # Duet contains no code, formats or names from other coding agents. The only
-# allowlisted place is the evaluation lane adapters, which launch them as
-# black boxes for measurement.
+# allowlisted places are the evaluation lane adapters, which launch them as
+# black boxes for measurement, and the sandbox's list of home-directory
+# credential stores, which names their login directories only to deny them.
 # Distinctive names match case-insensitively; names that are also ordinary words
 # (Cursor, Goose) match only as capitalized product names.
 pattern='(\bcodex\b|claude[ -]code|\bopencode\b|\bpi-mono\b|\baider\b|openhands|swe-agent|\bcline\b|\*\*\* Begin Patch)'
 products='\b(Cursor|Goose)\b'
 hits=$( { grep -rniE "$pattern" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml';
           grep -rnE "$products" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml'; } \
-    | grep -v '^crates/duet-evals/src/lanes/' || true)
+    | grep -v '^crates/duet-evals/src/lanes/' \
+    | grep -v '^crates/duet-sandbox/src/home_secrets.rs:' || true)
 if [ -n "$hits" ]; then
     echo "provenance check failed:" >&2
     echo "$hits" >&2

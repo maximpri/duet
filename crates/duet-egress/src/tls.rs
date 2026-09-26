@@ -37,9 +37,9 @@ pub fn client_hello(buf: &[u8]) -> Hello {
 }
 
 /// A cursor over bytes; every read is bounds-checked.
-struct Cursor<'a>(&'a [u8]);
+struct ByteReader<'a>(&'a [u8]);
 
-impl<'a> Cursor<'a> {
+impl<'a> ByteReader<'a> {
     fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         if self.0.len() < n {
             return None;
@@ -64,12 +64,12 @@ impl<'a> Cursor<'a> {
 /// The `server_name` of a ClientHello handshake message (RFC 8446 4.1.2,
 /// RFC 6066 3). The whole ClientHello must be in this record.
 fn server_name(record: &[u8]) -> Option<String> {
-    let mut c = Cursor(record);
+    let mut c = ByteReader(record);
     if c.u8()? != 1 {
         return None; // not a ClientHello
     }
     let len = c.u24()?;
-    let mut hello = Cursor(c.take(len)?);
+    let mut hello = ByteReader(c.take(len)?);
     hello.take(2 + 32)?; // legacy version, random
     let n = hello.u8()?;
     hello.take(n)?; // session id
@@ -78,7 +78,7 @@ fn server_name(record: &[u8]) -> Option<String> {
     let n = hello.u8()?;
     hello.take(n)?; // compression methods
     let n = hello.u16()?;
-    let mut exts = Cursor(hello.take(n)?);
+    let mut exts = ByteReader(hello.take(n)?);
     while !exts.0.is_empty() {
         let kind = exts.u16()?;
         let n = exts.u16()?;
@@ -86,9 +86,9 @@ fn server_name(record: &[u8]) -> Option<String> {
         if kind != 0 {
             continue;
         }
-        let mut list = Cursor(body);
+        let mut list = ByteReader(body);
         let n = list.u16()?;
-        let mut names = Cursor(list.take(n)?);
+        let mut names = ByteReader(list.take(n)?);
         while !names.0.is_empty() {
             let name_type = names.u8()?;
             let n = names.u16()?;
