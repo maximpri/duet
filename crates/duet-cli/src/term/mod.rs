@@ -28,9 +28,16 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 /// Whether output is styled with colour: a terminal, unless `NO_COLOR` is
 /// set to anything (no-color.org) or the terminal is `dumb`.
 pub(crate) fn colour(terminal: bool) -> bool {
-    terminal
-        && std::env::var_os("NO_COLOR").is_none_or(|v| v.is_empty())
-        && std::env::var("TERM").map_or(true, |t| t != "dumb")
+    colour_for(
+        terminal,
+        std::env::var_os("NO_COLOR"),
+        std::env::var("TERM").ok(),
+    )
+}
+
+/// [`colour`] from the environment's values.
+fn colour_for(terminal: bool, no_color: Option<std::ffi::OsString>, term: Option<String>) -> bool {
+    terminal && no_color.is_none_or(|v| v.is_empty()) && term.as_deref() != Some("dumb")
 }
 
 /// Whether the live screen (cursor movement) can be used on a terminal.
@@ -385,6 +392,17 @@ mod tests {
         assert_eq!(safe("\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\"), "link");
         assert_eq!(safe("é⟨EMAIL#1⟩ 中文"), "é⟨EMAIL#1⟩ 中文");
         assert_eq!(safe("rm \u{202e}txt.exe"), "rm txt.exe");
+    }
+
+    #[test]
+    fn no_color_or_a_dumb_terminal_turns_colour_off() {
+        let term = || Some("xterm-256color".to_owned());
+        assert!(colour_for(true, None, term()));
+        assert!(!colour_for(true, Some("1".into()), term()));
+        // Set but empty counts as unset (no-color.org).
+        assert!(colour_for(true, Some("".into()), term()));
+        assert!(!colour_for(true, None, Some("dumb".into())));
+        assert!(!colour_for(false, None, term()));
     }
 
     #[test]

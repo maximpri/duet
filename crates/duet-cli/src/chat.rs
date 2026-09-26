@@ -1399,6 +1399,36 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_c_interrupts_a_turn_and_twice_at_the_prompt_leaves() {
+        let flag = || Arc::new(AtomicBool::new(false));
+        let i = Interrupts {
+            working: flag(),
+            interrupted: flag(),
+            leave: flag(),
+            idle_press: Mutex::new(None),
+        };
+        i.working.store(true, Ordering::SeqCst);
+        assert_eq!(
+            i.press(),
+            Some("interrupt: stopping this turn; the session stays open")
+        );
+        assert!(i.interrupted.load(Ordering::SeqCst) && !i.leave.load(Ordering::SeqCst));
+        i.working.store(false, Ordering::SeqCst);
+        assert!(
+            i.press()
+                .unwrap()
+                .starts_with("Ctrl-C again leaves the session")
+        );
+        assert!(!i.leave.load(Ordering::SeqCst));
+        assert_eq!(i.press(), None);
+        assert!(i.leave.load(Ordering::SeqCst));
+        // A press long after the first one only warns again.
+        i.leave.store(false, Ordering::SeqCst);
+        *i.idle_press.lock().unwrap() = Some(std::time::Instant::now() - Duration::from_secs(3));
+        assert!(i.press().is_some() && !i.leave.load(Ordering::SeqCst));
+    }
+
+    #[test]
     fn an_approval_answer_is_the_first_line_after_the_question() {
         let inbox = Inbox::default();
         inbox.push("queued message".into());

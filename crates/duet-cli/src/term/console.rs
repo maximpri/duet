@@ -137,7 +137,7 @@ impl Console {
             rows: rows.max(4) as usize,
             feed: Feed::new(
                 colour,
-                columns as usize,
+                columns.max(20) as usize,
                 true,
                 Arc::new(|t: &str| t.to_owned()),
             ),
