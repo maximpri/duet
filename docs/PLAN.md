@@ -537,9 +537,11 @@ the home directory are unreadable to every command; per-run package caches (carg
 links to the operator's crates). github.com is not a default (it takes pushes); its download hosts
 are. Live check (2026-09-26, macOS, default settings, through the sandbox and the proxy): `cargo
 new` + `cargo add itoa oorandom` + `cargo run` (index.crates.io, static.crates.io) and `npm init
--y && npm install left-pad`; `curl https://example.com` refused. Linux: `tools/linux-check.sh`
-(bubblewrap 0.8.0, OrbStack kernel), the bridge with duet itself as the helper through the
-frontier loop. Found on the way: `sensitive_data` commands and checks had the unrestricted network
+-y && npm install left-pad`; `curl https://example.com` refused; and a `duet run` in
+pass-through (`glm-5.3-flash`, default settings) that did the same by itself (8 turns, $0.0016;
+`egress` events for index.crates.io and registry.npmjs.org). Linux: `tools/linux-check.sh`
+(bubblewrap 0.8.0, OrbStack kernel), every test passing privileged, unprivileged and as root, the
+bridge with duet itself as the helper through the frontier loop. Found on the way: `sensitive_data` commands and checks had the unrestricted network
 of `sandbox.network = true`, and home credential files were readable (DUET-2026-022, fixed).
 
 ### M5.2 — Cost with security: the local model shrinks what the frontier reads
