@@ -843,6 +843,42 @@ are recognized for `read_file`
 by extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`); another binary file is read as text, as
 before. The ledger's image tokens are estimates (no provider reports them apart from other input).
 
+## Context compaction
+
+With `context.compaction` on (off by default until measured), the local model condenses the older
+part of a long conversation into a working summary that replaces it (ARCHITECTURE §6). That is a
+channel out (the summary reaches the frontier) and a place where sensitive content could be
+widened (a model reading a whole conversation at once), so its input and output are fixed:
+
+| Threat | What stops it |
+|---|---|
+| The local model is given sensitive content to summarize, and writes it into the summary | Its input is only what the frontier was already sent: the older items in the form the gate's filters leave them (`GatedFrontier::as_sent`), never the items as kept, a handle's content or a vault value. Placeholders stay placeholders, and the model is told to keep them as written |
+| The summary carries a value anyway (the model recalls one, is steered by an injection in the conversation, or invents a real one) | The summary is cleaned as local-model output before it joins the conversation (`Engine::clean_condensed`): runs of four or more words copied from sensitive content, values spelled out or base64/hex-encoded, detected and vault values, protected code and digits of withheld numbers are replaced. The message holding it then passes the outbound gate like any other (filter, final check, audit record) |
+| Compaction hides what happened from the operator or the audit | Each compaction is a `compaction` audit event (outcome, items, tokens before and after, local seconds; never the text) and a `compacted` transcript entry with the replacement text; the request that carries the summary is recorded in the audit log like every request |
+| A summary drops the operator's instruction or the task | The first message (the task, or a session's first message, with the project instructions) is never condensed; in a session, the operator's latest message, if condensed, is appended to the summary verbatim by Duet, not by the model |
+| A failing local model ends or stalls the run | No summary changes nothing: the failure is recorded, masking goes on as before, and no attempt is made until the conversation has grown by a quarter of `context.compact_at` |
+| A resumed run sees a different conversation than the one that was sent | Events are recorded before they apply, with the replacement text; replay rebuilds the same conversation (tested byte for byte) |
+
+Pass-through runs, and hybrid runs with `local.enabled` off, have no local model and never
+compact. The test
+`planted_values_never_reach_the_frontier_through_a_summary` (`crates/duet-cli/tests/compaction.rs`)
+runs a hybrid run whose careless local stand-in writes every planted value into its summary, as
+written, as four-digit fragments, spelled out and in base64; none reaches the frontier, and no
+compaction input holds one.
+
+**Known limits.** The summary is lossy: exact values of what was read (file contents, command
+output, long arguments) are dropped by design, and the frontier reads files or runs commands again
+when it needs them; what the local model leaves out of decisions, failures or identifiers is lost
+to the frontier (masking, which is tried first, keeps every call's name exactly). Text the model
+writes that is neither a known value nor a detected one (a first name alone, a value in a format
+no detector knows) passes the cleaning as it would in any public text; since the model read only
+what the frontier was sent, such text can repeat what the frontier saw, not add to it, unless the
+model invents or recalls it. The sensitive-text heuristics used for summaries of sensitive content
+(name-like phrases, long numbers, distinctive identifiers) are not applied to compaction summaries,
+because they would turn the frontier's own identifiers into placeholders. The local model sees the
+whole older conversation at once, including what the frontier wrote and fetched; the local host is
+trusted with it as it is with sensitive content.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to

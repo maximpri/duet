@@ -157,6 +157,7 @@ are sandboxed, every use is audited, and side effects need approval.
 | Sub-agents | They share the same engine, vault and audit chain, and get no more than their parent |
 | Package installs | Commands reach only the registries in `sandbox.registries` (crates.io, npm, PyPI, Go, Maven Central, RubyGems, GitHub downloads) through an audited proxy; `sandbox.network = "off"` takes even that away, `"all"` opens everything (with `--confirm`) |
 | Images | Images can't be text-scanned, so the local model describes them unless you mark one public |
+| Context compaction (off by default) | The local model condenses a long conversation from what the frontier was already sent; its summary is filtered like any local output and passes the same gate |
 
 ### 7. Secure by default, and the owner decides
 

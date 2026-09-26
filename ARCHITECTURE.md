@@ -68,7 +68,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -132,7 +132,9 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
 1. ContextManager builds the request: fixed system prompt (`prompt::system_prompt`, from the
    workspace name, the checks and the tool set: its research advice names web tools only when
    they are offered) + fixed sorted tools + transcript
-   (whole old turns replaced by stubs once over `context.mask_at` of the window).
+   (with `context.compaction`: older turns condensed by the local model once over
+   `context.compact_at`; whole old turns replaced by stubs once over `context.mask_at` of the
+   window; §6).
 2. GatedFrontier.create(request)
      OutboundGate filters (engine/outbound.rs), two passes: detectors, copied-span filter and
        protected-code redaction on messages and tool results (new values join the vault); then
@@ -288,10 +290,12 @@ The local model is called only by the boundary, never by the loop directly, and 
 | Digest | new HandleSummary, or BulkyHandle of command output | `summary` (≤800 chars per chunk), `facts[]` |
 | Answer | `ask_local(handle, questions[≤6])`, one call per question on the most relevant chunk; `handle` may be a placeholder from an operator message (the handle is that message) | `answer` (≤1,200 chars), `evidence_lines[]`, `unanswerable` |
 | Implement | `edit_protected(path, spec, tests?, command?)` | `code`: the whole new protected file, written by the host and validated by host-run checks |
+| Condense | context compaction (§6): the older part of a conversation as the frontier was sent it, read part by part (≤60K characters each), each call updating the notes of the parts before it | `summary` (≤12,000 chars; own schema) |
 
 All roles send one shared JSON schema (servers such as oMLX key their prompt cache by schema) and
 put the content before the instruction, so questions about one handle reuse the processed prefix;
-each role checks its own required fields. Temperature 0; visible thinking off; content over ~60K
+each role checks its own required fields. The personal-data pass and Condense have schemas of
+their own (neither shares a prefix with the others). Temperature 0; visible thinking off; content over ~60K
 characters is chunked; one retry on unparseable output, then an error the frontier sees as
 "unavailable" — never an invented answer.
 
@@ -313,6 +317,13 @@ reversed or encoded) is put to the local model as a question about the value's f
 of its answer's pieces of a value are withheld. Each such probe is a `local_probe` audit event
 (handle, rule, pieces withheld, a running count per handle), drained from the presenter
 (`Presenter::take_events`) into the run's audit log.
+
+A compaction summary (Condense) is cleaned differently (`Engine::clean_condensed`): its input is
+conversation the frontier was already sent, so it can only carry a value the model writes anyway
+(recalled, echoed from an injection, invented). Steps 1 and 2 as above, then detected and vault
+values replaced (as public text), copied spans, protected code and digits of withheld numbers
+removed. The name and number heuristics for text about sensitive content (step 3) are not
+applied: they would vault the frontier's own identifiers and replace them in every later request.
 
 ### 5.4 Outbound gate
 
@@ -604,6 +615,40 @@ parent's model drives it and never carries the operator's attachments.
   Masking happens rarely and in batches so caches are invalidated rarely. Images count by their
   own estimate (about one token per 750 pixels); a masked turn's images are dropped with their
   result, whose stub then says to repeat the call.
+- **Compaction** (`context.compaction`, off by default until measured; `duet_agent::compaction`).
+  At each safe point, when the estimate passes `context.compact_at` (100K tokens), one event
+  brings the conversation down to `context.compact_to` (0.4) of it:
+
+  ```
+  estimate ≥ compact_at (and ≥ retry_at after a failure)
+    1. masking first: the stubs above, toward the target; if that reaches it, done (no local call)
+    2. else compaction: first message (and its images) | older part | recent turns
+         recent = as many whole turns as fit in the target with a summary, ≥ the last 4;
+                  the cut is where a turn starts, so a call keeps its result
+         older part: Driver::as_sent (the gate's filters) → rendered, results and arguments
+                  shortened (files can be read again) → Presenter::condense
+                  → LocalReader::condense (§5.3) → cleaned as local output (engine)
+         one user message replaces it: "[compacted: N earlier items (~T tokens) ...]" + notes
+                  (+ in a session, the operator's latest message verbatim if it was condensed)
+    3. then the window's own masking, as always (the safety net)
+  ```
+
+  An event needs an older part of at least a quarter of `compact_at`, so events are rare and
+  each breaks the provider's prefix cache once; the system prompt, tools and first message keep
+  theirs, and requests after an event only append. No summary (no local model, an error, an empty
+  or too long one, one no shorter than what it replaces, an older part over 240K characters)
+  changes nothing: `compaction_failed` is recorded, masking goes on, and no attempt is made until
+  the conversation has grown by a quarter of `compact_at`. Compaction never ends a run.
+  Pass-through, and hybrid with `local.enabled` off, have no local model, so they never compact
+  (no attempt, no failure recorded). Each conversation (a session, a
+  sub-agent) compacts on its own; sub-agents inherit the settings.
+- **Resume.** Each event is recorded before it changes the conversation, and one that could not
+  be recorded is not applied: `masked` holds its positions, `compacted` holds `head`, `upto` and
+  the replacement text (and tokens before/after, local seconds), `compaction_failed` the estimate
+  at which to retry. Replay applies them where they happened, so a resumed run sends the same
+  request byte for byte (masking recorded before positions were is re-decided as before). A
+  sub-agent result condensed away still counts as recorded when a resume looks for unfinished
+  sub-agents.
 - The run's cost ledger (`summary.json` `stats.ledger`) charges every tool result, for each
   request that carries it, to the class it was shown as (raw, tokenized, handle summary, local
   answer, bulky handle), and counts `ask_local` calls and questions, `sensitive_data` commands,
@@ -624,7 +669,8 @@ git; reset behaviour defined per entry).
     run.json                  manifest (mode, task, frontier; `session` for `duet chat`) for resume
     transcript.jsonl          full conversation items, synced per item; for a session also its
                               turns (as typed), their ends, steering and undo; sub-agents'
-                              starts, ends, rollbacks and their own entries nested under their id
+                              starts, ends, rollbacks and their own entries nested under their id;
+                              masking positions and compactions (with their replacement text)
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands

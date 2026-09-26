@@ -489,3 +489,35 @@ Every setting is defined in one registry and editable with `duet config` or `due
 models, sensitivity rules and detectors, protected paths and IP levels, budgets, retention.
 Credentials and endpoints live only in your user config (`~/.config/duet/config.toml`); a
 repository's `.duet/config.toml` can make privacy stricter but never looser.
+
+### Long conversations
+
+When a conversation grows past `context.mask_at` (0.7) of `context.window_tokens` (200K), old
+tool results are replaced by short stubs that name the call, oldest turns first. With
+`context.compaction` on (off by default until it is measured), a long conversation is also
+condensed by the local model:
+
+```sh
+duet config set context.compaction true
+duet config set context.compact_at 100000   # estimated request tokens that trigger it
+duet config set context.compact_to 0.4      # what it is brought down to, as a fraction of that
+```
+
+Past `context.compact_at`, masking is tried first; if it cannot bring the conversation down to
+`context.compact_to` of the threshold, everything between the first message and the recent turns
+is replaced by a working summary the local model writes (the task, what was done and why, what
+failed, the state, what is open, and the exact paths and names). The recent turns stay verbatim,
+and the frontier reads files again when it needs them. It needs a local model (hybrid mode with `local.enabled`); a
+failure leaves the conversation as it was and masking goes on. Keep `context.compact_at` below
+`context.mask_at` of the window. Each compaction appears in the run's progress, in `duet tui`, as
+a `compaction` audit event and in `summary.json` (`stats.compactions`).
+
+To see what compaction would do to a recorded run, replay its transcript offline with your local
+model:
+
+```sh
+cargo run -p duet-cli --example compaction_replay -- .duet/runs/<run-id> --out /tmp/compaction
+```
+
+It reports each event (tokens before and after, local seconds), request tokens over the run with
+and without compaction, and writes each summary to the output directory.
