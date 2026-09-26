@@ -637,6 +637,42 @@ the `.env` layout from the outline and ran one `sensitive_data` command instead 
 requests (32), $0.018 ($0.038), 244 s (614 s), 9/9 hidden tests, 0 leaks. *Open:* the head-to-head
 (on and off, Gate 2 and X1/X2, with and without a local model).
 
+*Built (branch `explorer`), item 5:* `explore {question, paths?, depth?}` (`explore.enabled`, off;
+`explore.quick_steps` 12, `explore.thorough_steps` 30, `explore.max_seconds` 600 with a third for
+quick, `explore.max_read_kb` 96 with half for quick), offered in hybrid and pass-through when a local
+model is enabled; the run and session prompts name it only then. The local model drives a bounded
+tool loop of its own (`duet-agent/src/explore.rs`; a `LocalAgent` implementing `Driver`, refused
+for any endpoint not in the local role): the frontier's own `read_file`, `list_files`, `search`,
+`code_nav` and read-only git tools through a secure-zone view (content as it is, 12 KB per result,
+hidden paths and `.git`/`.duet` hidden, nothing writable), anything else refused; native tool calls
+(checked live on oMLX `omlx-coding`: parallel calls, ~215 tokens/s uncached prefill, follow-up steps
+served from the prompt cache). Report: a short answer and references checked against the files it
+was shown; the model's words pass the boundary as `Source::Explore` (cleaned like an `ask_local`
+answer about everything it read: copied runs, re-encodings, known and detected values, withheld-number
+digits, the per-value budget with positional questions put as format questions, protected lines, and
+with structure views every value of structured sensitive data), paths as a listing, code lines quoted
+by Duet from open files only; sensitive references point to the structure view. One `explore` audit
+event and `Explored` transcript entry per call; `ledger.explore` holds its local time (resume
+included), which duet-eval counts as local work; lane `duet-hybrid-explore`. Found on the way:
+`read_file` could read `.duet` run state (DUET-2026-024, fixed in `d280f07`). Tests: scripted local
+stand-in through the loop (tools, step/reading/time caps, refused tools, checked references), a
+careless explorer pasting everything it read plus a date of birth in prose (no canary reaches the
+frontier), a positional question, protected source, injected instructions, resume after an
+interrupt mid-exploration, pass-through. Live head-to-head (`results/explore1`, build `5d841f0`
+before the rebase onto `261a369`, glm-5.3-flash, seed 1, explore off vs on): M2: the frontier never
+called `explore` (4 source files, read directly): 12 vs 8 requests, 115K vs 71K request tokens,
+$0.0094 vs $0.0068 frontier, 100% hidden both, 0 leaks both (the difference is run-to-run variance).
+L1: one quick call (5 local steps, 10 files, 11 KB, 92 s local, 10 of 11 references kept) asking for
+an overview, after which the frontier read 9 of the 10 referenced files whole anyway (none by range):
+21 vs 25 requests, 343K vs 585K request tokens, $0.0198 vs $0.0318 frontier (+61%), 95% hidden both,
+0 leaks both; wall 572 vs 1,536 s, of which ~12 minutes waiting for the frontier provider in the
+explore run's first turn. Both tasks together, projected: $0.129 vs $0.172 at glm-5.3, $0.334 vs
+$0.409 at Opus 5.5, $0.521 vs $0.636 at GPT-5.5. Reading on S–L repositories is already one
+batched turn of whole-file reads, and the frontier re-reads what it will edit, so the explorer adds
+a turn and its report instead of removing turns: kept off. *Open:* the XL head-to-head (X1/X2, where
+reading takes many turns), questions narrower than an overview, and offering it only above a
+repository size.
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`
