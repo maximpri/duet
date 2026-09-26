@@ -35,6 +35,7 @@ use std::path::Path;
 use std::sync::{Arc, LazyLock, Mutex};
 
 mod code_nav;
+mod explore;
 mod history;
 mod image;
 mod outbound;
@@ -285,6 +286,8 @@ struct State {
     probes: Tally,
     /// Structure views and samples (see `engine/structure.rs`).
     structure: structure::StructureState,
+    /// Digests of the texts the local explorer read that are indexed.
+    explored: std::collections::HashSet<String>,
 }
 
 /// Values the operator typed: each placeholder is also a handle for
@@ -420,6 +423,7 @@ impl Engine {
                     .and_then(|b| serde_json::from_slice(&b).ok())
                     .unwrap_or_default(),
                 structure: structure::StructureState::open(run_dir),
+                explored: Default::default(),
             }),
         }))
     }
@@ -1800,6 +1804,7 @@ impl Presenter for Engine {
                 self.clean_public(&mut st, &text, &format!("report of sub-agent {child}"))
             }
             Source::Image { origin } => self.image_view(origin, bytes),
+            Source::Explore { question, read } => self.explore_view(question, read, &text),
             // Matches in sensitive files are masked first; only that view is kept.
             Source::Search { pattern } => {
                 let view = self.search_view(&text);

@@ -276,6 +276,22 @@ pub enum AuditEvent {
         tokens_after: u64,
         local_seconds: f64,
     },
+    /// The local explorer answered an `explore` call: the SHA-256 of the
+    /// question (never its text), `quick` or `thorough`, its steps (local
+    /// model requests), the files and bytes it was shown, its local seconds,
+    /// the references its report kept and the outcome (`reported`,
+    /// `partial`: a cap ended it before it reported, `failed`). Never what
+    /// it read or wrote.
+    Explore {
+        question_sha256: String,
+        depth: String,
+        steps: u32,
+        files: u32,
+        bytes_read: u64,
+        local_seconds: f64,
+        references: u32,
+        outcome: String,
+    },
 }
 
 impl AuditEvent {
@@ -308,6 +324,7 @@ impl AuditEvent {
             AuditEvent::OutputProbe { .. } => "output_probe",
             AuditEvent::MaskedNumbers { .. } => "masked_numbers",
             AuditEvent::SyntheticSample { .. } => "synthetic_sample",
+            AuditEvent::Explore { .. } => "explore",
         }
     }
 }

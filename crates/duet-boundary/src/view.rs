@@ -76,6 +76,37 @@ pub enum Source {
     Subagent {
         child: String,
     },
+    /// The local explorer's report (`explore`): text the local model wrote
+    /// after reading the workspace as it is, sensitive and protected files
+    /// included. `question` is the question as the frontier asked it; `read`
+    /// is everything the explorer was shown. Cleaned as local-model output
+    /// about `read` (copied spans, re-encodings, digits of withheld numbers,
+    /// the per-value budget, protected code) and never offloaded.
+    Explore {
+        question: String,
+        read: Explored,
+    },
+}
+
+/// What the local explorer was shown, each text with the workspace file it
+/// came from (`None`: output not tied to one file, such as a listing or
+/// commit metadata). The text is raw workspace content: `Debug` shows only
+/// the paths and sizes.
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct Explored(pub std::sync::Arc<Vec<(Option<PathBuf>, String)>>);
+
+impl std::fmt::Debug for Explored {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|(p, t)| {
+                format!(
+                    "{} ({} bytes)",
+                    p.as_ref().map_or("-".into(), |p| p.display().to_string()),
+                    t.len()
+                )
+            }))
+            .finish()
+    }
 }
 
 /// How an external server's results are treated.

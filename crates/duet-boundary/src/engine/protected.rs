@@ -114,7 +114,7 @@ impl Engine {
     }
 
     /// Indexes withheld text; returns the skeleton spans if the file has a skeleton.
-    fn ip_index(
+    pub(super) fn ip_index(
         &self,
         st: &mut State,
         path: &Path,
@@ -175,7 +175,7 @@ impl Engine {
 
     /// The whole file's text: read again from the workspace (so line ranges do
     /// not cut a skeleton), or recovered from what `read_file` passed.
-    fn ip_full_text(&self, st: &State, path: &Path, shown: &str) -> String {
+    pub(super) fn ip_full_text(&self, st: &State, path: &Path, shown: &str) -> String {
         st.ip
             .workspace
             .as_ref()

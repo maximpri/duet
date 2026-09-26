@@ -497,6 +497,70 @@ notes, fold them in. Return only {{\"summary\": ...}}."
     }
 }
 
+/// The local model driving a tool loop of its own (the explorer): each
+/// request is a conversation with tools, answered with text and tool calls.
+/// Its requests carry workspace content as it is, sensitive files included,
+/// so it only ever talks to a local-role endpoint (loopback, or allowlisted
+/// by the owner), which [`LocalAgent::new`] checks. What it writes is data:
+/// whoever shows it to the frontier cleans it first.
+pub struct LocalAgent {
+    provider: ChatProvider,
+    extra: Map<String, Value>,
+    audit: crate::audit::AuditHandle,
+}
+
+impl LocalAgent {
+    /// Refuses a provider that is not in the local role: raw content never
+    /// goes to the frontier's endpoint this way. `audit` is the run's log.
+    pub fn new(
+        provider: ChatProvider,
+        audit: crate::audit::AuditHandle,
+    ) -> Result<Self, ProviderError> {
+        if !matches!(provider.config().role, duet_provider::Role::Local { .. }) {
+            return Err(ProviderError::new(
+                duet_provider::ErrorKind::Forbidden,
+                "the local agent needs a local-role endpoint",
+            ));
+        }
+        let mut extra = Map::new();
+        // Qwen-family chat templates: no visible thinking between tool calls.
+        extra.insert(
+            "chat_template_kwargs".into(),
+            json!({"enable_thinking": false}),
+        );
+        Ok(Self {
+            provider,
+            extra,
+            audit,
+        })
+    }
+
+    pub fn model(&self) -> &str {
+        &self.provider.config().model
+    }
+
+    /// When the provider stops retrying on its own (the run's deadline).
+    pub fn deadline(&self) -> Option<tokio::time::Instant> {
+        self.provider.config().deadline
+    }
+
+    pub fn audit(&self) -> &crate::audit::AuditHandle {
+        &self.audit
+    }
+
+    /// One request, with the local server's request fields added.
+    pub async fn create(
+        &self,
+        request: &Request,
+    ) -> Result<duet_provider::types::Response, ProviderError> {
+        let mut req = request.clone();
+        for (k, v) in &self.extra {
+            req.extra.entry(k.clone()).or_insert_with(|| v.clone());
+        }
+        self.provider.create(&req).await
+    }
+}
+
 /// Context compaction's schema (its own: a summary far longer than a digest's).
 fn condense_schema() -> Value {
     json!({"type": "object", "properties": {
