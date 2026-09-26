@@ -12,6 +12,12 @@
 //! anchored log therefore also writes its head (record count and last hash) to
 //! an anchor file in the owner's state directory, outside the workspace, on
 //! every append; [`check_anchor`] detects a log rewritten or truncated since.
+//!
+//! A program that embeds Duet can follow a log as it is written: an
+//! [`AuditSubscriber`] attached to it is told of every record appended after
+//! (see [`AuditLog::subscribe`]), with its place in the chain, and never of
+//! content: a request record reaches it as its endpoint, model, digest and
+//! size, without the body.
 
 use duet_fs::FsError;
 use duet_fs::host::HostWait;
@@ -276,6 +282,19 @@ pub enum AuditEvent {
         tokens_after: u64,
         local_seconds: f64,
     },
+    /// A hook of a program that embeds Duet failed (see
+    /// [`AuditSubscriber`]): an audit subscriber when it was attached
+    /// (`stage` = `open`) or on the record `seq` (`audit`), which it
+    /// therefore missed, or an end hook (`end`). Holds the hook's name, never
+    /// its message; the run is not affected.
+    HookFailed {
+        hook: String,
+        stage: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seq: Option<u64>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        panicked: bool,
+    },
     /// The local explorer answered an `explore` call: the SHA-256 of the
     /// question (never its text), `quick` or `thorough`, its steps (local
     /// model requests), the files and bytes it was shown, its local seconds,
@@ -325,6 +344,7 @@ impl AuditEvent {
             AuditEvent::MaskedNumbers { .. } => "masked_numbers",
             AuditEvent::SyntheticSample { .. } => "synthetic_sample",
             AuditEvent::Explore { .. } => "explore",
+            AuditEvent::HookFailed { .. } => "hook_failed",
         }
     }
 }
@@ -594,6 +614,135 @@ fn check_found(
     })
 }
 
+/// Follows an audit log as it is written: a program that embeds Duet
+/// attaches one with [`AuditLog::subscribe`] (or [`AuditHandle::subscribe`])
+/// to build its own record of a run.
+///
+/// Delivery: each record appended after the subscriber was attached, once,
+/// in chain order, after its line is in the log (appended and synced) and
+/// its anchor written (or the attempt failed). Calls are made on the thread
+/// that appends, with the log locked: a subscriber must return quickly (hand
+/// slow work such as network export to its own thread) and must not append
+/// to the same log (that deadlocks).
+///
+/// Failure: an error or a panic never reaches the run. It is reported on
+/// stderr and recorded as a `hook_failed` event naming the subscriber and the
+/// record it missed, which every subscriber is then told of in turn (a
+/// failure to deliver that event is not recorded again). A subscriber can
+/// always rebuild what it missed from the log itself ([`read`]).
+pub trait AuditSubscriber: Send + Sync {
+    /// A short name (letters, digits, `.`, `_`, `-`; anything else becomes
+    /// `_`), recorded when the subscriber fails.
+    fn name(&self) -> &str;
+
+    /// The subscriber was attached to `log`; the records already in it
+    /// (a resumed run or session continues its chain) are not delivered.
+    fn opened(&self, _log: &Opened) -> Result<(), String> {
+        Ok(())
+    }
+
+    /// A record was appended.
+    fn appended(&self, record: &Appended) -> Result<(), String>;
+}
+
+/// Where a log's chain stands when a subscriber is attached.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct Opened {
+    /// The log file.
+    pub log: PathBuf,
+    /// The run it belongs to, when it is anchored.
+    pub run_id: Option<String>,
+    /// Records already in the log.
+    pub records: u64,
+    /// SHA-256 of its last line ([`GENESIS`] when empty).
+    pub head: String,
+}
+
+/// A record appended to a log, as a subscriber is told of it: its place in
+/// the chain and what it records, never content.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct Appended {
+    /// Its position in the chain (the first record is 1).
+    pub seq: u64,
+    /// SHA-256 of the previous line ([`GENESIS`] for the first).
+    pub prev: String,
+    /// SHA-256 of this line as written: the chain's head after it.
+    pub hash: String,
+    pub unix_ms: u128,
+    pub record: Recorded,
+}
+
+/// What an appended record holds.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "record", rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum Recorded {
+    /// A security event, as recorded.
+    Event { event: AuditEvent },
+    /// A request sent to the frontier: the endpoint and model, the SHA-256
+    /// and size in bytes of the body as recorded, and what the gate replaced
+    /// or withheld (counts). Never the body.
+    Request {
+        endpoint: String,
+        model: String,
+        request_sha256: String,
+        bytes: u64,
+        interventions: Vec<String>,
+    },
+}
+
+/// A log's head: records written, the hash of the last line, and the anchor
+/// file outside the workspace that holds it (when the log is anchored and
+/// has a record).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct ChainHead {
+    pub log: PathBuf,
+    pub records: u64,
+    pub head: String,
+    pub anchor: Option<PathBuf>,
+}
+
+/// A subscriber's name as an audit event may hold it.
+fn hook_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .take(64)
+        .map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '_' | '-' => c,
+            _ => '_',
+        })
+        .collect();
+    if clean.is_empty() {
+        "unnamed".into()
+    } else {
+        clean
+    }
+}
+
+/// Calls a hook of an embedding program: an error or a panic is reported on
+/// stderr and returned (the hook's name as recorded, and whether it
+/// panicked); it never propagates.
+pub fn call_hook(
+    name: &str,
+    what: &str,
+    f: impl FnOnce() -> Result<(), String>,
+) -> Result<(), (String, bool)> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(why)) => {
+            eprintln!("warning: {what} {name} failed: {why}");
+            Err((hook_name(name), false))
+        }
+        Err(_) => {
+            eprintln!("warning: {what} {name} panicked");
+            Err((hook_name(name), true))
+        }
+    }
+}
+
 pub struct AuditLog {
     path: PathBuf,
     seq: u64,
@@ -604,6 +753,8 @@ pub struct AuditLog {
     anchor: Option<RunAnchors>,
     /// Waits out a full disk so a write is retried in place (see `duet_fs::host`).
     wait: Option<Arc<dyn HostWait>>,
+    /// Told of every record appended (see [`AuditSubscriber`]).
+    subscribers: Vec<Arc<dyn AuditSubscriber>>,
 }
 
 impl AuditLog {
@@ -628,6 +779,7 @@ impl AuditLog {
             first,
             anchor: None,
             wait: None,
+            subscribers: Vec::new(),
         })
     }
 
@@ -670,6 +822,64 @@ impl AuditLog {
     /// Records written so far and the hash of the last one.
     pub fn head(&self) -> (u64, &str) {
         (self.seq, &self.prev)
+    }
+
+    /// The head with the log's path and its anchor file.
+    pub fn chain_head(&self) -> ChainHead {
+        ChainHead {
+            log: self.path.clone(),
+            records: self.seq,
+            head: self.prev.clone(),
+            anchor: match (&self.anchor, &self.first) {
+                (Some(a), Some(first)) => Some(a.path_for(first)),
+                _ => None,
+            },
+        }
+    }
+
+    /// Attaches a subscriber: it is told where the chain stands now
+    /// ([`AuditSubscriber::opened`]), then of every record appended.
+    pub fn subscribe(&mut self, subscriber: Arc<dyn AuditSubscriber>) {
+        let opened = Opened {
+            log: self.path.clone(),
+            run_id: self.anchor.as_ref().map(|a| a.run_id.clone()),
+            records: self.seq,
+            head: self.prev.clone(),
+        };
+        let outcome = call_hook(subscriber.name(), "audit subscriber", || {
+            subscriber.opened(&opened)
+        });
+        self.subscribers.push(subscriber);
+        if let Err((hook, panicked)) = outcome {
+            self.hook_failed(hook, "open", None, panicked);
+        }
+    }
+
+    /// Tells every subscriber of an appended record; each failure is recorded
+    /// when `record_failures` (not for the record of a failure itself).
+    fn deliver(&mut self, appended: &Appended, record_failures: bool) {
+        let failures: Vec<(String, bool)> = self
+            .subscribers
+            .iter()
+            .filter_map(|s| call_hook(s.name(), "audit subscriber", || s.appended(appended)).err())
+            .collect();
+        if record_failures {
+            for (hook, panicked) in failures {
+                self.hook_failed(hook, "audit", Some(appended.seq), panicked);
+            }
+        }
+    }
+
+    fn hook_failed(&mut self, hook: String, stage: &str, seq: Option<u64>, panicked: bool) {
+        let event = AuditEvent::HookFailed {
+            hook,
+            stage: stage.into(),
+            seq,
+            panicked,
+        };
+        if let Err(e) = self.write_event(event, false) {
+            eprintln!("warning: audit event not recorded: {e}");
+        }
     }
 
     /// Writes the head to the anchor filed under the run id and the first
@@ -727,25 +937,64 @@ impl AuditLog {
             request,
             interventions,
         };
-        self.write_line(
+        let written = self.write_line(
             record.seq,
             serde_json::to_string(&record).unwrap_or_default(),
-        )?;
-        Ok(record)
+        );
+        if self.seq == record.seq && !self.subscribers.is_empty() {
+            let appended = Appended {
+                seq: record.seq,
+                prev: record.prev.clone(),
+                hash: self.prev.clone(),
+                unix_ms: record.unix_ms,
+                record: Recorded::Request {
+                    endpoint: record.endpoint.clone(),
+                    model: record.model.clone(),
+                    request_sha256: record.request_sha256.clone(),
+                    bytes: body.len() as u64,
+                    interventions: record.interventions.clone(),
+                },
+            };
+            self.deliver(&appended, true);
+        }
+        written.map(|()| record)
     }
 
     pub fn event(&mut self, event: AuditEvent) -> Result<EventRecord, FsError> {
+        self.write_event(event, true)
+    }
+
+    /// Appends an event and tells the subscribers (see [`AuditLog::deliver`]).
+    fn write_event(
+        &mut self,
+        event: AuditEvent,
+        record_failures: bool,
+    ) -> Result<EventRecord, FsError> {
         let record = EventRecord {
             seq: self.seq + 1,
             prev: self.prev.clone(),
             unix_ms: now_ms(),
             event,
         };
-        self.write_line(
+        let written = self.write_line(
             record.seq,
             serde_json::to_string(&record).unwrap_or_default(),
-        )?;
-        Ok(record)
+        );
+        // The line is in the log once the head moved, even if its anchor
+        // could not be written.
+        if self.seq == record.seq && !self.subscribers.is_empty() {
+            let appended = Appended {
+                seq: record.seq,
+                prev: record.prev.clone(),
+                hash: self.prev.clone(),
+                unix_ms: record.unix_ms,
+                record: Recorded::Event {
+                    event: record.event.clone(),
+                },
+            };
+            self.deliver(&appended, record_failures);
+        }
+        written.map(|()| record)
     }
 }
 
@@ -800,6 +1049,16 @@ impl AuditHandle {
     /// See [`AuditLog::set_wait`].
     pub fn set_wait(&self, wait: Option<Arc<dyn HostWait>>) {
         self.log().set_wait(wait);
+    }
+
+    /// See [`AuditLog::subscribe`].
+    pub fn subscribe(&self, subscriber: Arc<dyn AuditSubscriber>) {
+        self.log().subscribe(subscriber);
+    }
+
+    /// See [`AuditLog::chain_head`].
+    pub fn chain_head(&self) -> ChainHead {
+        self.log().chain_head()
     }
 
     /// Appends an event. A failure is reported on stderr and does not stop the
@@ -1114,6 +1373,203 @@ mod tests {
             .unwrap(),
             AnchorCheck::Missing
         );
+    }
+
+    /// Keeps what it is told.
+    #[derive(Default)]
+    struct Recorder {
+        opened: Mutex<Vec<Opened>>,
+        seen: Mutex<Vec<Appended>>,
+        /// Fails (`Some(false)`) or panics (`Some(true)`) on every record.
+        fails: Option<bool>,
+        fails_on_open: bool,
+    }
+
+    impl AuditSubscriber for Recorder {
+        fn name(&self) -> &str {
+            match self.fails {
+                None => "recorder",
+                Some(false) => "failing recorder!",
+                Some(true) => "panicking",
+            }
+        }
+        fn opened(&self, log: &Opened) -> Result<(), String> {
+            self.opened.lock().unwrap().push(log.clone());
+            if self.fails_on_open {
+                return Err("cannot start".into());
+            }
+            Ok(())
+        }
+        fn appended(&self, record: &Appended) -> Result<(), String> {
+            self.seen.lock().unwrap().push(record.clone());
+            match self.fails {
+                None => Ok(()),
+                Some(false) => Err("export queue full".into()),
+                Some(true) => panic!("subscriber defect"),
+            }
+        }
+    }
+
+    #[test]
+    fn subscribers_follow_every_record_in_chain_order() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("ws/.duet/audit/r7.jsonl");
+        let anchors = run_anchors(&d.path().join("state"), &d.path().join("ws"), "r7");
+        // A record from an earlier invocation: not delivered, but where the
+        // chain stands is.
+        write_run(&p, &anchors, 0);
+        let earlier = digest(std::fs::read_to_string(&p).unwrap().lines().next().unwrap());
+
+        let mut log = AuditLog::open_anchored(&p, &anchors).unwrap();
+        let (a, b) = (Arc::new(Recorder::default()), Arc::new(Recorder::default()));
+        log.subscribe(a.clone());
+        log.subscribe(b.clone());
+        let handle = AuditHandle::new(log);
+        handle
+            .append(
+                "https://f/v1",
+                "m",
+                json!({"messages": ["BODY-MARKER-8841"]}),
+                vec!["sanitize: replaced sensitive content (0 copied span(s))".into()],
+            )
+            .unwrap();
+        handle.record(AuditEvent::BlockedSend {
+            check: "known-values".into(),
+        });
+        handle.record(AuditEvent::RunEnd {
+            terminal: "completed".into(),
+        });
+
+        let opened = a.opened.lock().unwrap().clone();
+        assert_eq!(opened.len(), 1);
+        assert_eq!(opened[0].records, 1);
+        assert_eq!(opened[0].head, earlier);
+        assert_eq!(opened[0].run_id.as_deref(), Some("r7"));
+        assert_eq!(opened[0].log, p);
+
+        let seen = a.seen.lock().unwrap().clone();
+        assert_eq!(
+            seen,
+            *b.seen.lock().unwrap(),
+            "every subscriber is told the same"
+        );
+        let text = std::fs::read_to_string(&p).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(seen.len(), lines.len() - 1);
+        let mut prev = earlier;
+        for (n, r) in seen.iter().enumerate() {
+            assert_eq!(r.seq, n as u64 + 2);
+            assert_eq!(r.prev, prev);
+            assert_eq!(
+                r.hash,
+                digest(lines[n + 1]),
+                "the hash of the line as written"
+            );
+            prev = r.hash.clone();
+        }
+        let Recorded::Request {
+            request_sha256,
+            bytes,
+            interventions,
+            ..
+        } = &seen[0].record
+        else {
+            panic!("{:?}", seen[0]);
+        };
+        let body = serde_json::to_vec(&json!({"messages": ["BODY-MARKER-8841"]})).unwrap();
+        assert_eq!(*request_sha256, hex::encode(Sha256::digest(&body)));
+        assert_eq!(*bytes, body.len() as u64);
+        assert_eq!(interventions.len(), 1);
+        // Never the content of a request.
+        let told = serde_json::to_string(&seen).unwrap();
+        assert!(!told.contains("BODY-MARKER"), "{told}");
+        assert!(text.contains("BODY-MARKER"));
+        assert!(matches!(
+            &seen[1].record,
+            Recorded::Event {
+                event: AuditEvent::BlockedSend { .. }
+            }
+        ));
+
+        let head = handle.chain_head();
+        assert_eq!((head.records, head.head.as_str()), (4, prev.as_str()));
+        let anchor: Anchor =
+            serde_json::from_slice(&std::fs::read(head.anchor.unwrap()).unwrap()).unwrap();
+        assert_eq!((anchor.records, anchor.head), (4, prev));
+        assert_eq!(verify(&p).unwrap(), Verification::Intact { records: 4 });
+    }
+
+    #[test]
+    fn a_failing_subscriber_is_recorded_and_changes_nothing_else() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("audit/r8.jsonl");
+        let mut log = AuditLog::open(&p).unwrap();
+        let good = Arc::new(Recorder::default());
+        let failing = Arc::new(Recorder {
+            fails: Some(false),
+            fails_on_open: true,
+            ..Recorder::default()
+        });
+        let panicking = Arc::new(Recorder {
+            fails: Some(true),
+            ..Recorder::default()
+        });
+        log.subscribe(good.clone());
+        log.subscribe(failing.clone());
+        log.subscribe(panicking.clone());
+        let handle = AuditHandle::new(log);
+        handle
+            .append("https://f/v1", "m", json!({"n": 1}), vec![])
+            .unwrap();
+        handle.record(AuditEvent::RunEnd {
+            terminal: "completed".into(),
+        });
+
+        let events: Vec<AuditEvent> = read(&p)
+            .unwrap()
+            .into_iter()
+            .filter_map(|l| match l {
+                Line::Event(e) => Some(e.event),
+                Line::Request(_) => None,
+            })
+            .collect();
+        let failed =
+            |stage: &str, seq: Option<u64>, hook: &str, panicked: bool| AuditEvent::HookFailed {
+                hook: hook.into(),
+                stage: stage.into(),
+                seq,
+                panicked,
+            };
+        assert_eq!(
+            events,
+            [
+                // Attaching: the failing one's `opened`.
+                failed("open", None, "failing_recorder_", false),
+                // The request (record 2): both failed on it.
+                failed("audit", Some(2), "failing_recorder_", false),
+                failed("audit", Some(2), "panicking", true),
+                AuditEvent::RunEnd {
+                    terminal: "completed".into()
+                },
+                failed("audit", Some(5), "failing_recorder_", false),
+                failed("audit", Some(5), "panicking", true),
+            ]
+        );
+        // Every record reached every subscriber, the failure records too
+        // (their own failures are not recorded again).
+        let seqs = |r: &Recorder| {
+            r.seen
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|a| a.seq)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(seqs(&good), [1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(seqs(&failing), seqs(&good));
+        // Attached after record 1 was written.
+        assert_eq!(seqs(&panicking), [2, 3, 4, 5, 6, 7]);
+        assert_eq!(verify(&p).unwrap(), Verification::Intact { records: 7 });
     }
 
     /// The single anchor file of `run_id` in the current layout.
