@@ -462,6 +462,8 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
         max_finish_attempts: cfg.max_finish_attempts,
         context_window: cfg.context_window,
         mask_at: cfg.mask_at,
+        // Each conversation compacts on its own.
+        compaction: cfg.compaction,
         max_output_tokens: cfg.max_output_tokens,
         reasoning_effort: cfg.reasoning_effort.clone(),
         price: Box::new(move |u| price(u)),
@@ -709,6 +711,7 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
         steering: None,
         exchange: 0,
         child: Some(Arc::new(child)),
+        context: Default::default(),
     };
     let mut stats = RunStats::default();
     let terminal = match nested.append(&Entry::Item { item: first }) {
@@ -991,6 +994,7 @@ pub(crate) fn replay(entries: &[Entry], cfg: &RunConfig, stats: &mut RunStats) {
             steering: None,
             exchange: 0,
             child: None,
+            context: Default::default(),
         };
         let mut child = RunStats::default();
         crate::run::replay_priced(list, price, &mut conv, &mut child);
@@ -1010,13 +1014,26 @@ pub(crate) fn recover(
     items: &[Item],
 ) -> Result<Vec<PathBuf>, FsError> {
     let entries = Transcript::read(&cfg.run_dir)?;
-    let answered: HashSet<&str> = items
+    let mut answered: HashSet<&str> = items
         .iter()
         .filter_map(|i| match i {
             Item::ToolResult { call_id, .. } => Some(call_id.as_str()),
             _ => None,
         })
         .collect();
+    // A result the conversation condensed was recorded all the same: every
+    // result before the parent's last compaction belongs to a finished turn.
+    if let Some(last) = entries
+        .iter()
+        .rposition(|e| matches!(e, Entry::Compacted { .. }))
+    {
+        answered.extend(entries[..last].iter().filter_map(|e| match e {
+            Entry::Item {
+                item: Item::ToolResult { call_id, .. },
+            } => Some(call_id.as_str()),
+            _ => None,
+        }));
+    }
     let transcript = Transcript::open(&cfg.run_dir)?;
     let mut restored = Vec::new();
     for r in recorded(&entries) {

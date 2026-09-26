@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The frontier loop: one continuous conversation until a terminal state.
 
-use crate::context::{estimate, mask_if_needed};
+use crate::context::{apply_mask, estimate, mask_if_needed};
 use crate::driver::Driver;
 use crate::host::HostPolicy;
 use crate::journal::WriteJournal;
@@ -107,6 +107,10 @@ pub struct RunConfig {
     pub max_finish_attempts: u32,
     pub context_window: u64,
     pub mask_at: f64,
+    /// Context compaction by the local model (`context.compaction`,
+    /// `context.compact_at`, `context.compact_to`); `None`: off. It needs a
+    /// local model, so without one the run only masks.
+    pub compaction: Option<crate::compaction::Compaction>,
     pub max_output_tokens: u32,
     /// Sent as `reasoning_effort` unless `None`.
     pub reasoning_effort: Option<String>,
@@ -179,6 +183,7 @@ impl RunConfig {
             max_finish_attempts: 2,
             context_window: 200_000,
             mask_at: 0.7,
+            compaction: None,
             max_output_tokens: 1000,
             reasoning_effort: None,
             price: Box::new(|_| 0.0),
@@ -206,6 +211,9 @@ pub struct RunStats {
     pub cost_usd: f64,
     pub tool_calls: u64,
     pub masked_results: u64,
+    /// Times the local model condensed the conversation (see `compaction`).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub compactions: u64,
     pub wall_seconds: f64,
     /// Where the frontier input went, by how tool results were shown (see `ledger`).
     #[serde(default)]
@@ -226,6 +234,10 @@ fn reasoning_extra(effort: Option<&str>) -> serde_json::Map<String, serde_json::
         extra.insert("reasoning_effort".into(), e.into());
     }
     extra
+}
+
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 fn is_unused(u: &Usage) -> bool {
@@ -488,6 +500,8 @@ pub(crate) struct Conversation {
     /// (Sub-agent) What makes this loop a sub-agent's: its id, tools, write
     /// scope and its parent's stop request.
     pub(crate) child: Option<Arc<crate::subagents::Child>>,
+    /// What context compaction keeps between its events.
+    pub(crate) context: crate::compaction::State,
 }
 
 /// Why the loop stopped.
@@ -536,9 +550,12 @@ pub(crate) fn replay_priced(
             conv.classes.insert(call_id.clone(), *class);
         }
     }
-    // The ledger is rebuilt from the transcript; masking done before the
-    // interruption is not replayed, so carried tokens are an upper bound.
+    // Masking and compaction are replayed where they happened, so the
+    // conversation (and the ledger's carried tokens) are the run's own.
+    // Masking recorded before positions were is not replayed.
     let mut calls: HashMap<String, ToolCall> = HashMap::new();
+    // The item after a turn start or steering is the operator's message.
+    let mut operator_next = false;
     for e in entries {
         match e {
             Entry::Item { item } => {
@@ -556,10 +573,28 @@ pub(crate) fn replay_priced(
                                 .on_result(c, content, class.unwrap_or(ViewClass::Raw));
                         }
                     }
+                    Item::User { .. } if operator_next => {
+                        conv.context.operator = Some(conv.items.len());
+                        operator_next = false;
+                    }
                     Item::User { .. } | Item::Images { .. } => {}
                 }
                 conv.items.push(item);
             }
+            Entry::Masked {
+                items, positions, ..
+            } => {
+                apply_mask(&mut conv.items, &positions);
+                stats.masked_results += items as u64;
+            }
+            Entry::Compacted {
+                head, upto, text, ..
+            } => {
+                crate::compaction::replace(&mut conv.items, &mut conv.context, head, upto, &text);
+                stats.compactions += 1;
+            }
+            Entry::CompactionFailed { retry_at, .. } => conv.context.retry_at = Some(retry_at),
+            Entry::Steered { .. } => operator_next = true,
             Entry::Usage {
                 usage, cost_usd, ..
             } => {
@@ -578,11 +613,17 @@ pub(crate) fn replay_priced(
                 add(&mut stats.failed_attempt_usage, &usage);
                 stats.cost_usd += cost_usd;
             }
-            Entry::TurnStart { .. } => drop_unfinished_turn(&mut conv.items),
+            Entry::TurnStart { .. } => {
+                drop_unfinished_turn(&mut conv.items);
+                operator_next = true;
+            }
             _ => {}
         }
     }
     drop_unfinished_turn(&mut conv.items);
+    if conv.context.operator.is_some_and(|k| k >= conv.items.len()) {
+        conv.context.operator = None;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -618,6 +659,7 @@ async fn drive(
         steering: None,
         exchange: 0,
         child: None,
+        context: Default::default(),
     };
     if resume {
         let restored = stored!(
@@ -791,6 +833,8 @@ pub(crate) async fn work(
         deadline
     };
     let (mut text_only, mut length_stops, mut finish_attempts) = (0u32, 0u32, 0u32);
+    // Compaction needs a local model to write the summary.
+    let compaction = cfg.compaction.filter(|_| presenter.can_condense());
     let items = &mut conv.items;
     let system = &conv.system;
     let classes = &mut conv.classes;
@@ -828,6 +872,7 @@ pub(crate) async fn work(
                     })
                 );
                 stored!(host, transcript.append(&Entry::Item { item: item.clone() }));
+                conv.context.operator = Some(items.len());
                 items.push(item);
             }
         }
@@ -840,16 +885,57 @@ pub(crate) async fn work(
             }
             .into());
         }
+        // Context compaction first (masking, else a local summary; see
+        // `crate::compaction`), then the window's own masking.
+        if let Some(c) = compaction {
+            let as_sent = |older: &[Item]| {
+                frontier
+                    .as_sent(&Request {
+                        items: older.to_vec(),
+                        tools: conv.specs.clone(),
+                        ..Request::default()
+                    })
+                    .items
+            };
+            let event =
+                crate::compaction::decide(items, &conv.context, system, c, &as_sent, presenter);
+            // A summary written while the run was interrupted may be cut short.
+            if interrupted.load(Ordering::SeqCst) {
+                return Ok(Terminal::interrupted().into());
+            }
+            if let Some(event) = event {
+                // Recorded first: what is not recorded is not applied, so a
+                // resumed run rebuilds the same conversation.
+                match transcript.append(&event.entry()) {
+                    Ok(()) => {
+                        crate::compaction::apply(items, &mut conv.context, &event);
+                        match &event {
+                            crate::compaction::Event::Masked { positions, .. } => {
+                                stats.masked_results += positions.len() as u64;
+                            }
+                            crate::compaction::Event::Compacted { .. } => stats.compactions += 1,
+                            crate::compaction::Event::Failed { .. } => {}
+                        }
+                        if let Some(a) = event.audit(conv.child.as_ref().map(|c| c.id.clone())) {
+                            frontier.audit().record(a);
+                        }
+                    }
+                    Err(e) if e.is_host_resource() => return write_failed(e, host).map(Into::into),
+                    Err(_) => {}
+                }
+            }
+        }
         let before = estimate(items, system);
-        let masked = mask_if_needed(items, system, cfg.context_window, cfg.mask_at);
-        if masked > 0 {
-            stats.masked_results += masked as u64;
+        let positions = mask_if_needed(items, system, cfg.context_window, cfg.mask_at);
+        if !positions.is_empty() {
+            stats.masked_results += positions.len() as u64;
             noted!(
                 host,
                 transcript.append(&Entry::Masked {
-                    items: masked,
+                    items: positions.len(),
                     tokens_before: before,
                     tokens_after: estimate(items, system),
+                    positions,
                 })
             );
         }

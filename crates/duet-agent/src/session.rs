@@ -384,6 +384,7 @@ impl<'a> Session<'a> {
                 steering: Some(steering.clone()),
                 exchange: 0,
                 child: None,
+                context: Default::default(),
             },
             stats: RunStats::default(),
             exchange: 0,
@@ -714,6 +715,7 @@ impl<'a> Session<'a> {
         transcript
             .append(&Entry::Item { item: item.clone() })
             .map_err(|e| e.to_string())?;
+        self.conv.context.operator = Some(self.conv.items.len());
         self.conv.items.push(item);
         if !images.is_empty() {
             let item = Item::Images {

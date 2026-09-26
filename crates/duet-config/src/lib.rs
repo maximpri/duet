@@ -547,6 +547,36 @@ pub const REGISTRY: &[Setting] = &[
         "Fraction of the frontier window at which old tool results are masked."
     ),
     s!(
+        "context.compaction",
+        Bool,
+        "false",
+        Owner,
+        Any,
+        false,
+        "Condense older turns into a working summary written by the local model once the conversation passes context.compact_at (hybrid mode with local.enabled; without a local model nothing is attempted). Masking is tried first and stays the fallback. Off until measured."
+    ),
+    s!(
+        "context.compact_at",
+        Int {
+            min: 8_000,
+            max: 2_000_000
+        },
+        "100000",
+        Owner,
+        Any,
+        false,
+        "Estimated request tokens at which context.compaction condenses older turns; keep it below context.mask_at of the window."
+    ),
+    s!(
+        "context.compact_to",
+        Float { min: 0.1, max: 0.8 },
+        "0.4",
+        Owner,
+        Any,
+        false,
+        "Fraction of context.compact_at a compaction brings the conversation down to (the recent turns kept verbatim fill it)."
+    ),
+    s!(
         "sandbox.network",
         Choice(&["all", "registries", "off"]),
         r#""registries""#,

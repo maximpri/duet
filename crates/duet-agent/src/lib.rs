@@ -3,6 +3,7 @@
 
 pub mod changes;
 pub mod code_nav;
+pub mod compaction;
 pub mod context;
 pub mod disclosure;
 pub mod driver;
@@ -25,6 +26,7 @@ pub mod tools;
 pub mod transcript;
 pub mod web;
 
+pub use compaction::Compaction;
 pub use oversight::{ApproveMode, Approver, Oversight};
 pub use run::{RunConfig, RunStats, Terminal, conclude, resumable, run};
 pub use session::{Session, SessionLimits, TurnEnd};

@@ -752,6 +752,15 @@ async fn prepare(
         max_finish_attempts: cfg.int("limits.max_finish_attempts")? as u32,
         context_window: cfg.int("context.window_tokens")? as u64,
         mask_at: cfg.float("context.mask_at")?,
+        compaction: cfg
+            .bool("context.compaction")?
+            .then(|| -> Result<duet_agent::Compaction> {
+                Ok(duet_agent::Compaction {
+                    at: cfg.int("context.compact_at")? as u64,
+                    to: cfg.float("context.compact_to")?,
+                })
+            })
+            .transpose()?,
         max_output_tokens: 32_768,
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),

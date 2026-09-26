@@ -379,9 +379,24 @@ fn feeds_from(
                 items,
                 tokens_before,
                 tokens_after,
+                ..
             } => feed.push(format!(
                 "masked {items} old result(s): {tokens_before} -> {tokens_after} tokens"
             )),
+            Entry::Compacted {
+                head,
+                upto,
+                tokens_before,
+                tokens_after,
+                local_seconds,
+                ..
+            } => feed.push(format!(
+                "compacted {} earlier item(s) into a local summary: {tokens_before} -> {tokens_after} tokens ({local_seconds:.0}s local)",
+                upto - head
+            )),
+            Entry::CompactionFailed { reason, .. } => {
+                feed.push(format!("compaction failed ({}); masking instead", first_line(reason)))
+            }
             Entry::Shown { call_id, class } if *class != ViewClass::Raw => {
                 withheld.push(format!("{call_id}: shown as {class:?}"))
             }

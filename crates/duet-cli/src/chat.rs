@@ -1323,6 +1323,16 @@ pub(crate) fn progress(
         Entry::Masked { items, .. } => {
             out.push(format!("  ◦ context: {items} old tool result(s) shortened"))
         }
+        Entry::Compacted {
+            head,
+            upto,
+            tokens_before,
+            tokens_after,
+            ..
+        } => out.push(format!(
+            "  ◦ context: {} earlier item(s) condensed by the local model (~{tokens_before} → ~{tokens_after} tokens)",
+            upto - head
+        )),
         Entry::Interrupted { tool, .. } => out.push(format!("  ■ {tool} stopped")),
         Entry::SubagentStart {
             child, mode, task, ..

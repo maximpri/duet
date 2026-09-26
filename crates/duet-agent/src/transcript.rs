@@ -39,10 +39,37 @@ pub enum Entry {
         call_id: String,
         tool: String,
     },
+    /// Old tool results were replaced by stubs (`crate::context`).
+    /// `positions` are the items masked, in the conversation as it was then
+    /// (a resume masks the same ones; transcripts before they were recorded
+    /// have none, and their resume masks again as needed).
     Masked {
         items: usize,
         tokens_before: u64,
         tokens_after: u64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        positions: Vec<usize>,
+    },
+    /// The local model condensed items `head..upto` of the conversation (as
+    /// it was then) into one message, `text`, which replaced them
+    /// (`crate::compaction`). `text` is kept whole, so a resume rebuilds the
+    /// same conversation byte for byte.
+    Compacted {
+        head: usize,
+        upto: usize,
+        text: String,
+        tokens_before: u64,
+        tokens_after: u64,
+        local_seconds: f64,
+    },
+    /// A compaction of a conversation of `tokens` failed (`reason`); the
+    /// conversation was left as it was, and no new attempt is made before
+    /// it reaches `retry_at`.
+    CompactionFailed {
+        tokens: u64,
+        retry_at: u64,
+        reason: String,
+        local_seconds: f64,
     },
     /// How a tool result was shown to the frontier (for the cost ledger).
     Shown {

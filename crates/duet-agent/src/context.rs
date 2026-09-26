@@ -11,6 +11,11 @@
 //! removed, so each tool call keeps its result. A stub names the call (tool
 //! and main argument) and any handle the result referred to, so the model can
 //! re-read exactly what it needs instead of repeating the work.
+//!
+//! The transcript records the positions masked, so a resumed run masks the
+//! same results at the same point. Summarizing, when it is turned on, is
+//! [`crate::compaction`]: it runs before this masking, which stays the
+//! window's safety net.
 
 use duet_boundary::model::{Item, ToolCall};
 use regex::Regex;
@@ -39,17 +44,17 @@ fn image_tokens(item: &Item) -> u64 {
     }
 }
 
-fn tokens_of_bytes(bytes: usize) -> u64 {
+pub(crate) fn tokens_of_bytes(bytes: usize) -> u64 {
     (bytes as u64).div_ceil(7) * 2
 }
 
 /// Tokens a piece of text adds to a request (as serialized).
-fn tokens_of(text: &str) -> u64 {
+pub(crate) fn tokens_of(text: &str) -> u64 {
     tokens_of_bytes(serde_json::to_string(text).map_or(text.len(), |s| s.len()))
 }
 
 /// Assistant turns whose results always stay.
-const KEEP_RECENT_TURNS: usize = 4;
+pub const KEEP_RECENT_TURNS: usize = 4;
 /// Results this short cost less than a round trip to get them back; they stay.
 const MIN_MASKED_CHARS: usize = 400;
 const STUB_PREFIX: &str = "[masked: ";
@@ -123,24 +128,43 @@ pub fn stub(call: Option<&ToolCall>, content: &str) -> String {
     }
 }
 
-/// Masks old tool results if needed. Returns how many were masked.
-pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f64) -> usize {
-    let mut current = estimate(items, system);
-    if (current as f64) < mask_at * window as f64 {
-        return 0;
+/// Masks old tool results if the estimate passes `mask_at` of `window`,
+/// down to half the window. Returns the positions masked (empty below the
+/// threshold), as [`apply_mask`] takes them.
+pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f64) -> Vec<usize> {
+    if (estimate(items, system) as f64) < mask_at * window as f64 {
+        return Vec::new();
     }
-    let target = window / 2;
+    let (positions, _) = mask_plan(items, system, window / 2);
+    apply_mask(items, &positions);
+    positions
+}
+
+/// Every call of the conversation, by id.
+fn calls_of(items: &[Item]) -> HashMap<&str, &ToolCall> {
+    items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Assistant { tool_calls, .. } => Some(tool_calls),
+            _ => None,
+        })
+        .flatten()
+        .map(|c| (c.id.as_str(), c))
+        .collect()
+}
+
+/// Positions of the results to mask, whole turns at a time and oldest
+/// first, until the estimate is at most `target` (or nothing more may be
+/// masked: the last [`KEEP_RECENT_TURNS`] turns and short results stay),
+/// with the estimate after masking them.
+pub fn mask_plan(items: &[Item], system: &str, target: u64) -> (Vec<usize>, u64) {
+    let mut current = estimate(items, system);
+    let calls = calls_of(items);
     // Result positions grouped by the assistant turn that called them.
-    let mut calls: HashMap<String, ToolCall> = HashMap::new();
     let mut turns: Vec<Vec<usize>> = Vec::new();
     for (n, item) in items.iter().enumerate() {
         match item {
-            Item::Assistant { tool_calls, .. } if !tool_calls.is_empty() => {
-                for c in tool_calls {
-                    calls.insert(c.id.clone(), c.clone());
-                }
-                turns.push(Vec::new());
-            }
+            Item::Assistant { tool_calls, .. } if !tool_calls.is_empty() => turns.push(Vec::new()),
             Item::ToolResult { .. }
             | Item::Images {
                 call_id: Some(_), ..
@@ -152,45 +176,82 @@ pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f6
         }
     }
     // Results with an image are masked whatever their length: the image goes too.
-    let with_images: std::collections::HashSet<String> = items
+    let with_images: std::collections::HashSet<&str> = items
         .iter()
         .filter_map(|i| match i {
             Item::Images {
                 call_id: Some(c),
                 images,
-            } if !images.is_empty() => Some(c.clone()),
+            } if !images.is_empty() => Some(c.as_str()),
             _ => None,
         })
         .collect();
     turns.retain(|t| !t.is_empty());
     let maskable = turns.len().saturating_sub(KEEP_RECENT_TURNS);
-    let mut masked = 0;
+    let mut out = Vec::new();
     for turn in turns.iter().take(maskable) {
         if current <= target {
             break;
         }
         for &pos in turn {
-            let tokens = image_tokens(&items[pos]);
-            match &mut items[pos] {
+            match &items[pos] {
                 Item::ToolResult { call_id, content }
                     if !is_masked(content)
                         && (content.len() >= MIN_MASKED_CHARS
                             || with_images.contains(call_id.as_str())) =>
                 {
-                    let replacement = stub(calls.get(call_id.as_str()), content);
+                    let replacement = stub(calls.get(call_id.as_str()).copied(), content);
                     current = current.saturating_sub(tokens_of(content)) + tokens_of(&replacement);
-                    *content = replacement;
-                    masked += 1;
+                    out.push(pos);
                 }
                 Item::Images { images, .. } if !images.is_empty() => {
-                    current = current.saturating_sub(tokens);
-                    images.clear();
+                    current = current.saturating_sub(image_tokens(&items[pos]));
+                    out.push(pos);
                 }
                 _ => {}
             }
         }
     }
-    masked
+    (out, current)
+}
+
+/// Replaces the results at `positions` by stubs and drops the images at
+/// them; a position that holds neither (or an already masked result) is left
+/// alone. The same positions on the same conversation give the same result,
+/// so a resumed run masks exactly what the interrupted one did. Returns how
+/// many items changed.
+pub fn apply_mask(items: &mut [Item], positions: &[usize]) -> usize {
+    if positions.is_empty() {
+        return 0;
+    }
+    let stubs: Vec<(usize, String)> = {
+        let calls = calls_of(items);
+        positions
+            .iter()
+            .filter_map(|&p| match items.get(p) {
+                Some(Item::ToolResult { call_id, content }) if !is_masked(content) => {
+                    Some((p, stub(calls.get(call_id.as_str()).copied(), content)))
+                }
+                _ => None,
+            })
+            .collect()
+    };
+    let mut changed = 0;
+    for (p, replacement) in stubs {
+        if let Some(Item::ToolResult { content, .. }) = items.get_mut(p) {
+            *content = replacement;
+            changed += 1;
+        }
+    }
+    for &p in positions {
+        if let Some(Item::Images { images, .. }) = items.get_mut(p)
+            && !images.is_empty()
+        {
+            images.clear();
+            changed += 1;
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -248,7 +309,7 @@ mod tests {
     #[test]
     fn nothing_masked_below_threshold() {
         let mut v = items(3, 1, 100);
-        assert_eq!(mask_if_needed(&mut v, "s", 100_000, 0.7), 0);
+        assert!(mask_if_needed(&mut v, "s", 100_000, 0.7).is_empty());
     }
 
     #[test]
@@ -256,7 +317,7 @@ mod tests {
         let mut v = items(20, 1, 7000);
         let before = estimate(&v, "s");
         let window = before + 1000;
-        let masked = mask_if_needed(&mut v, "s", window, 0.7);
+        let masked = mask_if_needed(&mut v, "s", window, 0.7).len();
         assert!(masked > 0);
         assert!(estimate(&v, "s") <= window / 2 + 3000);
         let last: Vec<&Item> = v.iter().rev().take(2 * KEEP_RECENT_TURNS).collect();
@@ -266,7 +327,7 @@ mod tests {
         );
         assert!(masked_at(&v, 2));
         // A second call right after does nothing (batching).
-        assert_eq!(mask_if_needed(&mut v, "s", window, 0.7), 0);
+        assert!(mask_if_needed(&mut v, "s", window, 0.7).is_empty());
     }
 
     #[test]
@@ -282,7 +343,7 @@ mod tests {
         };
         let before_ids = ids(&v);
         let window = estimate(&v, "s") + 1000;
-        assert!(mask_if_needed(&mut v, "s", window, 0.7) > 0);
+        assert!(!mask_if_needed(&mut v, "s", window, 0.7).is_empty());
         assert_eq!(ids(&v), before_ids, "no result removed or reordered");
         // Each turn is [assistant, r, r, r]: its three results share one fate.
         for t in 0..12 {
@@ -316,7 +377,7 @@ mod tests {
         without.remove(3);
         assert!(with >= estimate(&without, "s") + img.estimated_tokens());
         let window = with + 1000;
-        assert!(mask_if_needed(&mut v, "s", window, 0.7) > 0);
+        assert!(!mask_if_needed(&mut v, "s", window, 0.7).is_empty());
         assert!(
             masked_at(&v, 2),
             "the image's short result is masked with it"
@@ -331,7 +392,7 @@ mod tests {
             *content = "edited src/f0_0.rs (1 edit)".into();
         }
         let window = estimate(&v, "s") + 1000;
-        assert!(mask_if_needed(&mut v, "s", window, 0.7) > 0);
+        assert!(!mask_if_needed(&mut v, "s", window, 0.7).is_empty());
         assert!(!masked_at(&v, 2));
         assert!(masked_at(&v, 4));
     }

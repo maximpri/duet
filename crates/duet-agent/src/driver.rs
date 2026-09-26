@@ -26,6 +26,9 @@ pub trait Driver: Send + Sync {
         &'a self,
         request: &'a Request,
     ) -> BoxFuture<'a, Result<(Response, Vec<String>), GateError>>;
+    /// `request` in the form it would be sent: after the outbound filters,
+    /// neither checked, audited nor sent (context compaction reads this).
+    fn as_sent(&self, request: &Request) -> Request;
 }
 
 impl Driver for GatedFrontier {
@@ -46,5 +49,9 @@ impl Driver for GatedFrontier {
         request: &'a Request,
     ) -> BoxFuture<'a, Result<(Response, Vec<String>), GateError>> {
         Box::pin(GatedFrontier::create(self, request))
+    }
+
+    fn as_sent(&self, request: &Request) -> Request {
+        GatedFrontier::as_sent(self, request)
     }
 }
