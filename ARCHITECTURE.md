@@ -68,7 +68,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -303,7 +303,9 @@ output follows the command-output rules above.
 
 ### 5.3 Local roles
 
-The local model is called only by the boundary, never by the loop directly, and has no tools.
+The local model is called by the boundary and has no tools, with one exception: the local explorer
+(§5.13), which drives it through a tool loop of its own over a `LocalAgent` (a local-role endpoint
+only) and whose report the boundary cleans as local output.
 
 | Role | Trigger | Required fields |
 |---|---|---|
@@ -312,6 +314,7 @@ The local model is called only by the boundary, never by the loop directly, and 
 | Answer | `ask_local(handle, questions[≤6])`, one call per question on the most relevant chunk; `handle` may be a placeholder from an operator message (the handle is that message) | `answer` (≤1,200 chars), `evidence_lines[]`, `unanswerable` |
 | Implement | `edit_protected(path, spec, tests?, command?)` | `code`: the whole new protected file, written by the host and validated by host-run checks |
 | Condense | context compaction (§6): the older part of a conversation as the frontier was sent it, read part by part (≤60K characters each), each call updating the notes of the parts before it | `summary` (≤12,000 chars; own schema) |
+| Explore | `explore {question, paths?, depth?}` (§5.13): a native tool-calling loop over the workspace as it is, read-only | a `report` call: `answer`, `findings[{path, line, end_line?, note}]` |
 
 All roles send one shared JSON schema (servers such as oMLX key their prompt cache by schema) and
 put the content before the instruction, so questions about one handle reuse the processed prefix;
@@ -668,6 +671,57 @@ plausibility and side of 2^53; letters pronounceable with the same case and UTF-
 The seed is drawn per run (`sample-seed`); equal values get equal fakes; a larger sample starts
 with the smaller one's records.
 
+### 5.13 Local explorer
+
+`crates/duet-agent/src/explore.rs`. `RunConfig.explore` (`None` unless `explore.enabled` and a
+local model is enabled; never in a sub-agent) adds `explore {question, paths?, depth?}` to the fixed
+tool set of runs and sessions, in hybrid and pass-through; the run and session prompts name it only
+then (so the prefix of a run without it is the one every evaluation measured). The CLI builds it in
+`prepare` (`crates/duet-cli/src/explore.rs`): the configured local model through `local_provider`
+(the same endpoint rules and deadline as the engine's), wrapped in `LocalAgent`, which refuses a
+provider that is not in the local role and implements the `Driver` trait.
+
+```
+call     parse: question (≤4,000 chars), paths (≤20 globs, relative, no .git/.duet), depth quick
+         (default) or thorough → Caps{steps, time, bytes} (explore.quick_steps / thorough_steps;
+         explore.max_seconds, a third for quick; explore.max_read_kb, half for quick); until =
+         min(now + time, the run's deadline)
+view     SecureView over the calling loop's presenter: present() shows content as it is, cut at
+         12 KB per result, listings and searches kept to `paths`, and records every text with the
+         file it came from (search lines split per file); path_visible adds .git/.duet to the
+         presenter's hidden paths; path_sensitive/protection/hidden_* delegate; resolve_for_write
+         refuses
+tools    the calling loop's implementations (tools::dispatch) with a Ctx over the view: read_file
+         (text), list_files, search, code_nav (if the run has language servers), git_log/show/
+         blame/status (commits off), report; sorted; any other name refused before dispatch; no
+         network, no web, no MCP, no sub-agents
+loop     system = explorer prompt (workspace name only); items = [question (placeholders resolved;
+         a positional question put as one about format), where to look, the budget]; each step
+         one LocalAgent request (temperature 0.2, visible thinking off, ≤2,048 output tokens) under
+         timeout_at(until) and the interrupt flag; tool results counted against the byte cap and cut
+         to what is left; when steps or bytes run out one last request offers only `report`; plain
+         text instead of a call is taken as the answer
+report   findings kept only for a visible, non-reserved file the explorer was shown, with the line
+         inside it (≤25); the answer and notes (note lines marked) presented together as
+         Source::Explore{question, read} → engine: index what was read (sensitive as sensitive,
+         protected through ip_index, public as public), withhold values of structured sensitive
+         data (with structure views; kept only when all words are public or schema words, never
+         with a digit), clean_local_counted over all of it as an answer to the question, then
+         ip_redact; paths presented as Source::FileList (protected
+         ones marked); the line at a reference quoted by Duet only for an open file, as
+         Source::CodeNav; framed between random-tag markers
+end      Explored{call_id, stats} in the transcript; audit `explore` {question_sha256, depth,
+         steps, files, bytes_read, local_seconds, references, outcome}; the presenter's probe
+         events drained; ledger.explore (calls, reported, steps, bytes, local CallStats); the
+         result is shown as LocalAnswer
+```
+
+Outcomes: `reported`; `partial` (a cap ended it before a report: the frontier gets the files it
+read and nothing else); `failed` (the local model errored: a tool error); `interrupted`. The
+explorer's own conversation is not kept (it held raw content). **Resume**: `Explored` entries
+rebuild `ledger.explore` in `run::replay`; a call whose result was not recorded is dropped with its
+turn and decided again, like any tool call (nothing to roll back: it never writes).
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -736,7 +790,8 @@ git; reset behaviour defined per entry).
     transcript.jsonl          full conversation items, synced per item; for a session also its
                               turns (as typed), their ends, steering and undo; sub-agents'
                               starts, ends, rollbacks and their own entries nested under their id;
-                              masking positions and compactions (with their replacement text)
+                              masking positions and compactions (with their replacement text);
+                              the explorer's calls (counts only, never what it read)
     handles/<hN>(.source)     raw bytes of handles (local only)
     vault.json                placeholder ↔ value map, aliases (local only)
     derived.json              files made sensitive by `sensitive_data` commands
@@ -907,6 +962,8 @@ Each is backed by a test, except where noted.
    adapters).
 10. A sub-agent has no tool its parent lacks, cannot delegate, writes only through the journal
     within its paths (its commands cannot write the workspace), and its requests pass the same gate.
+    The local explorer has only reading tools, sends raw content only to a local-role endpoint, and
+    its report reaches the frontier only through `Presenter::present` (`Source::Explore`).
 11. A sandboxed command reaches no network but the egress proxy (and its own loopback servers)
     unless `sandbox.network = "all"`; a `sensitive_data` command reaches none in any mode; the proxy
     resolves only listed names and connects only to public addresses.

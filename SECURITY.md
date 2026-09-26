@@ -108,7 +108,7 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    vault, transcripts, the audit log) is unreadable to every command in every mode, `sensitive_data`
    and checks included, whatever the caller asks; `.git` and `.duet` are never writable.
    **Protected source** (`ip.interface_only`, `ip.sealed`): see the next section.
-   **Local-model output** (summaries, facts, briefs, `ask_local` answers) is checked with a 4-token
+   **Local-model output** (summaries, facts, briefs, `ask_local` answers, the explorer's reports) is checked with a 4-token
    copy window on the text as written, spaced-out values (`V a k d r i l`) and base64/hex runs
    (decoded at every alignment) are matched against the vault and the copy index, and pieces of
    identifying values are limited: characters tied to a position (`the first digit is 5`,
@@ -970,6 +970,46 @@ because they would turn the frontier's own identifiers into placeholders. The lo
 whole older conversation at once, including what the frontier wrote and fetched; the local host is
 trusted with it as it is with sensitive content.
 
+## Local explorer
+
+`explore` (`explore.enabled`, off by default until measured; offered only when a local model is
+enabled, in hybrid and pass-through) hands a where/what/how question about the repository to the
+local model, which answers after a bounded read-only tool loop of its own (ARCHITECTURE §5.13). It
+is a new actor in the secure zone (it reads the workspace as it is, sensitive files and protected
+source included) and a channel in (its report reaches the frontier):
+
+| Threat | What stops it |
+|---|---|
+| The report carries sensitive content the explorer read | The report passes the boundary as `Source::Explore`. What the explorer read is indexed first (sensitive text as sensitive, also a file the run-start index did not take; protected source through its own index; public files as public), then the model's words are cleaned like an `ask_local` answer about all of it: 4-token copied runs, spelled-out and base64/hex forms, detected and vault values, the name and number heuristics for text about sensitive content, digits of withheld numbers and the per-value budget; lines quoting protected code are withheld. Before that, with `sensitivity.structure_views` on, every value of structured sensitive data (a CSV cell, a JSON string: a date of birth, a plan name, an internal code) the report names is withheld, unless it is made only of words public code or the schema uses The request carrying it passes the outbound gate like any other (filter, final check, audit record) |
+| A reference or quoted line discloses a sensitive or protected file's content | References are Duet's text, not the model's: one is kept only for a visible workspace file (never `.git`, `.duet`) the explorer was shown, with the line inside the file, 25 at most; paths are presented like a file listing (protected ones marked). Duet quotes the line at a reference only from an open file (neither sensitive nor protected), presented as a line of that file (`Source::CodeNav`); a sensitive reference says "content not shown" and points to its structure view (`read_file`), a sealed one says only that, an interface-only one points to its skeleton |
+| The frontier probes a value through the explorer ("the first four digits of the card on line 3") | A positional question is put to the local model as one about the value's format, and the report is limited as a narrow answer (every piece of a value withheld); in other reports pieces of values are charged to the per-value budget shared with `ask_local` over the run (`probes.json`). Each such report is a `local_probe` event with handle `explore` |
+| The explorer does anything but read (writes, commands, network, delegation, the web, MCP) | Its tools are an allowlist: `read_file` (text files), `list_files`, `search`, `code_nav` when the run has language servers, `git_log`, `git_show`, `git_blame`, `git_status`, and its own `report`; any other name, `explore` included, is refused before dispatch. The tools see the workspace through a view that refuses every write, hides what the frontier may not see and `.git`/`.duet`, and has no network, web or MCP client; git runs through the hardened runner with commits off |
+| Hostile content steers the explorer (prompt injection in a file, a comment, a commit message) | Its system prompt frames everything it reads as data; it has no tool with a side effect, so the most an injection can do is make the report wrong or misleading. The frontier gets the report framed as data between random-tag markers, and references the model invents are dropped by the check above. Tested with a stand-in that obeys an injected file (`crates/duet-cli/tests/explore.rs`) |
+| Raw content goes somewhere other than the local model | The explorer's model is a `LocalAgent`, which refuses any provider not in the local role; the endpoint is loopback or owner-allowlisted (TLS unless `local.allow_plaintext`), checked when the provider is built, the same rule as for the engine's local model |
+| Runaway local time or an overflowing local context | Per call: steps (`explore.quick_steps` 12, `explore.thorough_steps` 30), time (`explore.max_seconds`, a third of it for quick) and bytes shown (`explore.max_read_kb`, half for quick; each tool result cut at 12 KB), and the run's own deadline; an interrupt stops it at once. When the steps or bytes run out it gets one last request offering only `report`; if it still does not report, or time runs out, the frontier gets the list of files it read and nothing else |
+| The explorer's work is invisible to the operator or the audit | One `explore` audit event per call (SHA-256 of the question, depth, steps, files and bytes read, local seconds, references kept, outcome; never the question, what it read or the report), an `Explored` transcript entry with the same counts, and the result recorded like any tool result; `summary.json` reports its calls, steps and local time (`stats.ledger.explore`) |
+
+Pass-through: the report is shown as the model wrote it (the boundary is off, as for every other
+result); there the explorer only saves frontier turns. The local endpoint's trust is recorded in
+the audit log as in hybrid. Tested end to end with planted values: a careless stand-in that pastes
+everything it read (the `.env` and customer file, search hits, each value spelled out, in base64
+and as digit fragments) into its answer and notes reaches the frontier with none of them
+(`a_careless_explorer_pasting_what_it_read_leaks_nothing`), and protected bodies and literals never
+appear in any request (`protected_source_is_never_quoted_and_sealed_files_are_marked`).
+
+**Known limits.** The report is cleaned like any other local output, with the same limits (below),
+narrowed by the structured-data step: a value no detector knows that is not a value of structured
+sensitive data (a first name in a log line, a password in prose, anything with structure views off),
+or one spelled out or encoded, written by the model outside a copied run, passes. Describing what protected code does in prose is allowed, as for `ask_local` on a
+protected handle; only quoted lines and known literals are withheld. A hostile file can steer which
+checked references the report makes (which lines of files the explorer read it points to): a
+low-bandwidth channel that line numbers alone can carry. Pieces of values are charged against all
+the identifying values in what the explorer read, so after it read sensitive files a short number
+in the report's text may be withheld (the references' line numbers are Duet's and are not). The
+explorer's local requests carry raw content to the local host, as the engine's local roles do, and
+are not in the audit log (the call's event is). Its conversation is not kept: a call interrupted
+before its result was recorded is decided again by the frontier.
+
 ## Known limits
 
 - Detectors cannot recognize every possible secret format; canaries and the audit log exist to
@@ -1156,6 +1196,7 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-021 | Random keys taken for identifiers | CWE-183 Permissive List of Allowed Inputs (consequence CWE-201) | The entropy detector passed any token holding `__` (meant for dunder names) and any letters-only token whose capitals looked like camel case, so about 1% of random URL-safe base64 keys and 0.6% of random letter keys were sent as written, in public content and in the frontier's own text, unless another detector knew their format or a key-like name stood next to them. Found by the random-token measurement written while fixing the detector's false positives on paths and build output (seen in a live run, 2026-09-26), not observed in a run | The exemptions are gone; an identifier is recognized by its word shape (camel case with acronyms, words of one or two letters only those identifiers use, at most two capitals in five letters) and a long token by its parts; a seeded test over a million random tokens of five alphabets bounds those not withheld whole (55 measured; 3,177 before) |
 | DUET-2026-022 | Network for commands that read sensitive data | CWE-284 Improper Access Control (consequence CWE-201) | With `sandbox.network = true`, `sensitive_data` commands (which read sensitive files) and checks (which read protected source) had the same unrestricted network as ordinary commands, so a steered frontier could send sensitive data or protected source from them; and every command could read the credential stores in the operator's home directory (registry tokens, keys, cloud credentials, shell histories) and print or send them. Found in review while adding the egress proxy, not observed in a run | `sensitive_data` commands never have network, in any mode; checks that can read protected source have none; the credential stores in the home directory (`HOME_SECRETS`) are unreadable to every command; the default network is registries only, through the audited egress proxy |
 | DUET-2026-023 | Probing sensitive data through the size and shape of command output | CWE-203 Observable Discrepancy (consequence CWE-202) | Without a local model, the frontier (not steered, only unable to read `.env`) ran 34 `sensitive_data` commands such as `grep -q KEY .env && echo M` and decoded one bit from each through the view's line and byte counts, after calibrating them with `echo hi` and `printf ''`. What it read was structure (which keys exist, their syntax), and it drew a wrong conclusion, but the channel reads values as well, one comparison at a time. Observed in a live run (`results/nolocal-smoke`, S1, 2026-09-26) | Short output of a `sensitive_data` command (or a file it wrote) is a probe: counted, audited (`output_probe`) and, past `sensitivity.output_probes` (12), shown as a fixed text that does not depend on it; output that is shown is masked (values as shapes, small numbers within `sensitivity.masked_numbers`); the task note's structure outline states what such probes sought. Longer output remains a bounded channel (see Structure views, Known limits) |
+| DUET-2026-024 | Run state through `read_file` | CWE-552 Files or Directories Accessible to External Parties (consequence CWE-201) | `read_file` (and an image read, and `code_nav`'s target) refused hidden paths but not `.duet` or `.git`. An ordinary command's `$TMPDIR` names the run (`duet-scratch/<run-id>`), so a steered frontier could find `.duet/runs/<run-id>/handles/h1` and have a raw handle presented as a public file: values in the vault were replaced, but what no detector knows (a date of birth) was shown as written. Found in review while building the explorer, not observed in a run | The file tools refuse reserved paths (`.duet`: handles, the vault, transcripts; `.git`: committed copies), as the sandbox does for commands and the git tools and listings already did (`d280f07`); regression test `read_file_never_reads_run_state_or_git_internals` |
 
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values

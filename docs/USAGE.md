@@ -399,6 +399,37 @@ placeholders, never sensitive content); every request it makes passes the same o
 is in the same audit log, with `subagent_start` and `subagent_end` events (the task's hash, never
 its text). Details: [SECURITY.md](../SECURITY.md) (Sub-agents).
 
+**Local explorer** (`explore.*` settings; off by default until measured): with a local model
+enabled, the frontier gets `explore {question, paths?, depth?}`. The local model answers a
+where/what/how question ("where is the retry policy applied?", "how does an order reach the
+invoice?", "which tests cover the CSV export?") by searching and reading the repository itself, in
+as many steps as it needs, and the frontier gets one result: a short answer and file:line
+references with one-line notes, each checked against the files, with the code at the reference
+quoted from open source files. A frontier that would otherwise list, search and read over several
+turns (each resending the whole conversation) spends one.
+
+```sh
+duet config set explore.enabled true              # offer explore (hybrid and pass-through)
+duet config set explore.quick_steps 12            # local model requests per quick call (default depth)
+duet config set explore.thorough_steps 30         # ... per thorough call
+duet config set explore.max_seconds 600           # time of a thorough call (a quick one: a third)
+duet config set explore.max_read_kb 96            # tool output a thorough call reads (a quick one: half)
+```
+
+The explorer only reads: `read_file`, `list_files`, `search`, `code_nav` when language servers
+are available, and the read-only git tools; no commands, no network, no delegation, no writes. It
+reads sensitive files as they are (the local model may), but in hybrid mode its report is cleaned
+as local-model output before the frontier sees it: a reference to `data/customers.csv line 3` is
+fine (it points to the file's structure view), its content is not, values of the data are withheld
+wherever the report names them, and protected source is never quoted (an interface-only file's
+reference points to its skeleton, a sealed one's says only that it exists). Keep `explore.max_read_kb` within
+your local model's context (data files take about one token per 2 bytes). A call that runs out of
+steps or time before it reports tells the frontier which files it read. In pass-through mode the
+report is shown as written: the explorer is only a cost tool there. Each call is an `explore`
+audit event (the question's hash, steps, bytes, local seconds; never content), its local time is
+in `summary.json` (`stats.ledger.explore`), and in `duet tui` the Run view shows each call's
+outcome and counts. Details: [SECURITY.md](../SECURITY.md) (Local explorer).
+
 **Images** (PNG, JPEG, GIF, WebP): `read_file` on an image in the workspace, `duet run --image
 <path>` (repeatable), and `/image <path>` in `duet chat` or the TUI's session box (attached to your
 next message). Every image is decoded, scaled to `images.max_side` (1568 px) and encoded again,
