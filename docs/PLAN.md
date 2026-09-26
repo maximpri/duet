@@ -745,9 +745,10 @@ Order: after the M5.2 head-to-head, the host-native web search and the single eg
 
 ### Extension points for Enterprise (Core, GPL)
 
-Generic, documented hooks that Duet Enterprise builds on and that are useful on their own:
-1. An additional top-precedence configuration layer with tighten-only merge (e.g. an
-   organisation policy file), verified by a caller-supplied check.
+Generic, documented hooks exposed as a library embedding API; Duet Enterprise builds on them. Core's
+own `duet` CLI uses none of them (the policy feature itself is commercial):
+1. An additional top-precedence configuration layer with tighten-only merge, loaded and verified
+   by a caller-supplied source.
 2. An audit-event subscriber API (the events Core already records, never content).
 3. A run/session end hook carrying the terminal state and the audit chain head.
 
