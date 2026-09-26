@@ -113,9 +113,10 @@ re!(
     r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]"
 );
 re!(
-    /// Lines `run_command` and the checks write around the output itself.
+    /// Lines `run_command` and the checks write around the output itself,
+    /// and the sandbox's notes (a refused download, a removed `.git`).
     STRUCTURE,
-    r"^(?:exit code -?\d+|timed out after \S+|terminated by a signal|--- (?:stdout|stderr) ---|\[(?:stdout|stderr) truncated: .*\]|\$ .+|could not run: .*)$"
+    r"^(?:exit code -?\d+|timed out after \S+|terminated by a signal|--- (?:stdout|stderr) ---|\[(?:stdout|stderr) truncated: .*\]|\$ .+|could not run: .*|\[sandbox\] .*)$"
 );
 
 impl Plan {

@@ -223,6 +223,27 @@ total.into()\n   |          +++++++\n\n"
 }
 
 #[test]
+fn the_sandboxs_notes_are_kept_whole() {
+    // A registry the egress proxy refused, noted after an install's output.
+    let mut text = String::from("exit code 1\n--- stderr ---\n");
+    for i in 0..40 {
+        text.push_str(&format!(
+            "npm http fetch GET 200 https://registry.npmjs.org/pkg-{i} 12ms (cache hit)\n"
+        ));
+    }
+    text.push_str(
+        "npm error code E403\nnpm error 403 Forbidden - GET https://npm.corp.example/@corp%2fui\n",
+    );
+    let note = "[sandbox] the egress proxy refused: npm.corp.example:443. Commands reach only the \
+package registries in sandbox.registries (an owner setting).";
+    text.push_str(&format!("\n{note}\n"));
+    let c = condense(&text, 2000).expect("condensed");
+    assert!(c.text.contains(note), "{}", c.text);
+    assert!(c.text.contains("npm error 403 Forbidden"), "{}", c.text);
+    assert!(c.text.contains("40 progress lines"), "{}", c.text);
+}
+
+#[test]
 fn eligibility_follows_what_the_command_asked_to_see() {
     for yes in [
         "cargo test",
