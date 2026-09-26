@@ -143,6 +143,15 @@ pub const REGISTRY: &[Setting] = &[
         "The frontier model accepts images. Pass-through: images are sent when true and refused when false. Hybrid: the frontier gets an image itself only when it is public (images.to_frontier, or attached with --image-public), never from a sensitive path. The anthropic and openai presets turn it on; `duet doctor --online` tests it."
     ),
     s!(
+        "local.enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        true,
+        "Use a local model. false: hybrid runs without one: no local server is probed, no model reads sensitive content, the frontier sees it only as handles (their sanitized error lines and line shapes), and ask_local and edit_protected are refused; local-only mode and sensitivity.local_pii_pass refuse to start. Measures what the local model adds (evaluation lane duet-hybrid-nolocal)."
+    ),
+    s!(
         "local.base_url",
         Str,
         r#""http://127.0.0.1:8080/v1""#,
@@ -1537,6 +1546,29 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    #[test]
+    fn a_project_may_turn_the_local_model_off_and_only_the_owner_back_on() {
+        let (_d, o, p) = files("", "[local]\nenabled = false\n");
+        let c = Config::load(&o, Some(&p)).unwrap();
+        assert!(!c.bool("local.enabled").unwrap());
+        assert_eq!(c.origin("local.enabled"), Some(Origin::Project));
+        let (_d, o, p) = files("[local]\nenabled = false\n", "[local]\nenabled = true\n");
+        assert!(matches!(
+            Config::load(&o, Some(&p)),
+            Err(ConfigError::Loosening { .. })
+        ));
+        // Back on, the local model reads sensitive content again: confirmed.
+        let (_d, o, _p) = files("[local]\nenabled = false\n", "");
+        let mut c = Config::load(&o, None).unwrap();
+        assert!(matches!(
+            c.set_owner_checked("local.enabled", Value::Boolean(true), false),
+            Err(ConfigError::NeedsConfirm { .. })
+        ));
+        c.set_owner_checked("local.enabled", Value::Boolean(true), true)
+            .unwrap();
+        assert!(c.bool("local.enabled").unwrap());
     }
 
     #[test]

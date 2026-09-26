@@ -830,6 +830,23 @@ async fn cache_check(
 }
 
 async fn local(c: &Config, online: bool) -> Vec<Check> {
+    if !c.bool("local.enabled").unwrap_or(true) {
+        // Nothing to contact; a setting that needs a local model is a conflict.
+        return vec![if c.bool("sensitivity.local_pii_pass").unwrap_or(false) {
+            check(
+                "local model",
+                Status::Fail,
+                "off (local.enabled = false), but sensitivity.local_pii_pass needs one: hybrid runs are refused",
+            )
+            .fix("turn one of them off: duet config set sensitivity.local_pii_pass false")
+        } else {
+            check(
+                "local model",
+                Status::Pass,
+                "off (local.enabled = false): hybrid runs show sensitive content as handles only; ask_local, edit_protected and local-only mode are refused",
+            )
+        }];
+    }
     let url = c.str("local.base_url").unwrap_or_default();
     let model = c.str("local.model").unwrap_or_default();
     let allowlist = c.list("local.allowlist").unwrap_or_default();

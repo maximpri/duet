@@ -374,6 +374,27 @@ fn local_provider(
     Ok((ChatProvider::with_reqwest(pc)?, event))
 }
 
+/// Whether a run in `mode` uses a local model (`local.enabled`). With it off,
+/// hybrid runs without one (handles only; `ask_local` and `edit_protected`
+/// refused), and anything that would need one to protect data or to run at
+/// all is refused rather than silently skipped.
+pub(crate) fn local_enabled(cfg: &Config, mode: Mode) -> Result<bool> {
+    if cfg.bool("local.enabled")? {
+        return Ok(true);
+    }
+    match mode {
+        Mode::LocalOnly => {
+            bail!("--mode local-only needs a local model, and local.enabled is false")
+        }
+        Mode::Hybrid => ensure!(
+            !cfg.bool("sensitivity.local_pii_pass")?,
+            "sensitivity.local_pii_pass needs a local model, and local.enabled is false: turn one of them off"
+        ),
+        Mode::Passthrough => {}
+    }
+    Ok(false)
+}
+
 /// The anchors of a run's audit log (owner state directory).
 pub(crate) fn run_anchor(ws: &Path, run_id: &str) -> RunAnchors {
     run_anchors(&duet_config::owner_state_dir(), ws, run_id)
@@ -642,6 +663,12 @@ async fn prepare(
     }
     let mut trust = None;
     let engine = match manifest.mode {
+        Mode::Hybrid if !local_enabled(cfg, Mode::Hybrid)? => {
+            eprintln!(
+                "no local model (local.enabled = false): sensitive content reaches the frontier only as handles; ask_local and edit_protected are refused"
+            );
+            Some(Engine::open(run_dir, policy(cfg)?, None)?)
+        }
         Mode::Hybrid => {
             let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
@@ -669,6 +696,7 @@ async fn prepare(
             manifest.frontier_model.clone(),
         ),
         Mode::LocalOnly => {
+            local_enabled(cfg, Mode::LocalOnly)?;
             let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
             (local, String::new())
@@ -894,15 +922,18 @@ Add --no-privacy to confirm, or use --mode hybrid."
             approve::require_terminal(&cfg)?;
             let attached = images::from_args(&image, &image_public)?;
             images::precheck(&ws, &cfg, mode, &attached)?;
+            // With the local model off nothing is probed for one.
             let local = match mode {
-                Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
-                    Ok(found) => found.map(|b| LocalOverride {
-                        base_url: b.base_url,
-                        model: b.model,
-                    }),
-                    Err(code) => std::process::exit(code),
-                },
-                Mode::Passthrough => None,
+                Mode::Hybrid | Mode::LocalOnly if local_enabled(&cfg, mode)? => {
+                    match setup::bootstrap(&cfg).await {
+                        Ok(found) => found.map(|b| LocalOverride {
+                            base_url: b.base_url,
+                            model: b.model,
+                        }),
+                        Err(code) => std::process::exit(code),
+                    }
+                }
+                _ => None,
             };
             let manifest = RunManifest {
                 run_id: new_run_id(),

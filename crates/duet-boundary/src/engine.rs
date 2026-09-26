@@ -330,6 +330,10 @@ static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+").expect("sta
 /// Local calls for the task brief, and characters read of each sensitive file for it.
 const MAX_BRIEF_CALLS: usize = 3;
 const BRIEF_FILE_CHARS: usize = 20_000;
+/// Told to the frontier in a run without a local model.
+const NO_LOCAL_NOTE: &str = "\n\nThis run has no local model: ask_local and edit_protected are refused, and a \
+handle of sensitive content shows only the lines and line shapes given with it. Work from those, from command \
+output and from synthetic fixtures.";
 /// Questions answered per `ask_local` call.
 pub const MAX_QUESTIONS: usize = 6;
 /// Lines `read_raw` returns when no end is given, and at most per call.
@@ -1473,6 +1477,17 @@ value; run_command with sensitive_data resolves placeholders in the command on t
         self.local.as_ref().map(LocalReader::take_stats)
     }
 
+    /// The task notes, and when there is no local model (`local.enabled =
+    /// false`) the note that nothing can answer questions about a handle, so
+    /// the frontier does not spend turns on refused calls.
+    fn notes(&self, st: &State) -> String {
+        let mut notes = Self::task_notes_of(st);
+        if self.local.is_none() && !notes.is_empty() {
+            notes.push_str(NO_LOCAL_NOTE);
+        }
+        notes
+    }
+
     /// The notes the task gets: the sensitive paths (commands cannot read
     /// them), the protected ones and the local brief, if any.
     fn task_notes_of(st: &State) -> String {
@@ -1918,12 +1933,12 @@ and are never resolved for {destination}",
         let mut out = self.sanitize_operator(&mut st, text, "task");
         let note = self.operator_values(&mut st, text, &out);
         out.push_str(&note);
-        out.push_str(&Self::task_notes_of(&st));
+        out.push_str(&self.notes(&st));
         out
     }
 
     fn task_notes(&self) -> String {
-        Self::task_notes_of(&self.lock())
+        self.notes(&self.lock())
     }
 
     /// A follow-up operator message: detected values become placeholders and
@@ -2684,6 +2699,43 @@ mod prime_tests {
             "{task}"
         );
         assert!(task.contains("sensitive_data"), "{task}");
+    }
+
+    #[test]
+    fn without_a_local_model_the_task_says_so_and_handles_answer_nothing() {
+        const EMAIL: &str = "mira.quellbrook@example.org";
+        let (_d, e) = primed_engine(
+            &[
+                (
+                    "data/customers.csv",
+                    &format!("id,email\n1,{EMAIL}\nError: row 1\n"),
+                ),
+                ("src/lib.rs", "// code\n"),
+            ],
+            "",
+        );
+        let task = e.sanitize_objective("Fix the export.");
+        assert!(task.contains("This run has no local model"), "{task}");
+        assert_eq!(e.task_notes().matches("no local model").count(), 1);
+        let shown = e.present(
+            &Source::File {
+                path: "data/customers.csv".into(),
+                ranged: false,
+            },
+            format!("id,email\n1,{EMAIL}\nError: row 1\n").as_bytes(),
+        );
+        assert!(!shown.contains(EMAIL), "{shown}");
+        assert!(shown.contains("no local model configured"), "{shown}");
+        let args = serde_json::json!({"handle": "h1", "question": "What is the email in row 1?"});
+        let refused = e.call_tool("ask_local", args.as_object().unwrap()).unwrap();
+        assert_eq!(refused, Err("no local model is configured".to_owned()));
+        // Nothing sensitive, nothing to say.
+        let (_d, plain) = primed_engine(&[("src/lib.rs", "// code\n")], "");
+        assert!(
+            !plain
+                .sanitize_objective("Fix it.")
+                .contains("no local model")
+        );
     }
 
     #[test]

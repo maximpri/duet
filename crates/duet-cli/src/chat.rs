@@ -33,7 +33,7 @@ use crate::approve;
 use crate::term::console::{Console, Hooks, Mode as Live};
 use crate::{
     LocalOverride, Mode, Prepared, RunLimits, RunManifest, audit_log_path, checked_run_id,
-    frontier_dialect, load_config, new_run_id, open_audit, prepare, setup,
+    frontier_dialect, load_config, local_enabled, new_run_id, open_audit, prepare, setup,
 };
 use anyhow::{Context, Result, bail, ensure};
 use duet_agent::oversight::Action;
@@ -575,15 +575,18 @@ Add --no-privacy to confirm, or use --mode hybrid."
             };
             // Setting up prints freely.
             screen.hide();
+            // With the local model off nothing is probed for one.
             let local = match args.mode {
-                Mode::Hybrid | Mode::LocalOnly => match setup::bootstrap(&cfg).await {
-                    Ok(found) => found.map(|b| LocalOverride {
-                        base_url: b.base_url,
-                        model: b.model,
-                    }),
-                    Err(code) => return Ok(code),
-                },
-                Mode::Passthrough => None,
+                Mode::Hybrid | Mode::LocalOnly if local_enabled(&cfg, args.mode)? => {
+                    match setup::bootstrap(&cfg).await {
+                        Ok(found) => found.map(|b| LocalOverride {
+                            base_url: b.base_url,
+                            model: b.model,
+                        }),
+                        Err(code) => return Ok(code),
+                    }
+                }
+                _ => None,
             };
             let manifest = RunManifest {
                 run_id: new_run_id(),
