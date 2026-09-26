@@ -200,12 +200,19 @@ async fn a_tunnel_must_carry_tls_for_its_own_host() {
             refusals.0
         );
     }
+    // A tunnel the client opens and closes unused is not a refusal.
+    let (got, refusals) = exchange(&s, request.as_bytes(), b"").await;
+    assert!(got.starts_with("HTTP/1.1 200"), "{got}");
+    assert!(refusals.0.lock().unwrap().is_empty());
+    assert_eq!(events(&s).last().unwrap().outcome, Outcome::Failed);
     // The upstream never saw a byte of the refused sessions.
     assert!(s.received.lock().unwrap().iter().all(Vec::is_empty));
+    let e = events(&s);
     assert!(
-        events(&s)
+        e[..3]
             .iter()
-            .all(|e| e.outcome == Outcome::Refused && e.bytes_up == 0)
+            .all(|e| e.outcome == Outcome::Refused && e.bytes_up == 0),
+        "{e:?}"
     );
 }
 

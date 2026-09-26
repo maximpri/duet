@@ -395,7 +395,12 @@ impl Proxy {
             tls::Hello::Name(name) if name == host => None,
             tls::Hello::Name(_) => Some("the TLS session is for another host"),
             tls::Hello::Unnamed => Some("a tunnel carries only TLS naming its host"),
-            tls::Hello::Incomplete => Some("the tunnel closed before its TLS hello"),
+            tls::Hello::Incomplete => {
+                // Clients open tunnels they never use (connection pools): not
+                // a refusal, and nothing crossed.
+                record.decide(Outcome::Failed, "the client closed the tunnel unused");
+                return;
+            }
         };
         if let Some(why) = why {
             // The tunnel is already open: refuse by closing it.

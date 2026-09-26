@@ -162,7 +162,7 @@ pub(crate) fn cache_env(scratch: &Path, writable: bool) -> Vec<(String, String)>
         ("CARGO_HOME".into(), path(cargo)),
         ("npm_config_cache".into(), path(root.join("npm"))),
         ("YARN_CACHE_FOLDER".into(), path(root.join("yarn"))),
-        ("npm_config_store_dir".into(), path(root.join("pnpm"))),
+        ("XDG_CACHE_HOME".into(), path(root.join("xdg"))),
         ("PIP_CACHE_DIR".into(), path(root.join("pip"))),
         ("UV_CACHE_DIR".into(), path(root.join("uv"))),
         ("GOMODCACHE".into(), path(root.join("go/mod"))),

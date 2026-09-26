@@ -702,6 +702,8 @@ pub(crate) async fn sandboxed(
             let mut env = vec![
                 ("CARGO_TERM_COLOR".into(), "never".into()),
                 ("NO_COLOR".into(), "1".into()),
+                // Commands may not create `.git`: `cargo new` makes none.
+                ("CARGO_CARGO_NEW_VCS".into(), "none".into()),
             ];
             env.extend(caches);
             // What a sensitive command builds may embed sensitive data (a
