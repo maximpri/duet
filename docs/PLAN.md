@@ -568,6 +568,29 @@ not by the work itself; privacy mode adds turns (`ask_local`), which is its 1.6�
 Each item ships behind a setting and is kept only if, head to head on the Gate 2 set and X1/X2, it
 lowers frontier cost (projected at flagship prices too) with no quality loss and zero leaks.
 
+*Built (branch `compaction`), item 2:* `context.compaction` (off), `context.compact_at` (100K
+estimated tokens), `context.compact_to` (0.4). Masking first; when it cannot reach the target, the
+local model condenses everything between the first message and the recent turns (whole turns, at
+least 4) into working notes; the window's own masking stays the safety net. Its input is the older
+part as the gate's filters leave it; its output is cleaned as local output and then passes the gate.
+Events are recorded before they apply (`compacted` with the text; `masked` now with its positions),
+so a resume sends the same request byte for byte. No local model (pass-through, `local.enabled`
+off) means no attempt; a failure changes nothing and waits for growth. Offline replay with the live
+`omlx-coding` (`compaction_replay` example) of `xcal/X1-duet-hybrid-s1` (236 requests): 4
+compactions (requests 70, 122, 164, 226; ~101K → ~37K estimated tokens each), 122–358 s of local
+time each (940 s in all, +19% on the run's 84 minutes, during which the run waits; 16–36K local
+input and 1.5–4.1K output tokens), summaries of 3.4–7.9K characters; request tokens −49% and
+uncached tokens −36% (its 48 window maskings are no longer needed). On the run's recorded usage
+that projects to −43% frontier dollars at glm-5.3, −32% at Opus 5.5 and −36% at GPT-5.5. Dry
+replays of all 12 XL runs (6,000-character stand-in summaries, no model): 1–6 compactions per run,
+−25% to −46% each, −39% overall at glm-5.3 (−29% Opus, −32% GPT-5.5). The replay assumes the
+frontier's later turns unchanged: re-reads after a compaction and any effect on quality are for
+the head-to-head. The summaries read as specific and faithful (task and incident ids, files and
+functions changed and why, failing probes with their exact errors, open items), each folding the
+previous one in; detail of resolved issues thins out over generations (the fourth dropped the
+early error texts and line numbers). Duet's estimate counts about 1.5× the provider's tokens on
+these transcripts, so 100K estimated is about 67K provider tokens (XL mean context 71K).
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`
