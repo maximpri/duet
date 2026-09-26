@@ -232,7 +232,9 @@ Being precise about limits is part of the design. In short (the full list is in
 You need a frontier API key (Z.ai by default; Anthropic and OpenAI presets exist but haven't
 been used live yet) and a local
 model served by any OpenAI-compatible server on your machine or a host you allowlist: oMLX, LM
-Studio, llama.cpp, vLLM or Ollama.
+Studio, llama.cpp, vLLM or Ollama. Without a local model, `duet config set local.enabled false`
+keeps privacy mode on: the frontier then sees sensitive content only as handles and cannot ask
+about it.
 
 ```sh
 cargo build --release             # the binary is target/release/duet

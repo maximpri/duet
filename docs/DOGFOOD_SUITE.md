@@ -170,7 +170,44 @@ on a seed see identical canaries. Placeholders in task files use `{{canary:<kind
 | Cost | frontier tokens × list price (incl. cache) + local electricity | Reported (privacy premium), not gated |
 | Wall clock, local busy time | harness | Reported |
 | Frontier tokens carried by class, `ask_local` calls and questions, `sensitive_data` commands, sandbox denials, local busy seconds | Duet cost ledger (`summary.json`) | Diagnosis |
+| Cost profile: turns, context per turn (mean, p90), request tokens, cached share, output, input share of dollars; turns by cause | proxy capture (usage per request, every lane); Duet transcript (causes) | Diagnosis; the M5.2 yardstick |
+| Projected cost at other list prices, and its paired ratio against the reference lane | run record's `usage_by_model` × `pricing.toml` | M5.2 decisions (flagship prices) |
 | Terminal state | run record | Reliability gate |
+
+### Cost profile and price projection
+
+Frontier cost is turns × context: every request re-sends the conversation. `duet-eval report
+<batch>` adds a **Cost profile** table per lane and per task (means per run):
+
+- **Turns**: frontier requests as the proxy counted them, sub-agents' included (Duet's own
+  `stats.turns` counts the parent's only, so XL runs that delegate show more here).
+- **Context/turn** and **p90**: what each request sent, uncached input + cache reads + cache
+  writes, from the provider's usage in the proxy's response capture; mean and 90th percentile over
+  every turn of the runs (pooled). Requests whose response reported no usage have no context.
+- **Request tokens**: context summed over a run's turns (all the input it paid for); **Cached**: the
+  share of it read from the provider's cache; **Output** tokens (reasoning included).
+- **Input share of $**: input dollars (uncached, cache reads and writes, each at its rate) over all
+  frontier dollars, at the run's own list prices.
+- **Turns by cause** (Duet lanes, from `transcript.jsonl`, sub-agents included): each assistant
+  message is a turn; a turn with k tool calls counts 1/k toward each call's cause — reading
+  (`read_file`, `read_raw`, `list_files`, `search`, `diff`, git history, web, `code_nav`), editing
+  (`edit_file`, `write_file`, `edit_protected`, `rename`, `git_commit`), commands (`run_command`),
+  `ask_local`, other (`finish`, `delegate`, MCP tools, no tool call).
+
+`--project-prices flagships` (or model names in `pricing.toml`, or another price table's path)
+adds a **Price projection**: every run's recorded tokens (uncached input, cache reads, cache
+writes, output) charged at each table's list prices — `glm-5.3` (Z.ai), `claude-opus-5-5`
+(Anthropic) and `gpt-5.5` (OpenAI) for `flagships`, each row cited with its source and date and
+checked in a test against Duet's own built-in prices — as mean frontier dollars per run and the
+paired ratio Σ lane / Σ reference (`--reference`, default `duet-passthrough`) over runs of the same
+task and seed, with a 95% bootstrap interval. Limits: tokenizer differences are ignored (another
+model counts the same text differently); the recorded cache split is kept, so a provider whose
+cache writes cost more than input (Anthropic, 1.25×) is projected low by up to a quarter of the
+uncached-input dollars; local electricity is left out. The batch's `cost-profile.json` holds every
+run's per-turn list (model, context, usage, cost), the summaries and the projections.
+
+The profile reads only what runs already left (`proxy/`, `workspace/.duet/runs/*/transcript.jsonl`,
+`run.json`), so earlier batches report without re-running.
 
 ### Leak proxy
 
@@ -210,6 +247,7 @@ forwards to the lane's real upstream without TLS interception. Its log for a run
 |---|---|
 | `duet-passthrough` | Duet with the boundary off and no local model — the frontier-only reference |
 | `duet-hybrid` | Duet with the security engine on — the product |
+| `duet-hybrid-nolocal` | `duet-hybrid` with `local.enabled = false`: privacy mode with no local model (handles only; `ask_local` and `edit_protected` refused). Paired with `duet-hybrid`, it measures what the local model adds |
 | `duet-local-only` | Duet with the local model driving — reference floor |
 | `pi-glm`, `claude-code`, `codex` | External agents run as black boxes through the leak proxy (measurement only) |
 
@@ -251,6 +289,8 @@ anything missing.
 `duet-passthrough` runs with `--no-privacy` (passthrough requires the acknowledgement; requests are
 unchanged). `duet-hybrid` and `duet-local-only` reach the operator's LAN model over plain HTTP, so
 their per-run owner config sets `local.allow_plaintext = true` (only canaries cross that link).
+`duet-hybrid-nolocal` allows no LAN host and gets no local key; its owner config sets only
+`local.enabled = false`, so it probes and contacts no local server and is charged no electricity.
 
 ## 8. Statistics and sample sizes
 

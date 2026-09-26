@@ -41,6 +41,13 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
   refused unless the owner sets `local.allow_plaintext = true`, which a project config cannot set.
   Prefer TLS or an SSH tunnel to loopback; with the opt-in, the network path is part of the trusted
   base and Duet warns at every run.
+- The local model is optional in privacy mode. With `local.enabled = false` (which a project config
+  may set, and only the owner may undo, with `--confirm`) no local server is probed or contacted and
+  no model reads sensitive content: the frontier gets only what the detectors, the vault and the
+  copied-span filter leave of it (a handle's sanitized error lines and line shapes), and `ask_local`
+  and `edit_protected` are refused. A setting that needs a local model to protect data
+  (`sensitivity.local_pii_pass`) is refused with it off rather than skipped silently, and local-only
+  mode will not start. Tested end to end with planted values in `crates/duet-cli/tests/no_local.rs`.
 - The frontier provider is treated as an honest-but-curious recipient: everything it receives may be
   retained.
 
@@ -408,7 +415,8 @@ written and looks like one (two or more capitalized words; an address with a num
 vault like a detection, so that result and every later text, the frontier's own included, carry
 its placeholder. The same prose is read once per run, at most four chunks per result. The pass
 only adds: when the local model fails or misses, the result is as the detectors leave it. Its
-prompt asks for exact copies, but its output never leaves the machine.
+prompt asks for exact copies, but its output never leaves the machine. With the local model off
+(`local.enabled = false`) a run with the pass on is refused, so the pass is never skipped silently.
 
 **Measured** by the detection corpus (`crates/duet-boundary/tests/corpus.rs`, in the gate; data in
 `tests/corpus/`, synthetic, except five files of real toolchain output with paths anonymized):

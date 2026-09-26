@@ -410,6 +410,15 @@ offer (saying so, and recording it in the run). With several, or none, it prints
 `duet config set` commands and stops. It never writes configuration: `duet config preset <name>`
 does that, through the same `--confirm` and audit path as any endpoint change.
 
+**Privacy mode without a local model.** `duet config set local.enabled false` (a repository's own
+config may set it too) runs hybrid mode with no local model: nothing is probed or contacted, no
+model reads sensitive content, and the frontier sees it only as handles (their error lines with
+values replaced, and line shapes). `ask_local` and `edit_protected` are refused, and the task tells
+the frontier so. Local-only mode, and `sensitivity.local_pii_pass` (which would otherwise be skipped
+without a word), refuse to start. Turning it back on lets a local model read sensitive content
+again, so it needs `--confirm`. The work is harder for the frontier without answers about the
+data; the evaluation lane `duet-hybrid-nolocal` measures by how much.
+
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git (and,

@@ -49,7 +49,8 @@ duet-agent                   → duet-boundary, duet-fs, duet-sandbox, duet-git,
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
-pricing and usage parsing. duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
+pricing and usage parsing (its tests check that table against duet-provider's prices and its
+lanes' owner configs with duet-config's loader). duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
 ratatui); duet-cli links it for `duet tui` and supplies `duet doctor` as a callback.
 duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet crate.
 ```
@@ -726,6 +727,17 @@ quality passes when the judge score is non-inferior (lower bound of the paired d
 and the candidate is not behind on hidden-test pass rate on a majority of tasks; cost needs the
 upper bound of the paired difference < 0; privacy needs zero leaks. Duet runs write their cost
 ledger to `summary.json`, which `duet-eval report` reads per lane.
+
+The cost profile (`crates/duet-evals/src/profile.rs`) is computed from what a run already left:
+per request, the context sent and the output from the usage in the proxy's response capture (every
+lane alike); per turn, its cause from the tool calls of Duet's `transcript.jsonl` (sub-agents
+included). `report --project-prices` re-prices each run's `usage_by_model` at other verified rows
+of `pricing.toml`. Both go into the batch's `report.md` and `cost-profile.json`.
+
+Duet's security engine takes its local reader as an option: `local.enabled = false` opens it with
+none (the `duet-hybrid-nolocal` lane), and every local-backed feature then either degrades to the
+detectors' view (handle summaries, bulky previews, the brief) or is refused (`ask_local`,
+`edit_protected`, image descriptions, and runs with `sensitivity.local_pii_pass` on).
 
 ## 12. Invariants
 
