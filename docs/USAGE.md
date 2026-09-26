@@ -29,6 +29,24 @@ duet purge                      # delete raw run data older than the retention p
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
 evaluation baseline).
 
+**Project instructions.** Put how to work in a repository (conventions, the commands that build and
+test it, its layout) in `DUET.md` at its root, and your own standing instructions for every
+repository in `~/.config/duet/DUET.md` (next to your config; `$DUET_CONFIG_HOME/DUET.md` when that
+is set). Duet gives both to the frontier at the start of every run, session and sub-agent, ahead of
+the task and framed as instructions (yours first); they never change during the conversation, so
+the request prefix stays cached. Each is limited to 16 KiB (a longer one is cut at a line, with a
+note); `duet doctor` says which it found. The repository's file is repository text: in hybrid mode
+it is scanned like any file (a key in it reaches the frontier as a placeholder), and it cannot
+change a setting, the policy or the sandbox, whatever it says. Details:
+[SECURITY.md](../SECURITY.md) (Project instructions).
+
+**Without git.** Duet works in any folder. Outside a git repository, files are listed and searched
+by a walk that honours `.gitignore` and `.ignore` files and skips `.git`, `.duet` and dependency and
+build-output directories (`node_modules`, `target`, `dist`, `__pycache__`, `.venv`, ...); `diff`
+and `/diff` compare the files duet wrote with their content before the run (changes made only by
+commands are not shown); `/undo`, resume and the audit work as in a repository; the git tools are
+not offered (`git init` adds them).
+
 ## Coding with duet: sessions
 
 A session is one conversation in one workspace. You give a task, duet works on it with its tools
@@ -65,8 +83,8 @@ you> Also add a header row option.
   in order. `/stop` ends the turn after the current step; **Ctrl-C** ends it at once and kills a
   running command. Either way the session stays open and duet is told what happened.
 - **Commands** (never sent to the model): `/status` (turns, tokens, cost and working time against
-  the budgets), `/diff` (the workspace against the last commit; sensitive files are named, not
-  shown), `/undo` (reverts the files the last turn wrote through its tools; repeat to go back
+  the budgets), `/diff` (the workspace against the last commit, or outside a repository the files
+  duet wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts the files the last turn wrote through its tools; repeat to go back
   further; changes made by commands are not reverted), `/image <path>` and `/image --public
   <path>` (attach an image to your next message; see Images below), `/quit` (leave; the session
   stays open), `/close` (end it for good), `/help`.
@@ -82,6 +100,9 @@ you> Also add a header row option.
   waiting for you does not count). A turn stopped by a limit leaves the session open; a spent
   session budget ends it until the budget is raised. `oversight.approve` asks in the conversation
   (answer `y` on the next line); with approval on, `duet chat` needs a terminal.
+- **Commits.** In a git repository, `duet chat` at a terminal offers `git_commit` with the
+  defaults (`git.commit = "ask"`, approval off): before each commit it shows the files and the
+  message and waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
 
 `duet run` stays the one-shot path (scripts, evaluation): no conversation, and its requests are
 unchanged.
@@ -160,7 +181,7 @@ In hybrid mode a URL or query holding a placeholder or a known sensitive value i
 anything is sent, and fetched content is scanned like public content and shown as untrusted data.
 Every call is an audit event (host, bytes, outcome). Details: [SECURITY.md](../SECURITY.md) (Web tools).
 
-**Git tools** (when the workspace is a git repository): `git_status`, `git_log {path?, rev?,
+**Git tools** (when the workspace is a git repository; see Without git above): `git_status`, `git_log {path?, rev?,
 max_count?}` (hash, date, author, subject; at most 100), `git_show {rev, path?}` (a commit's
 message, files and per-file diffs, or a file as it was at `rev`) and `git_blame {path, start_line?,
 end_line?}` (at most 400 lines per call). Commands still cannot read `.git`; a `git ...` command
@@ -177,14 +198,16 @@ commit is an audit event (hash, paths). `/undo` in a session reverts files, neve
 
 ```sh
 duet config set git.author '"Ada Lovelace <ada@example.com>"'   # else user.name/user.email from git config
-duet config set oversight.approve '"risky"'                     # git.commit = "ask" (default): offered, each commit asks
+duet config set oversight.approve '"risky"'                     # git.commit = "ask" (default): each commit asks, in duet run too
 duet config set git.commit '"allow"' --confirm                  # commit without asking (e.g. with approval off)
 duet config set --project git.commit '"off"'                    # no git_commit in this repository
 ```
 
-With the default `git.commit = "ask"` and approval off (`oversight.approve = "off"`), nobody can be
-asked, so `git_commit` is not offered; the read-only git tools always are. Details:
-[SECURITY.md](../SECURITY.md) (Git tools).
+With the default `git.commit = "ask"`, each commit waits for your approval. In an interactive
+`duet chat` it is asked in the conversation (files and message, answer `y`) even with approval off;
+where nobody can be asked (`duet run` with approval off, a session the TUI drives) `git_commit` is
+not offered. The read-only git tools always are. Details: [SECURITY.md](../SECURITY.md) (Git
+tools).
 
 **MCP servers** (`[mcp.servers.<name>]` in the owner config; the only plugin mechanism): Duet's
 own Model Context Protocol client (stdio and streamable HTTP) starts each enabled server at run
@@ -326,7 +349,8 @@ does that, through the same `--confirm` and audit path as any endpoint change.
 
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
-printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git, disk
+printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git (and,
+outside a repository, what works without one), the project instructions found (`DUET.md`), disk
 space, the audit chains and anchors of the latest runs, run data past retention, the approval
 mode, and whether release signing keys are present (a warning in a build made by
 `tools/release.sh`; a note in a development build, since no release has been published). It uses no

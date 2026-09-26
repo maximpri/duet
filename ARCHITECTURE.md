@@ -59,13 +59,13 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly, retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
-| `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers | Inherit the user's git config, hooks or fsmonitor |
+| `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
 | `duet-web` | Guarded `GET` fetch (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, SearXNG and Brave search backends | Decide what the frontier sees, or read the workspace |
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
-| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`) | Construct a frontier provider (it receives `GatedFrontier`) |
+| `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -115,13 +115,20 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
 
 ```
 0. Run start (hybrid): prime the engine. Public files and the task seed the public-word list;
-   every sensitive file (git ls-files, plus the sensitive files git does not list — an ignored
+   every sensitive file (`Git::list_files`: git ls-files, or outside a repository a walk that
+   honours `.gitignore`/`.ignore` (`duet_git::walk`), plus the sensitive files it does not list — an ignored
    `.env`, logs, databases — found by the walk that builds the commands' deny list, ≤64 MB of
    those in total; ≤2 MB per file) is read once: its values enter the vault and its
    text the copied-span index. The task gets a note naming the sensitive paths (commands cannot
    read them) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
    task (≤3 local calls, values withheld, cleaned like any local output).
-1. ContextManager builds the request: fixed system prompt + fixed sorted tools + transcript
+   The first message is the project instructions (`instructions::block`: the owner's `DUET.md`
+   sanitized like an operator message, then the repository's `DUET.md` presented as
+   `Source::File`, each framed between digest-tagged markers, ≤16 KiB, an `instructions` audit
+   event each), then the sanitized task. It is in the transcript, so a resume replays it.
+1. ContextManager builds the request: fixed system prompt (`prompt::system_prompt`, from the
+   workspace name, the checks and the tool set: its research advice names web tools only when
+   they are offered) + fixed sorted tools + transcript
    (whole old turns replaced by stubs once over `context.mask_at` of the window).
 2. GatedFrontier.create(request)
      OutboundGate filters: sanitize every item, including the frontier's own messages, reasoning
@@ -153,7 +160,8 @@ open    new: transcript Start (the first message is the objective the engine was
 turn    reset the stop flag; roll back pending writes; drop a partly answered frontier turn
         TurnStart{exchange, message as typed, journal_next}
         operator item = notes (interrupted turn, undone writes) + message
-          first message: Presenter.sanitize_objective (sensitive-path note, brief)
+          first message: Presenter.sanitize_objective (sensitive-path note, brief), after the
+                         project instructions (as a run's)
           later ones:    Presenter.sanitize_message (same sanitizer, no notes)
           each placeholder a message introduces maps to a handle holding the message
           (`operator.json`), so ask_local accepts it; the first such message says so once
@@ -353,7 +361,20 @@ recorded in `runs/<id>/git-base` before its first commit → `Git::commit_paths`
 committer = operator, message on stdin), `update-ref HEAD <new> <old>` (compare-and-swap), then the
 real index entries of those paths only → `git_commit` audit event. Approval is in
 `oversight::review` (`Risk::GitCommit`: `git.commit = "ask"`, or `oversight.approve = "all"`).
-`diff` compares with `git-base` when present, so a run's own commits never hide its changes.
+`git_commit` is offered with `ask` only when the run has an approver: `oversight.approve` on, or
+an interactive `duet chat` (`approve::session_oversight`: a terminal on standard input gives the
+session its inline approver even with approval off, and then only commits are asked).
+`diff` compares with `git-base` when present, so a run's own commits never hide its changes; it
+names changed sensitive files and never diffs them.
+
+**Without a repository** (`Git::is_repository` false): `Git::list_files` falls back to
+`duet_git::walk::list` (the `ignore` crate: `.gitignore` and `.ignore` files without requiring
+git, no global excludes, no links followed, `.git`, `.duet` and dependency/build-output
+directories skipped), so `list_files`, `search`, `code_nav`, engine priming and the TUI's IP tree
+work unchanged. `diff` and `/diff` use `duet_agent::changes`: the write journal's files, each
+read through the guarded file access, copied privately into the run directory and compared with
+its saved first content by `git diff --no-index` (which needs no repository), headers relabelled
+to workspace paths. No git tools are offered; a `git` command that fails gets a hint instead.
 
 ### 5.8 MCP servers
 
@@ -543,6 +564,7 @@ git; reset behaviour defined per entry).
     probes.json               characters of each value local answers showed; probes per handle
     operator.json             placeholders of operator-typed values → the handle of their message
     spill-<uuid>.txt          long command outputs
+    diff-<uuid>.tmp           private copy of a file while `diff` compares it outside git (removed)
     writes.jsonl              pending/applied records for crash recovery
     git-base                  HEAD before the run's first git_commit (what `diff` compares with)
     images/<sha256>.<ext>     images the frontier was shown, by digest (the transcript holds digests)
@@ -551,6 +573,7 @@ git; reset behaviour defined per entry).
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
   lock, tmp/                  workspace lock; sandbox scratch space
 ~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
+~/.config/duet/DUET.md        the owner's standing instructions (optional; next to config.toml)
 ~/.local/state/duet/          owner state ($DUET_CONFIG_HOME/state when set), mode 0700
   audit-anchors/runs/<run>/<first>.json   chain head of each run's audit log
   config-audit.jsonl          hash-chained log of `duet config set` changes

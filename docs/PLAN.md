@@ -67,6 +67,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 | 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
 | 2026-09-26 | Everyday use at parity with popular agents (operator: "go" after a full-stack app test): registry-only network for ordinary commands **on by default** (they cannot read sensitive files, protected code or run state, so what they can send is public code the frontier already sees; `sensitive_data` commands and checks of protected code never get network); host-side egress proxy with a host allowlist, audited; detector false positives on build artifacts and paths fixed; work without git; `DUET.md` project instructions (untrusted repository text, can never loosen policy); chat line editing, history and streamed replies; commits offered in interactive sessions (asked inline). See M5.1b |
+| 2026-09-26 | System prompts matched to the request (operator, after a live one-shot build of a named game: the model never looked up the game, wrote it in one 9K-token `write_file`, checked only that its script parsed, finished in 6 turns, and quietly changed the brief to "an original game inspired by" it; the prompt was tuned for benchmark bug fixes): fixes keep the focused behaviour; building something new means understanding the brief first (looking up what it names with the web tools, named only when offered), keeping to it (assumptions stated in a run, real decisions asked in a session), planning, building in checkable steps and running what was built before finishing; plus tidy work. The one-shot prompt is pinned by a digest test. **Any change to the system prompts changes every run's behaviour and request prefix, so Gate 2 quality and cost are re-measured on the new prompt before M5** |
 | 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
 | 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
 
@@ -482,6 +483,15 @@ with `sandbox.network = true`. Gaps found and fixed here:
 
 Acceptance: the full-app test repeated with default settings in both modes, and a variant whose
 repository holds sensitive data (an `.env` with keys, a customer CSV the app must import).
+
+*Built (branch `everyday`):* no git required (`Git::list_files` falls back to a walk honouring
+`.gitignore`/`.ignore`; `diff` and `/diff` compare the files written with their first content;
+priming, undo, resume and doctor work; a failed `git` command gets a hint); `DUET.md` (repository
+and owner) at the start of runs, sessions and sub-agents, presented or sanitized, framed, capped at
+16 KiB, audited (`instructions`), named by `duet doctor`; commits asked inline in an interactive
+`duet chat`; system prompts matched to the request, with tidy work (§3). Found on the way:
+`diff` in a repository showed a tracked sensitive file's changes as public text (DUET-2026-018,
+fixed).
 
 ### M5 — Public benchmark (days 32–35)
 
