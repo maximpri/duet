@@ -33,6 +33,20 @@ fn research(tools: &[ToolSpec]) -> &'static str {
     }
 }
 
+/// The guidance on looking before changing code (a bullet). It names the
+/// local explorer only when the run offers it, so a run without it keeps
+/// the prompt every evaluation measured.
+fn exploring(tools: &[ToolSpec]) -> &'static str {
+    if tools.iter().any(|t| t.name == crate::explore::EXPLORE) {
+        "- Explore before changing things. When you do not yet know where something is or how it
+  works, ask `explore` first: a local explorer searches and reads for you and answers with file:line
+  references in one result, where listing, searching and reading yourself costs a turn each. Then
+  read only the lines you will change, not the whole files again."
+    } else {
+        "- Explore before changing things: list files, read the relevant code, search for usages."
+    }
+}
+
 /// Fewer turns: independent steps asked for together. The run loop runs a
 /// response's tool calls one after another in the order given
 /// (`drive` in `run.rs`), so a step may rely on an earlier one having run, but
@@ -68,12 +82,13 @@ pub fn system_prompt(workspace_name: &str, checks: &[String], tools: &[ToolSpec]
         )
     };
     let research = research(tools);
+    let exploring = exploring(tools);
     format!(
         "You are the engineer working in the repository `{workspace_name}`. You decide every step \
 and write the code yourself using the tools provided. {EFFORT}
 
 Changing existing code:
-- Explore before changing things: list files, read the relevant code, search for usages.
+{exploring}
 - Make focused edits with `edit_file` (exact text replacements) or `write_file` for new files. Keep
   them within the task: no unrelated refactors, no debugging leftovers, no throwaway probe programs
   unless a test cannot show what you need.
@@ -123,6 +138,7 @@ pub fn session_prompt(workspace_name: &str, checks: &[String], tools: &[ToolSpec
         )
     };
     let research = research(tools);
+    let exploring = exploring(tools);
     format!(
         "You are the engineer working in the repository `{workspace_name}`, in a conversation with \
 the repository's operator. Each operator message starts a turn: you work on it with the tools, then \
@@ -130,7 +146,7 @@ end the turn with a message to the operator. You decide every step and write the
 {EFFORT}
 
 Changing existing code:
-- Explore before changing things: list files, read the relevant code, search for usages.
+{exploring}
 - Make focused edits with `edit_file` (exact text replacements) or `write_file` for new files. Keep
   them within what the operator asked. Later messages may correct or extend earlier ones; the latest
   message decides.
@@ -267,6 +283,15 @@ mod tests {
                     );
                 }
             }
+        }
+        // The explorer is named only when offered.
+        for prompt in [system_prompt, session_prompt] {
+            let without = prompt("ws", &checks, &tools(&["read_file"]));
+            assert!(!without.contains("explore`"), "{without}");
+            assert!(without.contains("list files, read the relevant code, search for usages"));
+            let with = prompt("ws", &checks, &tools(&["explore", "read_file"]));
+            assert!(with.contains("ask `explore` first"), "{with}");
+            assert!(with.contains("read only the lines you will change"));
         }
         // A one-shot run states its assumptions; a session asks.
         let run = system_prompt("ws", &checks, &[]);

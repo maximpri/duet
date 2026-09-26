@@ -62,8 +62,8 @@ impl Cause {
     }
 
     /// The cause a call of Duet's tool `name` counts toward. Tools that only
-    /// look (files, handles, search, git history, the web, code navigation)
-    /// are reading; tools that change the repository are editing; `finish`,
+    /// look (files, handles, search, git history, the web, code navigation,
+    /// the local explorer) are reading; tools that change the repository are editing; `finish`,
     /// `delegate`, questions to the operator and MCP tools are other.
     pub fn of_tool(name: &str) -> Self {
         match name {
@@ -73,9 +73,8 @@ impl Cause {
                 Cause::Editing
             }
             "read_file" | "read_raw" | "list_files" | "search" | "diff" | "code_nav"
-            | "web_fetch" | "web_search" | "git_log" | "git_status" | "git_show" | "git_blame" => {
-                Cause::Reading
-            }
+            | "web_fetch" | "web_search" | "git_log" | "git_status" | "git_show" | "git_blame"
+            | "explore" => Cause::Reading,
             _ => Cause::Other,
         }
     }

@@ -550,6 +550,51 @@ pub const REGISTRY: &[Setting] = &[
         "Frontier model id for sub-agents (for example a cheaper one at the same endpoint); empty uses frontier.model. Its requests pass the same outbound gate and audit log."
     ),
     s!(
+        "explore.enabled",
+        Bool,
+        "false",
+        Project,
+        OnlyFalse,
+        false,
+        "Offer the `explore` tool when a local model is enabled (hybrid and pass-through): the local model answers a where/what/how question about the repository by reading and searching it itself (read-only, sensitive files included, no commands, no network), and the frontier gets one result: a short answer and checked file:line references. In hybrid mode the report is cleaned as local-model output before the frontier sees it. Off until measured."
+    ),
+    s!(
+        "explore.quick_steps",
+        Int { min: 1, max: 100 },
+        "12",
+        Project,
+        Any,
+        false,
+        "Local model requests one quick `explore` call may make (the default depth); then it must report."
+    ),
+    s!(
+        "explore.thorough_steps",
+        Int { min: 1, max: 200 },
+        "30",
+        Project,
+        Any,
+        false,
+        "Local model requests one thorough `explore` call may make; then it must report."
+    ),
+    s!(
+        "explore.max_seconds",
+        Int { min: 10, max: 3600 },
+        "600",
+        Project,
+        Any,
+        false,
+        "Longest time one thorough `explore` call may take (a quick one gets a third); a call still exploring then ends and the frontier is told which files it read. The run's own wall clock also ends it."
+    ),
+    s!(
+        "explore.max_read_kb",
+        Int { min: 8, max: 4096 },
+        "96",
+        Project,
+        Any,
+        false,
+        "Most tool output one thorough `explore` call's local model is shown, in KB (a quick one half); then it must report. Keep it within the local model's context: data files take about one token per 2 bytes."
+    ),
+    s!(
         "checks.commands",
         List,
         "[]",

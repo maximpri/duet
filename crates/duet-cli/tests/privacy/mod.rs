@@ -225,6 +225,9 @@ pub struct Options {
     pub images: bool,
     /// No local model (`local.enabled = false`): the stand-in is not used.
     pub no_local: bool,
+    /// The workspace holds protected source: [`INTERFACE_ONLY`] under
+    /// `ip.interface_only` and [`SEALED`] under `ip.sealed`.
+    pub protected: bool,
 }
 
 impl Default for Options {
@@ -233,9 +236,35 @@ impl Default for Options {
             env_ignored: true,
             images: false,
             no_local: false,
+            protected: false,
         }
     }
 }
+
+/// An interface-only file of an [`Options::protected`] workspace (path,
+/// content): its signature is public, its bodies are not.
+pub const INTERFACE_ONLY: (&str, &str) = (
+    "src/pricing.rs",
+    "/// The price of `qty` units for a customer tier.\n\
+pub fn quote(qty: u64, tier: u8) -> u64 {\n    \
+let base = qty * 1_337 + (tier as u64) * 4_211;\n    \
+base - base / 17 + 29\n}\n",
+);
+
+/// A sealed file of an [`Options::protected`] workspace (path, content).
+pub const SEALED: (&str, &str) = (
+    "src/vault.rs",
+    "pub fn unlock(code: &str) -> bool {\n    \
+code.len() == 11 && code.starts_with(\"otter-\") && code.ends_with(\"-quill\")\n}\n",
+);
+
+/// Protected code that must never reach the frontier (bodies and literals).
+pub const PROTECTED_CANARIES: [&str; 4] = [
+    "qty * 1_337 + (tier as u64) * 4_211",
+    "base - base / 17 + 29",
+    "code.starts_with(\"otter-\")",
+    "ends_with(\"-quill\")",
+];
 
 /// Screenshots in an [`Options::images`] workspace: what each shows, which
 /// the stand-ins "read" (they cannot see pixels). A screenshot of the customer
@@ -364,6 +393,11 @@ impl Fixture {
         if options.env_ignored {
             std::fs::write(ws.join(".gitignore"), ".env\n").unwrap();
         }
+        if options.protected {
+            for (path, content) in [INTERFACE_ONLY, SEALED] {
+                std::fs::write(ws.join(path), content).unwrap();
+            }
+        }
         if options.images {
             std::fs::create_dir_all(ws.join("docs")).unwrap();
             for (i, (path, _)) in SCREENSHOTS.iter().enumerate() {
@@ -389,6 +423,10 @@ impl Fixture {
             duet_boundary::testing::responsive_local(move |prompt| respond(local, prompt));
         let mut policy = shipped_policy(&root.join("owner/config.toml"));
         policy.local_vision = options.images;
+        if options.protected {
+            policy.interface_only = vec![INTERFACE_ONLY.0.into()];
+            policy.sealed = vec![SEALED.0.into()];
+        }
         // Synthetic samples are drawn from a fixed seed, so a scenario sees
         // the same fakes every time.
         std::fs::write(run_dir.join("sample-seed"), "20260926").unwrap();
@@ -782,7 +820,7 @@ fn luhn(digits: &str) -> bool {
     sum.is_multiple_of(10)
 }
 
-fn base64(bytes: &[u8]) -> String {
+pub fn base64(bytes: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut s = String::new();
     for g in bytes.chunks(3) {

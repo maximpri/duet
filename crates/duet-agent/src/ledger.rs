@@ -60,6 +60,30 @@ pub struct Ledger {
     /// Images: where they went, and what the ones the frontier saw cost.
     #[serde(default, skip_serializing_if = "Images::is_empty")]
     pub images: Images,
+    /// The local explorer (`explore`): its calls and what its local model
+    /// did. Its reports are charged as `local_answer` results.
+    #[serde(default, skip_serializing_if = "Explore::is_empty")]
+    pub explore: Explore,
+}
+
+/// The local explorer's work in a run. Its local model is not the one in
+/// `Ledger::local` (the engine's reading roles), so its time is kept here.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Explore {
+    /// `explore` calls that ran, and how many ended with a report.
+    pub calls: u64,
+    pub reported: u64,
+    /// Local model requests, and the bytes of tool results it was shown.
+    pub steps: u64,
+    pub bytes_read: u64,
+    /// Its local model's tokens and busy seconds (`calls` are its requests).
+    pub local: CallStats,
+}
+
+impl Explore {
+    pub fn is_empty(&self) -> bool {
+        self.calls == 0
+    }
 }
 
 /// Images in a run. The provider's reported input tokens include what it
@@ -88,6 +112,14 @@ impl Images {
 
 fn is_zero(v: &f64) -> bool {
     *v == 0.0
+}
+
+fn add_local(a: &mut CallStats, b: &CallStats) {
+    a.calls += b.calls;
+    a.input_tokens += b.input_tokens;
+    a.cached_tokens += b.cached_tokens;
+    a.output_tokens += b.output_tokens;
+    a.seconds += b.seconds;
 }
 
 fn tokens_of(text: &str) -> u64 {
@@ -199,9 +231,33 @@ impl Ledger {
         self.ask_local_questions += other.ask_local_questions;
         self.sensitive_data_commands += other.sensitive_data_commands;
         self.sandbox_denials += other.sandbox_denials;
+        self.explore.calls += other.explore.calls;
+        self.explore.reported += other.explore.reported;
+        self.explore.steps += other.explore.steps;
+        self.explore.bytes_read += other.explore.bytes_read;
+        add_local(&mut self.explore.local, &other.explore.local);
         self.input_usd += other.input_usd;
         self.output_usd += other.output_usd;
         self.failed_attempts_usd += other.failed_attempts_usd;
+    }
+
+    /// An `explore` call ended (see [`crate::explore::Stats`]).
+    pub fn on_explore(&mut self, s: &crate::explore::Stats) {
+        let e = &mut self.explore;
+        e.calls += 1;
+        e.reported += u64::from(s.outcome == "reported");
+        e.steps += u64::from(s.steps);
+        e.bytes_read += s.bytes_read;
+        add_local(
+            &mut e.local,
+            &CallStats {
+                calls: s.steps,
+                input_tokens: s.input_tokens,
+                cached_tokens: s.cached_tokens,
+                output_tokens: s.output_tokens,
+                seconds: s.local_seconds,
+            },
+        );
     }
 
     /// Splits input dollars between classes; call once the run has ended.

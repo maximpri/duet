@@ -397,6 +397,15 @@ fn feeds_from(
             Entry::CompactionFailed { reason, .. } => {
                 feed.push(format!("compaction failed ({}); masking instead", first_line(reason)))
             }
+            Entry::Explored { call_id, stats } => feed.push(format!(
+                "  explorer ({call_id}, {}): {}, {} step(s), {} file(s), {} KB read, {:.0}s local",
+                stats.depth,
+                stats.outcome,
+                stats.steps,
+                stats.files,
+                stats.bytes_read.div_ceil(1024),
+                stats.local_seconds
+            )),
             Entry::Shown { call_id, class } if *class != ViewClass::Raw => {
                 withheld.push(format!("{call_id}: shown as {class:?}"))
             }

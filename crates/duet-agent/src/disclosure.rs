@@ -251,7 +251,8 @@ impl Disclosure {
                     | AuditEvent::Instructions { .. }
                     | AuditEvent::Egress { .. }
                     | AuditEvent::Compaction { .. }
-                    | AuditEvent::MaskedNumbers { .. } => {}
+                    | AuditEvent::MaskedNumbers { .. }
+                    | AuditEvent::Explore { .. } => {}
                 },
             }
         }

@@ -39,6 +39,12 @@ pub struct DuetLedger {
     pub local_input_tokens: u64,
     #[serde(default)]
     pub local_output_tokens: u64,
+    /// `explore` calls, and how many ended with a report; their local
+    /// model's work is included in the `local_*` fields above.
+    #[serde(default)]
+    pub explore_calls: u64,
+    #[serde(default)]
+    pub explore_reported: u64,
     /// Frontier dollars at list price as Duet priced them.
     pub input_usd: f64,
     pub output_usd: f64,
@@ -116,11 +122,20 @@ pub fn parse(summary: &Value) -> Option<DuetLedger> {
         output_usd: f(l, "output_usd"),
         ..DuetLedger::default()
     };
-    if let Some(local) = l.get("local") {
-        out.local_calls = u(local, "calls");
-        out.local_busy_seconds = f(local, "seconds");
-        out.local_input_tokens = u(local, "input_tokens");
-        out.local_output_tokens = u(local, "output_tokens");
+    // The engine's local roles, then the explorer's local model.
+    let explore = l.get("explore");
+    for local in [l.get("local"), explore.and_then(|e| e.get("local"))]
+        .into_iter()
+        .flatten()
+    {
+        out.local_calls += u(local, "calls");
+        out.local_busy_seconds += f(local, "seconds");
+        out.local_input_tokens += u(local, "input_tokens");
+        out.local_output_tokens += u(local, "output_tokens");
+    }
+    if let Some(e) = explore {
+        out.explore_calls = u(e, "calls");
+        out.explore_reported = u(e, "reported");
     }
     for (class, c) in l
         .get("by_class")
@@ -164,6 +179,19 @@ mod tests {
         assert!((l.local_busy_seconds - 42.5).abs() < 1e-9);
         // Older summaries without a ledger give none.
         assert!(parse(&json!({"stats": {"turns": 3}})).is_none());
+    }
+
+    #[test]
+    fn the_explorers_local_work_counts_as_local_work() {
+        let mut s = summary();
+        s["stats"]["ledger"]["explore"] = json!({"calls": 2, "reported": 1, "steps": 9,
+            "bytes_read": 40000, "local": {"calls": 9, "input_tokens": 30000, "cached_tokens": 0,
+            "output_tokens": 900, "seconds": 57.5}});
+        let l = parse(&s).unwrap();
+        assert_eq!((l.explore_calls, l.explore_reported), (2, 1));
+        assert_eq!(l.local_calls, 13);
+        assert_eq!((l.local_input_tokens, l.local_output_tokens), (31200, 980));
+        assert!((l.local_busy_seconds - 100.0).abs() < 1e-9);
     }
 
     #[test]

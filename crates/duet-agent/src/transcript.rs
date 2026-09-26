@@ -151,6 +151,13 @@ pub enum Entry {
         child: String,
         paths: Vec<PathBuf>,
     },
+    /// The local explorer answered the `explore` call `call_id`
+    /// (`crate::explore`): what it did, never what it read or wrote (its
+    /// report is the call's result). A resumed run charges its local time.
+    Explored {
+        call_id: String,
+        stats: crate::explore::Stats,
+    },
 }
 
 pub struct Transcript {

@@ -132,6 +132,9 @@ pub struct RunConfig {
     /// Sub-agents (`delegate`); `None` when `subagents.enabled` is off, and
     /// always in a sub-agent's own configuration (they cannot delegate).
     pub subagents: Option<crate::subagents::Subagents>,
+    /// The local explorer (`explore`); `None` when `explore.enabled` is off
+    /// or the run has no local model, and in a sub-agent's configuration.
+    pub explore: Option<Arc<crate::explore::Explorer>>,
     /// Image settings and the operator's attachments (`frontier.vision`,
     /// `images.max_side`, `duet run --image`).
     pub images: crate::images::ImageConfig,
@@ -144,7 +147,7 @@ pub struct RunConfig {
 impl RunConfig {
     /// A run of `objective` in `workspace`, keeping its state in `run_dir`,
     /// with every other setting at its most restrictive value: no network,
-    /// no checks, no web, MCP, language servers or sub-agents, no commit
+    /// no checks, no web, MCP, language servers, sub-agents or explorer, no commit
     /// identity, no owner instructions, no images for the frontier
     /// (`frontier.vision` off), usage priced at zero, oversight at its
     /// default (`off`: nothing is asked, so `git_commit` is not offered),
@@ -193,6 +196,7 @@ impl RunConfig {
             mcp: None,
             lsp: None,
             subagents: None,
+            explore: None,
             images: crate::images::ImageConfig::default(),
             owner_instructions: None,
         }
@@ -617,6 +621,7 @@ pub(crate) fn replay_priced(
                 drop_unfinished_turn(&mut conv.items);
                 operator_next = true;
             }
+            Entry::Explored { stats: s, .. } => stats.ledger.on_explore(&s),
             _ => {}
         }
     }
@@ -777,6 +782,9 @@ pub(crate) fn tool_specs(
     }
     if cfg.subagents.is_some() {
         extra.push(crate::subagents::spec());
+    }
+    if cfg.explore.is_some() {
+        extra.push(crate::explore::spec());
     }
     let mut specs = tools::specs_with(extra);
     // The command tool says what network its commands have.
@@ -1071,6 +1079,8 @@ pub(crate) async fn work(
             stats.tool_calls += 1;
             // The image a `read_file` call returns for the frontier itself.
             let mut attached = Vec::new();
+            // How the result was shown, when the call decides it itself.
+            let mut shown_as = None;
             let mut ctx = Ctx {
                 workspace: &cfg.workspace,
                 run_dir: &cfg.run_dir,
@@ -1178,6 +1188,31 @@ pub(crate) async fn work(
                     // sub-agents' own results were shown as).
                     let _ = presenter.take_view_class();
                     outcome
+                } else if call.name == crate::explore::EXPLORE
+                    && let Some(explorer) = &cfg.explore
+                {
+                    let done = crate::explore::explore(
+                        &mut ctx,
+                        explorer,
+                        &call.arguments,
+                        interrupted,
+                        deadline,
+                    )
+                    .await;
+                    if let Some(s) = &done.stats {
+                        stats.ledger.on_explore(s);
+                        noted!(
+                            host,
+                            transcript.append(&Entry::Explored {
+                                call_id: call.id.clone(),
+                                stats: s.clone(),
+                            })
+                        );
+                    }
+                    // A local answer, whatever its parts were shown as.
+                    let _ = presenter.take_view_class();
+                    shown_as = Some(ViewClass::LocalAnswer);
+                    done.outcome
                 } else if conv.child.is_some() && call.name == "run_command" {
                     crate::subagents::read_only_command(&ctx, &call.arguments).await
                 } else if call.name == "read_file" && crate::images::wants(&call.arguments) {
@@ -1243,7 +1278,9 @@ pub(crate) async fn work(
                     return Ok(Terminal::out_of_time().into());
                 }
             }
-            let class = presenter.take_view_class().unwrap_or(ViewClass::Raw);
+            let class = shown_as
+                .or_else(|| presenter.take_view_class())
+                .unwrap_or(ViewClass::Raw);
             stats.ledger.on_result(call, &content, class);
             classes.insert(call.id.clone(), class);
             let result = Item::ToolResult {
@@ -1298,6 +1335,7 @@ mod tests {
         assert!(cfg.checks.is_empty());
         assert!(cfg.web.is_none() && cfg.mcp.is_none() && cfg.lsp.is_none());
         assert!(cfg.subagents.is_none() && cfg.git_author.is_none());
+        assert!(cfg.explore.is_none());
         assert!(!cfg.images.frontier_vision && cfg.images.attached.is_empty());
         assert_eq!(cfg.oversight.mode, crate::oversight::ApproveMode::Off);
         assert_eq!(cfg.mode, "passthrough");

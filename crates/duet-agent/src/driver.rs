@@ -3,12 +3,14 @@
 //! with text and tool calls.
 //!
 //! The run's loop and sub-agents' loops take the model as a parameter, so a
-//! loop is not tied to one kind of model. Today every driver is a
+//! loop is not tied to one kind of model. The frontier loops are driven by a
 //! [`GatedFrontier`] (the run's frontier, or `subagents.model` behind its own
-//! gate on the same audit log); a local model driving a read-only loop in the
-//! secure zone can be another driver without changing the loop.
+//! gate on the same audit log); the local explorer's read-only loop in the
+//! secure zone (`crate::explore`) by a [`LocalAgent`], whose requests go to
+//! the local endpoint only and need no outbound gate.
 
 use duet_boundary::audit::AuditHandle;
+use duet_boundary::local::LocalAgent;
 use duet_boundary::model::{Request, Response};
 use duet_boundary::{GateError, GatedFrontier};
 use futures_util::future::BoxFuture;
@@ -53,5 +55,36 @@ impl Driver for GatedFrontier {
 
     fn as_sent(&self, request: &Request) -> Request {
         GatedFrontier::as_sent(self, request)
+    }
+}
+
+impl Driver for LocalAgent {
+    fn model(&self) -> &str {
+        LocalAgent::model(self)
+    }
+
+    fn deadline(&self) -> Option<Instant> {
+        LocalAgent::deadline(self)
+    }
+
+    fn audit(&self) -> &AuditHandle {
+        LocalAgent::audit(self)
+    }
+
+    fn create<'a>(
+        &'a self,
+        request: &'a Request,
+    ) -> BoxFuture<'a, Result<(Response, Vec<String>), GateError>> {
+        Box::pin(async move {
+            LocalAgent::create(self, request)
+                .await
+                .map(|r| (r, Vec::new()))
+                .map_err(GateError::Provider)
+        })
+    }
+
+    /// Nothing filters a local request: it is sent as it is.
+    fn as_sent(&self, request: &Request) -> Request {
+        request.clone()
     }
 }

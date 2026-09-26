@@ -474,6 +474,9 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
         mcp: cfg.mcp.clone(),
         lsp: cfg.lsp.clone(),
         subagents: None,
+        // The explorer answers the frontier's own questions; sub-agents read
+        // with their tools.
+        explore: None,
         // The operator's attachments belong to the parent's task. Another
         // model driving sub-agents is not known to take images: they are
         // described locally or refused for it.

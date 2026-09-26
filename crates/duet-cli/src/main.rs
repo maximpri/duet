@@ -28,6 +28,7 @@ mod approve;
 mod chat;
 mod doctor;
 mod egress;
+mod explore;
 mod images;
 mod lsp;
 mod mcp;
@@ -794,6 +795,7 @@ async fn prepare(
         .await?,
         lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
         subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits)?,
+        explore: explore::setup(cfg, manifest, frontier.audit(), limits)?,
         images: images::config(cfg, manifest.mode, &manifest.images)?,
         owner_instructions: Some(duet_config::owner_instructions_path()),
     };
