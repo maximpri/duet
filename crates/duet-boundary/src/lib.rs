@@ -13,6 +13,7 @@ pub mod gate;
 pub mod handles;
 pub mod images;
 pub mod ip;
+pub mod live;
 pub mod local;
 pub mod local_eval;
 pub mod overlap;

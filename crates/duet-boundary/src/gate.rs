@@ -317,7 +317,10 @@ impl GatedFrontier {
         self.gate
             .audit
             .append(&cfg.base_url, &cfg.model, body, interventions.clone())?;
-        let response = self.provider.create(&outbound).await?;
+        // Watched by the operator's terminal when the caller set a tap; the
+        // request and the response are the same either way.
+        let tap = crate::live::current();
+        let response = self.provider.create_with(&outbound, tap.as_deref()).await?;
         Ok((response, interventions))
     }
 

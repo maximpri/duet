@@ -721,7 +721,8 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
                 frontier_usd: p.usd,
             };
             // Boxed: the child's loop is the parent's loop, one level down.
-            let work: ChildWork<'_> = Box::pin(crate::run::work(
+            // The operator's terminal watches the parent's responses only.
+            let work: ChildWork<'_> = Box::pin(duet_boundary::live::quiet(crate::run::work(
                 &child_cfg,
                 driver,
                 parent.presenter,
@@ -731,7 +732,7 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
                 &mut stats,
                 &limits,
                 parent.host,
-            ));
+            )));
             match AssertUnwindSafe(work).catch_unwind().await {
                 Ok(Ok(Stop::Terminal(t))) => t,
                 Ok(Ok(Stop::Stopped)) => Terminal::Failed {
