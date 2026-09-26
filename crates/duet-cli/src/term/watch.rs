@@ -44,7 +44,8 @@ const HEARTBEAT: Duration = Duration::from_secs(30);
 
 impl Watch {
     /// Starts the view: live when standard error is a terminal that can
-    /// take it, else the compact log.
+    /// take it, else the compact log. The status line waits for
+    /// [`Watch::release`] (setup prints freely before).
     pub fn start(live: bool) -> Arc<Watch> {
         let (columns, _) = crossterm::terminal::size().unwrap_or((100, 24));
         let colour = live && colour(true);
@@ -53,9 +54,10 @@ impl Watch {
         let view = View {
             live,
             colour,
+            columns: columns as usize,
             feed: Feed::new(colour, (columns as usize).max(20), live, identity),
             region: Region::default(),
-            held: false,
+            held: true,
             printed_at: Instant::now(),
             drawn_at: Instant::now(),
         };
@@ -152,6 +154,7 @@ impl StreamTap for Tap {
 struct View {
     live: bool,
     colour: bool,
+    columns: usize,
     feed: Feed,
     region: Region,
     held: bool,
@@ -240,6 +243,14 @@ impl View {
                 let _ = writeln!(err, "{}", tint(l, false));
             }
             return;
+        }
+        // A resized terminal has re-wrapped the status line.
+        if let Ok((columns, _)) = crossterm::terminal::size()
+            && columns as usize != self.columns
+        {
+            self.columns = columns as usize;
+            self.region.resized(self.columns);
+            self.feed.resize(self.columns.max(20));
         }
         let mut rows = Vec::new();
         if region {

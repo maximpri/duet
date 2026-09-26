@@ -10,6 +10,7 @@ every security rule in detail: [SECURITY.md](../SECURITY.md).
 duet chat                       # code in a conversation (a session; hybrid mode by default)
 duet chat --resume              # continue the most recent open session (or --resume <id>)
 duet run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
+duet run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
 duet run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
 duet audit show <run>           # see exactly what was sent to the frontier, and the security events
 duet audit verify <run>         # check the hash chain and its anchor
@@ -77,6 +78,26 @@ you> Also add a header row option.
   (a clarifying question: your next message is the answer) or `duet finished:` (it called `finish`
   and `checks.commands` passed). End a line with `\` to continue the message on the next line;
   `//text` sends a message that starts with `/`.
+- **On a terminal.** duet's text appears as the frontier writes it, formatted lightly (headings,
+  lists, quotes, code blocks set off with a bar, inline code and bold) and wrapped to the window;
+  colour unless `NO_COLOR` is set. While duet works, a status line at the bottom shows the turn's
+  time, its cost so far and what runs now (a tool, or the frontier writing and how much); it is
+  redrawn in place and never fills the scrollback. The input line stays editable the whole time:
+
+  | Keys | |
+  |---|---|
+  | Enter | send (a line ending with `\` continues instead) |
+  | Alt-Enter, Shift-Enter, Ctrl-J | a new line in the message (Shift-Enter where the terminal reports it: kitty, WezTerm, Ghostty, foot, recent iTerm2) |
+  | ← → , Ctrl-B / Ctrl-F, Home / End, Ctrl-A / Ctrl-E | move; Alt-B / Alt-F, Ctrl-← / Ctrl-→ by word |
+  | Backspace, Delete, Ctrl-W, Alt-Backspace, Alt-D, Ctrl-K, Ctrl-U, Ctrl-Y | delete; cut a word or to the line's end/start; put back what was cut |
+  | ↑ ↓, Ctrl-P / Ctrl-N | move between the lines of a message, then through your earlier messages of this session |
+  | Ctrl-R | search those messages (type to narrow, Ctrl-R for an older match, Enter takes it into the input, Esc cancels) |
+  | Tab | complete a command, or a path after `/image` |
+  | Ctrl-L, Ctrl-Z, Ctrl-D | clear the screen; suspend (`fg` returns); on an empty input, leave (like the end of input) |
+
+  History is the session's own messages, read from its transcript: nothing new is stored. Ctrl-C
+  follows the rules below whatever you were typing (the line is cleared). Without a terminal (a
+  pipe, as the TUI drives a session) the output is plain lines exactly as before.
 - **Steering while it works.** Type while duet is working: the message is delivered after the
   current step (its tool results are recorded first; a running command is never cut short), and
   duet takes it into account from its next step. Several messages typed meanwhile arrive together,
@@ -105,7 +126,11 @@ you> Also add a header row option.
   message and waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
 
 `duet run` stays the one-shot path (scripts, evaluation): no conversation, and its requests are
-unchanged.
+unchanged. Its progress goes to standard error so it never looks stalled: on a terminal the steps,
+the frontier's text as it streams and a status line (time, cost, output received so far, what
+runs now); otherwise one plain line per step with placeholders kept as the frontier saw them, and
+a line every 30 seconds while nothing else happens. Standard output holds only the summary, as
+before; `--quiet` turns the progress off.
 
 **`duet tui`** has seven screens: Models (frontier and local settings, with `duet doctor`
 offline; `o` adds the online checks of connection and context window; `l` looks for local

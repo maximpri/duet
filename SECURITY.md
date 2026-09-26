@@ -283,6 +283,26 @@ steering messages sent while a turn runs) crosses the boundary exactly like task
   sandbox, budgets and the checks apply to every turn. `/undo` only restores files the session's
   own journaled writes changed.
 
+## The operator's terminal
+
+`duet chat` on a terminal and `duet run`'s progress show the frontier's text as it streams, and the
+chat keeps a line editor with history. None of it is a channel to the frontier: it only shows, on
+the operator's own screen, what duet already has.
+
+| Threat | What stops it |
+|---|---|
+| Watching the stream changes what is sent or recorded | The tap reads the provider's assembled stream after it arrived (`ChatProvider::create_with`); the request, the response, the transcript and the audit log are the same with or without it (tested: a hybrid session watched and not watched sends identical requests) |
+| A placeholder cut between two deltas shows half a token, or a value reaches the wrong place | Streamed text is restored for the operator only, locally, by the same vault lookup as the final reply; text is held from an opening bracket until the placeholder closes (placeholders never contain a bracket or a newline), so the operator sees exactly what restoring the whole text shows. Restored text goes only to the terminal; the conversation keeps the frontier's text |
+| The local model's reading of sensitive files is shown as if duet said it | Only gated frontier requests are watched (the tap is set for the work the interface drives, and the local reader calls its provider directly); a sub-agent's loop runs unwatched |
+| The frontier, a file or a command writes escape sequences to the terminal (rewrite the screen, set the clipboard with OSC 52, hide text, forge duet's prompt or an approval question) | Everything from outside duet written to the console or the run progress passes `term::safe`: escape and control sequences (CSI, OSC, DCS and C1 forms), other control characters and text-direction overrides are removed before the terminal sees them. The approval question on the console is duet's own input label, not text the frontier wrote |
+| History becomes a new store of what the operator typed (secrets included) | History is the session's own operator messages, read from its transcript, which already holds them as typed (mode 0600 in `.duet/runs/<id>/`, purged with the run); it lives in memory only. No history file is written. A recalled message is sent like any typed one (sanitized) |
+| Tab completion leaks the directory | It lists the operator's own directory for `/image` paths on their screen only; nothing is sent. A completed path is text in the operator's message, and the image then follows the `/image` rules |
+| Run progress in a log shares restored values | Without a terminal, `duet run` writes compact progress lines with placeholders as the frontier saw them and no streamed text (a log is more easily shared than a screen); restored values are shown only on a terminal. `--quiet` writes none |
+
+**Known limits.** Piped `duet chat` output (no terminal: the TUI, scripts) is unchanged line for
+line, so it is not stripped of escape sequences; a program that shows it on a terminal should. On
+the terminal, look-alike characters are shown as they are.
+
 ## Project instructions (`DUET.md`)
 
 `DUET.md` at the repository root, and the owner's own `DUET.md` next to the owner config

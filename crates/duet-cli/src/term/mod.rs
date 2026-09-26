@@ -213,9 +213,9 @@ pub(crate) fn clip_width(text: &str, max: usize) -> String {
 }
 
 /// Text from outside duet (the frontier, tools, files, the operator) made
-/// safe to write to a terminal: escape sequences and control characters are
-/// removed, tabs become four spaces and carriage returns are dropped.
-/// Newlines stay.
+/// safe to write to a terminal: escape sequences, control characters and
+/// text-direction overrides are removed, tabs become four spaces and
+/// carriage returns are dropped. Newlines stay.
 pub(crate) fn safe(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -227,6 +227,8 @@ pub(crate) fn safe(text: &str) -> String {
             // C1 CSI and OSC introducers start sequences too.
             '\u{9b}' => skip_until_final(&mut chars),
             '\u{9d}' => skip_string(&mut chars),
+            // Direction overrides could make a line read other than it is.
+            '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}' => {}
             c if c.is_control() => {}
             c => out.push(c),
         }
@@ -275,6 +277,9 @@ pub(crate) struct Region {
     /// Rows between the region's first row and the cursor.
     up: usize,
     shown: bool,
+    /// The drawn rows' widths and the cursor, for a resize.
+    widths: Vec<usize>,
+    cursor: (usize, usize),
 }
 
 impl Region {
@@ -291,6 +296,20 @@ impl Region {
         self.up = 0;
     }
 
+    /// The terminal is now `columns` wide and has re-wrapped the region's
+    /// rows (as most terminals do): where its first row is now.
+    pub fn resized(&mut self, columns: usize) {
+        let columns = columns.max(1);
+        let (row, col) = self.cursor;
+        self.up = self
+            .widths
+            .iter()
+            .take(row)
+            .map(|w| w.div_ceil(columns).max(1))
+            .sum::<usize>()
+            + col / columns;
+    }
+
     /// Draws `rows` (each at most the terminal's width) from the cursor's
     /// row, which must be the first of the region (after [`Region::clear`]),
     /// and puts the cursor at `cursor` (row, column), or after the last row.
@@ -305,6 +324,7 @@ impl Region {
             out.push_str(row);
         }
         let last = rows.len() - 1;
+        self.widths = rows.iter().map(|r| visible_width(r)).collect();
         match cursor {
             Some((row, col)) => {
                 let row = row.min(last);
@@ -316,8 +336,12 @@ impl Region {
                     let _ = write!(out, "\x1b[{col}C");
                 }
                 self.up = row;
+                self.cursor = (row, col);
             }
-            None => self.up = last,
+            None => {
+                self.up = last;
+                self.cursor = (last, self.widths[last]);
+            }
         }
         self.shown = true;
     }
@@ -360,6 +384,7 @@ mod tests {
         assert_eq!(safe(hostile), "ok red done    tab\nnext");
         assert_eq!(safe("\x1b]8;;http://x\x1b\\link\x1b]8;;\x1b\\"), "link");
         assert_eq!(safe("é⟨EMAIL#1⟩ 中文"), "é⟨EMAIL#1⟩ 中文");
+        assert_eq!(safe("rm \u{202e}txt.exe"), "rm txt.exe");
     }
 
     #[test]
@@ -394,5 +419,11 @@ mod tests {
         out.clear();
         r.clear(&mut out);
         assert_eq!(out, "\r\x1b[J");
+        // After a resize the terminal has re-wrapped the rows.
+        r.draw(&mut out, &["a".repeat(30), "you> hi".into()], Some((1, 7)));
+        r.resized(20);
+        out.clear();
+        r.clear(&mut out);
+        assert_eq!(out, "\r\x1b[2A\x1b[J");
     }
 }

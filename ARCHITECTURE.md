@@ -56,7 +56,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 
 | Crate | Owns | Must never |
 |---|---|---|
-| `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly, retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
+| `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
@@ -66,7 +66,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules | Accept owner-only keys from a project file |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, IP levels, local roles, local micro-eval, outbound gate, audit | Expose a way to reach the frontier without the gate |
 | `duet-agent` | Loop, tools, transcript, context manager, termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) |
-| `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built | Contain policy logic (they edit the registry) |
+| `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
 
@@ -204,6 +204,30 @@ restores every file written by records from that mark on to its content before t
 (removing files the turn created), records `Undone{exchange, paths}` and tells the frontier with the
 next message. Repeating it walks back turn by turn. Writes made by commands are not journaled and
 are not reverted.
+
+**The operator's terminal (`duet-cli::term`).** Two feeds reach the screen, both read-only:
+
+```
+transcript.jsonl ──follow (150 ms)──▶ Entry ─────────────┐
+                                                          ▼
+provider stream ─Assembler::view─▶ live::Differ ─▶ StreamTap ─▶ channel ─▶ Feed ─▶ lines (scrollback)
+  (GatedFrontier passes the task-local tap set by        │         Detok (hold a placeholder until it
+   duet_boundary::live::observe; sub-agents run quiet)   │         closes, then Presenter::detokenize)
+                                                          │         FieldReader (reply / ask_operator
+                                                          │         text out of the call's JSON)
+                                                          │         Markdown (wrap, lists, code)
+                                                          ▼
+                                            live region: row being written, status line, input
+```
+
+`duet chat` on a terminal (stdin and stdout) starts `term::console`: one thread owns the screen and
+reads keys raw (crossterm, output processing left on); the editor (`term::editor`) sends lines to the
+same inbox the reader thread fills without a terminal, and Ctrl-C keys go through the same
+`Interrupts::press` as the signal. The live region is redrawn in place (synchronized output, cursor
+hidden while drawing); output is printed above it. `Screen::Plain` keeps the old line-by-line output
+without a terminal. `duet run` uses the same feed (`term::watch`) on standard error: live on a
+terminal, compact lines (placeholders kept, a heartbeat) otherwise; standard output keeps the
+summary.
 
 ## 5. Boundary internals
 

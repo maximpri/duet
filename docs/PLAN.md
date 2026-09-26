@@ -493,6 +493,24 @@ and owner) at the start of runs, sessions and sub-agents, presented or sanitized
 `diff` in a repository showed a tracked sensitive file's changes as public text (DUET-2026-018,
 fixed).
 
+*Built (branch `chatux`):* the chat part. `duet chat` on a terminal gets a console of duet's own
+(crossterm, already in the lock; rustyline and reedline draw only while a line is read and print
+concurrent output as whole lines, and reedline's in-place repaint needs Rust 1.95): a line editor
+(word/line movement, cut and put back, Alt-Enter / Shift-Enter / Ctrl-J new lines, the trailing
+`\` kept), history from the session's own transcript (no new store), Ctrl-R search, Tab completion
+of commands and `/image` paths; the frontier's text streamed as it arrives (a read-only tap on the
+provider stream, set per task by `duet_boundary::live::observe`; placeholders held until complete
+and restored locally; the `reply` / `ask_operator` text read out of the call's JSON as it streams)
+and rendered as light Markdown wrapped to the terminal, colour unless `NO_COLOR`; a status line
+while duet works (time, turn cost, what runs now) in a live region outside the scrollback; typing
+still steers; Ctrl-C read as a key and given the same rules; Ctrl-Z suspends. Everything from
+outside duet is stripped of escape sequences before it reaches the terminal. Piped output is
+unchanged line for line. Also `duet run` progress on standard error (live on a terminal, compact
+lines with placeholders kept and a heartbeat otherwise; `--quiet`), so a long generation never
+looks hung; standard output keeps only the summary. Checked by hand in tmux (streaming, steering,
+`/stop`, Ctrl-C, approval of a commit, history after resume, resize, Ctrl-Z/`fg`, `NO_COLOR`, the
+terminal restored on exit).
+
 ### M5 — Public benchmark (days 32–35)
 
 Final gate-size runs on the full S0–L2 suite: `duet-hybrid` vs `duet-passthrough`, plus `claude-code`, `codex`

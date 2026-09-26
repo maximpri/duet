@@ -46,6 +46,8 @@ enum Msg {
     Begin,
     End(TurnEnd),
     Mode(Mode),
+    /// Draws what is pending, then acknowledges.
+    Sync(Sender<()>),
     Remember(Vec<String>),
     Restore(Restore),
     Stop(Sender<()>),
@@ -150,7 +152,28 @@ impl Console {
         };
         let thread = std::thread::Builder::new()
             .name("duet-console".into())
-            .spawn(move || run(state, rx))?;
+            .spawn(move || {
+                let mut state = state;
+                let run = std::panic::AssertUnwindSafe(|| run(&mut state, &rx));
+                if std::panic::catch_unwind(run).is_err() {
+                    // The terminal is given back and the session is left
+                    // open (the input ended), so no work is lost.
+                    restore_terminal();
+                    (state.hooks.eof)();
+                    while let Ok(m) = rx.recv() {
+                        match m {
+                            Msg::Stop(ack) => {
+                                let _ = ack.send(());
+                                return;
+                            }
+                            Msg::Sync(ack) => {
+                                let _ = ack.send(());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            })?;
         Ok(Arc::new(Console {
             tx,
             thread: Mutex::new(Some(thread)),
@@ -190,6 +213,12 @@ impl Console {
 
     pub fn mode(&self, mode: Mode) {
         self.send(Msg::Mode(mode));
+        if mode == Mode::Hidden {
+            // Other code prints next: the region is gone first.
+            let (ack, done) = mpsc::channel();
+            self.send(Msg::Sync(ack));
+            let _ = done.recv_timeout(Duration::from_secs(2));
+        }
     }
 
     pub fn remember(&self, entries: Vec<String>) {
@@ -255,7 +284,7 @@ struct Live {
 /// How often the status line moves while duet works.
 const TICK: Duration = Duration::from_millis(250);
 
-fn run(mut s: Live, rx: Receiver<Msg>) {
+fn run(s: &mut Live, rx: &Receiver<Msg>) {
     loop {
         loop {
             match rx.try_recv() {
@@ -263,6 +292,10 @@ fn run(mut s: Live, rx: Receiver<Msg>) {
                     s.close();
                     let _ = ack.send(());
                     return;
+                }
+                Ok(Msg::Sync(ack)) => {
+                    s.render(Instant::now());
+                    let _ = ack.send(());
                 }
                 Ok(m) => s.message(m),
                 Err(TryRecvError::Empty) => break,
@@ -330,7 +363,7 @@ impl Live {
             }
             Msg::Remember(entries) => self.editor.remember(entries),
             Msg::Restore(restore) => self.feed.set_restore(restore),
-            Msg::Stop(_) => {}
+            Msg::Stop(_) | Msg::Sync(_) => {}
         }
     }
 
@@ -343,6 +376,7 @@ impl Live {
             Event::Paste(text) => self.editor.insert(&text),
             Event::Resize(columns, rows) => {
                 let mut out = String::new();
+                self.region.resized(columns as usize);
                 self.region.clear(&mut out);
                 self.write(&out);
                 self.columns = (columns as usize).max(20);

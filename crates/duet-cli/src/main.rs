@@ -582,11 +582,15 @@ async fn start(
     watch: Option<&Arc<term::watch::Watch>>,
 ) -> Result<(Terminal, duet_agent::RunStats)> {
     let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit).await?;
-    if let (Some(w), Some(e)) = (watch, &p.engine) {
-        let e = e.clone();
-        w.restore(Arc::new(move |t: &str| {
-            duet_boundary::view::Presenter::detokenize(e.as_ref(), t)
-        }));
+    if let Some(w) = watch {
+        if let Some(e) = &p.engine {
+            let e = e.clone();
+            w.restore(Arc::new(move |t: &str| {
+                duet_boundary::view::Presenter::detokenize(e.as_ref(), t)
+            }));
+        }
+        // Set up: the status line starts.
+        w.release();
     }
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn duet_boundary::view::Presenter = match &p.engine {
