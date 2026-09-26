@@ -14,10 +14,11 @@ mod privacy;
 
 use duet_agent::Terminal;
 use duet_agent::session::TurnEnd;
+use duet_boundary::audit::AuditEvent;
 use duet_boundary::testing::canary::Canaries;
 use privacy::{
     CUSTOMERS, DB_PASSWORD, Echo, Fixture, KEY, Local, Options, Step, customer_line, first_handle,
-    first_placeholder,
+    first_placeholder, latest_handle,
 };
 use serde_json::json;
 
@@ -621,5 +622,148 @@ async fn image_a_screenshot_of_an_unindexed_password_is_described_without_it() {
     let end = f.run().await;
     assert!(completed(&end), "{end:?}");
     no_image_sent(&f);
+    f.assert_no_leak(&f.canaries([]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn structure_views_samples_and_masked_output_carry_no_planted_value() {
+    // The frontier is told the structure of the sensitive files up front,
+    // reads one (structure view and a sample record), asks for a sample,
+    // reads `.env` (value formats) and runs programs on the data (masked
+    // output). No planted value reaches it in any spelling, dates of birth
+    // included: no detector knows them, and the views never show a value.
+    for (i, local) in LOCALS.into_iter().enumerate() {
+        let f = Fixture::new(
+            &format!("structure-{i}"),
+            "Add a CSV import for the customer export.",
+            local,
+        );
+        f.script(vec![
+            Step::Call("read_file", json!({"path": "data/customers.csv"})),
+            Step::From(Box::new(|body| {
+                let handle = latest_handle(body).expect("a handle");
+                ("synthetic_sample", json!({"handle": handle, "rows": 3}))
+            })),
+            Step::Call("read_file", json!({"path": ".env"})),
+            Step::Call(
+                "run_command",
+                json!({"command": "for i in 1 2 3 4 5 6; do cat data/customers.csv; done", "sensitive_data": true}),
+            ),
+            Step::Call(
+                "run_command",
+                json!({"command": "head -2 data/customers.csv | tail -1", "sensitive_data": true}),
+            ),
+            Step::Call("finish", json!({"summary": "Checked the export's layout."})),
+        ]);
+        let end = f.run().await;
+        assert!(completed(&end), "{local:?}: {end:?}");
+        assert_eq!(f.unscripted(), 0);
+        f.assert_no_leak(&f.canaries(CUSTOMERS.map(|c| c.born)));
+        // What the frontier learned instead.
+        let task = f.task_message();
+        assert!(
+            task.contains("- data/customers.csv: CSV, 3 rows of 5 fields"),
+            "{task}"
+        );
+        let read = f.results_of("read_file");
+        assert!(
+            read[0].contains("born — string; 3; all distinct; len 10; date yyyy-MM-dd ×3"),
+            "{}",
+            read[0]
+        );
+        assert!(
+            read[0].contains("Synthetic sample (record 1 of 3"),
+            "{}",
+            read[0]
+        );
+        assert!(read[1].contains("DB_PASSWORD — "), "{}", read[1]);
+        let sample = &f.results_of("synthetic_sample")[0];
+        assert!(sample.contains("records 1, 2, 3 of 3"), "{sample}");
+        assert!(sample.contains("id,name,born,email,card"), "{sample}");
+        let runs = f.results_of("run_command");
+        assert!(
+            runs[1].contains("Output with every value masked"),
+            "{}",
+            runs[1]
+        );
+        assert!(runs[1].contains("Aa Aa,9999-99-99,"), "{}", runs[1]);
+        let events = f.audit_events();
+        assert!(events.iter().any(|e| matches!(e,
+            AuditEvent::SyntheticSample { outcome, records: 3, .. } if outcome == "shown")));
+        assert!(events.iter().any(|e| matches!(
+            e,
+            AuditEvent::OutputProbe {
+                count: 1,
+                shown: true,
+                ..
+            }
+        )));
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn grep_probes_of_the_env_file_stop_at_the_budget() {
+    // Seen in a live run without a local model (S1, `results/nolocal-smoke`):
+    // unable to ask about `.env`, the frontier ran 34 `sensitive_data`
+    // commands such as `grep -q KEY .env && echo M` and read one bit from
+    // each (a line, or none, and its byte count). Short outputs are probes:
+    // past the run's budget (shipped: 12) the view of each is the same,
+    // whatever the command printed, and every probe is audited.
+    let f = Fixture::with(
+        "grep-probes",
+        "Load the settings: every key in .env is required.",
+        Local::Cooperative,
+        Options {
+            no_local: true,
+            ..Options::default()
+        },
+    );
+    let keys = ["STRIPE_SECRET_KEY", "PORT", "DB_PASSWORD", "LOG_LEVEL"];
+    let mut steps: Vec<Step> = (0..16)
+        .map(|i| {
+            let key = keys[i % keys.len()];
+            Step::Call(
+                "run_command",
+                json!({"command": format!("grep -q '^{key}=' .env && echo M"), "sensitive_data": true}),
+            )
+        })
+        .collect();
+    steps.push(Step::Call("finish", json!({"summary": "Probed."})));
+    f.script(steps);
+    let end = f.run().await;
+    assert!(completed(&end), "{end:?}");
+    assert_eq!(f.unscripted(), 0);
+    let results = f.results_of("run_command");
+    assert_eq!(results.len(), 16);
+    // Within the budget a probe still answers (the key is there or not)...
+    assert!(results[0].contains("\n  M\n"), "{}", results[0]);
+    assert!(!results[1].contains("\n  M\n"), "{}", results[1]);
+    // ...past it, the view no longer depends on the output: it names the
+    // command (the frontier's own text) and nothing else.
+    let without_command = |i: usize| {
+        let key = keys[i % keys.len()];
+        results[i].replace(&format!("grep -q '^{key}=' .env && echo M"), "…")
+    };
+    for i in 12..16 {
+        assert_eq!(without_command(i), without_command(12));
+        assert!(results[i].contains("withheld"), "{}", results[i]);
+    }
+    assert!(without_command(12).contains("sensitivity.output_probes"));
+    let probes: Vec<(u32, bool)> = f
+        .audit_events()
+        .into_iter()
+        .filter_map(|e| match e {
+            AuditEvent::OutputProbe { count, shown, .. } => Some((count, shown)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(probes.len(), 16);
+    assert!(probes.iter().take(12).all(|p| p.1) && probes.iter().skip(12).all(|p| !p.1));
+    // The structure of `.env` was in the task all along.
+    let task = f.task_message();
+    assert!(
+        task.contains("- .env: KEY=value, 2 assignments: STRIPE_SECRET_KEY ("),
+        "{task}"
+    );
     f.assert_no_leak(&f.canaries([]));
 }

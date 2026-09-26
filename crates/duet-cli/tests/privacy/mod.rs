@@ -223,6 +223,8 @@ pub struct Options {
     /// The workspace holds screenshots ([`SCREENSHOTS`]) and the local model
     /// reads images (`local.vision`); every other image setting is shipped.
     pub images: bool,
+    /// No local model (`local.enabled = false`): the stand-in is not used.
+    pub no_local: bool,
 }
 
 impl Default for Options {
@@ -230,6 +232,7 @@ impl Default for Options {
         Self {
             env_ignored: true,
             images: false,
+            no_local: false,
         }
     }
 }
@@ -386,7 +389,11 @@ impl Fixture {
             duet_boundary::testing::responsive_local(move |prompt| respond(local, prompt));
         let mut policy = shipped_policy(&root.join("owner/config.toml"));
         policy.local_vision = options.images;
-        let engine = Engine::open(&run_dir, policy, Some(reader)).unwrap();
+        // Synthetic samples are drawn from a fixed seed, so a scenario sees
+        // the same fakes every time.
+        std::fs::write(run_dir.join("sample-seed"), "20260926").unwrap();
+        let reader = (!options.no_local).then_some(reader);
+        let engine = Engine::open(&run_dir, policy, reader).unwrap();
         engine.prime(&ws, &git.list_files(&ws).unwrap(), objective);
 
         let frontier = Frontier::default();
@@ -503,6 +510,34 @@ impl Fixture {
         (0..self.local.bodies().len())
             .map(|i| self.local.prompt(i))
             .collect()
+    }
+
+    /// The run's audit events, in order.
+    pub fn audit_events(&self) -> Vec<AuditEvent> {
+        let log = self
+            .ws
+            .join(".duet/audit")
+            .join(format!("{}.jsonl", self.run_id));
+        duet_boundary::audit::read(&log)
+            .unwrap()
+            .into_iter()
+            .filter_map(|l| match l {
+                duet_boundary::audit::Line::Event(e) => Some(e.event),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The text of the first user message of the last request (the task).
+    pub fn task_message(&self) -> String {
+        self.last_request()["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "user")
+            .and_then(|m| m["content"].as_str())
+            .unwrap_or_default()
+            .to_owned()
     }
 
     /// Canaries for every planted value and `extra`.

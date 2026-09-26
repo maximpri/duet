@@ -528,6 +528,9 @@ command output or files commands wrote",
             ));
         }
         let text = String::from_utf8_lossy(&bytes);
+        // A file's handle holds it as shown: numbered.
+        let text = crate::bulky::strip_line_numbers(&text)
+            .map_or_else(|| text.to_string(), |(_, body)| body);
         let mut st = self.lock();
         let outcome = self.sample(&mut st, &info.source, &text, path, rows);
         let (records, word, result) = match outcome {
@@ -663,13 +666,19 @@ mod tests {
         (d, ws, e)
     }
 
+    /// `text` presented as `read_file` presents a file: numbered.
     fn read(e: &Engine, path: &str, text: &str) -> String {
+        let numbered: String = text
+            .lines()
+            .enumerate()
+            .map(|(i, l)| format!("{:>2}  {l}\n", i + 1))
+            .collect();
         e.present(
             &Source::File {
                 path: path.into(),
                 ranged: false,
             },
-            text.as_bytes(),
+            numbered.as_bytes(),
         )
     }
 

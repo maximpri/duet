@@ -879,7 +879,14 @@ impl Engine {
         origin: structure::Origin<'_>,
     ) -> String {
         self.set_class(ViewClass::HandleSummary);
-        if let Some(withheld) = self.probe_gate(text, origin) {
+        // A file is shown numbered (`read_file`); its structure is its content's.
+        let plain = match origin {
+            structure::Origin::File(_) => {
+                bulky::strip_line_numbers(text).map_or_else(|| text.to_owned(), |(_, body)| body)
+            }
+            _ => text.to_owned(),
+        };
+        if let Some(withheld) = self.probe_gate(&plain, origin) {
             return withheld;
         }
         let handle = {
@@ -935,7 +942,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         }
         let structure = match masked {
             Some(_) => None,
-            None => self.structure_section(&mut st, text, origin),
+            None => self.structure_section(&mut st, &plain, origin),
         };
         match structure {
             Some(view) => out.push_str(&view),
@@ -945,7 +952,8 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
             None => {}
         }
         if let structure::Origin::File(path) = origin
-            && let Some(sample) = self.inline_sample(&mut st, &handle.id, source_label, text, path)
+            && let Some(sample) =
+                self.inline_sample(&mut st, &handle.id, source_label, &plain, path)
         {
             out.push_str(&sample);
         }
@@ -1687,7 +1695,9 @@ impl Presenter for Engine {
                     let mut st = self.lock();
                     st.overlap.add_sensitive(&text);
                     let mut view = self.tokenized_view(&mut st, &label, &text);
-                    view.push_str(&self.env_formats(&mut st, path, &text));
+                    let plain = bulky::strip_line_numbers(&text)
+                        .map_or_else(|| text.to_string(), |(_, body)| body);
+                    view.push_str(&self.env_formats(&mut st, path, &plain));
                     view
                 } else {
                     self.handle_view_as(&label, &text, structure::Origin::File(path))

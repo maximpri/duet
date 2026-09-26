@@ -202,17 +202,16 @@ pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) 
             }
         }
         git if crate::git_tools::NAMES.contains(&git) => crate::git_tools::dispatch(ctx, git, args),
-        other => {
-            let result = ctx.presenter.call_tool(other, args);
-            for event in ctx.presenter.take_events() {
-                ctx.record(event);
-            }
-            match result {
-                Some(r) => r,
-                None => Err(format!("unknown tool `{other}`")),
-            }
-        }
+        other => match ctx.presenter.call_tool(other, args) {
+            Some(r) => r,
+            None => Err(format!("unknown tool `{other}`")),
+        },
     };
+    // What the presenter decided while the tool ran (a probe of a value,
+    // a short sensitive output, a sample) goes to the audit log.
+    for event in ctx.presenter.take_events() {
+        ctx.record(event);
+    }
     match result {
         Ok(text) => Outcome::Result(text),
         Err(e) => Outcome::Error(e),
