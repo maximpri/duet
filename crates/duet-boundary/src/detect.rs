@@ -145,6 +145,7 @@ re!(
     r"(?i)\b(?:(credit|debit|card|visa|mastercard|amex|maestro)|(iban)|(account|acct|routing|bank|sort\s+code|bsb)|(ssn|social\s+security|passport|licen[cs]e|tax\s*id|national\s+id|id\s+(?:number|no)|personal\s+id))"
 );
 re!(WORD_RUN, r"\w+");
+re!(ISBN_LABEL, r"(?i)\bisbn(?:-1[03])?\s*:?\s*$");
 re!(SSN, r"\b\d{3}-\d{2}-\d{4}\b");
 re!(
     IPV4,
@@ -225,6 +226,31 @@ fn luhn(digits: &str) -> bool {
         })
         .sum();
     sum.is_multiple_of(10)
+}
+
+/// Whether the card-shaped number `number` at `start` is an ISBN: printed in
+/// the ISBN-13 layout (five groups, a three-digit prefix first and the check
+/// digit last: `978-0-596-51004-6`), or 978 or 979 and a valid ISBN-13 check
+/// digit, or right after an `ISBN` label. Thirteen-digit card numbers start
+/// with 4, and cards are printed in groups of four or so.
+fn isbn(text: &str, start: usize, number: &str) -> bool {
+    let digits: Vec<u32> = number.chars().filter_map(|c| c.to_digit(10)).collect();
+    if digits.len() != 13 {
+        return false;
+    }
+    let groups: Vec<&str> = number.split([' ', '-']).collect();
+    let layout = groups.len() == 5 && groups[0].len() == 3 && groups[4].len() == 1;
+    let weighted: u32 = digits
+        .iter()
+        .enumerate()
+        .map(|(i, d)| if i % 2 == 0 { *d } else { 3 * d })
+        .sum();
+    let checked = matches!(digits[..3], [9, 7, 8 | 9]) && weighted.is_multiple_of(10);
+    let mut from = start.saturating_sub(16);
+    while !text.is_char_boundary(from) {
+        from += 1;
+    }
+    layout || checked || ISBN_LABEL.is_match(&text[from..start])
 }
 
 /// Words a label may stand from the number it names.
@@ -462,7 +488,7 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
         }
         if on(Own::Card) {
             for m in CARD.find_iter(text) {
-                if luhn(m.as_str()) {
+                if luhn(m.as_str()) && !isbn(text, m.start(), m.as_str()) {
                     push(Kind::Card, m.range(), None);
                 }
             }
@@ -638,6 +664,38 @@ mod tests {
             "created_ms 1790367049547",
         ] {
             assert!(kinds(text).is_empty(), "{text}: {:?}", kinds(text));
+        }
+    }
+
+    #[test]
+    fn isbns_are_not_card_numbers() {
+        // Seen in calibration runs (2026-09-25): a book citation in public
+        // source, with a misprinted ISBN that passes the card checksum,
+        // became a card placeholder.
+        for text in [
+            "// and in 'Collected Parsers', edited by the editors, Copyright 2007 Example Press, Inc. 798-0-596-51004-6",
+            "978 5 9651 0044 6",
+            "9785965100446",
+            "ISBN: 9785965100453",
+            "isbn-13 978-5965100545",
+        ] {
+            assert!(
+                !kinds(text).iter().any(|(k, _)| *k == Kind::Card),
+                "{text}: {:?}",
+                kinds(text)
+            );
+        }
+        // Grouped like a card, or labelled as one, it is one.
+        for text in [
+            "paid with 7980 5965 1004 6",
+            "4111 1111 1111 1111",
+            "card number 978-0-596-51004-6",
+        ] {
+            assert!(
+                kinds(text).iter().any(|(k, _)| *k == Kind::Card),
+                "{text}: {:?}",
+                kinds(text)
+            );
         }
     }
 
