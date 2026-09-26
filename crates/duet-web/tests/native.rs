@@ -549,6 +549,38 @@ async fn throttle_violations_back_off_and_errors_never_show_the_reply() {
 }
 
 #[tokio::test]
+async fn a_sentence_that_matches_nothing_gets_a_hint() {
+    let s = serve().await;
+    answer_all(&s);
+    s.route(
+        "/2.3/search/advanced",
+        vec![gzipped(json!({"items": [], "quota_remaining": 280}))],
+    );
+    let w = web(
+        &s,
+        native(&s, &[Source::StackOverflow, Source::Wikipedia]),
+        Duration::from_secs(5),
+        &["*.test"],
+    );
+    let got = w
+        .search_with("how do I cancel a tokio select branch safely", 5, None)
+        .await
+        .unwrap();
+    let text = duet_web::search::render("q", &got);
+    assert!(
+        text.starts_with(
+            "Sources asked: stackoverflow (no results; it matches every word: try fewer); wikipedia (2 results)."
+        ),
+        "{text}"
+    );
+    let got = w.search_with("tokio", 5, None).await.unwrap();
+    assert!(
+        duet_web::search::render("tokio", &got).contains("stackoverflow (no results);"),
+        "{got:?}"
+    );
+}
+
+#[tokio::test]
 async fn answers_are_kept_for_the_run() {
     let s = serve().await;
     answer_all(&s);

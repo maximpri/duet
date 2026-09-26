@@ -1015,10 +1015,20 @@ impl Web {
         match asked {
             Ok(Ok((bytes, results))) => {
                 self.native.keep(key, &results);
+                // These match every word; a frontier that asked a sentence
+                // learns why nothing came back.
+                let every_word =
+                    matches!(source.service(), Service::StackExchange | Service::GitHub);
+                let note =
+                    if results.is_empty() && every_word && query.split_whitespace().count() > 2 {
+                        "it matches every word: try fewer".to_owned()
+                    } else {
+                        String::new()
+                    };
                 Asked {
                     report: SourceReport {
                         hits: results.len(),
-                        ..report(bytes, "ok", String::new())
+                        ..report(bytes, "ok", note)
                     },
                     results,
                 }

@@ -401,7 +401,8 @@ fn status(r: &SourceReport) -> String {
         n => format!("{n} results"),
     };
     match r.outcome {
-        "ok" => format!("{} ({})", r.source, hits(r.hits)),
+        "ok" if r.note.is_empty() => format!("{} ({})", r.source, hits(r.hits)),
+        "ok" => format!("{} ({}; {})", r.source, hits(r.hits), r.note),
         "cached" => format!("{} ({}, answered earlier)", r.source, hits(r.hits)),
         "not_applicable" | "throttled" | "backoff" => format!("{} (skipped: {})", r.source, r.note),
         _ => format!("{} ({})", r.source, r.note),

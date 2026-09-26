@@ -148,6 +148,11 @@ pub fn choose(
             if var(env, &brave_env).is_some() {
                 unused.push("a Brave key is set: web.search.backend = \"brave\" searches with it");
             }
+            if cfg.str("web.search.zai_engine")? != "auto" {
+                unused.push(
+                    "web.search.zai_engine is set: web.search.backend = \"zai\" searches with Z.ai",
+                );
+            }
             native(cfg, ws, Some(&unused.join("; ")))?
         }
     })
@@ -448,6 +453,18 @@ mod tests {
         );
         let c = pick("", None, &[]);
         assert!(!c.detail.contains("auto searches natively"), "{}", c.detail);
+        let c = pick(
+            "[web.search]\nzai_engine = \"plan\"\n",
+            zai_frontier(CODING),
+            &[("ZAI_API_KEY", "zk")],
+        );
+        assert_eq!(name(&c), Some("native"));
+        assert!(
+            c.detail
+                .contains("web.search.backend = \"zai\" searches with Z.ai"),
+            "{}",
+            c.detail
+        );
         // `native` by name is the same backend.
         assert_eq!(
             name(&pick("[web.search]\nbackend = \"native\"\n", None, &[])),
