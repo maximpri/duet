@@ -66,6 +66,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-24 | Live backend acceptance = the configured remote oMLX server (operator): it is verified live (doctor --online, micro-eval, all gate runs, hands-on acceptance); Ollama, LM Studio, llama.cpp, vLLM and mlx_lm.server stay verified against mock servers only, stated as such |
 | 2026-09-24 | Future TUI (operator preference): a dual-panel Run view — main panel with the live run (turns, tool calls, results, withheld-content events), side panel listing the files the run changed (+/- line counts) with a scrollable per-file diff (line numbers, added/removed highlighting) that follows the run as it edits. Recorded as a functional requirement; the layout and visuals are designed independently (novelty rule: no design references from other coding agents) |
 | 2026-09-25 | Detection rules stay duet's own engine, fed by a maintained third-party rule set as data (operator): import the gitleaks rule set (MIT; a secret scanner, not a coding agent, so the novelty rule does not exclude it) into duet's detector, pinned and updatable; add a detection corpus that measures recall and false positives in the gate; widen personal-data formats beyond US-only; optional local-model pass for names and addresses in free text. See SbD-2 "Detection coverage" |
+| 2026-09-26 | Local security review is part of the product (operator): one SAST engine with two entry points — an **auditor** of duet's own changes at `finish` (first) and a **scanner** of the whole repository (`duet scan`, second). Three layers: deterministic rules find candidate paths and known patterns; the local model judges every candidate and is the only reviewer of protected code and privacy flows; an optional fresh-context frontier second opinion for high-severity or uncertain findings on open code. Only rule-confirmed high-severity paths can block. The local layer's value is measured on public vulnerable-code benchmarks before it is trusted. See M5.3 |
 | 2026-09-26 | Web search is executed by the host itself (operator): duet's own code queries sources with official open APIs from the operator's machine (no search-provider API by default, no HTML scraping of general search engines); z.ai search and SearXNG/Brave remain explicit owner choices |
 | 2026-09-26 | Cost with security (operator: "yes"): the local model returns to cutting frontier cost, now aimed at the measured driver — frontier turns × context size (XL: 159 turns, ~120K tokens resent per turn, input ≈ 90% of frontier cost; privacy mode's `ask_local` round trips are 23% of S–L tool calls). Rule: offload only what removes frontier turns or shrinks context; never add turns; the local model never decides; everything it produces passes the boundary. See M5.2 |
 | 2026-09-26 | Everyday use at parity with popular agents (operator: "go" after a full-stack app test): registry-only network for ordinary commands **on by default** (they cannot read sensitive files, protected code or run state, so what they can send is public code the frontier already sees; `sensitive_data` commands and checks of protected code never get network); host-side egress proxy with a host allowlist, audited; detector false positives on build artifacts and paths fixed; work without git; `DUET.md` project instructions (untrusted repository text, can never loosen policy); chat line editing, history and streamed replies; commits offered in interactive sessions (asked inline). See M5.1b |
@@ -673,6 +674,55 @@ batched turn of whole-file reads, and the frontier re-reads what it will edit, s
 a turn and its report instead of removing turns: kept off. *Open:* the XL head-to-head (X1/X2, where
 reading takes many turns), questions narrower than an overview, and offering it only above a
 repository size.
+
+### M5.3 — Local security review: auditor first, then scanner
+
+Why: the boundary keeps data local *during* a session, but nothing checks that the code duet
+writes will not leak data *after deployment* (a new outbound host, customer fields in logs,
+disabled TLS verification, a weakened auth check) — including code written by a frontier steered
+by prompt injection. Banks also need per-change security-review evidence (PCI DSS 6.2.4, secure
+development standards). The local model is the only model allowed to read protected code and the
+code that handles real data, and it is independent of the model that wrote the change.
+
+One engine, two entry points:
+
+| | Auditor (first) | Scanner (second) |
+|---|---|---|
+| Scope | The run's or session's changes | The whole repository |
+| When | Automatically at `finish`, before the work counts as done | `duet scan`, on demand or in the background; results kept per commit |
+| Cost | Changed files only (minutes of local time) | About an hour of local time on a 58K-line repository at current prefill speed |
+| Protects against | New vulnerabilities and data-leak backdoors in duet's own changes | Existing vulnerabilities and privacy flows |
+
+Three layers:
+
+1. **Deterministic rules** (duet's own, tree-sitter parsers and language-server references):
+   sources (untrusted input: HTTP, files, CLI, environment; sensitive data: vault-known fields,
+   structure-view fields, secrets) → sinks (SQL, shell, file paths, HTML, deserializers, logs,
+   outbound HTTP, analytics) and the paths between them; plus known patterns (disabled TLS
+   verification, weak crypto, hard-coded credentials, new outbound hosts). Operator-installed
+   scanners (OpenGrep with openly licensed rules, cargo-audit, npm/pip audit, gosec, Bandit) run
+   sandboxed as optional inputs; duet ships no rules under restrictive licences.
+2. **Local model judgement** of each candidate in a small context: exploitable or not, missing
+   sanitisation, severity, suggested fix. The only reviewer for protected code and privacy flows.
+3. **Optional frontier second opinion** in a fresh context (only the diff and relevant open code,
+   never the working conversation) for high-severity or uncertain findings on open code.
+
+Rules: only rule-confirmed high-severity paths can block `finish` (setting); model-only findings
+are advisory. The reviewer has no tools with side effects; its report passes the local-output
+filter and the outbound gate. Every review is an audit event (counts, severities, rule ids, never
+code), giving a per-change security-review record.
+
+Privacy flows first: duet knows which fields are sensitive (vault, structure views), so it can find
+what general scanners cannot — customer fields reaching logs or analytics, card numbers in error
+messages, secrets in exceptions, personal data sent to a new host.
+
+Measurement before trust: precision and recall on public vulnerable-code benchmarks (OWASP
+Benchmark, CWE-Bench-Java, Juliet subsets) and on seeded vulnerabilities and data-leak backdoors in
+dogfood tasks, for rules alone, rules + local model, rules + frontier, and all three; false alarms
+on normal diffs from recorded benchmark runs; time per review. If the local layer adds little on
+open code, its role narrows to protected code and privacy flows.
+
+Order: after the M5.2 head-to-head, the host-native web search and the single egress choke point.
 
 ### M5 — Public benchmark (days 32–35)
 
