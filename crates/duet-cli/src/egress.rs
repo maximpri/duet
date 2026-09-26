@@ -12,13 +12,14 @@ use std::sync::Arc;
 /// `duet_sandbox::bridge`); never typed by anyone.
 pub(crate) const BRIDGE_ARG: &str = "__sandbox-bridge";
 
-/// When duet was started as the bridge helper: its exit code.
-pub(crate) fn bridge_helper() -> Option<i32> {
-    let mut args = std::env::args_os().skip(1);
-    if args.next()? != BRIDGE_ARG {
+/// When duet was started as the bridge helper (`args` is its command line,
+/// program name first): its exit code.
+pub(crate) fn bridge_helper(args: &[std::ffi::OsString]) -> Option<i32> {
+    let mut args = args.iter().skip(1);
+    if *args.next()? != BRIDGE_ARG {
         return None;
     }
-    Some(duet_sandbox::bridge::main(args.collect()))
+    Some(duet_sandbox::bridge::main(args.cloned().collect()))
 }
 
 /// The run's `sandbox.network`. With `registries`, the proxy starts on the

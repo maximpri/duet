@@ -32,8 +32,9 @@
 use crate::approve;
 use crate::term::console::{Console, Hooks, Mode as Live};
 use crate::{
-    LocalOverride, Mode, Prepared, RunLimits, RunManifest, audit_log_path, checked_run_id,
-    frontier_dialect, load_config, local_enabled, new_run_id, open_audit, prepare, setup,
+    Embedding, LocalOverride, Mode, Prepared, RunLimits, RunManifest, audit_log_path,
+    checked_run_id, frontier_dialect, load_config, local_enabled, new_run_id, open_audit, prepare,
+    setup,
 };
 use anyhow::{Context, Result, bail, ensure};
 use duet_agent::oversight::Action;
@@ -520,7 +521,7 @@ fn image_path(ws: &Path, raw: &str) -> PathBuf {
 
 /// `duet chat`. Returns the exit code: 0 when the session was left open or
 /// closed, 3 when a session budget is spent, 1 when it could not start.
-pub(crate) async fn chat(ws: PathBuf, args: ChatArgs) -> Result<i32> {
+pub(crate) async fn chat(ws: PathBuf, args: ChatArgs, emb: &Embedding) -> Result<i32> {
     match (args.mode, args.no_privacy) {
         (Mode::Passthrough, false) if args.resume.is_none() => bail!(
             "--mode passthrough turns the privacy boundary off: everything the model reads, \
@@ -532,7 +533,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         _ => {}
     }
-    let cfg = load_config(&ws)?;
+    let cfg = load_config(&ws, emb)?;
     if args.resume.is_none() {
         crate::overrides::mode_allowed(&cfg, args.mode)?;
     }
@@ -636,7 +637,16 @@ Add --no-privacy to confirm, or use --mode hybrid."
     };
     let mut audit = None;
     let driven = std::panic::AssertUnwindSafe(converse(
-        &ws, &manifest, &cfg, oversight, &run_dir, resume, &limits, &mut audit, &io,
+        &ws,
+        &manifest,
+        &cfg,
+        oversight,
+        &run_dir,
+        resume,
+        &limits,
+        &mut audit,
+        &io,
+        emb.hooks(),
     ))
     .catch_unwind()
     .await;
@@ -656,12 +666,13 @@ Add --no-privacy to confirm, or use --mode hybrid."
     screen.close();
     let audit = match audit {
         Some(a) => Some(a),
-        None => open_audit(&ws, &manifest.run_id)
+        None => open_audit(&ws, &manifest.run_id, emb.hooks())
             .map(AuditHandle::new)
             .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
             .ok(),
     };
-    // Duet's own command line adds no hooks (see ARCHITECTURE.md, "Embedding Duet").
+    // `duet` itself embeds nothing, so it adds no hooks (see ARCHITECTURE.md,
+    // "Embedding Duet").
     duet_agent::conclude_with(
         &run_dir,
         &manifest.run_id,
@@ -674,7 +685,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             mode: &format!("{:?}", manifest.mode).to_lowercase(),
             resumed: resume,
             policy: cfg.policy().map(duet_config::Policy::meta),
-            hooks: &duet_agent::Hooks::default(),
+            hooks: emb.hooks(),
         },
     )?;
     let id = &manifest.run_id;
@@ -809,13 +820,14 @@ async fn converse(
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
     io: &Io,
+    hooks: &duet_agent::Hooks,
 ) -> Result<(Terminal, RunStats)> {
     let Prepared {
         git,
         engine,
         frontier,
         run_cfg,
-    } = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit).await?;
+    } = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit, hooks).await?;
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn Presenter = match &engine {
         Some(e) => e.as_ref(),

@@ -71,7 +71,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules, the policy layer of an embedding program (`policy`, §13) | Accept owner-only keys from a project file, or any value past a loaded policy |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
 | `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
-| `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress) | Contain policy logic (they edit the registry) |
+| `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress); `duet-cli` is also a library whose `main_with` is the whole command line for a program that embeds Duet (§13) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
 
@@ -1035,12 +1035,14 @@ Each is backed by a test, except where noted.
 
 ## 13. Embedding Duet
 
-A program may link Duet's crates and compose runs and sessions itself, the way `duet-cli` does
-(`prepare`, `execute` and `chat` in `crates/duet-cli/src`); Duet Enterprise does. Three generic
-extension points let such a program add to what Duet does without changing how a run behaves.
-`duet-cli` makes the same calls with none of them (no policy source, `Hooks::default()`), so
-Duet's own behaviour does not depend on them. What they see is what Duet already records: names,
-counts, digests, chain positions and paths, never content.
+A program may link Duet's crates and build its own binary on them; Duet Enterprise does. It calls
+`duet_cli::main_with` with what it adds (point 4 below) and gets `duet`'s whole command line,
+with runs and sessions composed exactly as `duet` composes them (`prepare`, `execute` and `chat`
+in `crates/duet-cli/src`). Three generic extension points let such a program add to what Duet does
+without changing how a run behaves. The `duet` binary is `main_with(Embedding::default())`: the
+same calls with none of them (no policy source, `Hooks::default()`), so Duet's own behaviour does
+not depend on them. What they see is what Duet already records: names, counts, digests, chain
+positions and paths, never content.
 
 **1. Policy layer** (`duet_config::policy`, re-exported by `duet_agent::embed`). A layer above the
 owner's and the project's configuration files:
@@ -1141,7 +1143,39 @@ other text a model wrote or the workspace held. A failing hook is recorded as `h
 `end`) after `run_end`, so the reported head is the head at `run_end` and only such records follow
 it until the run is resumed. A process killed outright (SIGKILL, power loss) calls nothing.
 
-**Composing a run with hooks** (as `duet-cli` does, with `hooks` added):
+**4. The command line as a library** (`duet_cli`). The `duet` binary's `main` is one call:
+
+```rust
+pub fn main_with(embedding: Embedding) -> ExitCode;      // fn main() -> ExitCode { main_with(e) }
+Embedding::new(Product::new("Name", "x.y.z"))            // --version: "Name x.y.z"
+    .with_policy(Arc<dyn PolicySource>)                   // every command that loads settings
+    .with_hooks(Hooks)                                    // every run and session invocation
+    .with_doctor_check(Arc<dyn DoctorCheck>)              // `duet doctor` and the TUI's doctor
+pub trait DoctorCheck: Send + Sync { fn run(&self, ctx: &DoctorContext<'_>) -> Vec<Check>; }
+DoctorContext { workspace, config: Option<&Config> /* with the policy layer */, online }
+Check::new(name, Status::{Skip, Pass, Warn, Fail}, detail).fix(how)
+```
+
+`main_with` reads the process's arguments, builds the asynchronous runtime (so it must not be
+called inside one) and returns the exit code `duet` would end with; an error is printed as
+`Error: …` and ends with 1, and `--help`, `--version` and argument errors end the process as
+`duet`'s do. It is also the egress bridge helper inside a bubblewrap sandbox (the sandbox starts
+the running executable with `__sandbox-bridge`), and the TUI starts runs with the running
+executable, so both are the embedding program's own binary. What `Embedding` adds, and where:
+- the policy source: `Config::load_with` everywhere `duet` loads configuration (`run`, `resume`,
+  `chat`, `config`, `purge`, `local-eval`, `doctor`, the TUI's settings screens and cache probe);
+- the hooks: attached to a run's audit log as soon as it is opened for this invocation (before
+  `run_start`, or before `run_end` of a run that failed before that) and passed to
+  `conclude_with`, for `duet run`, `duet resume` and `duet chat`;
+- the product: `--version` prints `<name> <version>`; `duet doctor`'s `version` line names it and
+  the Duet it is built on (`…; Duet Core 0.1.0`), and its JSON adds `product` and `core_version`
+  (`version` is the product's); `duet` itself prints exactly what it always did;
+- the doctor checks: run after Duet's own, counted in the exit code like any other.
+
+Nothing else changes: the same commands, flags, messages, files and exit codes. Tested with a
+test binary that is such a program (`crates/duet-cli/tests/embedded.rs`).
+
+**Composing a run with hooks** (what `main_with` does for each run and session invocation):
 
 ```rust
 let hooks = Hooks::default().subscribe(recorder).on_end(receipts);
@@ -1155,7 +1189,8 @@ duet_agent::conclude_with(&run_dir, &run_id, Some(frontier.audit()), &log_path, 
     hooks: &hooks })?;
 ```
 
-Stability. The embedding API is the items named in this section: `duet_config::policy` and
+Stability. The embedding API is the items named in this section: `duet_cli::{main_with, Embedding,
+Product, DoctorCheck, DoctorContext, Check, Status}`; `duet_config::policy` and
 `Config::load_with`/`policy`/`policy_rule`/`policy_overrides`/`allows`, `ConfigError::Policy` and
 `PolicyLoad`, `Origin::Policy`; `duet_boundary::audit::{AuditSubscriber, Opened, Appended,
 Recorded, ChainHead}`, `AuditLog::subscribe`, `AuditHandle::subscribe`/`chain_head`; and
@@ -1165,7 +1200,8 @@ comes with a minor version bump and a release note; a patch release never change
 changes are not breaking and may come in any release: new settings (a policy can then name them),
 new `AuditEvent` variants (match with a wildcard arm; `AuditEvent::kind` names any), new fields of
 the `#[non_exhaustive]` types (`Opened`, `Appended`, `Recorded`, `ChainHead`, `EndReport`,
-`EndStats`, `RunKind`, `PolicyMeta`, which Core constructs; build a `PolicyMeta` with
-`PolicyMeta::new`). `Ending` is built by the embedding program; a new field in it is a breaking
-change. What a policy can express is the settings that exist: for example no setting forbids
+`EndStats`, `RunKind`, `PolicyMeta`, `DoctorContext`, `Check`, which Core constructs; build a
+`PolicyMeta` with `PolicyMeta::new` and a `Check` with `Check::new`), new `Embedding` methods and
+new commands or flags of the command line. `Ending` is built by the embedding program; a new field
+in it is a breaking change. What a policy can express is the settings that exist: for example no setting forbids
 adding MCP servers (each has its own `enabled`), so a policy cannot yet either.

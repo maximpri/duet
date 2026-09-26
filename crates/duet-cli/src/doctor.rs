@@ -8,6 +8,7 @@
 //! one-colour images (the frontier only when frontier.vision is on); it never
 //! prints a credential.
 
+use crate::embedding::{CORE_VERSION, DoctorContext, Embedding, Product};
 use crate::{config_audit_path, run_anchor};
 use duet_boundary::audit::{AnchorCheck, Verification, check_anchor, verify};
 use duet_config::{Config, Origin, REGISTRY};
@@ -15,6 +16,7 @@ use duet_provider::backends;
 use duet_provider::endpoint::{Trust, check_local_endpoint, host_port, is_loopback_host};
 use duet_provider::{ChatProvider, Dialect, ProviderConfig, Request, Role};
 use serde::Serialize;
+use std::borrow::Cow;
 use std::path::Path;
 use std::time::Duration;
 
@@ -28,6 +30,7 @@ const DISK_FAIL: u64 = 1 << 30;
 const RECENT_RUNS: usize = 5;
 const ONLINE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How a check came out, from least to most severe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -37,9 +40,12 @@ pub enum Status {
     Fail,
 }
 
+/// One line of `duet doctor`: what was checked, how it came out, what it
+/// found and, for anything short of pass, how to fix it.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Check {
-    pub name: &'static str,
+    pub name: Cow<'static, str>,
     pub status: Status,
     pub detail: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -47,16 +53,25 @@ pub struct Check {
 }
 
 fn check(name: &'static str, status: Status, detail: impl Into<String>) -> Check {
-    Check {
-        name,
-        status,
-        detail: detail.into(),
-        fix: None,
-    }
+    Check::new(name, status, detail)
 }
 
 impl Check {
-    fn fix(mut self, fix: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<Cow<'static, str>>,
+        status: Status,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            status,
+            detail: detail.into(),
+            fix: None,
+        }
+    }
+
+    /// How to fix what the check found (one or more lines).
+    pub fn fix(mut self, fix: impl Into<String>) -> Self {
         self.fix = Some(fix.into());
         self
     }
@@ -111,24 +126,35 @@ pub fn render_text(checks: &[Check], online: bool) -> String {
     out
 }
 
-pub fn render_json(checks: &[Check], online: bool) -> String {
-    serde_json::to_string_pretty(&serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
+pub fn render_json(checks: &[Check], online: bool, product: &Product) -> String {
+    let mut report = serde_json::json!({
+        "version": product.version,
         "online": online,
         "result": worst(checks),
         "checks": checks,
-    }))
-    .unwrap_or_default()
+    });
+    // An embedding product also names itself and the Duet it is built on.
+    if !product.is_duet() {
+        report["product"] = product.name.into();
+        report["core_version"] = CORE_VERSION.into();
+    }
+    serde_json::to_string_pretty(&report).unwrap_or_default()
 }
 
-/// Runs every check against the workspace `ws`.
-pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
-    let mut out = vec![check(
+/// The `version` line: the product, the platform and the kind of build.
+fn version(product: &Product) -> Check {
+    let core = if product.is_duet() {
+        String::new()
+    } else {
+        format!("; Duet Core {CORE_VERSION}")
+    };
+    check(
         "version",
         Status::Pass,
         format!(
-            "duet {} ({}-{}, {} build); release channel not published yet, so no update check",
-            env!("CARGO_PKG_VERSION"),
+            "{} {} ({}-{}, {} build{core}); release channel not published yet, so no update check",
+            product.name,
+            product.version,
             std::env::consts::OS,
             std::env::consts::ARCH,
             if RELEASE_BUILD {
@@ -137,10 +163,16 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
                 "development"
             }
         ),
-    )];
+    )
+}
+
+/// Runs every check against the workspace `ws`, then the embedding
+/// program's own (`emb`).
+pub async fn run(ws: &Path, online: bool, emb: &Embedding) -> Vec<Check> {
+    let mut out = vec![version(emb.product())];
     let owner = duet_config::owner_config_path();
     let project = ws.join(".duet/config.toml");
-    let cfg = match Config::load(&owner, Some(&project)) {
+    let cfg = match Config::load_with(&owner, Some(&project), emb.policy_source()) {
         Ok(c) => {
             out.push(config_loaded(&c, &owner, &project));
             out.extend(policy_layer(&c, &owner, &project));
@@ -182,6 +214,14 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
     out.push(audit(ws));
     if let Some(c) = &cfg {
         out.push(retention(ws, c));
+    }
+    let ctx = DoctorContext {
+        workspace: ws,
+        config: cfg.as_ref(),
+        online,
+    };
+    for extra in emb.doctor_checks() {
+        out.extend(extra.run(&ctx));
     }
     out
 }

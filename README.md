@@ -335,7 +335,8 @@ engine, the sandbox, the outbound gate and the audit log — everything describe
 developer machine (developers cannot loosen it), a signed receipt per session showing what each
 outside party received, an independent verifier, SIEM/GRC export, fleet management and compliance
 reports. It is planned, not yet built. It builds on Duet Core's documented embedding API (a
-policy layer above the configuration, audit-event subscribers and a run-end hook; see
+policy layer above the configuration, audit-event subscribers and a run-end hook, and
+`duet_cli::main_with`, which runs Duet's command line with them; see
 [ARCHITECTURE.md](ARCHITECTURE.md) §13), which Core's own command line does not use.
 
 ## License

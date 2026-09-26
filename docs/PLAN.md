@@ -756,9 +756,11 @@ Done 2026-09-26 as library APIs (`duet_config::policy`, `duet_boundary::audit::A
 `duet_agent::embed` with `conclude_with`), documented with their stability rules in
 ARCHITECTURE.md §13 and threat-modelled in SECURITY.md ("Embedding"). Duet's own command line
 passes no policy source and no hooks. Added for a policy to have something to bound:
-`frontier.allow_passthrough` (a repository may forbid `--mode passthrough`). Next: expose the run
-composition (`prepare`/`execute`/`chat`, today in the `duet` binary) as a library entry point
-(`duet_cli::main(Embedding)`) so an enterprise build does not repeat it.
+`frontier.allow_passthrough` (a repository may forbid `--mode passthrough`). The run composition
+(`prepare`/`execute`/`chat`) is a library entry point too: `duet_cli::main_with(Embedding)` runs
+`duet`'s whole command line with an embedding program's policy source, hooks, product name and
+version and doctor checks (the `duet` binary is `main_with(Embedding::default())`), so an
+enterprise build does not repeat it.
 
 The single egress choke point (in progress) is the other Core dependency: an Enterprise receipt's
 claim that nothing else left is only as strong as Core's guarantee that every outbound path goes
