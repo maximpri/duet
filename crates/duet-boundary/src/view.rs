@@ -274,6 +274,17 @@ pub trait Presenter: Send + Sync {
     fn check_outbound(&self, _destination: &str, text: &str) -> Result<String, String> {
         Ok(text.to_owned())
     }
+    /// The check every request to a third party passes, owned (see
+    /// [`crate::third_party`]): the only maker of the [`Checked`] requests
+    /// the product's HTTP client sends. It reads every part of a request as
+    /// [`Self::check_outbound`] reads a text, against what the run knows at
+    /// the time of the request, and records each refusal. Without the
+    /// boundary every request passes.
+    ///
+    /// [`Checked`]: crate::third_party::Checked
+    fn outbound_guard(&self) -> crate::third_party::Guard {
+        crate::third_party::Guard::open()
+    }
     /// Whether [`Self::condense`] can write a summary (a local model is
     /// configured). Pass-through has none.
     fn can_condense(&self) -> bool {

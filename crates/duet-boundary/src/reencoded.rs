@@ -188,9 +188,315 @@ pub fn encoded_runs(text: &str) -> Vec<Encoded> {
     out
 }
 
+/// Shortest base32 run decoded (5 bytes).
+pub const BASE32_MIN: usize = 8;
+
+fn base32_value(b: u8) -> Option<u32> {
+    Some(match b.to_ascii_uppercase() {
+        c @ b'A'..=b'Z' => c - b'A',
+        c @ b'2'..=b'7' => c - b'2' + 26,
+        _ => return None,
+    } as u32)
+}
+
+/// Every run of [`BASE32_MIN`]+ base32 characters (RFC 4648, either case:
+/// host names are case-insensitive, and base32 is how names usually carry
+/// data) in `text`, decoded at each of its eight alignments.
+pub fn base32_decodings(text: &str) -> Vec<Vec<u8>> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if base32_value(bytes[i]).is_none() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() && base32_value(bytes[i]).is_some() {
+            i += 1;
+        }
+        let run = &bytes[start..i];
+        if run.len() < BASE32_MIN {
+            continue;
+        }
+        for k in 0..8.min(run.len()) {
+            let (mut acc, mut bits, mut d) = (0u64, 0u32, Vec::new());
+            for &c in &run[k..] {
+                let Some(v) = base32_value(c) else { break };
+                acc = (acc << 5) | u64::from(v);
+                bits += 5;
+                if bits >= 8 {
+                    bits -= 8;
+                    d.push((acc >> bits) as u8);
+                    acc &= (1 << bits) - 1;
+                }
+            }
+            if !d.is_empty() {
+                out.push(d);
+            }
+        }
+    }
+    out
+}
+
+/// `text` with `%XX` escapes (and `+` as a space) decoded, so a value spelled
+/// URL-encoded is still seen. Invalid escapes are kept as they are.
+pub fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        match bytes[i] {
+            b'%' if i + 2 < bytes.len() => match (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                (Some(h), Some(l)) => {
+                    out.push((h * 16 + l) as u8);
+                    i += 3;
+                    continue;
+                }
+                _ => out.push(b'%'),
+            },
+            b'+' => out.push(b' '),
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// `text` with HTML character references decoded: numeric ones (`&#113;`,
+/// `&#x71;`) and the named ones for markup characters.
+pub fn html_unescape(text: &str) -> String {
+    if !text.contains('&') {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        rest = &rest[at..];
+        let Some(end) = rest[..rest.len().min(12)].find(';') else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let name = &rest[1..end];
+        let decoded = match name {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "nbsp" => Some(' '),
+            _ => name
+                .strip_prefix("#x")
+                .or_else(|| name.strip_prefix("#X"))
+                .and_then(|h| u32::from_str_radix(h, 16).ok())
+                .or_else(|| name.strip_prefix('#').and_then(|d| d.parse().ok()))
+                .and_then(char::from_u32),
+        };
+        match decoded {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `text` with backslash escapes decoded (`\uXXXX`, `\xHH`, `\"`, `\\`,
+/// `\/`): a value written as a JSON or source-code string literal inside a
+/// URL or a query.
+pub fn backslash_unescape(text: &str) -> String {
+    if !text.contains('\\') {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        let digits = |chars: &mut std::iter::Peekable<std::str::Chars<'_>>, n: usize| {
+            let s: String = (0..n)
+                .map_while(|_| chars.next_if(char::is_ascii_hexdigit))
+                .collect();
+            (s.len() == n)
+                .then(|| u32::from_str_radix(&s, 16).ok().and_then(char::from_u32))
+                .flatten()
+                .ok_or(s)
+        };
+        match chars.peek().copied() {
+            Some('u') => {
+                chars.next();
+                match digits(&mut chars, 4) {
+                    Ok(d) => out.push(d),
+                    Err(s) => out.push_str(&format!("\\u{s}")),
+                }
+            }
+            Some('x') => {
+                chars.next();
+                match digits(&mut chars, 2) {
+                    Ok(d) => out.push(d),
+                    Err(s) => out.push_str(&format!("\\x{s}")),
+                }
+            }
+            Some(e @ ('"' | '\\' | '/' | '\'')) => {
+                chars.next();
+                out.push(e);
+            }
+            _ => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// The other spellings of a text for a third party that the outbound check
+/// reads besides the text itself: URL-decoded (up to three layers), and each
+/// of those with HTML character references and backslash escapes decoded.
+/// The text itself comes first; no spelling is listed twice.
+pub fn outbound_forms(text: &str) -> Vec<String> {
+    let mut out = vec![text.to_owned()];
+    let mut layer = text.to_owned();
+    for _ in 0..3 {
+        let decoded = percent_decode(&layer);
+        if decoded == layer {
+            break;
+        }
+        out.push(decoded.clone());
+        layer = decoded;
+    }
+    for i in 0..out.len() {
+        for f in [html_unescape(&out[i]), backslash_unescape(&out[i])] {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+    }
+    out
+}
+
+const DIGIT_WORDS: [&str; 10] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+];
+
+/// Digits written one at a time in `text`, each as a digit standing alone
+/// or as an English number word (`four five 3 nine`, `4-5-3-9`), with one to
+/// [`GAP_MAX`] other characters between each two, joined: every such run of
+/// four or more. A run of several digits (`2026`) is a number, not a spelled
+/// digit, and ends a run.
+pub fn spelled_digits(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    let bytes = lower.as_bytes();
+    let mut out = Vec::new();
+    let mut run = String::new();
+    let mut gap = 0usize;
+    let mut i = 0;
+    let flush = |run: &mut String, out: &mut Vec<String>| {
+        if run.len() >= 4 {
+            out.push(std::mem::take(run));
+        }
+        run.clear();
+    };
+    while i < bytes.len() {
+        let word_start = i == 0 || !bytes[i - 1].is_ascii_alphanumeric();
+        let unit = if bytes[i].is_ascii_digit() {
+            let alone = word_start && bytes.get(i + 1).is_none_or(|b| !b.is_ascii_alphanumeric());
+            alone.then(|| ((bytes[i] - b'0') as usize, 1))
+        } else if word_start && bytes[i].is_ascii_alphabetic() {
+            DIGIT_WORDS.iter().enumerate().find_map(|(d, w)| {
+                let end = i + w.len();
+                (lower[i..].starts_with(w)
+                    && bytes.get(end).is_none_or(|b| !b.is_ascii_alphanumeric()))
+                .then_some((d, w.len()))
+            })
+        } else {
+            None
+        };
+        match unit {
+            Some((d, len)) => {
+                if !run.is_empty() && !(1..=GAP_MAX).contains(&gap) {
+                    flush(&mut run, &mut out);
+                }
+                run.push((b'0' + d as u8) as char);
+                gap = 0;
+                i += len;
+            }
+            None if bytes[i].is_ascii_alphanumeric() => {
+                flush(&mut run, &mut out);
+                // Skip the rest of this word or number.
+                while i < bytes.len() && bytes[i].is_ascii_alphanumeric() {
+                    i += 1;
+                }
+                gap = 0;
+            }
+            None => {
+                gap += 1;
+                i += 1;
+            }
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn outbound_spellings_are_decoded() {
+        assert_eq!(percent_decode("a%2Fb+c%zz"), "a/b c%zz");
+        let forms = outbound_forms("q=%2571uartz");
+        assert!(forms.contains(&"q=%71uartz".to_owned()), "{forms:?}");
+        assert!(forms.contains(&"q=quartz".to_owned()), "{forms:?}");
+        assert_eq!(
+            html_unescape("&#113;u&#x61;rtz &amp; &lt;x&gt; &bogus;"),
+            "quartz & <x> &bogus;"
+        );
+        assert_eq!(
+            backslash_unescape(r#"quartz \x2d \"a\" \q"#),
+            r#"quartz - "a" \q"#
+        );
+        assert_eq!(
+            spelled_digits("four five three nine, then 4-5-3-9 and 2026 1 2"),
+            vec!["4539", "4539"]
+        );
+        assert!(spelled_digits("page 1 of 3, line 2").is_empty());
+        assert!(base32_decodings("ORSXG5A").is_empty(), "too short");
+        // A value in base32, lower case, as a host label.
+        let host = format!("x.{}.evil.test", b32(b"quartz-otter").to_lowercase());
+        let d = base32_decodings(&host);
+        assert!(
+            d.iter()
+                .any(|b| b.windows(12).any(|w| w == b"quartz-otter")),
+            "{host}: {d:?}"
+        );
+    }
+
+    fn b32(bytes: &[u8]) -> String {
+        const T: &[u8; 32] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        let (mut acc, mut bits, mut s) = (0u64, 0u32, String::new());
+        for &b in bytes {
+            acc = (acc << 8) | u64::from(b);
+            bits += 8;
+            while bits >= 5 {
+                bits -= 5;
+                s.push(T[((acc >> bits) & 31) as usize] as char);
+            }
+        }
+        if bits > 0 {
+            s.push(T[((acc << (5 - bits)) & 31) as usize] as char);
+        }
+        s
+    }
 
     fn b64(bytes: &[u8]) -> String {
         const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

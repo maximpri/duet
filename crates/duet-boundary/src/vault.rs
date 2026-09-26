@@ -69,7 +69,21 @@ struct Spelled {
     /// Skeletons ([`skeleton`]) of 4+ characters.
     skeletons: Option<AhoCorasick>,
     skeleton_tokens: Vec<String>,
+    /// Values of [`CHECKED_VALUE_BYTES`]+ bytes, lower-cased, every match
+    /// reported (for text bound for a third party, [`Vault::find_lowered`]).
+    lowered: Option<AhoCorasick>,
+    lowered_tokens: Vec<String>,
+    /// Skeletons of [`CHECKED_VALUE_BYTES`]+ characters, every match reported,
+    /// with their length in characters ([`Vault::find_skeleton`]).
+    long_skeletons: Option<AhoCorasick>,
+    long_skeleton_tokens: Vec<(String, usize)>,
+    /// Every run of [`WINDOW_BYTES`] bytes of each value, lower-cased, to its
+    /// token ([`Vault::find_window`]).
+    windows: std::collections::HashMap<[u8; WINDOW_BYTES], String>,
 }
+
+/// Bytes of a value that identify it inside decoded data ([`Vault::find_window`]).
+pub const WINDOW_BYTES: usize = 8;
 
 /// `text` reduced to its letters and digits, lower-cased: what is left of a
 /// value however its characters are separated (`V a k`, `4539-1488`, `a.b`).
@@ -419,17 +433,41 @@ impl Vault {
         self.spelled.get_or_init(|| {
             let (mut folded, mut folded_tokens) = (Vec::new(), Vec::new());
             let (mut skeletons, mut skeleton_tokens) = (Vec::new(), Vec::new());
+            let (mut lowered, mut lowered_tokens) = (Vec::new(), Vec::new());
+            let (mut long, mut long_skeleton_tokens) = (Vec::new(), Vec::new());
+            let mut windows = std::collections::HashMap::new();
             for (v, e) in &self.by_value {
+                for w in v.to_lowercase().as_bytes().windows(WINDOW_BYTES) {
+                    if let Ok(w) = <[u8; WINDOW_BYTES]>::try_from(w) {
+                        windows.entry(w).or_insert_with(|| e.token.clone());
+                    }
+                }
                 if v.len() >= MIN_VALUE_BYTES {
                     folded.push(v.clone());
                     folded_tokens.push(e.token.clone());
                 }
+                if v.len() >= CHECKED_VALUE_BYTES {
+                    lowered.push(v.to_lowercase());
+                    lowered_tokens.push(e.token.clone());
+                }
                 let s = skeleton(v);
-                if s.chars().count() >= MIN_VALUE_BYTES {
+                let chars = s.chars().count();
+                if chars >= CHECKED_VALUE_BYTES {
+                    long.push(s.clone());
+                    long_skeleton_tokens.push((e.token.clone(), chars));
+                }
+                if chars >= MIN_VALUE_BYTES {
                     skeletons.push(s);
                     skeleton_tokens.push(e.token.clone());
                 }
             }
+            // Every match, so a short value can never hide a longer one that
+            // overlaps it.
+            let every = |patterns: &[String]| {
+                (!patterns.is_empty())
+                    .then(|| AhoCorasick::new(patterns).ok())
+                    .flatten()
+            };
             let build = |patterns: &[String], fold: bool| {
                 (!patterns.is_empty())
                     .then(|| {
@@ -446,6 +484,11 @@ impl Vault {
                 folded_tokens,
                 skeletons: build(&skeletons, false),
                 skeleton_tokens,
+                lowered: every(&lowered),
+                lowered_tokens,
+                long_skeletons: every(&long),
+                long_skeleton_tokens,
+                windows,
             }
         })
     }
@@ -457,6 +500,43 @@ impl Vault {
         let s = self.spelled();
         let hit = s.folded.as_ref()?.find(bytes)?;
         Some(s.folded_tokens[hit.pattern().as_usize()].as_str())
+    }
+
+    /// The token of a value ([`CHECKED_VALUE_BYTES`]+ bytes) that occurs in
+    /// `lowered`, a text lower-cased (`str::to_lowercase`, or ASCII case for
+    /// decoded bytes): a value in any letter case. Every occurrence is
+    /// considered, so a short value never hides a longer one.
+    pub fn find_lowered(&self, lowered: &[u8]) -> Option<&str> {
+        let s = self.spelled();
+        let hit = s.lowered.as_ref()?.find_overlapping_iter(lowered).next()?;
+        Some(s.lowered_tokens[hit.pattern().as_usize()].as_str())
+    }
+
+    /// The token of a value [`WINDOW_BYTES`] consecutive bytes of which
+    /// occur in `lowered` (decoded data, ASCII lower-cased): an encoding of
+    /// part of a value, which no whole-value match sees.
+    pub fn find_window(&self, lowered: &[u8]) -> Option<&str> {
+        let s = self.spelled();
+        if s.windows.is_empty() {
+            return None;
+        }
+        lowered
+            .windows(WINDOW_BYTES)
+            .find_map(|w| s.windows.get(w))
+            .map(String::as_str)
+    }
+
+    /// The token of a value whose [`skeleton`] has `min_chars` or more
+    /// characters (at least [`CHECKED_VALUE_BYTES`]) and occurs in `skeleton`:
+    /// a value however its characters are separated or cut apart.
+    pub fn find_skeleton(&self, skeleton: &str, min_chars: usize) -> Option<&str> {
+        let s = self.spelled();
+        s.long_skeletons
+            .as_ref()?
+            .find_overlapping_iter(skeleton)
+            .map(|hit| &s.long_skeleton_tokens[hit.pattern().as_usize()])
+            .find(|(_, chars)| *chars >= min_chars)
+            .map(|(token, _)| token.as_str())
     }
 
     /// Values spelled out in `skeleton` (a [`skeleton`] of some text): the

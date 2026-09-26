@@ -42,6 +42,7 @@ mod outbound;
 mod pii_pass;
 mod protected;
 mod structure;
+mod third_party;
 
 pub use outbound::PART_WITHHELD;
 
@@ -301,6 +302,8 @@ struct OperatorValues {
 }
 
 pub struct Engine {
+    /// This engine, for the owned checks it hands out ([`Presenter::outbound_guard`]).
+    me: std::sync::Weak<Engine>,
     policy: Policy,
     detectors: Detectors,
     /// `sensitivity.custom_patterns`, compiled.
@@ -382,7 +385,33 @@ impl Engine {
                 message,
                 errno: None,
             })?;
-        Ok(Arc::new(Self {
+        let state = Mutex::new(State {
+            vault: Vault::open(&run_dir.join("vault.json"))?,
+            handles: HandleStore::open(&run_dir.join("handles"))?,
+            overlap: OverlapIndex::default(),
+            public_words: Default::default(),
+            sensitive_files: Vec::new(),
+            ip: protected::IpState::open(run_dir),
+            authored: Default::default(),
+            brief: None,
+            operator: std::fs::read(run_dir.join("operator.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default(),
+            pii_passed: Default::default(),
+            frontier_images: std::fs::read(run_dir.join("frontier-images.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default(),
+            probes: std::fs::read(run_dir.join("probes.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or_default(),
+            structure: structure::StructureState::open(run_dir),
+            explored: Default::default(),
+        });
+        Ok(Arc::new_cyclic(|me| Self {
+            me: me.clone(),
             policy,
             detectors,
             custom,
@@ -400,31 +429,7 @@ impl Engine {
             last_class: Mutex::new(None),
             events: Mutex::new(Vec::new()),
             fixtures: Mutex::new(structure::Fixtures::open(run_dir)),
-            state: Mutex::new(State {
-                vault: Vault::open(&run_dir.join("vault.json"))?,
-                handles: HandleStore::open(&run_dir.join("handles"))?,
-                overlap: OverlapIndex::default(),
-                public_words: Default::default(),
-                sensitive_files: Vec::new(),
-                ip: protected::IpState::open(run_dir),
-                authored: Default::default(),
-                brief: None,
-                operator: std::fs::read(run_dir.join("operator.json"))
-                    .ok()
-                    .and_then(|b| serde_json::from_slice(&b).ok())
-                    .unwrap_or_default(),
-                pii_passed: Default::default(),
-                frontier_images: std::fs::read(run_dir.join("frontier-images.json"))
-                    .ok()
-                    .and_then(|b| serde_json::from_slice(&b).ok())
-                    .unwrap_or_default(),
-                probes: std::fs::read(run_dir.join("probes.json"))
-                    .ok()
-                    .and_then(|b| serde_json::from_slice(&b).ok())
-                    .unwrap_or_default(),
-                structure: structure::StructureState::open(run_dir),
-                explored: Default::default(),
-            }),
+            state,
         }))
     }
 
@@ -2055,38 +2060,18 @@ is written or as a test fixture. At most {rows} records."
     }
 
     /// Refuses text for a third party that carries a placeholder (never
-    /// resolved for a non-local destination), a known sensitive value (as
-    /// written, URL-encoded or in another letter case) or a long span copied
-    /// from sensitive content.
+    /// resolved for a non-local destination), a known sensitive value in any
+    /// spelling the check reads, digits of a withheld number or a span copied
+    /// from sensitive content (see `engine/third_party.rs`).
     fn check_outbound(&self, destination: &str, text: &str) -> Result<String, String> {
-        let decoded = percent_decoded(text);
-        let st = self.lock();
-        for form in [text, decoded.as_str()] {
-            if let Some(token) = PLACEHOLDER.find(form) {
-                return Err(format!(
-                    "it contains the placeholder {}; placeholders stand for withheld values \
-and are never resolved for {destination}",
-                    token.as_str()
-                ));
-            }
+        match self.third_party_refusal(destination, &crate::third_party::Texts::of(text)) {
+            Some(reason) => Err(reason),
+            None => Ok(text.to_owned()),
         }
-        let forms = [text.to_owned(), decoded.clone()];
-        if let Some(what) = known_value_in(&st, &forms, true) {
-            return Err(format!(
-                "it contains {what}; sensitive values are never sent to {destination}"
-            ));
-        }
-        if forms.iter().any(|f| redact_fragments(&st.vault, f).1 > 0) {
-            return Err(format!(
-                "it contains digits of a withheld number; they are never sent to {destination}"
-            ));
-        }
-        if forms.iter().any(|f| st.overlap.redact(f).1 > 0) {
-            return Err(format!(
-                "it quotes sensitive content; that is never sent to {destination}"
-            ));
-        }
-        Ok(text.to_owned())
+    }
+
+    fn outbound_guard(&self) -> crate::third_party::Guard {
+        self.guard()
     }
 
     /// The task, sanitized, with a note naming the sensitive paths, so the model
@@ -2137,38 +2122,6 @@ and are never resolved for {destination}",
     }
 }
 
-/// The first vault value (6 characters or longer) found in `texts`, plain or
-/// JSON-escaped, described as "a <kind> value from <origin>". With
-/// `fold_case`, letter case is ignored (a URL's host is case-insensitive).
-fn known_value_in(st: &State, texts: &[String], fold_case: bool) -> Option<String> {
-    let fold = |t: &str| {
-        if fold_case {
-            t.to_lowercase()
-        } else {
-            t.to_owned()
-        }
-    };
-    let texts: Vec<String> = texts.iter().map(|t| fold(t)).collect();
-    for (value, entry) in st.vault.values() {
-        if value.len() < 6 {
-            continue;
-        }
-        let escaped = serde_json::to_string(value).unwrap_or_default();
-        let (value, escaped) = (fold(value), fold(escaped.trim_matches('"')));
-        if texts
-            .iter()
-            .any(|t| t.contains(&value) || t.contains(&escaped))
-        {
-            return Some(format!(
-                "a {} value from {}",
-                entry.kind.tag(),
-                entry.origin
-            ));
-        }
-    }
-    None
-}
-
 /// `text` with every digit run that shares [`FRAGMENT_DIGITS`] or more
 /// consecutive digits with a withheld identifying number (card, account,
 /// national id, IBAN, phone) replaced by [`FRAGMENT`], and how many. A local
@@ -2208,31 +2161,6 @@ fn redact_fragments(vault: &Vault, text: &str) -> (String, usize) {
     }
     out.push_str(&text[last..]);
     (out, n)
-}
-
-/// `text` with `%XX` escapes (and `+` as a space) decoded, so a value spelled
-/// URL-encoded is still seen. Invalid escapes are kept as they are.
-fn percent_decoded(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let hex = |b: u8| (b as char).to_digit(16);
-        match bytes[i] {
-            b'%' if i + 2 < bytes.len() => match (hex(bytes[i + 1]), hex(bytes[i + 2])) {
-                (Some(h), Some(l)) => {
-                    out.push((h * 16 + l) as u8);
-                    i += 3;
-                    continue;
-                }
-                _ => out.push(b'%'),
-            },
-            b'+' => out.push(b' '),
-            b => out.push(b),
-        }
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
