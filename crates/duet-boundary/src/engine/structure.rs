@@ -5,7 +5,8 @@
 //!
 //! - A sensitive file's view gets its structure view (replacing the map of
 //!   repeated line shapes) and, for a data file, the first record of its
-//!   synthetic sample; the task note an outline of every sensitive file.
+//!   synthetic sample; the task note an outline of every file the policy
+//!   makes sensitive.
 //! - `synthetic_sample(handle, rows)` makes a sample of a sensitive file:
 //!   a fake is a function of its value's shape and first position and the
 //!   run's seed, never of the value. Before it is shown, no known value may
@@ -36,10 +37,10 @@ use std::sync::LazyLock;
 
 /// Program output of at most this many characters is short: a count, a
 /// match, a yes or no.
-pub const SHORT_OUTPUT_CHARS: usize = 200;
+const SHORT_OUTPUT_CHARS: usize = 200;
 /// Masked output is shown for output up to this many lines (and
 /// [`super::INLINE_OUTPUT_CHARS`] characters).
-pub const MASKED_LINES: usize = 80;
+const MASKED_LINES: usize = 80;
 /// The first record of a sample goes with a file's view when at most this long.
 const INLINE_SAMPLE_CHARS: usize = 2500;
 /// Records a sample holds when the call names none.
@@ -55,11 +56,6 @@ const DATA_VALUES_MAX: usize = 200_000;
 /// A value this short is remembered as a word only (a code, a category).
 const DATA_VALUE_MIN: usize = 4;
 
-/// Lines Duet writes around a command's output (not the program's).
-static FRAMING: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(?:exit code -?\d+|terminated by a signal|timed out after \d+s|--- (?:stdout|stderr) ---|\[(?:stdout|stderr) truncated: \d+ of \d+ bytes shown\])$")
-        .expect("static regex")
-});
 /// JSON's literals: syntax, not values, in a sample's check.
 static LITERAL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(?:true|false|null)\b").expect("static regex"));
@@ -235,13 +231,13 @@ impl Knowledge for Known<'_> {
 /// The program's part of a command's output: without Duet's framing lines.
 fn program_output(text: &str) -> String {
     text.lines()
-        .filter(|l| !FRAMING.is_match(l))
+        .filter(|l| !masked::framing(l))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 /// Whether a command's output is short: a count, a match, a yes or no.
-pub fn short_output(text: &str) -> bool {
+fn short_output(text: &str) -> bool {
     program_output(text).trim().chars().count() <= SHORT_OUTPUT_CHARS
 }
 

@@ -39,11 +39,17 @@ static DATE: LazyLock<Regex> = LazyLock::new(|| {
 /// digits, `_`), or one other character.
 static TOKEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\d+(?:[.,]\d+)+|[\p{L}\p{N}_]+|(?s:.)").expect("static regex"));
-/// Lines Duet itself writes around a command's output.
+/// Lines Duet itself writes around a command's output (see [`framing`]).
 static FRAMING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:exit code -?\d+|terminated by a signal|timed out after \d+s|--- (?:stdout|stderr) ---|\[(?:stdout|stderr) truncated: \d+ of \d+ bytes shown\])$")
         .expect("static regex")
 });
+
+/// Whether `line` is one Duet writes around a command's output (`exit code
+/// 0`, `--- stdout ---`), not the program's.
+pub fn framing(line: &str) -> bool {
+    FRAMING.is_match(line)
+}
 
 /// How numbers standing alone are shown.
 pub trait Numbers {
@@ -196,7 +202,7 @@ pub fn mask(text: &str, command: &str, k: &dyn Knowledge, numbers: &mut dyn Numb
         .collect();
     let mut out = String::with_capacity(text.len());
     for line in text.lines() {
-        if FRAMING.is_match(line) {
+        if framing(line) {
             out.push_str(line);
         } else {
             out.push_str(&mask_line(line, k, &extra, numbers).shown);

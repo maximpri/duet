@@ -286,12 +286,14 @@ impl Field {
         let secret =
             spans.iter().any(|(_, _, kind)| *kind == Kind::Secret) && url_shape(trimmed).is_none();
         let ident = spans.iter().any(|(_, _, kind)| identifying(*kind));
-        let mut look = |l: String| *self.looks.entry(l).or_default() += 1;
+        // A date is described by its layout's picture, not by shapes.
         if let Some(layout) = dates::recognize(s) {
             let p = format!("{} {}", layout.kind(), layout.picture());
-            *self.pictures.entry(p.clone()).or_default() += 1;
-            look(p);
-        } else if URL.is_match(trimmed) {
+            *self.pictures.entry(p).or_default() += 1;
+            return;
+        }
+        let mut look = |l: String| *self.looks.entry(l).or_default() += 1;
+        if URL.is_match(trimmed) {
             look("url".into());
         } else if let Some(kind) =
             whole.filter(|k| *k != Kind::Data && !(*k == Kind::Secret && integer_text(trimmed)))
@@ -488,21 +490,14 @@ impl Field {
             parts.push(format!("secret-like, {}", top(&self.secret)));
         } else if !self.pictures.is_empty() {
             parts.push(top(&self.pictures));
-            let other = self.shapes_without_pictures();
-            if !other.is_empty() {
-                parts.push(format!("other shapes {}", top(&other)));
+            if !self.shapes().is_empty() {
+                parts.push(format!("other shapes {}", top(self.shapes())));
             }
         } else if !self.shapes().is_empty() {
             parts.push(format!("shapes {}", top(self.shapes())));
         }
-        let looks: BTreeMap<String, usize> = self
-            .looks
-            .iter()
-            .filter(|(l, _)| !self.pictures.contains_key(*l))
-            .map(|(l, n)| (l.clone(), *n))
-            .collect();
-        if !looks.is_empty() {
-            parts.push(format!("looks like {}", top(&looks)));
+        if !self.looks.is_empty() {
+            parts.push(format!("looks like {}", top(&self.looks)));
         }
         if !self.holding.is_empty() {
             let h: Vec<String> = self
@@ -513,20 +508,6 @@ impl Field {
             parts.push(format!("text holding {}", h.join(", ")));
         }
         format!("  {} — {}", self.path, parts.join("; "))
-    }
-
-    /// Shapes of the values that are not dates (in a field of dates).
-    fn shapes_without_pictures(&self) -> BTreeMap<String, usize> {
-        let dated: usize = self.pictures.values().sum();
-        let strings = self.types.get("string").copied().unwrap_or(0) - self.empties.min(dated);
-        if dated >= strings {
-            return BTreeMap::new();
-        }
-        self.shapes()
-            .iter()
-            .filter(|(s, _)| !s.is_empty() && dates_shape(s).is_none())
-            .map(|(s, n)| (s.clone(), *n))
-            .collect()
     }
 
     /// Notable things about this field, for the anomalies list.
@@ -546,7 +527,7 @@ impl Field {
                 "{p}: {} date/time layouts in one field",
                 self.pictures.len()
             ));
-        } else if !self.pictures.is_empty() && !self.shapes_without_pictures().is_empty() {
+        } else if !self.pictures.is_empty() && !self.shapes().is_empty() {
             out.push(format!("{p}: dates mixed with values that are not dates"));
         }
         if self.above_2_53 > 0 {
@@ -568,11 +549,6 @@ impl Field {
             }
         }
     }
-}
-
-fn dates_shape(s: &str) -> Option<()> {
-    // A shape made of digits and date punctuation only is a date's shape.
-    (s.chars().any(|c| c == '9') && s.chars().all(|c| "9-/.:TZ +,A".contains(c))).then_some(())
 }
 
 /// The entries without counts, most frequent first.
