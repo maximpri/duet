@@ -340,6 +340,7 @@ pub fn resumable(run_dir: &Path) -> Result<(), String> {
 /// head), then `summary.json` in the run directory, written privately. Returns
 /// the summary. `audit_log` is the log's path, read for the disclosure report.
 /// Both writes wait out a full disk for up to [`crate::host::FINAL_GRACE`].
+/// Without hooks; see [`conclude_with`].
 pub fn conclude(
     run_dir: &Path,
     run_id: &str,
@@ -347,6 +348,30 @@ pub fn conclude(
     audit_log: &Path,
     terminal: &Terminal,
     stats: &RunStats,
+) -> Result<serde_json::Value, duet_fs::FsError> {
+    let hooks = crate::embed::Hooks::default();
+    let ending = crate::embed::Ending {
+        kind: crate::embed::RunKind::Run,
+        mode: "",
+        resumed: false,
+        policy: None,
+        hooks: &hooks,
+    };
+    conclude_with(run_dir, run_id, audit, audit_log, terminal, stats, &ending)
+}
+
+/// [`conclude`], then the end hooks of `ending.hooks`, called once with an
+/// [`crate::embed::EndReport`] whether or not `summary.json` could be
+/// written. Every run and session invocation that created its run directory
+/// must end here exactly once (the CLI's `execute` and `chat` do).
+pub fn conclude_with(
+    run_dir: &Path,
+    run_id: &str,
+    audit: Option<&AuditHandle>,
+    audit_log: &Path,
+    terminal: &Terminal,
+    stats: &RunStats,
+    ending: &crate::embed::Ending<'_>,
 ) -> Result<serde_json::Value, duet_fs::FsError> {
     let wait = Arc::new(HostPolicy::finishing());
     if let Some(a) = audit {
@@ -371,9 +396,18 @@ pub fn conclude(
         "disclosure": disclosure,
     });
     let bytes = serde_json::to_vec_pretty(&summary).unwrap_or_default();
-    duet_fs::host::persist(Some(wait.as_ref()), || {
+    let written = duet_fs::host::persist(Some(wait.as_ref()), || {
         duet_fs::private::write_private(&run_dir.join("summary.json"), &bytes)
-    })?;
+    });
+    if ending.hooks.has_end_hooks() {
+        let mut report =
+            crate::embed::EndReport::new(run_id, ending, terminal, stats, audit_log.to_path_buf());
+        report.chain = audit.map(AuditHandle::chain_head);
+        report.resumable = resumable(run_dir).is_ok();
+        report.disclosure = disclosure;
+        ending.hooks.ended(&report, audit);
+    }
+    written?;
     Ok(summary)
 }
 

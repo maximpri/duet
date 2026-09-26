@@ -15,6 +15,7 @@ workspace = true
 # through duet-boundary's gate (enforced by tools/gate.sh).
 [dependencies]
 duet-boundary.workspace = true
+duet-config.workspace = true
 duet-fs.workspace = true
 duet-sandbox.workspace = true
 duet-git.workspace = true
