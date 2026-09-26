@@ -497,6 +497,14 @@ async fn hybrid_zai_and_wikipedia_searches_never_carry_sensitive_values_either_w
             "{name}: {terminal:?}"
         );
         assert!(tool_names(&bodies[0]).contains(&"web_search".into()));
+        // The system prompt asks for research with the search tool, whose
+        // description says what it searches.
+        assert!(bodies[0].contains("with `web_search`"), "{name}");
+        assert_eq!(
+            bodies[0].contains("Search English Wikipedia"),
+            name == "wikipedia",
+            "{name}"
+        );
         // Only the clean query left the host.
         let requests = seen.lock().unwrap().clone();
         assert_eq!(requests.len(), 1, "{name}: {requests:?}");
