@@ -130,17 +130,21 @@ pub struct RunConfig {
     /// Image settings and the operator's attachments (`frontier.vision`,
     /// `images.max_side`, `duet run --image`).
     pub images: crate::images::ImageConfig,
+    /// The owner's own project instructions (`DUET.md` next to the owner
+    /// config), read at the start if the file exists; `None`: not read. The
+    /// repository's `DUET.md` is read in any case (see [`crate::instructions`]).
+    pub owner_instructions: Option<PathBuf>,
 }
 
 impl RunConfig {
     /// A run of `objective` in `workspace`, keeping its state in `run_dir`,
     /// with every other setting at its most restrictive value: no network,
     /// no checks, no web, MCP, language servers or sub-agents, no commit
-    /// identity, no images for the frontier (`frontier.vision` off), usage
-    /// priced at zero, oversight at its default (`off`: nothing is asked, so
-    /// `git_commit` is not offered), the platform's sandbox and small limits
-    /// (60 s wall clock, $5, 30 s per command, 2 finish attempts, 1000
-    /// output tokens).
+    /// identity, no owner instructions, no images for the frontier
+    /// (`frontier.vision` off), usage priced at zero, oversight at its
+    /// default (`off`: nothing is asked, so `git_commit` is not offered),
+    /// the platform's sandbox and small limits (60 s wall clock, $5, 30 s
+    /// per command, 2 finish attempts, 1000 output tokens).
     ///
     /// The rule: a new field gets its restrictive default here, so code that
     /// does not set it can never loosen anything. Callers name only what they
@@ -184,6 +188,7 @@ impl RunConfig {
             lsp: None,
             subagents: None,
             images: crate::images::ImageConfig::default(),
+            owner_instructions: None,
         }
     }
 }
@@ -646,6 +651,11 @@ async fn drive(
             })
         );
         let mut text = presenter.sanitize_objective(&cfg.objective);
+        // Project instructions come first, framed; the whole message is
+        // replayed from the transcript on resume, so it never changes.
+        if let Some(block) = crate::instructions::block(cfg, presenter, Some(frontier.audit())) {
+            text.insert_str(0, &block);
+        }
         // The operator's images: described ones become notes in the text,
         // the others follow it as an image item.
         let images = crate::images::attach_all(

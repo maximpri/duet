@@ -215,7 +215,8 @@ impl Disclosure {
                     | AuditEvent::McpCall { .. }
                     | AuditEvent::LanguageServer { .. }
                     | AuditEvent::SubagentStart { .. }
-                    | AuditEvent::SubagentEnd { .. } => {}
+                    | AuditEvent::SubagentEnd { .. }
+                    | AuditEvent::Instructions { .. } => {}
                 },
             }
         }

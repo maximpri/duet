@@ -174,6 +174,7 @@ pub async fn run(ws: &Path, online: bool) -> Vec<Check> {
     out.push(release_signers(&release_signers_path(), RELEASE_BUILD));
     out.push(sandbox());
     out.extend(git(ws));
+    out.push(instructions(ws));
     out.push(disk(ws));
     out.push(audit(ws));
     if let Some(c) = &cfg {
@@ -1146,6 +1147,63 @@ fn git(ws: &Path) -> Vec<Check> {
                 .fix("install git at /usr/bin/git, /opt/homebrew/bin/git or /usr/local/bin/git"),
         ],
     }
+}
+
+/// Project instructions given at the start of every run and session: the
+/// repository's `DUET.md` and the owner's own.
+fn instructions(ws: &Path) -> Check {
+    use duet_agent::instructions::{self, FILE, MAX_BYTES};
+    let owner = duet_config::owner_instructions_path();
+    let mut given = Vec::new();
+    let mut problems = Vec::new();
+    for (whose, path, read) in [
+        ("repository", ws.join(FILE), instructions::project(ws)),
+        ("owner", owner.clone(), instructions::owner(&owner)),
+    ] {
+        match read {
+            None => {}
+            Some(Ok(f)) => {
+                given.push(format!("{whose} {} ({} bytes)", path.display(), f.bytes));
+                if f.truncated {
+                    problems.push(format!(
+                        "the {whose} file is cut to its first {} KiB",
+                        MAX_BYTES / 1024
+                    ));
+                }
+            }
+            Some(Err(e)) => problems.push(format!(
+                "the {whose} file {} is not given: {e}",
+                path.display()
+            )),
+        }
+    }
+    if given.is_empty() && problems.is_empty() {
+        return check(
+            "instructions",
+            Status::Skip,
+            format!(
+                "no {FILE}: one at the repository root (repository text, scanned like any file) or at \
+                 {} (yours) gives duet standing instructions",
+                owner.display()
+            ),
+        );
+    }
+    let mut detail = if given.is_empty() {
+        "none given".to_owned()
+    } else {
+        format!(
+            "given at the start of each run and session: {}",
+            given.join("; ")
+        )
+    };
+    if problems.is_empty() {
+        return check("instructions", Status::Pass, detail);
+    }
+    detail.push_str(&format!("; {}", problems.join("; ")));
+    check("instructions", Status::Warn, detail).fix(format!(
+        "keep each {FILE} a text file under {} KiB",
+        MAX_BYTES / 1024
+    ))
 }
 
 fn disk(ws: &Path) -> Check {

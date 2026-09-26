@@ -206,6 +206,16 @@ pub enum AuditEvent {
         withheld: u32,
         count: u32,
     },
+    /// Project instructions were given to the frontier at the start of a
+    /// run or session: `origin` is `project` (the repository's `DUET.md`,
+    /// presented like any public file) or `owner` (the owner's own file).
+    /// Holds its size and digest, never its text.
+    Instructions {
+        origin: String,
+        bytes: u64,
+        sha256: String,
+        truncated: bool,
+    },
 }
 
 impl AuditEvent {
@@ -231,6 +241,7 @@ impl AuditEvent {
             AuditEvent::SubagentEnd { .. } => "subagent_end",
             AuditEvent::Image { .. } => "image",
             AuditEvent::LocalProbe { .. } => "local_probe",
+            AuditEvent::Instructions { .. } => "instructions",
         }
     }
 }

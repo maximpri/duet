@@ -703,6 +703,13 @@ impl<'a> Session<'a> {
             &mut self.stats.ledger,
             &mut sanitized,
         )?;
+        // The project instructions start the session's first message.
+        if first
+            && let Some(block) =
+                crate::instructions::block(self.cfg, self.presenter, Some(self.frontier.audit()))
+        {
+            sanitized.insert_str(0, &block);
+        }
         let item = Item::User { text: sanitized };
         transcript
             .append(&Entry::Item { item: item.clone() })

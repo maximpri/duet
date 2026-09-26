@@ -479,6 +479,7 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
             max_side: cfg.images.max_side,
             attached: Vec::new(),
         },
+        owner_instructions: cfg.owner_instructions.clone(),
     }
 }
 
@@ -685,11 +686,12 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
         paths: p.request.paths.clone(),
         model: driver.model().to_owned(),
     });
-    // The task with what the parent was told about the boundary (which
-    // paths are sensitive or protected).
+    // The project instructions, then the task with what the parent was told
+    // about the boundary (which paths are sensitive or protected).
     let first = Item::User {
         text: format!(
-            "{}{}",
+            "{}{}{}",
+            crate::instructions::block(cfg, parent.presenter, None).unwrap_or_default(),
             task_message(&p.request),
             parent.presenter.task_notes()
         ),

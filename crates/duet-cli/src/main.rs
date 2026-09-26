@@ -664,6 +664,7 @@ async fn prepare(
         lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
         subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits)?,
         images: images::config(cfg, manifest.mode, &manifest.images)?,
+        owner_instructions: Some(duet_config::owner_instructions_path()),
     };
     Ok(Prepared {
         git,

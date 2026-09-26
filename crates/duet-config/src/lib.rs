@@ -1064,6 +1064,13 @@ pub fn owner_config_path() -> PathBuf {
     home.join(".config/duet/config.toml")
 }
 
+/// The owner's own project instructions for every repository: `DUET.md`
+/// next to the owner config (`$DUET_CONFIG_HOME/DUET.md` or
+/// `~/.config/duet/DUET.md`). Optional.
+pub fn owner_instructions_path() -> PathBuf {
+    owner_config_path().with_file_name("DUET.md")
+}
+
 /// The owner's private state directory (audit anchors, the config audit log),
 /// outside every workspace: `$DUET_CONFIG_HOME/state` when that is set, else
 /// `$XDG_STATE_HOME/duet`, else `~/.local/state/duet`.
