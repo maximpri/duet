@@ -129,7 +129,9 @@ fn decode_base64(digits: &[u8]) -> Vec<u8> {
 
 fn decode_hex(digits: &[u8]) -> Vec<u8> {
     digits
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .filter_map(|p| {
             let h = (p[0] as char).to_digit(16)?;
             let l = (p[1] as char).to_digit(16)?;

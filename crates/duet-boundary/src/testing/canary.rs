@@ -285,7 +285,9 @@ impl Canaries {
         for (start, run) in runs(hay, |b| b.is_ascii_hexdigit(), 8) {
             for shift in 0..2 {
                 let decoded: Vec<u8> = run[shift..]
-                    .chunks_exact(2)
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
                     .map(|p| hex_value(p[0]) << 4 | hex_value(p[1]))
                     .collect();
                 for (c, j, m) in self.bytes.matches(&decoded) {
