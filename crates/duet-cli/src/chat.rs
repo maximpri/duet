@@ -692,7 +692,7 @@ async fn converse(
             Command::Close => break true,
             Command::Help => println!("{HELP}"),
             Command::Status => println!("{}", status(&session, &manifest.run_id, cfg)),
-            Command::Diff => print!("{}", local_diff(&git, ws, presenter)),
+            Command::Diff => print!("{}", local_diff(&git, ws, run_dir, presenter)),
             Command::Undo => match session.undo() {
                 Ok((turn, paths)) if paths.is_empty() => {
                     println!("turn {turn} wrote no files; nothing to revert")
@@ -804,7 +804,9 @@ async fn take_turn(
                                 steering.stop();
                                 println!("  ■ stopping after the current step");
                             }
-                            Command::Diff => print!("{}", local_diff(t.git, t.ws, t.presenter)),
+                            Command::Diff => {
+                                print!("{}", local_diff(t.git, t.ws, t.run_dir, t.presenter))
+                            }
                             Command::Help => println!("{HELP}"),
                             Command::Empty => {}
                             Command::Unknown(c) => {
@@ -928,8 +930,13 @@ agent working time {} of {}m (each turn at most {}m)",
 }
 
 /// `/diff`: the workspace's changes against the last commit, shown to the
-/// operator only. Sensitive files are named, never shown.
-fn local_diff(git: &duet_git::Git, ws: &Path, presenter: &dyn Presenter) -> String {
+/// operator only. Sensitive files are named, never shown. Outside a git
+/// repository: the files duet wrote in this session, against their content
+/// before it (see `duet_agent::changes`).
+fn local_diff(git: &duet_git::Git, ws: &Path, run_dir: &Path, presenter: &dyn Presenter) -> String {
+    if !git.is_repository(ws) {
+        return duet_agent::changes::for_operator(git, ws, run_dir, presenter);
+    }
     let tracked = git.list_files(ws).unwrap_or_default();
     let (hidden, shown): (Vec<String>, Vec<String>) = tracked
         .into_iter()

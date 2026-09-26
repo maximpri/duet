@@ -119,7 +119,8 @@ this machine, as a description by the local model.",
         ),
         t(
             "diff",
-            "Show your changes so far (working tree compared with the starting commit).",
+            "Show your changes so far: the working tree compared with the starting commit (outside a git \
+repository: the files you wrote, compared with their content before the run).",
             json!({"type": "object", "properties": {}}),
         ),
         t(
@@ -330,19 +331,30 @@ fn search(ctx: &Ctx<'_>, args: &Map<String, Value>) -> Result<String, String> {
 }
 
 fn diff(ctx: &Ctx<'_>) -> Result<String, String> {
-    let files: Vec<String> = ctx
+    if !ctx.git.is_repository(ctx.workspace) {
+        return Ok(written_diff(ctx));
+    }
+    // Sensitive files are named, never diffed for the frontier.
+    let (sensitive, files): (Vec<String>, Vec<String>) = ctx
         .git
         .list_files(ctx.workspace)
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|f| ctx.presenter.path_visible(Path::new(f)))
-        .collect();
+        .partition(|f| ctx.presenter.path_sensitive(Path::new(f)));
     // Against the run's base: its own commits (git_commit) stay in the diff.
     let base = crate::git_tools::diff_base(ctx);
     let mut text = ctx
         .git
         .diff_paths_from(ctx.workspace, &base, &files)
         .map_err(|e| e.to_string())?;
+    let changed_sensitive = changed_names(ctx, &base, &sensitive);
+    if !changed_sensitive.is_empty() {
+        text.push_str(&format!(
+            "\nChanged sensitive files (content held locally): {}\n",
+            changed_sensitive.join(", ")
+        ));
+    }
     let untracked = ctx
         .git
         .run(
@@ -355,7 +367,7 @@ fn diff(ctx: &Ctx<'_>) -> Result<String, String> {
         .unwrap_or_default();
     let new_files: Vec<&str> = untracked
         .lines()
-        .filter(|f| ctx.presenter.path_visible(Path::new(f)))
+        .filter(|f| !duet_fs::is_reserved(Path::new(f)) && ctx.presenter.path_visible(Path::new(f)))
         .collect();
     if !new_files.is_empty() {
         text.push_str(&format!("\nNew files: {}\n", new_files.join(", ")));
@@ -364,6 +376,65 @@ fn diff(ctx: &Ctx<'_>) -> Result<String, String> {
         return Ok("no changes".to_owned());
     }
     Ok(ctx.presenter.present(&Source::Diff, text.as_bytes()))
+}
+
+/// Which of `paths` differ from `base` (names only; nothing is read out).
+fn changed_names(ctx: &Ctx<'_>, base: &str, paths: &[String]) -> Vec<String> {
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let mut args = vec![
+        "diff",
+        "--name-only",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--end-of-options",
+        base,
+        "--",
+    ];
+    args.extend(paths.iter().map(String::as_str));
+    ctx.git
+        .run(ctx.workspace, &args, &[], None)
+        .map(|o| {
+            String::from_utf8_lossy(&o)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `diff` outside a git repository: the files this run wrote with its
+/// tools, against their content before its first write (see
+/// [`crate::changes`]). Sensitive files are named, never shown.
+fn written_diff(ctx: &Ctx<'_>) -> String {
+    let mut text = String::new();
+    let mut sensitive = Vec::new();
+    for c in crate::changes::written(ctx.git, ctx.workspace, ctx.run_dir) {
+        if !ctx.presenter.path_visible(&c.path) {
+            continue;
+        }
+        if ctx.presenter.path_sensitive(&c.path) {
+            sensitive.push(c.path.display().to_string());
+        } else {
+            text.push_str(&c.diff);
+        }
+    }
+    if !sensitive.is_empty() {
+        text.push_str(&format!(
+            "\nChanged sensitive files (content held locally): {}\n",
+            sensitive.join(", ")
+        ));
+    }
+    if text.trim().is_empty() {
+        return format!("no changes\n{}", crate::changes::NOTE);
+    }
+    format!(
+        "{}\n{}",
+        crate::changes::NOTE,
+        ctx.presenter.present(&Source::Diff, text.as_bytes())
+    )
 }
 
 #[cfg(test)]
@@ -704,16 +775,23 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         }
     };
     let mut shown = ctx.presenter.present(&source, &render_output(&o));
-    // A command that tried to use `.git` is pointed at the git tools.
-    if ctx.git_tools.is_some()
-        && GIT_WORD.is_match(command)
+    // A command that tried to use `.git` is pointed at the git tools, or,
+    // outside a repository, told that duet tracks the changes itself.
+    if GIT_WORD.is_match(command)
         && (o.shows_denial() || String::from_utf8_lossy(&o.stderr).contains("not a git repository"))
     {
         shown.push('\n');
-        shown.push_str(crate::git_tools::COMMAND_HINT);
+        shown.push_str(match ctx.git_tools {
+            Some(_) => crate::git_tools::COMMAND_HINT,
+            None => NO_REPOSITORY_HINT,
+        });
     }
     Ok(shown)
 }
+
+/// The hint added to a `git` command's output outside a repository.
+const NO_REPOSITORY_HINT: &str = "[this folder is not a git repository, and commands cannot create or \
+use .git; you do not need one: list_files and search work without it, and diff shows the files you changed]";
 
 static GIT_WORD: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"(^|[\s;&|(`])git(\s|$)").expect("static regex"));

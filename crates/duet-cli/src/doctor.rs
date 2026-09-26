@@ -1126,15 +1126,18 @@ fn git(ws: &Path) -> Vec<Check> {
     match duet_git::Git::locate() {
         Ok(g) => {
             let mut out = vec![check("git", Status::Pass, g.binary().display().to_string())];
+            // Duet works without a repository; what changes is said here.
             if !g.is_repository(ws) {
-                out.push(
-                    check(
-                        "workspace",
-                        Status::Warn,
-                        format!("{} is not a git repository", ws.display()),
-                    )
-                    .fix("run duet inside a repository (git init) so it can list files and checkpoint edits"),
-                );
+                out.push(check(
+                    "workspace",
+                    Status::Pass,
+                    format!(
+                        "{} is not a git repository: files are listed by a walk that honours \
+                         .gitignore and .ignore, `diff` and /diff show the files duet wrote, and the \
+                         git tools are not offered (git init adds them)",
+                        ws.display()
+                    ),
+                ));
             }
             out
         }

@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod commit;
+pub mod walk;
 pub use commit::{Committed, Identity, user_config_files};
 
 #[derive(Debug, thiserror::Error)]
@@ -173,9 +174,11 @@ impl Git {
     }
 
     /// Tracked and untracked-but-not-ignored files, relative to the workspace.
+    /// Outside a git repository, the files a walk finds that the workspace's
+    /// `.gitignore` and `.ignore` files do not exclude ([`walk::list`]).
     /// Reserved directories are excluded. There is no file-count cap.
     pub fn list_files(&self, workspace: &Path) -> Result<Vec<String>, GitError> {
-        let out = self.run(
+        let listed = self.run(
             workspace,
             &[
                 "ls-files",
@@ -187,7 +190,14 @@ impl Git {
             ],
             &[],
             None,
-        )?;
+        );
+        let out = match listed {
+            Ok(out) => out,
+            Err(GitError::Failed { .. }) if !self.is_repository(workspace) => {
+                return walk::list(workspace);
+            }
+            Err(e) => return Err(e),
+        };
         let mut files: Vec<String> = out
             .split(|&b| b == 0)
             .filter(|p| !p.is_empty())
@@ -313,10 +323,7 @@ impl CheckpointStore {
         let index_s = index.to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&index);
         let env = self.env(&index_s);
-        let files = self
-            .git
-            .list_files(&self.workspace)
-            .or_else(|_| walk(&self.workspace))?;
+        let files = self.git.list_files(&self.workspace)?;
         let mut list = Vec::new();
         for f in &files {
             list.extend_from_slice(f.as_bytes());
@@ -361,33 +368,6 @@ impl CheckpointStore {
             Err(e) => Err(e),
         }
     }
-}
-
-fn walk(root: &Path) -> Result<Vec<String>, GitError> {
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in std::fs::read_dir(&dir)
-            .map_err(|e| duet_fs::FsError::io("list", &dir, e))?
-            .flatten()
-        {
-            let p = entry.path();
-            let rel = p.strip_prefix(root).unwrap_or(&p).to_path_buf();
-            if duet_fs::is_reserved(&rel)
-                || rel.starts_with("target")
-                || rel.starts_with("node_modules")
-            {
-                continue;
-            }
-            match entry.file_type() {
-                Ok(t) if t.is_dir() => stack.push(p),
-                Ok(t) if t.is_file() => out.push(rel.to_string_lossy().into_owned()),
-                _ => {}
-            }
-        }
-    }
-    out.sort();
-    Ok(out)
 }
 
 #[cfg(test)]
@@ -453,6 +433,25 @@ mod tests {
             git.list_files(&ws).unwrap(),
             vec![".gitignore", "a.txt", "new.rs"]
         );
+    }
+
+    #[test]
+    fn lists_files_outside_a_repository_by_walking() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap();
+        let git = Git::locate().unwrap();
+        std::fs::write(ws.join("a.txt"), "one\n").unwrap();
+        std::fs::write(ws.join(".gitignore"), "ignored.log\n").unwrap();
+        std::fs::write(ws.join("ignored.log"), "x").unwrap();
+        std::fs::create_dir_all(ws.join(".duet")).unwrap();
+        std::fs::write(ws.join(".duet/state"), "x").unwrap();
+        assert!(!git.is_repository(&ws));
+        assert_eq!(git.list_files(&ws).unwrap(), vec![".gitignore", "a.txt"]);
+        // A snapshot of a folder that is no repository holds the same files.
+        let store = CheckpointStore::open(git.clone(), &ws).unwrap();
+        let c = store.snapshot("runs/r1/0", "before").unwrap();
+        assert_eq!(store.read(&c, "a.txt").unwrap().unwrap(), b"one\n");
+        assert_eq!(store.read(&c, "ignored.log").unwrap(), None);
     }
 
     #[test]
