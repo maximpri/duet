@@ -12,6 +12,8 @@
 use regex::{Regex, RegexSet};
 use std::sync::LazyLock;
 
+mod random;
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
 )]
@@ -148,7 +150,7 @@ re!(
     IPV4,
     r"\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b"
 );
-// Long random-looking tokens (entropy check applied afterwards).
+// Long random-looking tokens, judged afterwards by their parts ([`random`]).
 re!(HIGH_ENTROPY, r"[A-Za-z0-9+/_-]{24,}={0,2}");
 
 /// Duet's own expressions, in [`Own`] order. One pass of a set over all of
@@ -289,50 +291,6 @@ pub fn entropy(s: &str) -> f64 {
         .sum()
 }
 
-fn looks_random(s: &str) -> bool {
-    let classes = [
-        s.bytes().any(|b| b.is_ascii_lowercase()),
-        s.bytes().any(|b| b.is_ascii_uppercase()),
-        s.bytes().any(|b| b.is_ascii_digit()),
-    ];
-    entropy(s) >= 4.0
-        && classes.iter().filter(|c| **c).count() >= 2
-        && !s.contains("__")
-        && !s
-            .chars()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase() && s.len() == 40)
-        && !is_integrity_digest(s)
-        && !is_camel_case_words(s)
-}
-
-/// A subresource-integrity value (`sha512-<base64>`, as in lockfiles and
-/// `<script integrity=…>`): the digest of public content.
-fn is_integrity_digest(s: &str) -> bool {
-    ["sha256-", "sha384-", "sha512-"]
-        .iter()
-        .any(|p| s.starts_with(p))
-}
-
-/// An identifier made of words (`HttpRequestRetryPolicy`): letters only,
-/// each capital starting a word, words of three letters on average. Random
-/// letters change case every other character or so.
-fn is_camel_case_words(s: &str) -> bool {
-    if !s.bytes().all(|b| b.is_ascii_alphabetic()) {
-        return false;
-    }
-    let words = s
-        .bytes()
-        .enumerate()
-        .filter(|(i, b)| *i == 0 || b.is_ascii_uppercase())
-        .count();
-    let single = s
-        .as_bytes()
-        .windows(2)
-        .filter(|w| w[0].is_ascii_uppercase() && w[1].is_ascii_uppercase())
-        .count();
-    words >= 3 && single <= 2 && s.len() >= 3 * words
-}
-
 /// Addresses at domains reserved for documentation and testing (RFC 2606 /
 /// RFC 6761) cannot belong to anyone; code and tests use them as examples.
 /// The owner's and project's own detectors (`sensitivity.custom_patterns`):
@@ -436,29 +394,29 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
     let mut out = Vec::new();
     let hits = OWN.matches(text);
     let on = |o: Own| hits.matched(o as usize);
-    let mut push = |kind, m: regex::Match<'_>, label: Option<String>| {
+    let mut push = |kind, span: std::ops::Range<usize>, label: Option<String>| {
         out.push(Finding {
             kind,
-            start: m.start(),
-            end: m.end(),
+            start: span.start,
+            end: span.end,
             label,
         })
     };
     if d.secrets {
         if on(Own::Tokens) {
             for m in TOKENS.find_iter(text) {
-                push(Kind::Secret, m, None);
+                push(Kind::Secret, m.range(), None);
             }
         }
         if on(Own::PrivateKey) {
             for m in PRIVATE_KEY.find_iter(text) {
-                push(Kind::Secret, m, Some("PRIVATE_KEY".into()));
+                push(Kind::Secret, m.range(), Some("PRIVATE_KEY".into()));
             }
         }
         if on(Own::UrlCredentials) {
             for c in URL_CREDENTIALS.captures_iter(text) {
                 if let Some(m) = c.get(1) {
-                    push(Kind::Secret, m, Some("URL_PASSWORD".into()));
+                    push(Kind::Secret, m.range(), Some("URL_PASSWORD".into()));
                 }
             }
         }
@@ -476,7 +434,7 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
                         || value.eq_ignore_ascii_case("changeme")
                         || value.eq_ignore_ascii_case("change_me");
                     if !placeholder_like {
-                        push(Kind::Secret, v, Some(k.as_str().to_owned()));
+                        push(Kind::Secret, v.range(), Some(k.as_str().to_owned()));
                     }
                 }
             }
@@ -484,8 +442,8 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
     }
     if d.entropy && on(Own::HighEntropy) {
         for m in HIGH_ENTROPY.find_iter(text) {
-            if looks_random(m.as_str()) {
-                push(Kind::Secret, m, None);
+            for (start, end) in random::random_spans(text, m.start(), m.end()) {
+                push(Kind::Secret, start..end, None);
             }
         }
     }
@@ -493,39 +451,39 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
         if on(Own::Email) {
             for m in EMAIL.find_iter(text) {
                 if !reserved_example_domain(m.as_str()) {
-                    push(Kind::Email, m, None);
+                    push(Kind::Email, m.range(), None);
                 }
             }
         }
         if on(Own::Phone) {
             for m in PHONE.find_iter(text) {
-                push(Kind::Phone, m, None);
+                push(Kind::Phone, m.range(), None);
             }
         }
         if on(Own::Card) {
             for m in CARD.find_iter(text) {
                 if luhn(m.as_str()) {
-                    push(Kind::Card, m, None);
+                    push(Kind::Card, m.range(), None);
                 }
             }
         }
         if on(Own::LabelledNumber) {
             for m in LABELLED_NUMBER.find_iter(text) {
                 if let Some(kind) = labelled_kind(text, m.start(), m.end()) {
-                    push(kind, m, None);
+                    push(kind, m.range(), None);
                 }
             }
         }
         if on(Own::Ssn) {
             for m in SSN.find_iter(text) {
-                push(Kind::NationalId, m, None);
+                push(Kind::NationalId, m.range(), None);
             }
         }
         if on(Own::Ipv4) {
             for m in IPV4.find_iter(text) {
                 let s = m.as_str();
                 if !(s.starts_with("127.") || s == "0.0.0.0" || s.starts_with("255.")) {
-                    push(Kind::Ip, m, None);
+                    push(Kind::Ip, m.range(), None);
                 }
             }
         }
@@ -743,6 +701,99 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    // Seen in a live hybrid run (2026-09-26, a TypeScript app built from an
+    // empty repository): six public values became secret placeholders, among
+    // them the path of an EPERM error the frontier was debugging.
+
+    #[test]
+    fn hashed_bundle_names_in_build_output_are_not_secrets() {
+        let text = "dist/index.html                   0.40 kB │ gzip:  0.27 kB\ndist/assets/index-PPSrQqgT.css    2.83 kB │ gzip:  0.99 kB\ndist/assets/index-DVuHW4gw.js   229.53 kB │ gzip: 71.48 kB\n";
+        assert!(kinds(text).is_empty(), "{:?}", kinds(text));
+    }
+
+    #[test]
+    fn absolute_paths_in_errors_are_not_secrets() {
+        let text = "Error: EPERM: operation not permitted, mkdir '/Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/data'\n  path: '/Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/data'\n";
+        assert!(kinds(text).is_empty(), "{:?}", kinds(text));
+    }
+
+    #[test]
+    fn file_urls_in_stack_traces_are_not_secrets() {
+        let text = "    at openDatabase (file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/db.js:10:9)\n    at createAppWithDatabase (file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/app.js:179:22)\n    at file:///Volumes/EXT_DISK/duet_v2/scratch/fullapp/app/dist/server/index.js:7:13\n";
+        assert!(kinds(text).is_empty(), "{:?}", kinds(text));
+    }
+
+    #[test]
+    fn test_suite_paths_are_not_secrets() {
+        // Seen in calibration runs (2026-09-25): a test path (entropy 4.008)
+        // quoted in the frontier's own command was taken for a secret, and
+        // the outbound check refused the request.
+        let text =
+            "run_command: cat /test/test-suite/groups/function-fromMillis/case000/expected.json";
+        assert!(kinds(text).is_empty(), "{:?}", kinds(text));
+    }
+
+    #[test]
+    fn camel_case_identifiers_with_acronyms_are_not_secrets() {
+        let text =
+            "    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {";
+        assert!(kinds(text).is_empty(), "{:?}", kinds(text));
+    }
+
+    #[test]
+    fn build_and_package_identifiers_are_not_secrets() {
+        for text in [
+            // Bundlers: vite and rollup, webpack, next, esbuild, parcel, source maps.
+            "dist/assets/vendor-react-dom-Bx8f9aQz.js   142.10 kB │ map: 402.33 kB",
+            "dist/assets/index-DVuHW4gw.js.map",
+            "static/js/vendors-node_modules_react-dom_index_js.3f2a1b9c8d7e6f50a1b2.chunk.js",
+            ".next/static/chunks/pages/_app-0a1b2c3d4e5f6789.js",
+            ".next/static/chunks/app/dashboard/page-4f8e2a9c1b3d5e7f.js",
+            "build/_assets/entry-client-ABCD2345.js",
+            "dist/index.a1b2c3d4.js",
+            "//# sourceMappingURL=index-DVuHW4gw.js.map",
+            // Lockfiles: integrity digests and resolved URLs.
+            "\"integrity\": \"sha1-2BcYtEaQmXvTzLpRwNsKdHjFgBc=\"",
+            "resolved \"https://registry.yarnpkg.com/@babel/code-frame/-/code-frame-7.24.2.tgz#0a1b2c3d4e5f60718293a4b5c6d7e8f901234567\"",
+            "golang.org/x/net v0.25.0 h1:d/OCCoBEUq33pjydKrGQhw7IlUPI2Oylr+8qLr5gYCQ=",
+            // Git object ids, UUIDs and timestamps in paths.
+            ".git/objects/3f/2a1b9c8d7e6f50a1b2c3d4e5f60718293a4b5c",
+            "https://github.com/example-org/task-manager/blob/90b35a6239c3d8bdabc530a6a0816f7ff89a0aaf/src/server/app.ts#L42",
+            "GET /api/v1/projects/286a9205-6c69-4f40-ba3b-039fbdd92f38/tasks HTTP/1.1",
+            "backups/database-backup-2026-09-25T12-00-00Z.sqlite",
+            "migrations/20240101120000_create_users_table/migration.sql",
+            // Stack frames: Node, Python, Rust.
+            "    at Module._compile (node:internal/modules/cjs/loader:1554:14)",
+            "  File \"/home/runner/work/app/app/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py\", line 1967, in _exec_single_context",
+            "   at /rustc/90b35a6239c3d8bdabc530a6a0816f7ff89a0aaf/library/std/src/panicking.rs:665:5",
+        ] {
+            assert!(kinds(text).is_empty(), "{text}: {:?}", kinds(text));
+        }
+    }
+
+    #[test]
+    fn secrets_inside_paths_and_urls_are_still_found() {
+        let key = "Q8f2LmZ0x9R4tWvB7nC1pK6sD3hJ5gYa";
+        for text in [
+            format!("GET https://api.internal.test/v1/keys/{key}/rotate HTTP/1.1"),
+            format!("curl 'https://files.internal.test/download?token={key}&name=report'"),
+            format!("fetch('/api/share/{key}')"),
+            format!("saved to uploads/{key}/report.pdf"),
+            format!("at file:///srv/app/cache/{key}/index.js:1:1"),
+            format!("dist/assets/index-{key}.js"),
+        ] {
+            let k = kinds(&text);
+            assert!(
+                k.iter()
+                    .any(|(kind, v)| *kind == Kind::Secret && v.contains(key)),
+                "{text}: {k:?}"
+            );
+        }
+        // Base64 with slashes is read whole, not by its parts.
+        let b64 = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+        assert_eq!(kinds(b64), vec![(Kind::Secret, b64.to_owned())]);
     }
 
     #[test]

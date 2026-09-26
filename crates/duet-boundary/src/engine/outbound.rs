@@ -405,9 +405,12 @@ mod tests {
     const KEY: &str = "sk_live_Qm8vT2xW9pL4nR7kZ3cY6bH1";
     const EMAIL: &str = "amelia.velanwick42@mailbox-311.net";
     const MODEL: &str = "glm-test-4.6";
-    /// A test-suite path the entropy detector takes for a secret, as in the
-    /// run that found DUET-2026-019 (`/test/test-suite/groups/…/case000`).
-    const PATH: &str = "/spec/suite/groups/function-formatInteger/case031";
+    /// A path the entropy detector takes for a secret where it is quoted
+    /// relative (`.{PATH}.json`). In the run that found DUET-2026-019 it was a
+    /// plain test-suite path (`/test/test-suite/groups/…/case000`), which is
+    /// no longer one (tokens are judged by their parts); a path holding a
+    /// random segment still is.
+    const PATH: &str = "/spec/suite/k7Qx2LmZ9wRt4VbN8sYc3HjD6gFa5UeP/case031";
     const DIALECTS: [Dialect; 3] = [Dialect::Chat, Dialect::Anthropic, Dialect::Responses];
 
     fn engine() -> (tempfile::TempDir, Arc<Engine>) {
@@ -508,13 +511,13 @@ mod tests {
         // path in the model's own tool calls before it had already been
         // passed, and the final check blocked the request and ended the run.
         let (_d, e) = engine();
+        let command = format!("node -e \"const c=require('.{PATH}.json'); console.log(c.length)\"");
         assert!(
-            scan(PATH, Detectors::default())
+            scan(&command, Detectors::default())
                 .iter()
-                .any(|f| &PATH[f.start..f.end] == PATH),
+                .any(|f| &command[f.start..f.end] == PATH),
             "precondition: a detector takes the path for a secret"
         );
-        let command = format!("node -e \"const c=require('.{PATH}.json'); console.log(c.length)\"");
         let first = call("c1", "run_command", json!({ "command": command }));
         let stub = format!(
             "[masked: run_command `{command}`, ~900 tokens removed to save context; repeat the call if you need it]"

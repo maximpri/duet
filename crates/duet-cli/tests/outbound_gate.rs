@@ -4,8 +4,8 @@
 //! outbound filter could have replaced, and a request it still refuses is
 //! sent with the refused part withheld instead of ending the run.
 //!
-//! - A value the filter's detectors find only in a masking stub (a test-suite
-//!   path in a command the stub quotes) is replaced in the model's own call
+//! - A value the filter's detectors find only in a masking stub (a path in a
+//!   command the stub quotes) is replaced in the model's own call
 //!   too, and the run goes on (DUET-2026-019, found in an XL calibration run
 //!   that ended `failed` after 65 minutes).
 //! - Reading a file whose path the detectors take for a secret goes on too:
@@ -40,8 +40,10 @@ const RUN_ID: &str = "20260925-000000-gate01";
 const KEY: &str = "sk_live_eQ7mZ2vK9pX4rT8wL3nB6cY1";
 /// A test-suite file whose path the entropy detector takes for a secret, as
 /// `test/test-suite/groups/function-fromMillis/case000.json` was in the run.
-const SUITE: &str = "spec/suite/groups/function-formatInteger/case031.json";
-const SUITE_STEM: &str = "spec/suite/groups/function-formatInteger/case031";
+/// That path no longer is one (tokens are judged by their parts); a relative
+/// path holding a random segment still is.
+const SUITE: &str = "spec/suite/k7Qx2LmZ9wRt4VbN8sYc3HjD6gFa5UeP/case031.json";
+const SUITE_STEM: &str = "spec/suite/k7Qx2LmZ9wRt4VbN8sYc3HjD6gFa5UeP/case031";
 
 /// Replies with one tool call per request, in order, and records each body.
 #[derive(Clone, Default)]
