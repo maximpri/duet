@@ -744,9 +744,9 @@ async fn grep_probes_of_the_env_file_stop_at_the_budget() {
         let key = keys[i % keys.len()];
         results[i].replace(&format!("grep -q '^{key}=' .env && echo M"), "…")
     };
-    for i in 12..16 {
+    for (i, r) in results.iter().enumerate().skip(12) {
         assert_eq!(without_command(i), without_command(12));
-        assert!(results[i].contains("withheld"), "{}", results[i]);
+        assert!(r.contains("withheld"), "{r}");
     }
     assert!(without_command(12).contains("sensitivity.output_probes"));
     let probes: Vec<(u32, bool)> = f
