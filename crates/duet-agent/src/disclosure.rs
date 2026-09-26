@@ -224,7 +224,8 @@ impl Disclosure {
                     | AuditEvent::LanguageServer { .. }
                     | AuditEvent::SubagentStart { .. }
                     | AuditEvent::SubagentEnd { .. }
-                    | AuditEvent::Instructions { .. } => {}
+                    | AuditEvent::Instructions { .. }
+                    | AuditEvent::Egress { .. } => {}
                 },
             }
         }

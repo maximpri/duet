@@ -19,6 +19,7 @@ duet-fs.workspace = true
 duet-sandbox.workspace = true
 duet-git.workspace = true
 duet-web.workspace = true
+duet-egress.workspace = true
 duet-mcp.workspace = true
 duet-lsp.workspace = true
 url = "2"
@@ -31,5 +32,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+base64.workspace = true
 duet-boundary = { workspace = true, features = ["test-support"] }
 duet-mcp = { workspace = true, features = ["test-support"] }

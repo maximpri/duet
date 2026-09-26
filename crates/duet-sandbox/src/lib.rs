@@ -214,10 +214,14 @@ pub const HOME_SECRETS: &[&str] = &[
 /// The [`HOME_SECRETS`] that exist under `$HOME`, except any holding
 /// `workspace` (denying it would deny the work itself).
 pub fn home_secrets(workspace: &Path) -> Vec<PathBuf> {
-    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
-        return Vec::new();
-    };
-    let home = PathBuf::from(home);
+    match std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+        Some(home) => home_secrets_in(Path::new(&home), workspace),
+        None => Vec::new(),
+    }
+}
+
+/// [`home_secrets`] for the home directory `home`.
+pub fn home_secrets_in(home: &Path, workspace: &Path) -> Vec<PathBuf> {
     HOME_SECRETS
         .iter()
         .map(|p| home.join(p))
@@ -1758,6 +1762,55 @@ mod tests {
         assert!(
             !served.contains("4539") && served.contains(DENIAL_MESSAGE),
             "{served}"
+        );
+    }
+
+    #[tokio::test]
+    async fn credential_stores_in_the_home_directory_are_unreadable() {
+        let (d, ws) = setup();
+        let home = d.path().canonicalize().unwrap().join("home");
+        for (p, text) in [
+            (".npmrc", "//registry.npmjs.org/:_authToken=npm_Tk7Qx2Lp9\n"),
+            (
+                ".cargo/credentials.toml",
+                "[registry]\ntoken = \"cio_Rz4Wm8\"\n",
+            ),
+            (".cargo/config.toml", "[build]\njobs = 3\n"),
+            (".ssh/id_ed25519", "PRIVATE-KEY-5521\n"),
+            (".zsh_history", "export OPENAI_API_KEY=sk-proj-Vb61\n"),
+        ] {
+            std::fs::create_dir_all(home.join(p).parent().unwrap()).unwrap();
+            std::fs::write(home.join(p), text).unwrap();
+        }
+        let mut s = spec(&ws);
+        s.deny_read = home_secrets_in(&home, &ws);
+        assert_eq!(s.deny_read.len(), 4, "{:?}", s.deny_read);
+        let o = sh_with(
+            &s,
+            &format!(
+                "cd {}; cat .npmrc .cargo/credentials.toml .ssh/id_ed25519 .zsh_history; \
+                 ls .ssh; cat .cargo/config.toml",
+                home.display()
+            ),
+        )
+        .await;
+        let all = text(&o);
+        for secret in [
+            "npm_Tk7Qx2Lp9",
+            "cio_Rz4Wm8",
+            "PRIVATE-KEY-5521",
+            "sk-proj-Vb61",
+            "id_ed25519\n",
+        ] {
+            assert!(!all.contains(secret), "{secret} readable: {all}");
+        }
+        // Configuration next to them stays readable.
+        assert!(all.contains("jobs = 3"), "{all}");
+        // A workspace inside a listed directory is not denied with it.
+        assert!(
+            home_secrets_in(&home, &home.join(".ssh/work"))
+                .iter()
+                .all(|p| !p.ends_with(".ssh"))
         );
     }
 

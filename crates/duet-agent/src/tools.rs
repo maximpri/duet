@@ -28,7 +28,8 @@ pub struct Ctx<'a> {
     pub presenter: &'a dyn Presenter,
     pub journal: &'a mut WriteJournal,
     pub command_timeout: Duration,
-    pub network: bool,
+    /// The run's `sandbox.network` (see [`crate::egress`] for who gets it).
+    pub network: &'a crate::egress::Network,
     pub checks: &'a [String],
     /// The run's audit log, for security events (sandbox denials, sensitive commands).
     pub audit: Option<&'a AuditHandle>,
@@ -145,8 +146,7 @@ All edits are applied together or not at all.",
         ),
         t(
             "run_command",
-            "Run a shell command in the repository root (sandboxed: no network, writes limited to the repository). \
-Returns the exit code and output.",
+            &run_command_description(&crate::egress::Network::Off),
             json!({"type": "object", "properties": {
                 "command": {"type": "string"},
                 "timeout_seconds": {"type": "integer", "minimum": 1}
@@ -162,6 +162,15 @@ Returns the exit code and output.",
     ];
     specs.sort_by(|a, b| a.name.cmp(&b.name));
     specs
+}
+
+/// `run_command`'s description for a run with `network`.
+pub(crate) fn run_command_description(network: &crate::egress::Network) -> String {
+    format!(
+        "Run a shell command in the repository root (sandboxed: {}, writes limited to the repository). \
+Returns the exit code and output.",
+        network.describe()
+    )
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) -> Outcome {
@@ -623,17 +632,55 @@ pub(crate) async fn sandboxed(
         Access::SensitiveData => "sensitive_data",
         Access::ReadOnly => "read_only",
     };
-    let deny_read = match access {
+    // Checks may read protected source; then they get no network.
+    let mut reads_protected = false;
+    let mut deny_read = match access {
         Access::Ordinary | Access::ReadOnly => {
             hidden_from_processes(ctx.presenter, ctx.workspace, ctx.run_dir)
         }
         Access::Checks => {
             let mut hidden = ctx.presenter.hidden_from_checks(ctx.workspace);
+            reads_protected =
+                hidden.len() < ctx.presenter.hidden_from_commands(ctx.workspace).len();
             hidden.push(sensitive_scratch(ctx.run_dir));
             hidden
         }
         // Everything but run state, which the sandbox denies to every command.
         Access::SensitiveData => Vec::new(),
+    };
+    // Credential stores in the operator's home: never readable by a command.
+    deny_read.extend(duet_sandbox::home_secrets(ctx.workspace));
+    let scratch = match access {
+        Access::SensitiveData => sensitive_scratch(ctx.run_dir),
+        _ => scratch_root().join(run_name(ctx.run_dir)),
+    };
+    let mut note = None;
+    let (network, route) = match (access, ctx.network) {
+        (Access::SensitiveData, _) | (_, crate::egress::Network::Off) => {
+            (duet_sandbox::Network::Off, None)
+        }
+        (Access::Checks, _) if reads_protected => (duet_sandbox::Network::Off, None),
+        (_, crate::egress::Network::All) => (duet_sandbox::Network::All, None),
+        (_, crate::egress::Network::Registries(r)) => match r.route(ctx.sandbox, ctx.audit).await {
+            Ok(route) => (
+                duet_sandbox::Network::Proxy(route.network.clone()),
+                Some(route),
+            ),
+            Err(e) => {
+                note = Some(format!(
+                    "\n[sandbox] the egress proxy could not start ({e}); the command ran without network\n"
+                ));
+                (duet_sandbox::Network::Off, None)
+            }
+        },
+    };
+    // Package caches: filled by commands with network, read by the rest.
+    let caches = match ctx.network {
+        crate::egress::Network::Off => Vec::new(),
+        _ => crate::egress::cache_env(
+            &scratch_root().join(run_name(ctx.run_dir)),
+            !network.is_off(),
+        ),
     };
     // Placeholders in a sensitive_data command are resolved locally: its output
     // stays on this machine. Elsewhere they stay as written.
@@ -643,11 +690,8 @@ pub(crate) async fn sandboxed(
     };
     let spec = Spec {
         workspace: ctx.workspace.to_path_buf(),
-        scratch: match access {
-            Access::SensitiveData => sensitive_scratch(ctx.run_dir),
-            _ => scratch_root().join(run_name(ctx.run_dir)),
-        },
-        network: ctx.network.into(),
+        scratch,
+        network,
         timeout,
         output_cap: 256 * 1024,
         spill_file: Some(
@@ -659,6 +703,7 @@ pub(crate) async fn sandboxed(
                 ("CARGO_TERM_COLOR".into(), "never".into()),
                 ("NO_COLOR".into(), "1".into()),
             ];
+            env.extend(caches);
             // What a sensitive command builds may embed sensitive data (a
             // build script reading it): cargo builds into the command's private
             // scratch, not the shared `target/` other commands read and write.
@@ -682,7 +727,7 @@ pub(crate) async fn sandboxed(
             None => std::future::pending().await,
         }
     };
-    let o = duet_sandbox::run_until(
+    let mut o = duet_sandbox::run_until(
         ctx.sandbox,
         &spec,
         &["/bin/sh".into(), "-c".into(), exec],
@@ -694,6 +739,15 @@ pub(crate) async fn sandboxed(
     if o.interrupted {
         return Err("interrupted: the command was stopped".into());
     }
+    // What the proxy refused, so the frontier knows why a download failed.
+    if let Some(n) = note.or_else(|| {
+        route
+            .as_ref()
+            .and_then(|r| crate::egress::refused_note(&r.refused()))
+    }) {
+        o.stderr.extend_from_slice(n.as_bytes());
+    }
+    drop(route);
     // Run state is denied to every command, so any command can meet a denial.
     if o.shows_denial() {
         ctx.record(AuditEvent::SandboxDenial {
@@ -1044,7 +1098,7 @@ mod sensitive_command_tests {
             presenter: engine.as_ref(),
             journal: &mut journal,
             command_timeout: Duration::from_secs(30),
-            network: false,
+            network: &crate::egress::Network::Off,
             checks: &[],
             audit: None,
             interrupted: None,
@@ -1101,7 +1155,7 @@ mod sensitive_command_tests {
             presenter: engine.as_ref(),
             journal: &mut journal,
             command_timeout: Duration::from_secs(30),
-            network: false,
+            network: &crate::egress::Network::Off,
             checks: &[],
             audit: Some(&audit),
             interrupted: None,
@@ -1209,7 +1263,7 @@ mod sensitive_command_tests {
             presenter: engine.as_ref(),
             journal: &mut journal,
             command_timeout: Duration::from_secs(30),
-            network: false,
+            network: &crate::egress::Network::Off,
             checks: &[],
             audit: Some(&audit),
             interrupted: None,
@@ -1307,7 +1361,7 @@ mod sensitive_command_tests {
             presenter: engine.as_ref(),
             journal: &mut journal,
             command_timeout: Duration::from_secs(30),
-            network: false,
+            network: &crate::egress::Network::Off,
             checks: &[],
             audit: Some(&audit),
             interrupted: None,

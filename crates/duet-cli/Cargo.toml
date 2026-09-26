@@ -22,6 +22,7 @@ duet-mcp.workspace = true
 duet-sandbox.workspace = true
 duet-tui.workspace = true
 duet-web.workspace = true
+duet-egress.workspace = true
 duet-lsp.workspace = true
 url = "2"
 anyhow.workspace = true

@@ -188,7 +188,7 @@ mod tests {
             presenter: engine.as_ref(),
             journal: &mut journal,
             command_timeout: Duration::from_secs(30),
-            network: false,
+            network: &crate::egress::Network::Off,
             checks: &[],
             audit: None,
             interrupted: None,

@@ -54,13 +54,13 @@ fn config_audit(e: &Env) -> PathBuf {
 #[test]
 fn loosening_a_setting_needs_confirm_and_is_audited() {
     let e = env();
-    let refused = duet(&e, &["config", "set", "sandbox.network", "true"]);
+    let refused = duet(&e, &["config", "set", "sandbox.network", "\"all\""]);
     assert_eq!(refused.status.code(), Some(2), "{}", text(&refused));
     let out = text(&refused);
     for shown in [
         "sandbox.network",
-        "- false",
-        "+ true",
+        "- \"registries\"",
+        "+ \"all\"",
         "weakens",
         "--confirm",
     ] {
@@ -76,13 +76,15 @@ fn loosening_a_setting_needs_confirm_and_is_audited() {
     let tighten = duet(&e, &["config", "set", "limits.frontier_usd", "1.0"]);
     assert!(tighten.status.success(), "{}", text(&tighten));
 
+    // The boolean of earlier versions still works, as "all", with a note.
     let applied = duet(
         &e,
         &["config", "set", "sandbox.network", "true", "--confirm"],
     );
     assert!(applied.status.success(), "{}", text(&applied));
+    assert!(text(&applied).contains("deprecated"), "{}", text(&applied));
     let owner = std::fs::read_to_string(e.home.join("config.toml")).unwrap();
-    assert!(owner.contains("network = true"), "{owner}");
+    assert!(owner.contains("network = \"all\""), "{owner}");
 
     let log = config_audit(&e);
     assert_eq!(
@@ -104,7 +106,7 @@ fn loosening_a_setting_needs_confirm_and_is_audited() {
             confirmed,
         } => {
             assert_eq!((key.as_str(), file.as_str()), ("sandbox.network", "owner"));
-            assert_eq!((old.as_str(), new.as_str()), ("false", "true"));
+            assert_eq!((old.as_str(), new.as_str()), ("\"registries\"", "\"all\""));
             assert!(weakens.is_some() && *confirmed);
         }
         other => panic!("{other:?}"),

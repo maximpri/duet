@@ -455,7 +455,7 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
         mode: cfg.mode.clone(),
         checks: Vec::new(),
         sandbox: cfg.sandbox,
-        network: cfg.network,
+        network: cfg.network.clone(),
         command_timeout: cfg.command_timeout,
         wall_clock: cfg.wall_clock,
         frontier_usd: cfg.frontier_usd,

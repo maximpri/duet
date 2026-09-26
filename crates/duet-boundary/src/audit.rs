@@ -220,6 +220,20 @@ pub enum AuditEvent {
         sha256: String,
         truncated: bool,
     },
+    /// A sandboxed command's connection through the egress proxy
+    /// (`sandbox.network = "registries"`): the host it named (empty when it
+    /// named none that could be read), the port, bytes each way and the
+    /// outcome (`allowed`, `refused`, `failed`, with the reason). Never a
+    /// path, a query or content.
+    Egress {
+        host: String,
+        port: u16,
+        bytes_up: u64,
+        bytes_down: u64,
+        outcome: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reason: String,
+    },
 }
 
 impl AuditEvent {
@@ -247,6 +261,7 @@ impl AuditEvent {
             AuditEvent::Image { .. } => "image",
             AuditEvent::LocalProbe { .. } => "local_probe",
             AuditEvent::Instructions { .. } => "instructions",
+            AuditEvent::Egress { .. } => "egress",
         }
     }
 }

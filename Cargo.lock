@@ -463,7 +463,9 @@ dependencies = [
 name = "duet-agent"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "duet-boundary",
+ "duet-egress",
  "duet-fs",
  "duet-git",
  "duet-lsp",
@@ -520,6 +522,7 @@ dependencies = [
  "duet-agent",
  "duet-boundary",
  "duet-config",
+ "duet-egress",
  "duet-fs",
  "duet-git",
  "duet-lsp",

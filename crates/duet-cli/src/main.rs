@@ -27,6 +27,7 @@ use std::time::Duration;
 mod approve;
 mod chat;
 mod doctor;
+mod egress;
 mod images;
 mod lsp;
 mod mcp;
@@ -264,10 +265,14 @@ fn workspace(cli: &Cli) -> Result<PathBuf> {
 }
 
 fn load_config(ws: &Path) -> Result<Config> {
-    Ok(Config::load(
+    let cfg = Config::load(
         &duet_config::owner_config_path(),
         Some(&ws.join(".duet/config.toml")),
-    )?)
+    )?;
+    for note in &cfg.notes {
+        eprintln!("warning: {note}");
+    }
+    Ok(cfg)
 }
 
 fn new_run_id() -> String {
@@ -740,7 +745,7 @@ async fn prepare(
         mode: format!("{:?}", manifest.mode).to_lowercase(),
         checks: cfg.list("checks.commands")?,
         sandbox,
-        network: cfg.bool("sandbox.network")?,
+        network: egress::network(cfg)?,
         command_timeout: Duration::from_secs(cfg.int("limits.command_timeout_seconds")? as u64),
         wall_clock: Duration::from_secs(wall_minutes * 60),
         frontier_usd: cfg.float("limits.frontier_usd")?,
@@ -886,6 +891,10 @@ async fn tui_cache_probe(ws: &Path) -> Result<duet_tui::CacheReport, String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Inside a bubblewrap sandbox, as the egress bridge (before anything else).
+    if let Some(code) = egress::bridge_helper() {
+        std::process::exit(code);
+    }
     let cli = Cli::parse();
     let ws = workspace(&cli)?;
     match cli.command {
@@ -1052,6 +1061,10 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 } => {
                     let v = duet_config::parse_value(&value)
                         .with_context(|| format!("{value} is not a TOML value"))?;
+                    let (v, note) = duet_config::migrate(&key, v);
+                    if let Some(note) = note {
+                        eprintln!("note: {note}");
+                    }
                     if !project {
                         std::process::exit(setup::apply_owner(
                             &mut cfg,

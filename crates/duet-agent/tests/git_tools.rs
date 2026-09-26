@@ -145,7 +145,7 @@ fn ctx<'a>(
         presenter,
         journal,
         command_timeout: Duration::from_secs(30),
-        network: false,
+        network: &duet_agent::egress::Network::Off,
         checks: &[],
         audit,
         interrupted: None,

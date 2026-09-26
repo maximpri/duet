@@ -99,7 +99,8 @@ pub struct RunConfig {
     pub mode: String,
     pub checks: Vec<String>,
     pub sandbox: SandboxKind,
-    pub network: bool,
+    /// Commands' network (`sandbox.network`; see [`crate::egress`]).
+    pub network: crate::egress::Network,
     pub command_timeout: Duration,
     pub wall_clock: Duration,
     pub frontier_usd: f64,
@@ -148,7 +149,7 @@ impl RunConfig {
     ///
     /// The rule: a new field gets its restrictive default here, so code that
     /// does not set it can never loosen anything. Callers name only what they
-    /// mean: `RunConfig { network: true, ..RunConfig::new(ws, dir, task) }`.
+    /// mean: `RunConfig { network: Network::All, ..RunConfig::new(ws, dir, task) }`.
     /// The CLI's run configuration and a sub-agent's (`child_config`) stay
     /// full literals, so a new field is a compile error there until it is
     /// decided.
@@ -171,7 +172,7 @@ impl RunConfig {
             } else {
                 SandboxKind::Seatbelt
             },
-            network: false,
+            network: crate::egress::Network::Off,
             command_timeout: Duration::from_secs(30),
             wall_clock: Duration::from_secs(60),
             frontier_usd: 5.0,
@@ -735,7 +736,12 @@ pub(crate) fn tool_specs(
     if cfg.subagents.is_some() {
         extra.push(crate::subagents::spec());
     }
-    tools::specs_with(extra)
+    let mut specs = tools::specs_with(extra);
+    // The command tool says what network its commands have.
+    if let Some(run) = specs.iter_mut().find(|s| s.name == "run_command") {
+        run.description = tools::run_command_description(&cfg.network);
+    }
+    specs
 }
 
 /// What stops the loop besides the frontier: the wall-clock deadline and the
@@ -987,7 +993,7 @@ pub(crate) async fn work(
                 presenter,
                 journal: &mut journal,
                 command_timeout: cfg.command_timeout,
-                network: cfg.network,
+                network: &cfg.network,
                 checks: &cfg.checks,
                 audit: Some(frontier.audit()),
                 interrupted: Some(interrupted),
@@ -1202,7 +1208,7 @@ mod tests {
     #[test]
     fn a_new_run_configuration_turns_every_capability_off() {
         let cfg = RunConfig::new("/ws", "/ws/.duet/runs/r", "task");
-        assert!(!cfg.network);
+        assert!(matches!(cfg.network, crate::egress::Network::Off));
         assert!(cfg.checks.is_empty());
         assert!(cfg.web.is_none() && cfg.mcp.is_none() && cfg.lsp.is_none());
         assert!(cfg.subagents.is_none() && cfg.git_author.is_none());

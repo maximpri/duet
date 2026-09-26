@@ -6,6 +6,7 @@ pub mod code_nav;
 pub mod context;
 pub mod disclosure;
 pub mod driver;
+pub mod egress;
 pub mod git_tools;
 pub mod host;
 pub mod images;

@@ -309,7 +309,7 @@ async fn hybrid_instructions_are_scanned_framed_audited_and_change_no_policy() {
     // The injection is framed repository text, and nothing acted on it: the
     // run's configuration and the files it is read from are as they were.
     assert!(section.contains("sandbox.network"), "{section}");
-    assert!(!cfg.network);
+    assert!(matches!(cfg.network, duet_agent::egress::Network::Off));
     assert!(!f.ws.join(".duet/config.toml").exists());
     // Each file given is audited by size and digest (the event holds no
     // text; the request records hold what was sent, sanitized).
