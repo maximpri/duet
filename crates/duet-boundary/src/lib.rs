@@ -24,6 +24,7 @@ pub mod probing;
 pub mod reencoded;
 pub mod rules;
 pub mod skeleton;
+pub mod structure;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod vault;
