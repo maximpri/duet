@@ -798,7 +798,8 @@ async fn launch(
         argv.clone()
     };
     // Every process the agent starts inherits this priority.
-    let argv = cfg.limits.priority.wrap(argv);
+    let cpu_file = run_dir.join("agent-cpu.txt");
+    let argv = cfg.limits.priority.wrap(governor::timed(argv, &cpu_file));
     let mut command = tokio::process::Command::new(&argv[0]);
     command
         .args(&argv[1..])
@@ -841,7 +842,10 @@ async fn launch(
     let wall_seconds = started.elapsed().as_secs_f64();
     // Whatever the agent left running (a command it started in the
     // background, children of a process killed at the time limit) ends here.
-    let usage = governor.map(Governor::finish).unwrap_or_default();
+    let mut usage = governor.map(Governor::finish).unwrap_or_default();
+    if let Some(cpu) = governor::timed_cpu(&cpu_file) {
+        usage.cpu_seconds = cpu;
+    }
     let (exit_code, timed_out) = waited?;
     Ok(LaunchOutcome {
         exit_code,

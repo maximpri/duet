@@ -72,6 +72,35 @@ impl Priority {
     }
 }
 
+/// `argv` run under `time`, which writes to `out` the CPU time of everything
+/// it waited for: the program and every descendant reaped in its tree. The
+/// program stays a child (the tree's root is `time`); its exit status is
+/// passed through.
+pub fn timed(argv: Vec<String>, out: &std::path::Path) -> Vec<String> {
+    if !std::path::Path::new("/usr/bin/time").is_file() {
+        return argv;
+    }
+    ["/usr/bin/time", "-p", "-o", &out.to_string_lossy()]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(argv)
+        .collect()
+}
+
+/// The CPU seconds (`user` + `sys`) [`timed`] wrote to `out`, and removes it;
+/// `None` when it wrote nothing (`time` itself was killed).
+pub fn timed_cpu(out: &std::path::Path) -> Option<f64> {
+    let text = std::fs::read_to_string(out).ok()?;
+    let _ = std::fs::remove_file(out);
+    let mut total = None;
+    for line in text.lines() {
+        if let Some(v) = line.strip_prefix("user ").or(line.strip_prefix("sys ")) {
+            *total.get_or_insert(0.0) += v.trim().parse::<f64>().ok()?;
+        }
+    }
+    total
+}
+
 /// What a run may use. Recorded in every run so reports can say what held.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Limits {
@@ -103,8 +132,10 @@ pub struct Usage {
     pub peak_total_mb: u64,
     /// Largest resident memory of one process at one survey, in MiB.
     pub peak_process_mb: u64,
-    /// CPU seconds of the step's processes as surveyed: a lower bound (a
-    /// process that starts and ends between two surveys is not seen).
+    /// CPU seconds (user and system) of the step's processes: from [`timed`]
+    /// (every process waited for in the tree) when the step ended normally,
+    /// else from the surveys, a lower bound (short-lived processes between
+    /// two surveys, such as compiler runs, are not seen).
     pub cpu_seconds: f64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kills: Vec<Kill>,
@@ -614,6 +645,26 @@ mod tests {
         let id = child.id();
         let out = child.wait_with_output().unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), id.to_string());
+    }
+
+    #[test]
+    fn timed_counts_the_cpu_of_descendants() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("time.txt");
+        // About 0.3 s of CPU in a grandchild.
+        let argv = timed(
+            vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "/bin/sh -c 'i=0; while [ $i -lt 100000 ]; do i=$((i+1)); done'; exit 3".into(),
+            ],
+            &out,
+        );
+        let status = Command::new(&argv[0]).args(&argv[1..]).status().unwrap();
+        assert_eq!(status.code(), Some(3), "the exit status passes through");
+        let cpu = timed_cpu(&out).unwrap();
+        assert!(cpu > 0.05, "{cpu}");
+        assert!(!out.exists());
     }
 
     #[test]

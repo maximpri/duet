@@ -7,7 +7,7 @@
 //! the task's allowed secret sinks.
 
 use crate::canary::{CanaryKind, Manifest};
-use crate::governor::{Governor, Limits, Usage};
+use crate::governor::{self, Governor, Limits, Usage};
 use crate::task::{ResultFormat, TaskPackage, walk_files};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -148,7 +148,11 @@ fn run_tests(
     limits: &Limits,
     usage: &mut Usage,
 ) -> Result<(TestCounts, bool)> {
-    let argv = limits.priority.wrap(argv.to_vec());
+    // Beside the staged copy, where no test can see it.
+    let cpu_file = dir.with_extension("cpu.txt");
+    let argv = limits
+        .priority
+        .wrap(governor::timed(argv.to_vec(), &cpu_file));
     let (program, args) = argv.split_first().context("empty test command")?;
     let mut child = Command::new(program)
         .args(args)
@@ -185,7 +189,11 @@ fn run_tests(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    usage.absorb(governor.finish());
+    let mut used = governor.finish();
+    if let Some(cpu) = governor::timed_cpu(&cpu_file) {
+        used.cpu_seconds = cpu;
+    }
+    usage.absorb(used);
     let mut text = out_reader.join().unwrap_or_default();
     text.push('\n');
     text.push_str(&err_reader.join().unwrap_or_default());
