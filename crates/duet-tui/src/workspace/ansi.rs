@@ -96,7 +96,12 @@ fn colour(n: u8, bright: bool) -> Color {
 /// (a word longer than a row is cut by character); styles are kept. An empty
 /// line is one empty row.
 pub(super) fn wrap(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
-    let width = width.max(1);
+    wrap_widths(line, width, width)
+}
+
+/// [`wrap`] with the first row `first` columns wide and the others `rest`.
+pub(super) fn wrap_widths(line: &Line<'static>, first: usize, rest: usize) -> Vec<Line<'static>> {
+    let (first, rest) = (first.max(1), rest.max(1));
     let chars: Vec<(char, Style)> = line
         .spans
         .iter()
@@ -106,6 +111,7 @@ pub(super) fn wrap(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
     let mut rows = Vec::new();
     let mut start = 0;
     while start < chars.len() {
+        let width = if rows.is_empty() { first } else { rest };
         // The longest run from `start` that fits.
         let mut used = 0;
         let mut end = start;

@@ -256,11 +256,11 @@ keep approval off. Turning approval down (`all` → `risky` → `off`) loosens o
 Approval is a check on actions, not on disclosure: what the frontier receives is decided by the
 boundary whether or not an action is approved.
 
-In a session (`duet chat`) the question is asked in the conversation and the answer is the next
+In a session (the `duet` workspace) the question is asked in the conversation and the answer is the next
 line typed after it (lines typed before it stay queued as messages); an interrupt or the end of
-input denies. With approval on, `duet chat` needs a terminal on standard input like `duet run`, and
+input denies. With approval on, a session needs a terminal on standard input like `duet run`, and
 the TUI does not start sessions (it has no terminal for the child). With approval off, an
-interactive `duet chat` (a terminal on standard input) still asks before each commit when
+interactive session (a terminal on standard input) still asks before each commit when
 `git.commit = "ask"` (the default), showing the files and the message; nothing else is asked. A
 session without a terminal (the TUI's pipe) and a one-shot run have nobody to ask, so `git_commit`
 is not offered there.
@@ -304,7 +304,7 @@ steering messages sent while a turn runs) crosses the boundary exactly like task
 
 ## The operator's terminal
 
-`duet chat` on a terminal and `duet run`'s progress show the frontier's text as it streams, and the
+The workspace and `duet run`'s progress on a terminal show the frontier's text as it streams, and the
 chat keeps a line editor with history. None of it is a channel to the frontier: it only shows, on
 the operator's own screen, what duet already has.
 
@@ -318,7 +318,7 @@ the operator's own screen, what duet already has.
 | Tab completion leaks the directory | It lists the operator's own directory for `/image` paths on their screen only; nothing is sent. A completed path is text in the operator's message, and the image then follows the `/image` rules |
 | Run progress in a log shares restored values | Without a terminal, `duet run` writes compact progress lines with placeholders as the frontier saw them and no streamed text (a log is more easily shared than a screen); restored values are shown only on a terminal. `--quiet` writes none |
 
-**Known limits.** Piped `duet chat` output (no terminal: the TUI, scripts) is unchanged line for
+**Known limits.** A session's output without a terminal (a pipe, scripts) is unchanged line for
 line, so it is not stripped of escape sequences; a program that shows it on a terminal should. On
 the terminal, look-alike characters are shown as they are.
 
@@ -842,7 +842,7 @@ channel in; a commit is a side effect that outlives the run.
 | A hostile repository runs code through git | The `duet-git` runner only: absolute git binary, cleared environment, no global or system config, hooks off (`core.hooksPath=/dev/null`), no fsmonitor, no external diff, textconv or filter programs, no signing; revisions starting with `-` are refused and passed after `--end-of-options` |
 | A commit publishes sensitive data | Only files the run or session wrote (write journal); never sensitive, derived, hidden or protected paths, ignored files or paths with a `filter` attribute (LFS); the message is refused with a placeholder or anything the boundary would replace (a vault value, a detected secret or PII, copied sensitive text) |
 | A commit rewrites or publishes history | Plumbing only: no push, no reset, no checkout or branch switch, no amend; HEAD moves by compare-and-swap (a HEAD that moved meanwhile is left alone); other staged work is left as it is |
-| Commits without the operator knowing | `git.commit = "ask"` (default): each commit waits for approval showing the message and paths, in an interactive `duet chat` inline even with `oversight.approve = "off"`; `git_commit` is not offered where nobody can be asked (a one-shot run or a session without a terminal, with approval off); `allow` needs a confirmed owner change or an owner default; a project can only tighten (`allow` → `ask` → `off`). Every commit is a `git_commit` audit event (hash, paths; never the message) |
+| Commits without the operator knowing | `git.commit = "ask"` (default): each commit waits for approval showing the message and paths, in an interactive session inline even with `oversight.approve = "off"`; `git_commit` is not offered where nobody can be asked (a one-shot run or a session without a terminal, with approval off); `allow` needs a confirmed owner change or an owner default; a project can only tighten (`allow` → `ask` → `off`). Every commit is a `git_commit` audit event (hash, paths; never the message) |
 | Commits under a made-up identity | Author and committer are the operator: `git.author` (owner only), else `user.name`/`user.email` from the repository config, else the owner's git config files (read with `--file`, those two keys only); none → refused |
 
 Why there is no `git.run_hooks`: a hook is code chosen by the repository (or by whoever last wrote

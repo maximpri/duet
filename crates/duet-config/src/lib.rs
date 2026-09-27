@@ -174,7 +174,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyFalse,
         true,
-        "Allow `--mode passthrough` in `duet run` and `duet chat`: the privacy boundary off, everything the model reads sent to the frontier unfiltered (each use still needs --no-privacy). false refuses such runs and sessions, and resuming one. A project may turn it off for its repository; turning it back on is the owner's, confirmed."
+        "Allow `--mode passthrough` in `duet run` and a `duet` session: the privacy boundary off, everything the model reads sent to the frontier unfiltered (each use still needs --no-privacy). false refuses such runs and sessions, and resuming one. A project may turn it off for its repository; turning it back on is the owner's, confirmed."
     ),
     s!(
         "local.enabled",
@@ -501,7 +501,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyLower,
         true,
-        "Maximum frontier spend over a whole session (`duet chat`); each turn is also held to limits.frontier_usd."
+        "Maximum frontier spend over a whole session (the `duet` workspace); each turn is also held to limits.frontier_usd."
     ),
     s!(
         "session.wall_clock_minutes",
@@ -892,7 +892,7 @@ pub const REGISTRY: &[Setting] = &[
         Project,
         OnlyLaterChoice,
         true,
-        "Whether the frontier may commit files it wrote in the run (git_commit; never sensitive or protected files, never a push). `ask`: each commit waits for the operator's approval, so git_commit is offered only where someone can answer: in an interactive `duet chat` (asked inline), or when oversight.approve is risky or all. `allow`: commits without asking (audited). `off`: never offered."
+        "Whether the frontier may commit files it wrote in the run (git_commit; never sensitive or protected files, never a push). `ask`: each commit waits for the operator's approval, so git_commit is offered only where someone can answer: in an interactive `duet` session (asked inline), or when oversight.approve is risky or all. `allow`: commits without asking (audited). `off`: never offered."
     ),
     s!(
         "git.author",

@@ -7,8 +7,9 @@ every security rule in detail: [SECURITY.md](../SECURITY.md).
 ## Commands
 
 ```sh
-duet chat                       # code in a conversation (a session; hybrid mode by default)
-duet chat --resume              # continue the most recent open session (or --resume <id>)
+duet                            # the workspace: code in a conversation (hybrid mode by default)
+duet "fix the failing export"   # the same, with the first message given
+duet --resume                   # continue the most recent open session (or --resume <id>)
 duet run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
 duet run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
 duet run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
@@ -22,7 +23,6 @@ duet config preset              # local backends and frontier providers (zai, an
 duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
 duet config preset anthropic --confirm                 # frontier endpoint, model, key variable, dialect
 duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
-duet tui                        # settings, IP levels, audit viewer, run view; sessions and runs
 duet local-eval                 # measure the configured local model in its reading roles
 duet purge                      # delete raw run data older than the retention period
 ```
@@ -50,41 +50,50 @@ and `/diff` compare the files duet wrote with their content before the run (chan
 commands are not shown); `/undo`, resume and the audit work as in a repository; the git tools are
 not offered (`git init` adds them).
 
-## Coding with duet: sessions
+## Coding with duet: the workspace
 
-A session is one conversation in one workspace. You give a task, duet works on it with its tools
-(each step shows as a progress line), and the turn ends with duet's reply, a question for you, or a
-finished task; your next message continues with everything said and done so far.
+`duet` opens the workspace: one session (one conversation in one workspace) in full screen. You
+give a task, duet works on it with its tools (each step shows as a progress line), and the turn ends
+with duet's reply, a question for you, or a finished task; your next message continues with
+everything said and done so far.
 
 ```text
-$ duet chat
-duet chat: a new session starts with your first message. /help lists commands.
-you> The CSV export drops the last row. Find out why and fix it.
-  · search fn export_csv
-  · read_file src/export.rs
-  ◦ withheld from the frontier: read_file result sensitive, held locally (a summary was sent)
-duet asks: Should an empty trailing line count as a row?
-      options: yes / no
-      (your next message is the answer)
-you> no
-  · edit_file src/export.rs
-  · run_command cargo test export
-  · finish (running the checks)
-duet finished: The loop stopped one row early; it now reads to the end, with a test.
-you> /diff
-...
-you> Also add a header row option.
+ duet · hybrid · glm-5.3-flash ▸ omlx-coding                    turn 2 · $0.0184 of $20.00
+╭ conversation ─────────────────────────────────────╮  Changes   Privacy   Session  Ctrl-T
+│ you> The CSV export drops the last row. Fix it.   │┌ changed files 1 (+3 -1) ──────────┐
+│   · search fn export_csv                          ││edit src/export.rs  +3  -1         │
+│   · read_file src/export.rs                       │└───────────────────────────────────┘
+│   ◦ withheld from the frontier: read_file result  │┌ src/export.rs (edited) ───────────┐
+│     sensitive, held locally (a summary was sent)  ││ 41 - for i in 0..rows.len() - 1 { │
+│ duet asks: Should an empty trailing line count?   ││ 41 + for i in 0..rows.len() {     │
+│ you> no                                           ││    …                              │
+│   · edit_file src/export.rs                       ││                                   │
+│   · finish (running the checks)                   ││                                   │
+│ duet finished: The loop stopped one row early.    ││                                   │
+╰───────────────────────────────────────────────────╯└───────────────────────────────────┘
+╭ message ───────────────────────────────────────────────────────────────────────────────╮
+│ › Also add a header row option.                                                         │
+╰────────────────────────────────────────────────────────────────────────────────────────╯
+ ⏎ send · Alt-⏎ new line · Tab complete · PgUp/PgDn scroll · Ctrl-T panel · /help
 ```
 
+- **The screen.** The status bar: the mode, the frontier and local models, the turn, and the cost
+  against the session budget. The conversation: your messages, duet's steps and what the boundary
+  withheld from the frontier, duet's text as the frontier writes it (formatted lightly: headings,
+  lists, quotes, code blocks set off with a bar, inline code and bold), how each turn ended; while
+  duet works, a status line shows the turn's time, its cost so far and what runs now. It follows new
+  output; PgUp/PgDn or the mouse wheel scroll back (it then stays put and says how many rows are
+  below). The side panel (Ctrl-T cycles it; it opens by itself on a window 110 columns or wider):
+  **Changes** lists the files the session changed with added/removed line counts above the selected
+  file's diff (Ctrl-↑ ↓ pick a file, Ctrl-PgUp/PgDn scroll the diff); files that are sensitive, or
+  were produced by a command that read sensitive data, are named and never shown. **Privacy** counts
+  what the frontier did not see as it was (results replaced by placeholders, held locally, answered
+  by the local model) and lists the interventions, newest first. **Session** shows turns, requests,
+  tool calls, tokens, cost and working time against the budgets. Colour unless `NO_COLOR` is set.
 - **Talking to duet.** Every message is a turn. duet ends it with `duet:` (a reply), `duet asks:`
   (a clarifying question: your next message is the answer) or `duet finished:` (it called `finish`
-  and `checks.commands` passed). End a line with `\` to continue the message on the next line;
-  `//text` sends a message that starts with `/`.
-- **On a terminal.** duet's text appears as the frontier writes it, formatted lightly (headings,
-  lists, quotes, code blocks set off with a bar, inline code and bold) and wrapped to the window;
-  colour unless `NO_COLOR` is set. While duet works, a status line at the bottom shows the turn's
-  time, its cost so far and what runs now (a tool, or the frontier writing and how much); it is
-  redrawn in place and never fills the scrollback. The input line stays editable the whole time:
+  and `checks.commands` passed). `//text` sends a message that starts with `/`. `@path` names a
+  file of the workspace (Tab completes it). The input box stays editable the whole time:
 
   | Keys | |
   |---|---|
@@ -94,12 +103,18 @@ you> Also add a header row option.
   | Backspace, Delete, Ctrl-W, Alt-Backspace, Alt-D, Ctrl-K, Ctrl-U, Ctrl-Y | delete; cut a word or to the line's end/start; put back what was cut |
   | ↑ ↓, Ctrl-P / Ctrl-N | move between the lines of a message, then through your earlier messages of this session |
   | Ctrl-R | search those messages (type to narrow, Ctrl-R for an older match, Enter takes it into the input, Esc cancels) |
-  | Tab | complete a command, or a path after `/image` |
-  | Ctrl-L, Ctrl-Z, Ctrl-D | clear the screen; suspend (`fg` returns); on an empty input, leave (like the end of input) |
+  | Tab | complete a command, an `@path`, or a path after `/image` (several choices show in a box above the input) |
+  | PgUp / PgDn, mouse wheel | scroll the conversation |
+  | Ctrl-T | the side panel: Changes, Privacy, Session, closed |
+  | Ctrl-↑ / Ctrl-↓, Ctrl-PgUp / Ctrl-PgDn | pick a changed file; scroll its diff |
+  | Ctrl-O | the settings (below) |
+  | Ctrl-Z, Ctrl-D | suspend (`fg` returns); on an empty input, leave (like the end of input) |
 
   History is the session's own messages, read from its transcript: nothing new is stored. Ctrl-C
-  follows the rules below whatever you were typing (the line is cleared). Without a terminal (a
-  pipe, as the TUI drives a session) the output is plain lines exactly as before.
+  follows the rules below whatever you were typing (the line is cleared). The mouse wheel is the
+  workspace's; to select text with the mouse, hold Option (macOS) or Shift while dragging. Anything
+  else in the process prints (a warning, a setup note) appears in the conversation, dimmed and
+  marked `│`, never over the screen.
 - **Steering while it works.** Type while duet is working: the message is delivered after the
   current step (its tool results are recorded first; a running command is never cut short), and
   duet takes it into account from its next step. Several messages typed meanwhile arrive together,
@@ -107,13 +122,15 @@ you> Also add a header row option.
   running command. Either way the session stays open and duet is told what happened.
 - **Commands** (never sent to the model): `/status` (turns, tokens, cost and working time against
   the budgets), `/diff` (the workspace against the last commit, or outside a repository the files
-  duet wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts the files the last turn wrote through its tools; repeat to go back
-  further; changes made by commands are not reverted), `/image <path>` and `/image --public
-  <path>` (attach an image to your next message; see Images below), `/quit` (leave; the session
-  stays open), `/close` (end it for good), `/help`.
-- **Resuming.** `/quit`, the end of input or Ctrl-C twice at the prompt leaves the session open;
-  `duet chat --resume` continues the latest open one (with a recap of its last turns), `--resume
-  <id>` a given one, also after a crash.
+  duet wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts
+  the files the last turn wrote through its tools; repeat to go back further; changes made by
+  commands are not reverted), `/image <path>` and `/image --public <path>` (attach an image to your
+  next message; see Images below), `/quit` (leave; the session stays open), `/close` (end it for
+  good), `/help`; and the settings screens: `/settings`, `/models`, `/sensitivity`, `/ip`,
+  `/limits`, `/data`, `/audit`, `/runs`.
+- **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `duet
+  --resume` continues the latest open one (with a recap of its last turns), `--resume <id>` a given
+  one, also after a crash.
 - **Privacy.** You see real values in your terminal; the frontier gets your messages the way it
   gets task text: detected secrets and personal data become placeholders, and values it has seen
   as placeholders stay placeholders. duet's replies show the real values back to you. See
@@ -121,11 +138,13 @@ you> Also add a header row option.
 - **Limits.** Each turn is held to `limits.frontier_usd` and `limits.wall_clock_minutes`; the
   session to `session.frontier_usd` and `session.wall_clock_minutes` (time duet works; time
   waiting for you does not count). A turn stopped by a limit leaves the session open; a spent
-  session budget ends it until the budget is raised. `oversight.approve` asks in the conversation
-  (answer `y` on the next line); with approval on, `duet chat` needs a terminal.
-- **Commits.** In a git repository, `duet chat` at a terminal offers `git_commit` with the
-  defaults (`git.commit = "ask"`, approval off): before each commit it shows the files and the
-  message and waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
+  session budget ends it until the budget is raised. `oversight.approve` asks in the input box
+  (`approve? y/n`); with approval on, a session needs a terminal.
+- **Commits.** In a git repository, a session at a terminal offers `git_commit` with the defaults
+  (`git.commit = "ask"`, approval off): before each commit it shows the files and the message and
+  waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
+- **Without a terminal** (a pipe, a script) `duet` is the same session line by line: your lines
+  are read from standard input and duet's output is plain lines.
 
 `duet run` stays the one-shot path (scripts, evaluation): no conversation, and its requests are
 unchanged. Its progress goes to standard error so it never looks stalled: on a terminal the steps,
@@ -134,39 +153,26 @@ runs now); otherwise one plain line per step with placeholders kept as the front
 a line every 30 seconds while nothing else happens. Standard output holds only the summary, as
 before; `--quiet` turns the progress off.
 
-**`duet tui`** has seven screens: Models (frontier and local settings, with `duet doctor`
-offline; `o` adds the online checks of connection and context window; `l` looks for local
-servers on loopback (the preset ports, as bootstrap does) and `[` `]` `u` point the local role
-at one; `c` runs the cache-reuse probe, two identical short requests to the local model, only
-when pressed), Sensitivity (globs, detectors, custom detector patterns, raw-output commands,
-secret sinks, bulky thresholds; `t` tests a path — sensitive or not and which pattern matched —
-and `s` tests sample text, showing what the detectors and your patterns would replace), IP
-levels (the workspace tree as git sees it, so `.gitignore` applies; `i` / `s` mark a file or
-directory interface-only / sealed, with a preview of the skeleton the frontier would see),
-Limits, Data (retention; `x` purges the raw data of runs older than `data.retention_days`, `X`
-of every run, after listing them and asking; audit logs are kept), Audit (each run's records and
-outbound request summaries as stored, and `v` to verify the hash chain and its anchor) and Run.
-The Run screen has two panels: the run as it is written (turns, tool calls, results, and a feed
-of withheld content) and the files it changed with added/removed line counts above the selected
-file's diff, with line numbers, following the file the run wrote last. Files that are sensitive,
-or were produced by a command that read sensitive data, are listed as held locally and their
-content is not shown. `←` `→` switch panels, arrows pick a file, `PgUp` `PgDn` (or `J` `K`)
-scroll the diff; a finished run reads the same way. `n` starts a session: type the first message,
-pick the mode (hybrid by default; passthrough asks you to acknowledge that the privacy boundary is
-off), and Duet launches `duet chat` in the background (output in `.duet/tmp`) and opens it here.
-The main panel then shows the conversation (your messages, duet's replies and questions, steering
-with the step it arrived after) above an input box: `i` types a message (sent with `Enter`; while
-duet works it steers the turn), `s` stops the turn after its current step, `x` (or `Ctrl-C` in the
-box) stops it at once, `/status` reports turns and cost, `/image <path>` attaches an image to the
-next message (a refused one shows why at once), `Esc` leaves the box. `r` resumes the
-selected session. If you quit, the session finishes its current turn and stays open. `o` starts
-a one-shot `duet run` instead, which keeps running if you quit. With `oversight.approve` on, use
-`duet chat` or `duet run`, which have the terminal for approvals. The settings screens are generated from the registry and
-show where each value comes from (default, owner or project). Edits take the same path as
-`duet config set`: a change that loosens privacy shows its diff and needs `y`, `p` switches edits
-to the project file (which only tightens and never takes owner-only keys), and every applied change
-is recorded in the owner's config audit log. It needs an interactive terminal of at least 80x24;
-without one it says so and exits with status 1.
+**Settings, inside the workspace.** Ctrl-O or `/settings` (or `/models`, `/sensitivity`, `/ip`,
+`/limits`, `/data`, `/audit`, `/runs` for one screen) opens seven screens over the conversation;
+Esc (or `q`) comes back. Models (frontier and local settings, with `duet doctor` offline; `o` adds
+the online checks of connection and context window; `l` looks for local servers on loopback (the
+preset ports, as bootstrap does) and `[` `]` `u` point the local role at one; `c` runs the
+cache-reuse probe, two identical short requests to the local model, only when pressed), Sensitivity
+(globs, detectors, custom detector patterns, raw-output commands, secret sinks, bulky thresholds;
+`t` tests a path — sensitive or not and which pattern matched — and `s` tests sample text, showing
+what the detectors and your patterns would replace), IP levels (the workspace tree as git sees it,
+so `.gitignore` applies; `i` / `s` mark a file or directory interface-only / sealed, with a preview
+of the skeleton the frontier would see), Limits, Data (retention; `x` purges the raw data of runs
+older than `data.retention_days`, `X` of every run, after listing them and asking; audit logs are
+kept), Audit (each run's records and outbound request summaries as stored, and `v` to verify the
+hash chain and its anchor) and Runs (the workspace's runs and sessions, read-only: each as it was
+written, beside the files it changed and their diffs; `[` `]` pick one, `←` `→` switch panels,
+`J` `K` scroll the diff). The settings screens are generated from the registry and show where each
+value comes from (default, owner or project). Edits take the same path as `duet config set`: a
+change that loosens privacy shows its diff and needs `y`, `p` switches edits to the project file
+(which only tightens and never takes owner-only keys), and every applied change is recorded in the
+owner's config audit log. Changes apply from the next session.
 
 **What the detectors find.** Duet's own secret and personal-data detectors, the gitleaks rule set
 (221 rules for specific services' credentials, used as data: pinned in
@@ -336,8 +342,8 @@ duet config set --project git.commit '"off"'                    # no git_commit 
 ```
 
 With the default `git.commit = "ask"`, each commit waits for your approval. In an interactive
-`duet chat` it is asked in the conversation (files and message, answer `y`) even with approval off;
-where nobody can be asked (`duet run` with approval off, a session the TUI drives) `git_commit` is
+session it is asked in the workspace (files and message, answer `y`) even with approval off;
+where nobody can be asked (`duet run` with approval off, a session without a terminal) `git_commit` is
 not offered. The read-only git tools always are. Details: [SECURITY.md](../SECURITY.md) (Git
 tools).
 
@@ -425,8 +431,8 @@ Each sub-agent is held to `subagents.max_usd` and `subagents.max_minutes` (a `bu
 can only lower them), and its spend and time count against the run's limits; one that runs out
 stops, and the frontier is told. Sub-agents cannot delegate. `/undo` in a session reverts what a
 writing sub-agent wrote in that turn, and a sub-agent cut off by a crash or Ctrl-C is rolled back
-when the run or session continues. In `duet chat` their steps show under their id (`⇢ sub-agent
-a1 (read): ...`, `[a1]  · read_file ...`, `⇠ sub-agent a1 completed`); the TUI Run view shows them
+when the run or session continues. In the workspace their steps show under their id (`⇢ sub-agent
+a1 (read): ...`, `[a1]  · read_file ...`, `⇠ sub-agent a1 completed`); the Runs screen shows them
 indented the same way, and `summary.json` reports their requests and cost under `stats.subagents`.
 
 ```sh
@@ -469,11 +475,11 @@ your local model's context (data files take about one token per 2 bytes). A call
 steps or time before it reports tells the frontier which files it read. In pass-through mode the
 report is shown as written: the explorer is only a cost tool there. Each call is an `explore`
 audit event (the question's hash, steps, bytes, local seconds; never content), its local time is
-in `summary.json` (`stats.ledger.explore`), and in `duet tui` the Run view shows each call's
+in `summary.json` (`stats.ledger.explore`), and the Runs screen (`/runs`) shows each call's
 outcome and counts. Details: [SECURITY.md](../SECURITY.md) (Local explorer).
 
 **Images** (PNG, JPEG, GIF, WebP): `read_file` on an image in the workspace, `duet run --image
-<path>` (repeatable), and `/image <path>` in `duet chat` or the TUI's session box (attached to your
+<path>` (repeatable), and `/image <path>` in a session (attached to your
 next message). Every image is decoded, scaled to `images.max_side` (1568 px) and encoded again,
 which drops its metadata (EXIF location, text chunks); files over 20 MB, or that stay over
 3.75 MB encoded, are refused. Detectors cannot read text in an image, so in hybrid mode:
@@ -608,7 +614,7 @@ Live smoke tests, one per local backend, run with
 
 ## Configuration
 
-Every setting is defined in one registry and editable with `duet config` or `duet tui`:
+Every setting is defined in one registry and editable with `duet config` or in the workspace (`/settings`):
 models, sensitivity rules and detectors, protected paths and IP levels, budgets, retention.
 Credentials and endpoints live only in your user config (`~/.config/duet/config.toml`); a
 repository's `.duet/config.toml` can make privacy stricter but never looser.
@@ -632,7 +638,7 @@ is replaced by a working summary the local model writes (the task, what was done
 failed, the state, what is open, and the exact paths and names). The recent turns stay verbatim,
 and the frontier reads files again when it needs them. It needs a local model (hybrid mode with `local.enabled`); a
 failure leaves the conversation as it was and masking goes on. Keep `context.compact_at` below
-`context.mask_at` of the window. Each compaction appears in the run's progress, in `duet tui`, as
+`context.mask_at` of the window. Each compaction appears in the run's progress, on the Runs screen, as
 a `compaction` audit event and in `summary.json` (`stats.compactions`).
 
 To see what compaction would do to a recorded run, replay its transcript offline with your local

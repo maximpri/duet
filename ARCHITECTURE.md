@@ -53,7 +53,9 @@ duet-cli                     → all of the above (composition root)
 duet-evals links no duet crate: it drives the duet binary as a black box and has its own
 pricing and usage parsing (its tests check that table against duet-provider's prices and its
 lanes' owner configs with duet-config's loader). duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
-ratatui); duet-cli links it for `duet tui` and supplies `duet doctor` as a callback.
+ratatui): everything the operator sees on a terminal (the workspace, `term`, the settings
+screens); duet-cli runs the session and supplies `duet doctor`, detection and the cache probe to the
+settings as callbacks.
 duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet crate.
 ```
 
@@ -169,7 +171,7 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
 5. Loop until finish passes the checks, a budget stops, or a failure a retry cannot fix (§10).
 ```
 
-### Sessions (`duet chat`)
+### Sessions (the `duet` workspace)
 
 A session is a run whose conversation continues across operator turns (`duet_agent::session`). It
 uses the same loop (`run::work`), tools, presenter, gate and transcript; what differs is how a turn
@@ -221,27 +223,35 @@ restores every file written by records from that mark on to its content before t
 next message. Repeating it walks back turn by turn. Writes made by commands are not journaled and
 are not reverted.
 
-**The operator's terminal (`duet-cli::term`).** Two feeds reach the screen, both read-only:
+**The operator's terminal (`duet_tui::workspace`, `duet_tui::term`).** `duet` without a command
+runs the session in `duet-cli` (`chat.rs`: the inbox, steering at safe points, approvals, `/undo`,
+budgets) and, on a terminal, draws it with the workspace. Two feeds reach the screen, both read-only:
 
 ```
-transcript.jsonl ──follow (150 ms)──▶ Entry ─────────────┐
-                                                          ▼
-provider stream ─Assembler::view─▶ live::Differ ─▶ StreamTap ─▶ channel ─▶ Feed ─▶ lines (scrollback)
-  (GatedFrontier passes the task-local tap set by        │         Detok (hold a placeholder until it
-   duet_boundary::live::observe; sub-agents run quiet)   │         closes, then Presenter::detokenize)
-                                                          │         FieldReader (reply / ask_operator
-                                                          │         text out of the call's JSON)
-                                                          │         Markdown (wrap, lists, code)
-                                                          ▼
-                                            live region: row being written, status line, input
+transcript.jsonl ──Follow::drain (every 150 ms, and at each request's start)──▶ Entry ──┐
+                                                                                         ▼
+provider stream ─Assembler::view─▶ live::Differ ─▶ Ordered tap ─▶ channel ─▶ Feed ─▶ conversation
+  (GatedFrontier passes the task-local tap set by      (drains the transcript  Detok, FieldReader,
+   duet_boundary::live::observe; sub-agents run quiet)   on Attempt first)      Markdown, words
+                                                                                         │
+      side panel: Changes (journal + git), Privacy (entries), Session (status) ◀─────────┘
 ```
 
-`duet chat` on a terminal (stdin and stdout) starts `term::console`: one thread owns the screen and
-reads keys raw (crossterm, output processing left on); the editor (`term::editor`) sends lines to the
-same inbox the reader thread fills without a terminal, and Ctrl-C keys go through the same
-`Interrupts::press` as the signal. The live region is redrawn in place (synchronized output, cursor
-hidden while drawing); output is printed above it. `Screen::Plain` keeps the old line-by-line output
-without a terminal. `duet run` uses the same feed (`term::watch`) on standard error: live on a
+The ordered tap reads the transcript to its end when a request starts, so every step recorded
+before a response shows before it. One thread owns the screen and the keyboard (crossterm raw keys,
+alternate screen, mouse wheel, bracketed paste); it draws with ratatui on `/dev/tty`, and while it
+runs the process's standard output and error are a pipe whose lines it shows in the conversation
+(dimmed, through `term::safe`), so no print from any crate can corrupt the screen; the terminal and
+both descriptors are restored on exit, panic and Ctrl-Z. duet's styled lines are translated from its
+own SGR codes into ratatui spans (`workspace::ansi`; any other escape is dropped) and wrapped at
+spaces; each line may carry a lead its every row repeats. The editor (`term::editor`) sends lines to
+the same inbox the reader thread fills without a terminal, and Ctrl-C keys go through the same
+`Interrupts::press` as the signal. The side panel's Changes view follows the session's write journal
+(`changes::update`) with the engine's own policy, which the CLI hands over when the session opens,
+so the panel holds back exactly what the engine holds back. The settings screens (`app`, `ui`: the
+registry screens, IP levels, data, audit, the runs view) open as an overlay; their edits go through
+`Config::propose` / `apply` as before. `Screen::Plain` keeps the line-by-line output without a
+terminal. `duet run` uses the same feed (`duet-cli`'s `term::watch`) on standard error: live on a
 terminal, compact lines (placeholders kept, a heartbeat) otherwise; standard output keeps the
 summary.
 
@@ -510,7 +520,7 @@ committer = operator, message on stdin), `update-ref HEAD <new> <old>` (compare-
 real index entries of those paths only → `git_commit` audit event. Approval is in
 `oversight::review` (`Risk::GitCommit`: `git.commit = "ask"`, or `oversight.approve = "all"`).
 `git_commit` is offered with `ask` only when the run has an approver: `oversight.approve` on, or
-an interactive `duet chat` (`approve::session_oversight`: a terminal on standard input gives the
+an interactive session (`approve::session_oversight`: a terminal on standard input gives the
 session its inline approver even with approval off, and then only commits are asked).
 `diff` compares with `git-base` when present, so a run's own commits never hide its changes; it
 names changed sensitive files and never diffs them.
@@ -639,9 +649,9 @@ re-decides the dropped step. A sub-agent whose result was recorded keeps its wri
 `crates/duet-agent/src/images.rs` over `duet-provider`'s `image` and `duet-boundary`'s `images`.
 Entry points: `read_file` on a path with an image extension (routed by `run::work` before the
 tool dispatcher), `RunConfig.images.attached` (`duet run --image` / `--image-public`, attached to
-the task), and `Session::attach` (`/image` in `duet chat` and the TUI, attached to the next
+the task), and `Session::attach` (`/image` in a session, attached to the next
 message). `images::precheck` applies the same rule from the policy alone before a run or session
-exists (the CLI before creating a run, the TUI before sending `/image`), so a refusal shows at once.
+exists (the CLI before creating a run), so a refusal shows at once.
 
 ```
 read / attach ─ prepare (sniff PNG/JPEG/GIF/WebP, decode with size and allocation limits,
@@ -835,7 +845,7 @@ git; reset behaviour defined per entry).
   config.toml                 project settings (tighten-only)
   git/                        private checkpoint store (bare, fixed config, flock)
   runs/<run-id>/              mode 0700, files 0600; `duet purge` after data.retention_days
-    run.json                  manifest (mode, task, frontier; `session` for `duet chat`) for resume
+    run.json                  manifest (mode, task, frontier; `session` for a session) for resume
     transcript.jsonl          full conversation items, synced per item; for a session also its
                               turns (as typed), their ends, steering and undo; sub-agents'
                               starts, ends, rollbacks and their own entries nested under their id;
@@ -909,7 +919,7 @@ loads none. `frontier.allow_passthrough` (on by default; a project may turn it o
 `--mode passthrough` may run in a repository, for new and resumed runs and sessions alike. A value in a
 form an earlier version wrote is read as its current meaning with a note (`migrate`:
 `sandbox.network = true` / `false` read as `"all"` / `"off"`). `duet config
-list|get|set` and `duet tui` are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
+list|get|set` and the workspace's settings screens are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
 change that loosens privacy (a `confirm` setting, or a value against its direction) without
 `--confirm`, prints the diff and appends every applied change to the owner's `config-audit.jsonl`.
 
@@ -946,9 +956,9 @@ made) is not recorded; the turn is re-decided on resume.
   and ends in resumable `Failed{interrupted}`.
 
 A session applies the same states per turn (`TurnEnd`, §4 Sessions) and stays open after any of
-them; each `duet chat` invocation concludes the run with the session's state (`Completed` when the
+them; each `duet` session invocation concludes the run with the session's state (`Completed` when the
 operator closed it, resumable `Failed{session left open}` when they left, `BudgetStopped` when a
-session budget is spent). `duet resume` refuses a session; `duet chat --resume` continues it.
+session budget is spent). `duet resume` refuses a session; `duet --resume` continues it.
 
 A full disk is an infrastructure failure too (`duet_agent::host`). A write of run state that fails
 for lack of a host resource (disk space, quota, file handles; `FsError::is_host_resource`) pauses
@@ -1145,7 +1155,7 @@ duet_agent::conclude_with(run_dir, run_id, audit, audit_log, &terminal, &stats, 
 ```
 
 `conclude_with` records `run_end` (anchoring the head), writes `summary.json`, then calls each end
-hook, whether or not the summary could be written. Every `duet run`, `duet resume` and `duet chat`
+hook, whether or not the summary could be written. Every `duet run`, `duet resume` and `duet` session
 invocation that got as far as creating its run directory ends there exactly once, in every
 terminal state: completed, failed (including a panic and a failure before the audit log opened,
 then `chain` is `None`), budget-stopped, interrupted (`interrupted`, `resumable`), a session left
@@ -1172,13 +1182,13 @@ Check::new(name, Status::{Skip, Pass, Warn, Fail}, detail).fix(how)
 called inside one) and returns the exit code `duet` would end with; an error is printed as
 `Error: …` and ends with 1, and `--help`, `--version` and argument errors end the process as
 `duet`'s do. It is also the egress bridge helper inside a bubblewrap sandbox (the sandbox starts
-the running executable with `__sandbox-bridge`), and the TUI starts runs with the running
-executable, so both are the embedding program's own binary. What `Embedding` adds, and where:
+the running executable with `__sandbox-bridge`), so the helper is the embedding program's own
+binary. What `Embedding` adds, and where:
 - the policy source: `Config::load_with` everywhere `duet` loads configuration (`run`, `resume`,
-  `chat`, `config`, `purge`, `local-eval`, `doctor`, the TUI's settings screens and cache probe);
+  a session, `config`, `purge`, `local-eval`, `doctor`, the workspace's settings screens and cache probe);
 - the hooks: attached to a run's audit log as soon as it is opened for this invocation (before
   `run_start`, or before `run_end` of a run that failed before that) and passed to
-  `conclude_with`, for `duet run`, `duet resume` and `duet chat`;
+  `conclude_with`, for `duet run`, `duet resume` and a `duet` session;
 - the product: `--version` prints `<name> <version>`; `duet doctor`'s `version` line names it and
   the Duet it is built on (`…; Duet Core 0.1.0`), and its JSON adds `product` and `core_version`
   (`version` is the product's); `duet` itself prints exactly what it always did;

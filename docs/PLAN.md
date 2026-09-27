@@ -591,6 +591,21 @@ removed); (2) the side panels; (3) the overlays (settings screens, audit, sessio
 and navigation (history, completion, multi-line, scrolling, search); (5) documentation and a live
 check. Each step keeps `tools/gate.sh` green; `duet run` and the evaluation lanes do not change.
 
+*Built (branch `oneui`), steps 1–5:* `duet` alone is the workspace; `duet chat` and `duet tui` are
+gone. The session loop is `chat.rs`'s, unchanged but for its front end (`duet_tui::workspace`, in
+place of the inline console) and the status it reports; the terminal presentation moved to
+`duet_tui::term`. The workspace owns the terminal (draws on `/dev/tty`; standard output and error go
+to a pipe shown in the conversation, dimmed); the side panel's Changes view follows the session's
+write journal with the engine's own policy; the former TUI screens open as an overlay (`/settings`,
+`/models`, ..., `/runs`; Ctrl-O), without launching (the workspace is the session; the Run tab is
+now a read-only Runs view). Progress is ordered: the stream tap drains the transcript at each
+request's start, so a step never shows after the reply that followed it. Tests: layouts on a test
+backend; `duet` end to end on a pseudo-terminal (`script`) read back through a terminal emulator
+(`vt100`, dev-only): screen taken, message, reply, captured output, the Changes panel with the
+written file's diff, the settings overlay, leaving; a live run against the frontier (`--ignored`;
+hybrid with the local model off): the reply streams, the Privacy view counts the two
+interventions, the secret is in no request.
+
 ### M5.2 — Cost with security: the local model shrinks what the frontier reads
 
 Measured baseline (Gate 2 sets and `results/xcal`): frontier cost is driven by turns × context,
@@ -997,6 +1012,7 @@ Prerequisites:
 | 2026-09-26 | M5.2 item 1: cost instrumentation (`be69e0d`) | Per-turn cost profile and price projection over existing batches. Frontier-only premium hybrid/passthrough: gate2b 1.45× [0.97, 2.20], gate2e 1.50× [1.18, 1.98]; XL 0.87× [0.52, 1.52]; unchanged at glm-5.3, Opus and GPT-5.5 prices (1.38–1.50 S–L, 0.86 XL). The earlier 1.6–1.8× figure included an electricity upper bound. Input is 62–68% of frontier dollars on S–L and 91% on XL; hybrid adds ~5–6 turns per S–L run, 3.4–5.0 of them `ask_local`, and ~20% more context per turn. Context per turn: S–L 11–14K, XL 71–79K (p90 ~100K). `local.enabled = false` adds privacy mode without a local model; its S1 smoke run (0 leaks, 9/9) cost 4.8× hybrid because the frontier probed `.env` bit by bit with `sensitive_data` greps — the probing channel must be budgeted in both modes (M5.2 item 4). |
 | 2026-09-26 | M5.2 small-to-large head-to-head (`results/m52-sl`, frozen build `3da0abc`: structure views, synthetic samples, masked output, probe budget, condensing and batching on; compaction and explorer off) | S1/S2/M1/M2/M3/L1 × 3 seeds, all 54 runs valid. **Privacy mode: hidden 98.3% vs 97.5% frontier alone, full success 78% vs 67%, 0 leaks vs 3,720 canaries (18/18 runs), frontier cost 1.18× [0.89, 1.58]** (was 1.45–1.50×; 1.19–1.21× at glm-5.3/Opus/GPT-5.5 prices), turns 19.8 vs 19.8 (was +5–6), `ask_local` 3.1 calls/run, wall 539 vs 259 s. **No local model: 85.3%, 56% full success, 2.28×, 29.3 turns** — the local model is worth keeping. **Judged (both judges, 54/54 runs): hybrid 20.1/30 vs passthrough 19.9 (Δ +0.2, lower bound −0.5 → quality PASS) and no-local 19.6 (Δ +0.5 for hybrid; pass rate +13.1 pp, lower bound +3.9 pp).** The judges barely agree on these tasks (mean absolute difference 3.5/30, correlation 0.10), so the judge score is a weak signal here; hidden tests carry the quality verdict. XL batch (`results/m52-xl`: passthrough, hybrid, hybrid+compaction, hybrid+explorer, X1/X2 × 2 seeds): the first attempt (frozen `f772fea`, debug build) was stopped when X1 passthrough's own parser loop grew its test binary to 5.8 GB and swapped the operator's machine; relaunched on the release build of `30b82f8` under the new resource governor (below). |
 | 2026-09-26 | Eval resource governance (`1e9aba6`, `30b82f8`) | `duet-eval` lanes and grading run at utility priority (QoS clamp inherited by every descendant) under a resource governor: the process tree is followed in-process (children every 2 s, members' memory every 0.5 s, ~0.6% of one core); a process above an eighth of the machine's memory is killed, the largest above a quarter per run, and every straggler when a step ends (the harness's time limits had killed only their direct child, and an orphan holding a grading pipe could stall grading). macOS cannot do this in the kernel: `taskpolicy -m` bounds the process only, not its children (measured). Exact CPU per step via `time`; build output deleted after grading (~1.5 GB per XL run). Replaying the runaway workspace through grading: the looping test killed at 4,118 MB after 23 s, grading done in 31 s (before: up to 15 min per command). S1 smoke on the release build: peak 0.3 GB, agent 2.6 s CPU, grading 1.3 s. |
+| 2026-09-27 | **M5.1c one interface: built** (branch `oneui`) | `duet` opens a full-screen workspace (status bar, conversation, side panel of Changes/Privacy/Session, input that steers, settings as an overlay); `duet chat` and `duet tui` removed. Verified on a pseudo-terminal end to end and live against the frontier (hybrid, local model off: two interventions shown, secret in no request, $0.002). |
 
 Scope changes, with reasons:
 - **Anthropic Messages and Responses dialects move to M6.** The frontier (z.ai GLM) and the local

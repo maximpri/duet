@@ -756,7 +756,15 @@ fn rows_of(
     width: usize,
 ) -> Vec<Line<'static>> {
     match lead {
-        None => ansi::wrap(line, width),
+        None => {
+            // A progress line (`  · …`, `  ◦ …`) continues under its text.
+            let hang = hang_of(line);
+            let mut rows = ansi::wrap_widths(line, width, width.saturating_sub(hang));
+            for row in rows.iter_mut().skip(1) {
+                row.spans.insert(0, Span::raw(" ".repeat(hang)));
+            }
+            rows
+        }
         Some(lead) => {
             let room = width.saturating_sub(lead.width()).max(1);
             ansi::wrap(line, room)
@@ -768,6 +776,20 @@ fn rows_of(
                 .collect()
         }
     }
+}
+
+/// How far a progress line's continuation rows are indented: past its
+/// mark (`  · `, `  ◦ `, `  ! `, ...); 0 for any other line.
+fn hang_of(line: &Line<'static>) -> usize {
+    let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+    let mut chars = text.chars();
+    let marked = chars.next() == Some(' ')
+        && chars.next() == Some(' ')
+        && chars
+            .next()
+            .is_some_and(|c| matches!(c, '·' | '◦' | '!' | '~' | '■' | '▸' | '⇢' | '⇠'))
+        && chars.next() == Some(' ');
+    if marked { 4 } else { 0 }
 }
 
 /// A line of `/diff`, coloured by what it is.
@@ -1057,6 +1079,24 @@ mod tests {
         );
         s.event(key(KeyCode::Char('s')), &mut tty);
         assert!(!screen(&mut s, 100, 30).concat().contains("Tab completes"));
+    }
+
+    #[test]
+    fn a_progress_line_continues_under_its_text() {
+        let (mut s, _, _) = state();
+        s.set_width(30);
+        s.message(Msg::Lines(vec![
+            "  ◦ withheld from the frontier: read_file result values replaced".into(),
+        ]));
+        let rows: Vec<String> = s.rows.iter().map(|r| r.to_string()).collect();
+        assert!(rows.len() >= 2, "{rows:?}");
+        assert!(rows[0].starts_with("  ◦ withheld"), "{rows:?}");
+        assert!(
+            rows[1..]
+                .iter()
+                .all(|r| r.starts_with("    ") && !r.starts_with("     ")),
+            "{rows:?}"
+        );
     }
 
     #[test]

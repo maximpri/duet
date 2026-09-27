@@ -266,7 +266,7 @@ reported separately. IP canaries (unique function bodies) must never cross.
   listings, the local context window and a cache-reuse check (the same built-in prompt sent twice to
   the frontier and to the local model; cached input tokens of the repeat, warn when none); `--json`;
   exit code is the worst result. An update check *(M6)*.
-- **TUI screens** (`duet tui`; settings screens generated from the registry):
+- **Settings screens** (inside the `duet` workspace: `/settings`; generated from the registry):
 
 | Screen | Contents |
 |---|---|

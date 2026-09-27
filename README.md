@@ -150,7 +150,7 @@ are sandboxed, every use is audited, and side effects need approval.
 
 | Capability | How the premise holds |
 |---|---|
-| Sessions (`duet chat`) and steering | Your messages are sanitized like the task, and what you see shows your real values, also as replies stream in; nothing on your screen is stored anew or sent |
+| Sessions (the `duet` workspace) and steering | Your messages are sanitized like the task, and what you see shows your real values, also as replies stream in; nothing on your screen is stored anew or sent |
 | Web search and fetch | Search works without setup and Duet runs it itself: it asks public sources with open APIs (Stack Overflow, Wikipedia, GitHub, your languages' package registries) directly, with no search provider in between; each source asked sees the query, and `duet doctor` lists them. Your own SearXNG, Brave or Z.ai's search only when you choose one. Queries and URLs with a protected value are refused before anything is sent; internal network addresses are unreachable |
 | MCP servers (plugins) | Sandboxed. A server you mark sensitive (your database) returns results that stay local behind handles; public servers never receive protected values |
 | Language servers | Answers are shown the same way as the file they come from; sensitive files are never opened for them |
@@ -252,7 +252,7 @@ about it.
 ```sh
 cargo build --release             # the binary is target/release/duet
 duet doctor                       # checks models, sandbox, git and audit setup, with a fix for each
-duet chat                         # code in a conversation (privacy on by default)
+duet                              # the workspace: code in a conversation (privacy on by default)
 duet run "fix the failing billing export"   # one task, run to completion
 duet audit show <run>             # exactly what was sent to the frontier
 ```
@@ -261,8 +261,10 @@ Duet works in any folder, a git repository or not. Put how to work in a reposito
 build and test commands) in `DUET.md` at its root, and it is given to Duet at the start of every
 run and session.
 
-On a terminal `duet chat` streams duet's replies as they are written, keeps an editable input line
-with your earlier messages of the session, and shows a status line while it works; `duet run`
+On a terminal `duet` is a full-screen workspace: the conversation with duet's replies streamed as
+they are written, a side panel with the files it changed and their diffs, what it withheld from the
+frontier and the session's budgets, an input box that steers duet while it works, and the settings,
+models and audit inside (`/settings`). Without a terminal the session is line by line. `duet run`
 shows its progress on standard error (`--quiet` for none).
 
 Every command, the tools and all settings: [docs/USAGE.md](docs/USAGE.md).

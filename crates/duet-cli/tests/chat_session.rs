@@ -669,3 +669,85 @@ fn the_workspace_on_a_terminal() {
     assert!(!main.contains("conversation"), "{main}");
     assert_eq!(f.requests(), 3);
 }
+
+/// The workspace against the real frontier (`ZAI_API_KEY`), in hybrid mode
+/// with the local model off (the boundary's detectors only, so no local
+/// model is used): a workspace with a secret in `.env` is asked about it; the
+/// reply streams in, the Privacy view counts what was withheld, and the
+/// frontier's requests never held the secret. Run with `--ignored`.
+#[test]
+#[ignore = "calls the real frontier"]
+fn the_workspace_live() {
+    let e = env();
+    std::fs::write(
+        e.ws.join(".env"),
+        "PAYMENTS_API_KEY=sk_live_Q7pX9vT2mK4nR8wY3zB6cD1f\nPORT=8443\n",
+    )
+    .unwrap();
+    std::fs::write(e.home.join("config.toml"), "[local]\nenabled = false\n").unwrap();
+    let duet = env!("CARGO_BIN_EXE_duet");
+    let inner = format!(
+        "stty rows 40 cols 130; exec '{duet}' --workspace '{}'",
+        e.ws.display()
+    );
+    let mut c = Command::new("script");
+    if cfg!(target_os = "macos") {
+        c.args(["-q", "/dev/null", "sh", "-c", &inner]);
+    } else {
+        c.args(["-q", "-e", "-c", &inner, "/dev/null"]);
+    }
+    c.env("DUET_CONFIG_HOME", &e.home)
+        .env("TERM", "xterm-256color")
+        .env_remove("DUET_LOCAL_PORTS")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    let screen = Arc::new(Mutex::new(vt100::Parser::new(40, 130, 0)));
+    let mut out = child.stdout.take().unwrap();
+    let feed = screen.clone();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = out.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            feed.lock().unwrap().process(&buf[..n]);
+        }
+    });
+    let shown = || screen.lock().unwrap().screen().contents();
+    let wait_for = |what: &str, secs: u64| {
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(secs) {
+            if shown().contains(what) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("the screen never showed {what:?}:\n{}", shown());
+    };
+    let mut keys = child.stdin.take().unwrap();
+    wait_for(" message ", 30);
+    keys.write_all(
+        b"Read .env and tell me in one short sentence which port the service uses. Change nothing.\r",
+    )
+    .unwrap();
+    wait_for("duet:", 300);
+    wait_for("turn 1 · $", 30);
+    eprintln!("{}", shown());
+    // Privacy: Ctrl-T twice (Changes opens by itself at this width).
+    keys.write_all(b"\x14").unwrap();
+    wait_for("What the frontier did not see", 10);
+    eprintln!("{}", shown());
+    assert!(!shown().contains("nothing withheld so far"), "{}", shown());
+    keys.write_all(b"/quit\r").unwrap();
+    assert!(child.wait().unwrap().success(), "{}", shown());
+    // The secret never left in a request (the audit log records every one).
+    let runs = std::fs::read_dir(e.ws.join(".duet/runs")).unwrap();
+    assert_eq!(runs.count(), 1);
+    let audit = std::fs::read_dir(e.ws.join(".duet/audit")).unwrap();
+    for f in audit.flatten() {
+        let text = std::fs::read_to_string(f.path()).unwrap();
+        assert!(!text.contains("sk_live_Q7pX9vT2mK4nR8wY3zB6cD1f"));
+    }
+}
