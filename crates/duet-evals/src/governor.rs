@@ -12,12 +12,21 @@
 //!
 //! - every 2 s it reads the process table to follow the tree from its root,
 //!   remembering every process it has seen (one whose parent died stays a
-//!   member), and every 0.5 s it reads the members' resident memory; nothing
-//!   is spawned;
+//!   member), and every 0.5 s it reads the members' memory;
+//! - memory is the physical footprint: resident plus compressed on macOS
+//!   (what the kernel's own memory limits count), resident plus swapped on
+//!   Linux. Resident memory alone is not enough: on 2026-09-27 a runaway test
+//!   binary reached a 62 GB footprint on a 32 GB Mac while its resident memory
+//!   was 1.4 GB, then 9 MB (the rest compressed), so a resident limit never
+//!   fired, and the kernel killed system services 120 times each instead of
+//!   it (the binary ran in the foreground band) until the Mac restarted;
 //! - a member above [`Limits::process_mb`] is killed, and while the members
 //!   together are above [`Limits::total_mb`] the largest is killed (the
 //!   kernel's out-of-memory rule, scoped to the run). The agent sees a process
 //!   killed by a signal, as on a machine out of memory;
+//! - when the kernel reports critical memory pressure (the machine as a
+//!   whole), the run's largest process is killed whatever its size, so a run
+//!   can never be what takes the machine down;
 //! - when the governed step ends (it finished, or its time limit passed), every
 //!   member still alive is killed, so nothing a run started outlives it and no
 //!   orphan keeps a grading command's output pipe open.
@@ -104,9 +113,9 @@ pub fn timed_cpu(out: &std::path::Path) -> Option<f64> {
 /// What a run may use. Recorded in every run so reports can say what held.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Limits {
-    /// Resident memory of any one process, in MiB.
+    /// Memory (the physical footprint) of any one process, in MiB.
     pub process_mb: u64,
-    /// Resident memory of the whole tree, in MiB.
+    /// Memory of the whole tree, in MiB.
     pub total_mb: u64,
     pub priority: Priority,
 }
@@ -128,9 +137,9 @@ impl Limits {
 /// What a governed step used, and what the governor did about it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Usage {
-    /// Largest resident memory of the whole tree at one survey, in MiB.
+    /// Largest memory (footprint) of the whole tree at one survey, in MiB.
     pub peak_total_mb: u64,
-    /// Largest resident memory of one process at one survey, in MiB.
+    /// Largest memory of one process at one survey, in MiB.
     pub peak_process_mb: u64,
     /// CPU seconds (user and system) of the step's processes: from [`timed`]
     /// (every process waited for in the tree) when the step ended normally,
@@ -166,7 +175,9 @@ pub struct Kill {
     pub after_seconds: f64,
     pub pid: u32,
     pub name: String,
-    pub rss_mb: u64,
+    /// Its memory (footprint) when killed.
+    #[serde(alias = "rss_mb")]
+    pub mb: u64,
     pub rule: KillRule,
 }
 
@@ -177,6 +188,9 @@ pub enum KillRule {
     ProcessLimit,
     /// The tree was above [`Limits::total_mb`] and this was its largest process.
     TotalLimit,
+    /// The kernel reported critical memory pressure and this was the run's
+    /// largest process.
+    MachinePressure,
 }
 
 /// Watches one process tree until [`Governor::finish`].
@@ -251,7 +265,9 @@ fn watch(
             table.refresh_only(&members.keys().copied().collect::<Vec<_>>());
         }
         let alive = survey(&table, &mut members, &mut ended_cpu_ms, discover);
-        enforce(&alive, &limits, started, &mut usage);
+        // The machine's pressure is read with the full table (every 2 s).
+        let critical = discover && machine_critical();
+        enforce(&alive, &limits, critical, started, &mut usage);
         tick = tick.wrapping_add(1);
         std::thread::park_timeout(interval);
     }
@@ -278,7 +294,8 @@ fn watch(
 
 struct Member {
     pid: u32,
-    rss_bytes: u64,
+    /// The physical footprint (never less than the resident size).
+    bytes: u64,
     name: String,
 }
 
@@ -330,56 +347,135 @@ fn survey(
         }
         alive.push(Member {
             pid,
-            rss_bytes: info.rss_bytes,
+            bytes: info.rss_bytes.max(footprint(pid).unwrap_or(0)),
             name: info.name,
         });
     }
     alive
 }
 
-fn enforce(alive: &[Member], limits: &Limits, started: Instant, usage: &mut Usage) {
+fn enforce(alive: &[Member], limits: &Limits, critical: bool, started: Instant, usage: &mut Usage) {
     const MB: u64 = 1024 * 1024;
-    let mut total: u64 = alive.iter().map(|m| m.rss_bytes).sum();
+    let mut total: u64 = alive.iter().map(|m| m.bytes).sum();
     usage.peak_total_mb = usage.peak_total_mb.max(total / MB);
     usage.peak_process_mb = usage
         .peak_process_mb
-        .max(alive.iter().map(|m| m.rss_bytes / MB).max().unwrap_or(0));
+        .max(alive.iter().map(|m| m.bytes / MB).max().unwrap_or(0));
     let mut record = |m: &Member, rule: KillRule| {
         kill(m.pid);
         let limit = match rule {
             KillRule::ProcessLimit => format!("{} MB per process", limits.process_mb),
             KillRule::TotalLimit => format!("{} MB per run", limits.total_mb),
+            KillRule::MachinePressure => "the machine is critically short of memory".to_owned(),
         };
         eprintln!(
-            "resource governor: killed {} (pid {}, {} MB; limit {limit})",
+            "resource governor: killed {} (pid {}, {} MB; {limit})",
             m.name,
             m.pid,
-            m.rss_bytes / MB
+            m.bytes / MB
         );
         usage.kills.push(Kill {
             after_seconds: started.elapsed().as_secs_f64(),
             pid: m.pid,
             name: m.name.clone(),
-            rss_mb: m.rss_bytes / MB,
+            mb: m.bytes / MB,
             rule,
         });
     };
     let mut rest = Vec::new();
     for m in alive {
-        if m.rss_bytes / MB > limits.process_mb {
+        if m.bytes / MB > limits.process_mb {
             record(m, KillRule::ProcessLimit);
-            total -= m.rss_bytes;
+            total -= m.bytes;
         } else {
             rest.push(m);
         }
     }
     while total / MB > limits.total_mb {
-        let Some((i, _)) = rest.iter().enumerate().max_by_key(|(_, m)| m.rss_bytes) else {
+        let Some((i, _)) = rest.iter().enumerate().max_by_key(|(_, m)| m.bytes) else {
             break;
         };
         let m = rest.swap_remove(i);
         record(m, KillRule::TotalLimit);
-        total -= m.rss_bytes;
+        total -= m.bytes;
+    }
+    if critical && let Some(m) = pressure_victim(&rest) {
+        record(m, KillRule::MachinePressure);
+    }
+}
+
+/// The member killed when the machine is critically short of memory: the
+/// largest, when it holds enough to matter (the agent itself, a few tens of
+/// MB, is left alone).
+fn pressure_victim<'a>(alive: &[&'a Member]) -> Option<&'a Member> {
+    const MATTERS: u64 = 256 * 1024 * 1024;
+    alive
+        .iter()
+        .copied()
+        .filter(|m| m.bytes >= MATTERS)
+        .max_by_key(|m| m.bytes)
+}
+
+/// A process's physical footprint in bytes: resident and compressed memory on
+/// macOS (`proc_pid_rusage`), resident and swapped on Linux.
+fn footprint(pid: u32) -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        use libproc::libproc::pid_rusage::{RUsageInfoV2, pidrusage};
+        pidrusage::<RUsageInfoV2>(i32::try_from(pid).ok()?)
+            .ok()
+            .map(|r| r.ri_phys_footprint)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        let kb = |key: &str| {
+            status
+                .lines()
+                .find_map(|l| l.strip_prefix(key))
+                .and_then(|v| v.split_whitespace().next())
+                .and_then(|n| n.parse::<u64>().ok())
+                .unwrap_or(0)
+        };
+        Some((kb("VmRSS:") + kb("VmSwap:")) * 1024)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
+/// Whether the kernel reports critical memory pressure for the whole machine:
+/// on macOS its pressure level (`kern.memorystatus_vm_pressure_level`, 4 is
+/// critical); on Linux less than a twentieth of memory available.
+fn machine_critical() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/sbin/sysctl")
+            .args(["-n", "kern.memorystatus_vm_pressure_level"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|t| t.trim().parse::<u32>().ok())
+            .is_some_and(|level| level >= 4)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let Ok(info) = std::fs::read_to_string("/proc/meminfo") else {
+            return false;
+        };
+        let kb = |key: &str| {
+            info.lines()
+                .find_map(|l| l.strip_prefix(key))
+                .and_then(|v| v.split_whitespace().next())
+                .and_then(|n| n.parse::<u64>().ok())
+        };
+        matches!((kb("MemAvailable:"), kb("MemTotal:")), (Some(a), Some(t)) if a < t / 20)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
     }
 }
 
@@ -542,7 +638,7 @@ mod tests {
         assert_eq!(usage.kills.len(), 1, "{usage:?}");
         let k = &usage.kills[0];
         assert_eq!(k.rule, KillRule::ProcessLimit);
-        assert!(k.rss_mb > 150, "{k:?}");
+        assert!(k.mb > 150, "{k:?}");
         assert!(usage.peak_process_mb > 150);
     }
 
@@ -571,7 +667,7 @@ mod tests {
         let usage = g.finish();
         assert_eq!(usage.kills.len(), 1, "{usage:?}");
         assert_eq!(usage.kills[0].rule, KillRule::TotalLimit);
-        assert!(usage.kills[0].rss_mb >= 190, "{usage:?}");
+        assert!(usage.kills[0].mb >= 190, "{usage:?}");
         assert!(
             usage.stragglers_killed >= 1,
             "the 120 MiB one is killed at the end"
@@ -665,6 +761,47 @@ mod tests {
         let cpu = timed_cpu(&out).unwrap();
         assert!(cpu > 0.05, "{cpu}");
         assert!(!out.exists());
+    }
+
+    #[test]
+    fn the_footprint_counts_what_is_resident_at_least() {
+        // This process has touched memory: a footprint is read, and a member's
+        // memory is never below its resident size.
+        let mut t = Table::new();
+        t.refresh();
+        let me = std::process::id();
+        let rss = t.info(me).unwrap().rss_bytes;
+        if cfg!(any(target_os = "macos", target_os = "linux")) {
+            let fp = footprint(me).expect("a footprint on this platform");
+            assert!(fp > 0);
+        }
+        let mut members = HashMap::from([(
+            me,
+            Seen {
+                start: t.info(me).unwrap().start,
+                cpu_ms: 0,
+            },
+        )]);
+        let alive = survey(&t, &mut members, &mut 0, false);
+        assert!(alive[0].bytes >= rss);
+    }
+
+    #[test]
+    fn under_critical_pressure_the_largest_process_that_matters_is_killed() {
+        let m = |pid, mb: u64| Member {
+            pid,
+            bytes: mb * 1024 * 1024,
+            name: format!("p{pid}"),
+        };
+        let (agent, build, test) = (m(1, 40), m(2, 600), m(3, 3000));
+        assert_eq!(
+            pressure_victim(&[&agent, &build, &test]).map(|v| v.pid),
+            Some(3)
+        );
+        assert!(
+            pressure_victim(&[&agent]).is_none(),
+            "the agent itself is left alone"
+        );
     }
 
     #[test]

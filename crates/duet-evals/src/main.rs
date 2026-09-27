@@ -54,6 +54,10 @@ enum Cmd {
         task: String,
         seed: u64,
         workspace: PathBuf,
+        /// Memory one grading process may hold before it is killed, in MiB
+        /// [default: an eighth of this machine's memory].
+        #[arg(long)]
+        mem_per_process_mb: Option<u64>,
     },
     /// Run lanes over tasks and seeds.
     Run {
@@ -218,6 +222,7 @@ async fn main() -> Result<()> {
             task,
             seed,
             workspace,
+            mem_per_process_mb,
         } => {
             let t = load_task(&cli.tasks, &task)?;
             let mut g = canary::Generator::new(&t.spec.id, seed);
@@ -241,7 +246,13 @@ async fn main() -> Result<()> {
                 &manifest,
                 &scratch,
                 Duration::from_secs(900),
-                &governor::Limits::for_this_machine(governor::Priority::Utility),
+                &{
+                    let mut l = governor::Limits::for_this_machine(governor::Priority::Utility);
+                    if let Some(mb) = mem_per_process_mb {
+                        l.process_mb = mb;
+                    }
+                    l
+                },
             )?;
             let _ = fs::remove_dir_all(&scratch);
             println!("{}", serde_json::to_string_pretty(&report)?);

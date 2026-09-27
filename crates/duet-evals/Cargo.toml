@@ -32,6 +32,11 @@ bytes = "1"
 sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 rustix = { workspace = true, features = ["process"] }
 
+# The governor's memory measure on macOS: the physical footprint (resident and
+# compressed), which is what the kernel's own memory limits count.
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14"
+
 [dev-dependencies]
 tempfile = "3"
 # Tests only: the harness never links Duet at run time. Its price table is
