@@ -22,6 +22,8 @@ rustix.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+unicode-width = "0.2"
+unicode-segmentation = "1"
 ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
 
 [dev-dependencies]

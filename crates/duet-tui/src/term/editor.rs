@@ -16,13 +16,13 @@
 //! the console.
 
 use super::{Span, Style, char_width, paint};
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 
 /// What a key asks of the console.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Outcome {
+pub enum Outcome {
     /// Only the input changed (or nothing did).
     Edited,
     /// A message or command to send (continuation lines joined).
@@ -48,7 +48,7 @@ struct Search {
 }
 
 #[derive(Default)]
-pub(crate) struct Editor {
+pub struct Editor {
     buf: String,
     /// Byte offset, on a grapheme boundary.
     cursor: usize,

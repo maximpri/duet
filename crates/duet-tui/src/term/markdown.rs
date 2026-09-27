@@ -75,7 +75,7 @@ struct Line {
 }
 
 /// A block of duet's text being rendered.
-pub(crate) struct Markdown {
+pub struct Markdown {
     colour: bool,
     columns: usize,
     label: Vec<Span>,

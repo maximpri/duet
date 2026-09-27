@@ -21,11 +21,11 @@ use std::time::Instant;
 
 /// Restores placeholders for the operator (identity without the boundary,
 /// or in a log that must keep them).
-pub(crate) type Restore = Arc<dyn Fn(&str) -> String + Send + Sync>;
+pub type Restore = Arc<dyn Fn(&str) -> String + Send + Sync>;
 
 /// A stream event that can cross threads.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Streamed {
+pub enum Streamed {
     Attempt(u32),
     Text(String),
     Reasoning(usize),
@@ -84,7 +84,7 @@ struct Call {
     reader: Option<FieldReader>,
 }
 
-pub(crate) struct Feed {
+pub struct Feed {
     colour: bool,
     columns: usize,
     /// Show the frontier's text (live views); a log only counts it.
@@ -319,7 +319,7 @@ impl Feed {
             }
             _ => {}
         }
-        crate::chat::progress(
+        super::words::progress(
             shown.as_ref().unwrap_or(entry),
             &mut self.names,
             self.restore.as_ref(),
@@ -425,7 +425,7 @@ impl Feed {
                     TurnEnd::Failed { .. } => Style::BAD,
                     _ => Style::WARN,
                 };
-                for l in safe(&crate::chat::describe_end(other)).lines() {
+                for l in safe(&super::words::describe_end(other)).lines() {
                     out.push(styled(l, style, self.colour));
                 }
             }
@@ -457,7 +457,7 @@ fn after<'a>(full: &'a str, start: &str) -> Option<&'a str> {
 
 /// A progress or status line of duet's own, styled by its mark (the text
 /// is made safe for the terminal first).
-pub(crate) fn tint(line: &str, colour: bool) -> String {
+pub fn tint(line: &str, colour: bool) -> String {
     let line = safe(line);
     let style = if line.starts_with("  ◦") {
         Style::HELD
@@ -624,7 +624,7 @@ mod tests {
         );
         assert_eq!(
             f.end(&TurnEnd::Interrupted),
-            [crate::chat::describe_end(&TurnEnd::Interrupted)]
+            [crate::term::words::describe_end(&TurnEnd::Interrupted)]
         );
     }
 

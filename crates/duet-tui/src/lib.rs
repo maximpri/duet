@@ -21,6 +21,7 @@ mod launch;
 mod models;
 mod runs;
 mod settings;
+pub mod term;
 mod ui;
 
 #[cfg(test)]

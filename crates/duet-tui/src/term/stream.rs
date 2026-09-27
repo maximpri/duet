@@ -12,7 +12,7 @@ use duet_boundary::vault::{CLOSE, OPEN};
 /// bracket that has no closing one yet, and placeholders never contain an
 /// opening bracket or a newline, so no placeholder spans a cut.
 #[derive(Default)]
-pub(crate) struct Detok {
+pub struct Detok {
     held: String,
 }
 
@@ -57,7 +57,7 @@ impl Detok {
 /// Reads one top-level string field out of a JSON object that arrives in
 /// pieces, decoding escapes (including `\u` pairs split across pieces), and
 /// returns the field's text as it arrives. Everything else is skipped.
-pub(crate) struct FieldReader {
+pub struct FieldReader {
     field: &'static str,
     state: State,
     key: String,
