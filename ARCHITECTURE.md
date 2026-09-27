@@ -990,6 +990,18 @@ lane alike); per turn, its cause from the tool calls of Duet's `transcript.jsonl
 included). `report --project-prices` re-prices each run's `usage_by_model` at other verified rows
 of `pricing.toml`. Both go into the batch's `report.md` and `cost-profile.json`.
 
+A run must not take over the machine it runs on (`crates/duet-evals/src/governor.rs`). A lane's
+agent and each grading command are started at a scheduling priority every descendant inherits (a
+QoS clamp through `taskpolicy -c utility` on macOS, `nice` elsewhere) and watched by the resource
+governor, because the kernel cannot bound a process tree's memory on macOS (a spawn-time limit
+does not reach children; the runaway that prompted it was a test binary three levels below the
+lane). The governor reads the process table in-process every 2 s to follow the tree from its root
+(members whose parent died stay members; identity is id plus start time) and the members' memory
+every 0.5 s (about 0.6% of one core in all); it kills a member above the per-process limit, the
+largest member while the tree is above the per-run limit, and every member still alive when the
+step ends, so a timeout ends the whole tree and no orphan holds a grading command's output open.
+Kills, peaks and CPU go into the run record. Build output is deleted after grading.
+
 Duet's security engine takes its local reader as an option: `local.enabled = false` opens it with
 none (the `duet-hybrid-nolocal` lane), and every local-backed feature then either degrades to the
 detectors' view (handle summaries, bulky previews, the brief) or is refused (`ask_local`,

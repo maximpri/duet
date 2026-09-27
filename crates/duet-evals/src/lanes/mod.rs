@@ -9,6 +9,7 @@
 
 use crate::canary::Manifest;
 use crate::cost::{PriceTable, Usage, usage_from_proxy_log};
+use crate::governor::{self, Governor, Limits};
 use crate::grade::{GradeReport, grade};
 use crate::leakproxy::{self, LeakRecord};
 use crate::ledger::DuetLedger;
@@ -243,12 +244,26 @@ pub struct RunRecord {
     /// against the lane: pass rate 0, no success, judge score 0.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_failure: Option<String>,
+    /// What the agent's process tree used under the resource governor, and the
+    /// limits it ran under (grading's own use is in `grade.resources`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<RunResources>,
     /// Duet's own cost ledger (Duet lanes that wrote a run summary).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duet_ledger: Option<DuetLedger>,
     /// What produced the run: harness build, lane model, agent version.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provenance: Option<Provenance>,
+}
+
+/// A run's resource record: see `governor`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunResources {
+    pub limits: Limits,
+    pub agent: governor::Usage,
+    /// Build output (directories tagged `CACHEDIR.TAG`) deleted after grading.
+    #[serde(default)]
+    pub build_output_removed_mb: u64,
 }
 
 impl RunRecord {
@@ -504,6 +519,10 @@ pub struct RunConfig<'a> {
     pub sandbox: bool,
     /// Average draw of the local model host while generating.
     pub local_watts: f64,
+    /// Memory and priority limits of the agent and of grading.
+    pub limits: Limits,
+    /// Keep build output after grading (by default it is deleted).
+    pub keep_build_output: bool,
 }
 
 pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
@@ -587,6 +606,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         rate_limited: false,
         terminal: None,
         product_failure: None,
+        resources: None,
         duet_ledger: match cfg.lane.kind {
             LaneKind::Duet => crate::ledger::read(&ws),
             LaneKind::External => None,
@@ -602,6 +622,11 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
             record.exit_code = o.exit_code;
             record.timed_out = o.timed_out;
             record.wall_seconds = o.wall_seconds;
+            record.resources = Some(RunResources {
+                limits: cfg.limits,
+                agent: o.usage,
+                build_output_removed_mb: 0,
+            });
         }
         Err(e) => record.error = Some(format!("{e:#}")),
     }
@@ -629,6 +654,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         &prepared.manifest,
         &run_dir.join("grade"),
         timeout,
+        &cfg.limits,
     ) {
         Ok(g) => record.grade = Some(g),
         Err(e) => {
@@ -643,6 +669,12 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         record.invalid = Some(format!("host failure: {e}"));
     }
     apply_terminal_rules(&mut record, &ws);
+    if !cfg.keep_build_output {
+        let removed = remove_build_output(&run_dir);
+        if let Some(r) = record.resources.as_mut() {
+            r.build_output_removed_mb = removed / (1024 * 1024);
+        }
+    }
     fs::write(
         run_dir.join("run.json"),
         serde_json::to_string_pretty(&record)?,
@@ -654,6 +686,50 @@ struct LaunchOutcome {
     exit_code: Option<i32>,
     timed_out: bool,
     wall_seconds: f64,
+    usage: governor::Usage,
+}
+
+/// Deletes every build-output directory under `dir` (one holding a
+/// `CACHEDIR.TAG`, as Cargo's `target/` does): nothing reads it after grading
+/// (judging diffs sources only) and an XL run leaves about 1.5 GB of it.
+/// Returns the bytes removed.
+pub fn remove_build_output(dir: &Path) -> u64 {
+    fn size(dir: &Path) -> u64 {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return 0;
+        };
+        entries
+            .flatten()
+            .map(|e| match e.file_type() {
+                Ok(t) if t.is_dir() => size(&e.path()),
+                Ok(t) if t.is_file() => e.metadata().map_or(0, |m| m.len()),
+                _ => 0,
+            })
+            .sum()
+    }
+    let mut removed = 0;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let tagged = fs::read_to_string(d.join("CACHEDIR.TAG"))
+            .is_ok_and(|t| t.starts_with("Signature: 8a477f597d28d172789f06886806bc55"));
+        if tagged {
+            let bytes = size(&d);
+            if fs::remove_dir_all(&d).is_ok() {
+                removed += bytes;
+            }
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            // Symbolic links are not followed (`file_type` does not follow them).
+            if e.file_type().is_ok_and(|t| t.is_dir()) && e.file_name() != ".git" {
+                stack.push(e.path());
+            }
+        }
+    }
+    removed
 }
 
 async fn launch(
@@ -687,7 +763,7 @@ async fn launch(
         bail!("lane {}: program {program} is not installed", lane.name);
     }
 
-    let mut command = if cfg.sandbox && lane.sandbox {
+    let argv = if cfg.sandbox && lane.sandbox {
         // Seatbelt matches resolved paths, so the directories are canonicalized.
         let extra = lane
             .writable
@@ -708,15 +784,24 @@ async fn launch(
         let profile = sandbox_profile(&writable, &lane.allow_hosts);
         let profile_path = run_dir.join("sandbox.sb");
         fs::write(&profile_path, profile)?;
-        let mut c = tokio::process::Command::new("/usr/bin/sandbox-exec");
-        c.arg("-f").arg(&profile_path).arg(program).args(args);
-        c
+        [
+            "/usr/bin/sandbox-exec",
+            "-f",
+            &profile_path.to_string_lossy(),
+            program,
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(args.iter().cloned())
+        .collect()
     } else {
-        let mut c = tokio::process::Command::new(program);
-        c.args(args);
-        c
+        argv.clone()
     };
+    // Every process the agent starts inherits this priority.
+    let argv = cfg.limits.priority.wrap(argv);
+    let mut command = tokio::process::Command::new(&argv[0]);
     command
+        .args(&argv[1..])
         .current_dir(ws)
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
@@ -745,17 +830,24 @@ async fn launch(
     let mut child = command
         .spawn()
         .with_context(|| format!("starting lane {}", lane.name))?;
-    let (exit_code, timed_out) = match tokio::time::timeout(budget, child.wait()).await {
-        Ok(status) => (status?.code(), false),
+    let governor = child.id().map(|pid| Governor::watch(pid, cfg.limits));
+    let waited = match tokio::time::timeout(budget, child.wait()).await {
+        Ok(status) => status.map(|s| (s.code(), false)),
         Err(_) => {
             let _ = child.kill().await;
-            (None, true)
+            Ok((None, true))
         }
     };
+    let wall_seconds = started.elapsed().as_secs_f64();
+    // Whatever the agent left running (a command it started in the
+    // background, children of a process killed at the time limit) ends here.
+    let usage = governor.map(Governor::finish).unwrap_or_default();
+    let (exit_code, timed_out) = waited?;
     Ok(LaunchOutcome {
         exit_code,
         timed_out,
-        wall_seconds: started.elapsed().as_secs_f64(),
+        wall_seconds,
+        usage,
     })
 }
 

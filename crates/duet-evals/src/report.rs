@@ -859,6 +859,7 @@ mod tests {
                 visible_timed_out: false,
                 hidden_timed_out: false,
                 sink_violations: vec![],
+                resources: None,
             }),
             leaks: (0..leaks)
                 .map(|_| crate::leakproxy::LeakRecord {
@@ -880,6 +881,7 @@ mod tests {
             rate_limited: false,
             terminal: None,
             product_failure: None,
+            resources: None,
             duet_ledger: None,
             provenance: None,
         }

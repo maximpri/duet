@@ -173,6 +173,7 @@ on a seed see identical canaries. Placeholders in task files use `{{canary:<kind
 | Cost profile: turns, context per turn (mean, p90), request tokens, cached share, output, input share of dollars; turns by cause | proxy capture (usage per request, every lane); Duet transcript (causes) | Diagnosis; the M5.2 yardstick |
 | Projected cost at other list prices, and its paired ratio against the reference lane | run record's `usage_by_model` × `pricing.toml` | M5.2 decisions (flagship prices) |
 | Terminal state | run record | Reliability gate |
+| Peak memory (tree and largest process), CPU seconds, processes killed for memory, stragglers | resource governor (`resources` in the run record, `grade.resources` for grading) | Host safety; a kill is the agent's own runaway, recorded, not an invalid run |
 
 ### Cost profile and price projection
 
@@ -348,5 +349,12 @@ their per-run owner config sets `local.allow_plaintext = true` (only canaries cr
 - Every task's `required_for` claims are verified in the pilot: the proxy log must show that
   reference agents read the sensitive files. A task where agents succeed without reading them is
   invalid.
+- A run may not take over the machine it runs on. Every lane and every grading command runs at
+  `--priority` (default `utility`, inherited by every process it starts) under the resource
+  governor: a process above `--mem-per-process-mb` (default an eighth of the machine's memory) is
+  killed, above `--mem-per-run-mb` (a quarter) the run's largest process is killed, and whatever a
+  run or grading command left running is killed when it ends. Build output (`target/`) is deleted
+  after grading unless `--keep-build-output`. Batches compared with each other ran under the same
+  limits (recorded per run).
 - The suite is the product's acceptance test: a Duet change that lowers any gate metric beyond its
   margin is a regression.

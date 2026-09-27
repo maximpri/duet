@@ -7,6 +7,7 @@
 //! the task's allowed secret sinks.
 
 use crate::canary::{CanaryKind, Manifest};
+use crate::governor::{Governor, Limits, Usage};
 use crate::task::{ResultFormat, TaskPackage, walk_files};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -41,15 +42,20 @@ pub struct GradeReport {
     pub visible_timed_out: bool,
     pub hidden_timed_out: bool,
     pub sink_violations: Vec<SinkViolation>,
+    /// What the grading commands used (see `governor`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Usage>,
 }
 
 /// Grades `candidate` against `package`. `scratch` receives the staging copies.
+/// Each test command runs at `limits.priority` under the resource governor.
 pub fn grade(
     package: &TaskPackage,
     candidate: &Path,
     manifest: &Manifest,
     scratch: &Path,
     timeout: Duration,
+    limits: &Limits,
 ) -> Result<GradeReport> {
     package.verify_seal()?;
     let spec = &package.spec;
@@ -58,11 +64,14 @@ pub fn grade(
 
     let visible_dir = scratch.join("visible");
     stage(candidate, &[], &visible_dir)?;
+    let mut usage = Usage::default();
     let (visible, visible_timed_out) = run_tests(
         &spec.visible_tests,
         &visible_dir,
         spec.result_format,
         timeout,
+        limits,
+        &mut usage,
     )?;
 
     let hidden_dir = scratch.join("hidden");
@@ -70,7 +79,14 @@ pub fn grade(
     let mut hidden = TestCounts::default();
     let mut hidden_timed_out = false;
     for (i, argv) in spec.hidden_tests.commands().into_iter().enumerate() {
-        let (counts, timed_out) = run_tests(argv, &hidden_dir, spec.result_format, timeout)?;
+        let (counts, timed_out) = run_tests(
+            argv,
+            &hidden_dir,
+            spec.result_format,
+            timeout,
+            limits,
+            &mut usage,
+        )?;
         fs::rename(
             hidden_dir.join("test-output.txt"),
             hidden_dir.join(format!("test-output-{i}.txt")),
@@ -97,6 +113,7 @@ pub fn grade(
         visible_timed_out,
         hidden_timed_out,
         sink_violations,
+        resources: Some(usage),
     })
 }
 
@@ -120,12 +137,18 @@ pub fn stage(source: &Path, overlays: &[PathBuf], dest: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Runs one test command. Everything it starts is killed when it ends or times
+/// out, before its output is read to the end: an orphan holding the pipe open
+/// would otherwise keep grading waiting.
 fn run_tests(
     argv: &[String],
     dir: &Path,
     format: ResultFormat,
     timeout: Duration,
+    limits: &Limits,
+    usage: &mut Usage,
 ) -> Result<(TestCounts, bool)> {
+    let argv = limits.priority.wrap(argv.to_vec());
     let (program, args) = argv.split_first().context("empty test command")?;
     let mut child = Command::new(program)
         .args(args)
@@ -141,6 +164,7 @@ fn run_tests(
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("spawning {program}"))?;
+    let governor = Governor::watch(child.id(), *limits);
 
     let stdout = child.stdout.take().context("stdout")?;
     let stderr = child.stderr.take().context("stderr")?;
@@ -161,6 +185,7 @@ fn run_tests(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    usage.absorb(governor.finish());
     let mut text = out_reader.join().unwrap_or_default();
     text.push('\n');
     text.push_str(&err_reader.join().unwrap_or_default());
@@ -358,6 +383,7 @@ mod tests {
             &prepared.manifest,
             &scratch,
             Duration::from_secs(300),
+            &crate::governor::Limits::for_this_machine(crate::governor::Priority::Normal),
         )
         .unwrap();
         assert_eq!(report.hidden.passed, 1, "{report:?}");
@@ -405,6 +431,7 @@ mod tests {
             &prepared.manifest,
             &ws.path().join("scratch"),
             Duration::from_secs(300),
+            &crate::governor::Limits::for_this_machine(crate::governor::Priority::Normal),
         )
         .unwrap();
         assert_eq!(report.hidden.passed, 1, "{report:?}");

@@ -27,6 +27,10 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 bytes = "1"
+# The resource governor: process tables (memory, CPU, parents) without spawning
+# `ps`, and signals.
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
 tempfile = "3"

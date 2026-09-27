@@ -5,6 +5,7 @@
 mod benchmark;
 mod canary;
 mod cost;
+mod governor;
 mod grade;
 mod judge;
 mod lanes;
@@ -76,6 +77,21 @@ enum Cmd {
         /// Average watts drawn by the local model host while generating.
         #[arg(long, default_value_t = 120.0)]
         local_watts: f64,
+        /// Scheduling priority of the agent, its commands and grading
+        /// (inherited by every process they start).
+        #[arg(long, value_enum, default_value = "utility")]
+        priority: governor::Priority,
+        /// Resident memory one process of a run may hold before it is killed,
+        /// in MiB [default: an eighth of this machine's memory].
+        #[arg(long)]
+        mem_per_process_mb: Option<u64>,
+        /// Resident memory a run's processes may hold together before the
+        /// largest is killed, in MiB [default: a quarter of this machine's memory].
+        #[arg(long)]
+        mem_per_run_mb: Option<u64>,
+        /// Keep build output (`target/` directories) after grading.
+        #[arg(long)]
+        keep_build_output: bool,
     },
     /// Judge the code quality of every run in a batch, once per judge; each
     /// judge's result is stored separately in the run directory.
@@ -225,6 +241,7 @@ async fn main() -> Result<()> {
                 &manifest,
                 &scratch,
                 Duration::from_secs(900),
+                &governor::Limits::for_this_machine(governor::Priority::Utility),
             )?;
             let _ = fs::remove_dir_all(&scratch);
             println!("{}", serde_json::to_string_pretty(&report)?);
@@ -238,7 +255,21 @@ async fn main() -> Result<()> {
             prices,
             no_sandbox,
             local_watts,
+            priority,
+            mem_per_process_mb,
+            mem_per_run_mb,
+            keep_build_output,
         } => {
+            let machine = governor::Limits::for_this_machine(priority);
+            let limits = governor::Limits {
+                process_mb: mem_per_process_mb.unwrap_or(machine.process_mb),
+                total_mb: mem_per_run_mb.unwrap_or(machine.total_mb),
+                priority,
+            };
+            eprintln!(
+                "limits: {} MiB per process, {} MiB per run, {:?} priority",
+                limits.process_mb, limits.total_mb, limits.priority
+            );
             let all_lanes = lanes::load_lanes(lanes_file.as_deref())?;
             let prices = cost::PriceTable::load(&prices)?;
             let seeds = parse_seeds(&seeds)?;
@@ -280,6 +311,8 @@ async fn main() -> Result<()> {
                                 prices: &prices,
                                 sandbox: !no_sandbox,
                                 local_watts,
+                                limits,
+                                keep_build_output,
                             })
                             .await?;
                             attempt += 1;
@@ -297,8 +330,26 @@ async fn main() -> Result<()> {
                             }
                             break rec;
                         };
+                        let resources = rec.resources.as_ref().map_or(String::new(), |r| {
+                            let kills = r.agent.kills.len()
+                                + rec
+                                    .grade
+                                    .as_ref()
+                                    .and_then(|g| g.resources.as_ref())
+                                    .map_or(0, |u| u.kills.len());
+                            format!(
+                                "  peak {:.1}GB  cpu {:.0}s{}",
+                                r.agent.peak_total_mb as f64 / 1024.0,
+                                r.agent.cpu_seconds,
+                                if kills > 0 {
+                                    format!("  killed {kills}")
+                                } else {
+                                    String::new()
+                                }
+                            )
+                        });
                         println!(
-                            "{:<28} pass {:>5.1}%  leaks {}  cost {}  {:.0}s{}",
+                            "{:<28} pass {:>5.1}%  leaks {}  cost {}  {:.0}s{resources}{}",
                             rec.run_id,
                             100.0 * rec.counted_pass_rate(),
                             match rec.leaks_unmeasured {
@@ -507,9 +558,10 @@ fn check_task(t: &task::TaskPackage) -> Result<()> {
         fs::remove_dir_all(&tmp)?;
     }
     let timeout = Duration::from_secs(15 * 60);
+    let limits = governor::Limits::for_this_machine(governor::Priority::Utility);
     let starter = tmp.join("starter");
     let p = workspace::prepare(t, 1, "check", &starter)?;
-    let base = grade::grade(t, &starter, &p.manifest, &tmp.join("g1"), timeout)?;
+    let base = grade::grade(t, &starter, &p.manifest, &tmp.join("g1"), timeout, &limits)?;
     println!(
         "starter:   hidden {}/{} (must be below 100%)",
         base.hidden.passed, base.hidden_expected
@@ -541,7 +593,7 @@ fn check_task(t: &task::TaskPackage) -> Result<()> {
         }
         fs::remove_file(&deletions)?;
     }
-    let sol = grade::grade(t, &solved, &p.manifest, &tmp.join("g2"), timeout)?;
+    let sol = grade::grade(t, &solved, &p.manifest, &tmp.join("g2"), timeout, &limits)?;
     println!(
         "reference: hidden {}/{} (must be 100%), visible {} passed / {} failed, sink violations {}",
         sol.hidden.passed,
