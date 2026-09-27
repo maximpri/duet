@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Watching the frontier's responses as they stream, for the operator's
-//! terminal (`duet chat`, `duet run`).
+//! terminal (the `duet` workspace, `duet run`).
 //!
 //! The interface sets a tap for the work it drives ([`observe`]); every
 //! request the [`crate::GatedFrontier`] sends within it streams to the tap

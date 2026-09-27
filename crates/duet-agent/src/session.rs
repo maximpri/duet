@@ -44,7 +44,7 @@ pub(crate) const DELIVERED: &str =
     "delivered to the operator; this turn ends here and continues with their next message";
 
 /// Why a session invocation that did not close the session ended.
-pub const SESSION_LEFT: &str = "session left open; continue it with `duet chat --resume`";
+pub const SESSION_LEFT: &str = "session left open; continue it with `duet --resume`";
 
 /// How an operator turn ended. Texts are in their local form: placeholders
 /// the frontier wrote are restored for the operator.

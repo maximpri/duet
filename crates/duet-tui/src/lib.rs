@@ -23,6 +23,7 @@ mod runs;
 mod settings;
 pub mod term;
 mod ui;
+pub mod workspace;
 
 #[cfg(test)]
 mod tests;

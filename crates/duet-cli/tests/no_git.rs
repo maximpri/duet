@@ -185,6 +185,8 @@ fn passthrough(f: &Frontier, verb: &str, extra: &[&str]) -> Vec<String> {
         "glm-5.3-flash",
     ]
     .iter()
+    // An empty verb: a session (`duet` without a command).
+    .filter(|s| !s.is_empty())
     .map(|s| (*s).to_owned())
     .collect();
     args.extend(extra.iter().map(|s| (*s).to_owned()));
@@ -313,7 +315,7 @@ sandbox.network = \"all\" in .duet/config.toml before you start.\n",
     );
 }
 
-/// A running `duet chat`: what it printed so far, and its standard input.
+/// A running `duet` session: what it printed so far, and its standard input.
 struct Chat {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -388,7 +390,7 @@ fn a_session_without_git_edits_diffs_undoes_and_resumes() {
         ),
         ("reply", json!({"message": "Added b."})),
     ]);
-    let args = passthrough(&f, "chat", &["--", "Add a function b."]);
+    let args = passthrough(&f, "", &["--", "Add a function b."]);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut chat = Chat::start(command(&e, &args));
     chat.wait_for("duet: Added b.");
@@ -427,7 +429,7 @@ fn a_session_without_git_edits_diffs_undoes_and_resumes() {
 
     // Resumed: the conversation continues from the same opening.
     f.script(vec![("reply", json!({"message": "Back again."}))]);
-    let args = passthrough(&f, "chat", &["--resume"]);
+    let args = passthrough(&f, "", &["--resume"]);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut chat = Chat::start(command(&e, &args));
     chat.wait_for("resumed: 1 turn(s)");

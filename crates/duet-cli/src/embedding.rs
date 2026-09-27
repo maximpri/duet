@@ -55,7 +55,7 @@ impl Embedding {
     }
 
     /// Audit subscribers and end hooks for every run and session invocation
-    /// (`duet run`, `duet resume`, `duet chat`): subscribers are attached to
+    /// (`duet run`, `duet resume`, a `duet` session): subscribers are attached to
     /// the run's audit log as soon as it is opened, before anything is
     /// recorded in it, and end hooks are called once when it ends, in every
     /// terminal state (see `duet_agent::embed`).

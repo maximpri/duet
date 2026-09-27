@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! `duet chat`: a session on the terminal, line by line.
+//! `duet`: a session. On a terminal it is the workspace (full screen); without
+//! one it is line by line.
 //!
 //! The operator types a message; duet works on it (progress lines show each
 //! tool call and whatever the boundary withheld from the frontier) and the
@@ -21,16 +22,15 @@
 //! is prompted and the output is the same.
 //!
 //! At the prompt, Ctrl-C twice leaves the session, like `/quit` or the end
-//! of input; `duet chat --resume` continues it. `/close` ends it for good.
+//! of input; `duet --resume` continues it. `/close` ends it for good.
 //!
-//! On a terminal the console ([`crate::term::console`]) reads the keyboard
-//! instead of the reader thread: a line editor with history (the session's
-//! own messages) and completion, duet's replies streamed and formatted as
-//! they arrive, and a status line while duet works. The lines it sends and
-//! the Ctrl-C rules are the same.
+//! On a terminal the workspace (`duet_tui::workspace`) reads the keyboard
+//! instead of the reader thread: a status bar, the conversation with duet's
+//! replies streamed and formatted as they arrive, and an input box with
+//! history (the session's own messages) and completion. The lines it sends
+//! and the Ctrl-C rules are the same.
 
 use crate::approve;
-use crate::term::console::{Console, Hooks, Mode as Live};
 use crate::term::words::{clip, describe_end, progress};
 use crate::{
     Embedding, LocalOverride, Mode, Prepared, RunLimits, RunManifest, audit_log_path,
@@ -44,6 +44,7 @@ use duet_agent::transcript::Entry;
 use duet_agent::{ApproveMode, Approver, RunStats, Session, Terminal, TurnEnd};
 use duet_boundary::audit::AuditHandle;
 use duet_boundary::view::{PassThrough, Presenter};
+use duet_tui::workspace::{Hooks, Mode as Live, Status, Workspace};
 use futures_util::FutureExt;
 use futures_util::future::Either;
 use std::collections::{HashMap, VecDeque};
@@ -53,7 +54,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
-/// `duet chat`'s arguments.
+/// The session's arguments (`duet` without a command).
 pub(crate) struct ChatArgs {
     pub message: Option<String>,
     pub mode: Mode,
@@ -134,7 +135,7 @@ impl Inbox {
         self.lock().lines.pop_front().map(|(_, l)| l)
     }
 
-    /// The input ended (the console's Ctrl-D, or its terminal is gone).
+    /// The input ended (the workspace's Ctrl-D, or its terminal is gone).
     fn close(&self) {
         self.lock().closed = true;
         self.ready.notify_all();
@@ -306,7 +307,7 @@ Commands (never sent to the model):
                           local model describes it (needs local.vision)
   /image --public <path>  attach an image the frontier may see itself (not scanned;
                           never from a sensitive path; needs frontier.vision)
-  /quit    leave; the session stays open for `duet chat --resume`
+  /quit    leave; the session stays open for `duet --resume`
   /close   end the session for good
   //text   send a message that starts with /
 Ctrl-C stops duet's turn at once (a running command is killed);
@@ -314,11 +315,11 @@ at the prompt, Ctrl-C twice leaves.";
 
 /// Where the conversation is written: line by line on standard output
 /// (without a terminal, or when it cannot be driven: exactly as it always
-/// was), or the console.
+/// was), or the workspace.
 #[derive(Clone)]
 pub(crate) enum Screen {
     Plain { tty: bool },
-    Live(Arc<Console>),
+    Live(Arc<Workspace>),
 }
 
 impl Screen {
@@ -391,7 +392,7 @@ impl Screen {
         }
     }
 
-    fn console(&self) -> Option<&Arc<Console>> {
+    fn workspace(&self) -> Option<&Arc<Workspace>> {
         match self {
             Screen::Live(c) => Some(c),
             Screen::Plain { .. } => None,
@@ -422,7 +423,7 @@ fn last_session(ws: &Path) -> Result<String> {
             let dir = ws.join(".duet/runs").join(id);
             read_manifest(&dir).is_ok_and(|m| m.session) && duet_agent::resumable(&dir).is_ok()
         })
-        .context("no open session in this workspace; start one with `duet chat`")
+        .context("no open session in this workspace; start one with `duet`")
 }
 
 fn read_manifest(run_dir: &Path) -> Result<RunManifest> {
@@ -465,8 +466,7 @@ async fn first_message(
     mode: Mode,
 ) -> Option<(String, Vec<crate::images::AttachedImage>)> {
     if !matches!(screen, Screen::Plain { tty: false }) {
-        screen
-            .line("duet chat: a new session starts with your first message. /help lists commands.");
+        screen.line("a new session starts with your first message; /help lists the commands");
     }
     screen.prompt();
     let mut images = Vec::new();
@@ -516,7 +516,7 @@ fn image_path(ws: &Path, raw: &str) -> PathBuf {
     if given.exists() { given } else { ws.join(raw) }
 }
 
-/// `duet chat`. Returns the exit code: 0 when the session was left open or
+/// `duet` without a command. Returns the exit code: 0 when the session was left open or
 /// closed, 3 when a session budget is spent, 1 when it could not start.
 pub(crate) async fn chat(ws: PathBuf, args: ChatArgs, emb: &Embedding) -> Result<i32> {
     match (args.mode, args.no_privacy) {
@@ -557,6 +557,22 @@ Add --no-privacy to confirm, or use --mode hybrid."
         })
     })?;
     watch_interrupts(interrupts, screen.clone());
+    if let Some(w) = screen.workspace() {
+        w.status(Status {
+            mode: mode_name(args.mode).to_owned(),
+            frontier: args
+                .frontier_model
+                .clone()
+                .map_or_else(|| cfg.str("frontier.model"), Ok)
+                .unwrap_or_default(),
+            local: (args.mode != Mode::Passthrough
+                && local_enabled(&cfg, args.mode).unwrap_or(false))
+            .then(|| cfg.str("local.model").ok())
+            .flatten(),
+            budget_usd: cfg.float("session.frontier_usd").unwrap_or(0.0),
+            ..Status::default()
+        });
+    }
 
     let (manifest, resume) = match args.resume {
         Some(id) => {
@@ -693,7 +709,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         Terminal::Failed { reason } if reason == duet_agent::session::SESSION_LEFT => {
             println!(
-                "session {id} left open (${:.4} so far); continue with: duet chat --resume {id}",
+                "session {id} left open (${:.4} so far); continue with: duet --resume {id}",
                 stats.cost_usd
             );
             0
@@ -704,7 +720,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         Terminal::BudgetStopped { which } => {
             println!(
-                "session {id}: {which} is spent; raise it to continue with duet chat --resume {id}"
+                "session {id}: {which} is spent; raise it to continue with duet --resume {id}"
             );
             3
         }
@@ -722,7 +738,7 @@ struct Io {
     screen: Screen,
 }
 
-/// The console when standard input and output are a terminal that can take
+/// The workspace when standard input and output are a terminal that can take
 /// it (its lines go to the inbox), else the reader thread and plain lines.
 fn open_screen(tty: bool, interrupts: &Arc<Interrupts>) -> (Arc<Inbox>, Screen) {
     let plain = || (Inbox::stdin(), Screen::Plain { tty });
@@ -748,8 +764,8 @@ fn open_screen(tty: bool, interrupts: &Arc<Interrupts>) -> (Arc<Inbox>, Screen) 
             Box::new(move || inbox.answering())
         },
     };
-    match Console::start(hooks) {
-        Ok(console) => (inbox, Screen::Live(console)),
+    match Workspace::start(hooks, COMMANDS) {
+        Ok(workspace) => (inbox, Screen::Live(workspace)),
         Err(_) => plain(),
     }
 }
@@ -763,7 +779,7 @@ impl Drop for Closing {
     }
 }
 
-/// Ctrl-C, as a signal or (on the console) a key.
+/// Ctrl-C, as a signal or (in the workspace) a key.
 struct Interrupts {
     working: Arc<AtomicBool>,
     interrupted: Arc<AtomicBool>,
@@ -793,7 +809,7 @@ impl Interrupts {
     }
 }
 
-/// Ctrl-C sent as a signal (the console reads the key itself).
+/// Ctrl-C sent as a signal (the workspace reads the key itself).
 fn watch_interrupts(interrupts: Arc<Interrupts>, screen: Screen) {
     tokio::spawn(async move {
         while tokio::signal::ctrl_c().await.is_ok() {
@@ -851,7 +867,7 @@ async fn converse(
         }
         None => Arc::new(|t: &str| t.to_owned()),
     };
-    if let Some(c) = io.screen.console() {
+    if let Some(c) = io.screen.workspace() {
         c.restore(shown.clone());
         // History: the operator's own messages of this session.
         c.remember(
@@ -870,10 +886,12 @@ async fn converse(
         git: &git,
         presenter,
     };
+    show_status(io, &session, manifest, cfg);
     if resume {
         recap(&session, &manifest.run_id, &io.screen);
     } else {
         turns(&mut session, manifest.objective.clone(), &ctx).await;
+        show_status(io, &session, manifest, cfg);
     }
     let closed = loop {
         if io.leave.load(Ordering::SeqCst) {
@@ -944,6 +962,7 @@ async fn converse(
                     say(&format!("you> {}", m.replace('\n', "\n     ")));
                 }
                 turns(&mut session, m, &ctx).await;
+                show_status(io, &session, manifest, cfg);
             }
         }
     };
@@ -1005,7 +1024,7 @@ async fn take_turn(
     let path = t.run_dir.join("transcript.jsonl");
     let from = std::fs::metadata(&path).map_or(0, |m| m.len());
     let done = Arc::new(AtomicBool::new(false));
-    let sink: Box<dyn FnMut(Entry) + Send> = match io.screen.console() {
+    let sink: Box<dyn FnMut(Entry) + Send> = match io.screen.workspace() {
         Some(c) => {
             let c = c.clone();
             Box::new(move |e| c.entry(e))
@@ -1018,12 +1037,12 @@ async fn take_turn(
     io.working.store(true, Ordering::SeqCst);
     let say = |text: &str| io.screen.line(text);
     let end = {
-        // On the console the frontier's responses show as they stream.
-        let turn = match io.screen.console() {
+        // In the workspace the frontier's responses show as they stream.
+        let turn = match io.screen.workspace() {
             Some(c) => Either::Left(duet_boundary::live::observe(c.tap(), session.turn(message))),
             None => Either::Right(session.turn(message)),
         };
-        if let Some(c) = io.screen.console() {
+        if let Some(c) = io.screen.workspace() {
             c.begin();
         }
         let mut turn = std::pin::pin!(turn);
@@ -1072,6 +1091,39 @@ async fn take_turn(
     io.screen.end(&end);
     io.inbox.requeue(held);
     (end, steering.take())
+}
+
+/// How the mode reads in the status bar.
+fn mode_name(mode: Mode) -> &'static str {
+    match mode {
+        Mode::Hybrid => "hybrid",
+        Mode::LocalOnly => "local-only",
+        Mode::Passthrough => "passthrough",
+    }
+}
+
+/// The session's state in the workspace's status bar.
+fn show_status(io: &Io, session: &Session<'_>, manifest: &RunManifest, cfg: &duet_config::Config) {
+    let Some(w) = io.screen.workspace() else {
+        return;
+    };
+    let local = match (&manifest.local, manifest.mode) {
+        (_, Mode::Passthrough) => None,
+        (Some(l), _) => Some(l.model.clone()),
+        (None, mode) => local_enabled(cfg, mode)
+            .unwrap_or(false)
+            .then(|| cfg.str("local.model").ok())
+            .flatten(),
+    };
+    w.status(Status {
+        session: manifest.run_id.clone(),
+        mode: mode_name(manifest.mode).to_owned(),
+        frontier: manifest.frontier_model.clone(),
+        local,
+        turns: u32::try_from(session.turns()).unwrap_or(u32::MAX),
+        cost_usd: session.stats().cost_usd,
+        budget_usd: cfg.float("session.frontier_usd").unwrap_or(0.0),
+    });
 }
 
 /// The last few turns of a resumed session.

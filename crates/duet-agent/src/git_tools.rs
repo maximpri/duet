@@ -59,7 +59,7 @@ pub enum CommitPolicy {
     /// Offered; commits without asking (still audited, still only the run's files).
     Allow,
     /// Offered only when the operator can be asked (the run has an approver:
-    /// `oversight.approve` is not `off`, or an interactive `duet chat`), and
+    /// `oversight.approve` is not `off`, or an interactive `duet` session), and
     /// every commit waits for their approval. The default: a commit is
     /// permanent history in the operator's repository.
     #[default]

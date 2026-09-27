@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The terminal approver for `oversight.approve`: asks the operator on the
 //! controlling terminal before a risky action. A run with approval on and no
-//! terminal refuses to start (fail closed). In an interactive `duet chat`,
+//! terminal refuses to start (fail closed). In an interactive `duet` session,
 //! commits (`git.commit = "ask"`) are asked in the conversation even with
 //! approval off.
 
@@ -172,7 +172,7 @@ fn session_oversight_at(
     if !tty {
         anyhow::bail!(
             "oversight.approve = {} asks the operator at a terminal before risky actions, but \
-standard input is not a terminal; the session was not started. Run `duet chat` from an interactive \
+standard input is not a terminal; the session was not started. Run `duet` from an interactive \
 terminal, or turn approval off in the owner config: duet config set oversight.approve '\"off\"' --confirm",
             mode.as_str()
         );

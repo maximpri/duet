@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! `duet chat` end to end through the binary, against a scripted frontier on
+//! A `duet` session end to end through the binary (no terminal: line by line), against a scripted frontier on
 //! loopback (no model server, no network beyond 127.0.0.1). The operator
 //! drives a session over standard input: a first message, a clarifying
 //! question and its answer, a second task, `/status`, `/diff`, `/undo`, an
@@ -203,7 +203,7 @@ fn text(o: &Output) -> String {
     )
 }
 
-/// A running `duet chat`: what it printed so far, and its standard input.
+/// A running `duet` session: what it printed so far, and its standard input.
 struct Chat {
     child: Child,
     stdin: Option<ChildStdin>,
@@ -267,7 +267,6 @@ impl Chat {
 fn chat_command(e: &Env, f: &Frontier, extra: &[&str]) -> Command {
     let url = f.url();
     let mut args = vec![
-        "chat",
         "--mode",
         "passthrough",
         "--no-privacy",
@@ -370,7 +369,7 @@ fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
     assert_eq!(code, 0, "{out}");
     let id = only_run_id(&e);
     assert!(
-        out.contains(&format!("continue with: duet chat --resume {id}")),
+        out.contains(&format!("continue with: duet --resume {id}")),
         "{out}"
     );
     let summary: Value = serde_json::from_slice(
@@ -383,7 +382,7 @@ fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
     let o = command(&e, &["resume", &id]).output().unwrap();
     assert!(!o.status.success());
     assert!(
-        text(&o).contains("is a session; continue it with `duet chat --resume"),
+        text(&o).contains("is a session; continue it with `duet --resume"),
         "{}",
         text(&o)
     );
@@ -409,7 +408,7 @@ fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
     assert_eq!(code, 0, "{out}");
     assert!(out.contains(&format!("session {id} closed")), "{out}");
     assert!(
-        !command(&e, &["chat", "--resume", &id])
+        !command(&e, &["--resume", &id])
             .output()
             .unwrap()
             .status
@@ -535,7 +534,7 @@ fn piped_output_is_plain_lines_as_before() {
         format!(
             "  · read_file src/lib.rs\n\
 duet: Done.\n      Two lines.\n\
-session {id} left open (${cost:.4} so far); continue with: duet chat --resume {id}\n"
+session {id} left open (${cost:.4} so far); continue with: duet --resume {id}\n"
         )
     );
     assert!(
@@ -543,4 +542,95 @@ session {id} left open (${cost:.4} so far); continue with: duet chat --resume {i
         "{}",
         String::from_utf8_lossy(&o.stderr)
     );
+}
+
+/// `duet` on a real terminal (a pseudo-terminal from `script`, 30 rows by 100
+/// columns), its screen read back through a terminal emulator: the workspace
+/// takes the screen, shows the status bar and the input, takes a typed
+/// message, shows the reply and what other code printed, and gives the
+/// terminal back when the operator leaves.
+#[test]
+fn the_workspace_on_a_terminal() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "src/lib.rs"})),
+        Step::Call("reply", json!({"message": "Hello from the workspace."})),
+    ]);
+    let url = f.url();
+    let script: Vec<String> = if cfg!(target_os = "macos") {
+        ["script", "-q", "/dev/null"].map(str::to_owned).to_vec()
+    } else {
+        // util-linux: the command is one string.
+        vec![]
+    };
+    let duet = env!("CARGO_BIN_EXE_duet");
+    let inner = format!(
+        "stty rows 30 cols 100; exec '{duet}' --workspace '{}' --mode passthrough --no-privacy \
+--frontier-url '{url}' --frontier-model glm-5.3-flash",
+        e.ws.display()
+    );
+    let mut c = if script.is_empty() {
+        let mut c = Command::new("script");
+        c.args(["-q", "-e", "-c", &inner, "/dev/null"]);
+        c
+    } else {
+        let mut c = Command::new(&script[0]);
+        c.args(&script[1..]).args(["sh", "-c", &inner]);
+        c
+    };
+    c.env("DUET_CONFIG_HOME", &e.home)
+        .env("ZAI_API_KEY", "loopback-test-key")
+        .env("TERM", "xterm-256color")
+        .env_remove("NO_COLOR")
+        .env_remove("DUET_LOCAL_PORTS")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    let screen = Arc::new(Mutex::new(vt100::Parser::new(30, 100, 0)));
+    let mut out = child.stdout.take().unwrap();
+    let feed = screen.clone();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = out.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            feed.lock().unwrap().process(&buf[..n]);
+        }
+    });
+    let shown = || screen.lock().unwrap().screen().contents();
+    let wait_for = |what: &str| {
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(30) {
+            if shown().contains(what) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("the screen never showed {what:?}:\n{}", shown());
+    };
+    let mut keys = child.stdin.take().unwrap();
+    wait_for(" message ");
+    wait_for("duet · passthrough · glm-5.3-flash");
+    keys.write_all(b"Say hello.\r").unwrap();
+    wait_for("Hello from the workspace.");
+    wait_for("you> Say hello.");
+    wait_for("read_file src/lib.rs");
+    // `session <id> (Passthrough)` is printed on standard error by the
+    // session's setup: it lands in the conversation, not over the screen.
+    wait_for("│ session ");
+    wait_for("turn 1 · $");
+    // Shown with `--nocapture`, for looking at the layout.
+    eprintln!("{}", shown());
+    keys.write_all(b"/quit\r").unwrap();
+    let status = child.wait().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(status.success(), "{status:?}\n{}", shown());
+    // The terminal is given back: the main screen holds the closing line.
+    let main = shown();
+    assert!(main.contains("left open"), "{main}");
+    assert!(!main.contains("conversation"), "{main}");
+    assert_eq!(f.requests(), 2);
 }

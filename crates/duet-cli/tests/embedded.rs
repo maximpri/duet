@@ -366,7 +366,6 @@ fn runs_and_sessions_reach_the_hooks_once() {
         &e,
         true,
         &[
-            "chat",
             "--mode",
             "passthrough",
             "--no-privacy",

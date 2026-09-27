@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Images the operator attaches (`duet run --image`, `--image-public`, and
-//! `/image` in `duet chat`): the run's image settings, and a check before a
+//! `/image` in a `duet` session): the run's image settings, and a check before a
 //! run starts that each attachment can be used and where it would go.
 
 use crate::{Mode, policy};

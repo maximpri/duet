@@ -3,7 +3,7 @@
 //! progress lines, the frontier's streamed response becomes duet's text as
 //! it arrives, and both keep a status (time, cost, what runs now).
 //!
-//! The same feed serves `duet chat` on a terminal, `duet run` on a
+//! The same feed serves the `duet` workspace, `duet run` on a
 //! terminal, and `duet run`'s compact log (no streamed text, placeholders
 //! kept). Streamed text is shown restored for the operator (values in place
 //! of placeholders); the frontier's view is never changed by it.

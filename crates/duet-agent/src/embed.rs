@@ -91,7 +91,7 @@ impl Hooks {
 }
 
 /// Told once when a run or a session invocation ends: every `duet run`,
-/// `duet resume` and `duet chat` that got as far as creating its run
+/// `duet resume` and a `duet` session that got as far as creating its run
 /// directory, whatever the terminal state (completed, failed, interrupted,
 /// budget-stopped, a panic). A run interrupted and resumed is one call per
 /// invocation; [`EndReport::resumable`] says whether another may follow.
@@ -108,7 +108,7 @@ pub trait EndHook: Send + Sync {
     fn ended(&self, report: &EndReport) -> Result<(), String>;
 }
 
-/// A one-shot run, or a conversation (`duet chat`).
+/// A one-shot run, or a conversation (a `duet` session).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -125,7 +125,7 @@ pub struct Ending<'a> {
     /// `passthrough`, `localonly`).
     pub mode: &'a str,
     /// This invocation continued an earlier one (`duet resume`,
-    /// `duet chat --resume`).
+    /// `duet --resume`).
     pub resumed: bool,
     /// The policy layer the run's configuration was loaded with.
     pub policy: Option<&'a PolicyMeta>,

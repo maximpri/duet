@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Images in runs and sessions: `read_file` on an image in the workspace,
 //! and images the operator attaches to a message (`duet run --image`,
-//! `/image` in `duet chat` and the TUI).
+//! `/image` in a `duet` session).
 //!
 //! Every image is prepared first (format checked from its bytes, decoded,
 //! scaled to `images.max_side`, encoded again without metadata), then routed

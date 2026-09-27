@@ -452,7 +452,7 @@ async fn an_interactive_session_asks_before_each_commit_with_approval_off() {
         seen: Mutex::default(),
     });
     let cfg = RunConfig {
-        // What `duet chat` sets up at a terminal with the defaults
+        // What a `duet` session sets up at a terminal with the defaults
         // (`oversight.approve = "off"`, `git.commit = "ask"`).
         oversight: Oversight {
             mode: ApproveMode::Off,

@@ -18,7 +18,7 @@ duet-agent.workspace = true
 duet-git.workspace = true
 duet-fs.workspace = true
 regex.workspace = true
-rustix.workspace = true
+rustix = { workspace = true, features = ["stdio", "pipe"] }
 anyhow.workspace = true
 serde_json.workspace = true
 toml.workspace = true

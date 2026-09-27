@@ -42,6 +42,8 @@ unicode-segmentation = "1"
 
 
 [dev-dependencies]
+# The workspace test reads a terminal's screen back (MIT).
+vt100 = "0.16"
 duet-boundary = { workspace = true, features = ["test-support"] }
 duet-mcp = { workspace = true, features = ["test-support"] }
 duet-provider = { workspace = true, features = ["test-support"] }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The input line of `duet chat`: editing, history, search and completion,
-//! independent of the terminal (the console feeds it keys and draws what
+//! The workspace's input: editing, history, search and completion,
+//! independent of the terminal (the workspace feeds it keys and draws what
 //! [`Editor::display`] returns).
 //!
 //! Keys: arrows, Home/End, Ctrl-A/E (line start/end), Ctrl-B/F, Alt-B/F and
@@ -13,14 +13,14 @@
 //! the next), Alt-Enter, Shift-Enter (where the terminal reports it) and
 //! Ctrl-J (a new line in the message), Ctrl-L (clear the screen), Ctrl-D
 //! (on an empty input: the end of input). Ctrl-C and Ctrl-Z are handed to
-//! the console.
+//! the workspace.
 
 use super::{Span, Style, char_width, paint};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// What a key asks of the console.
+/// What a key asks of the workspace.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// Only the input changed (or nothing did).
@@ -29,9 +29,9 @@ pub enum Outcome {
     Submit(String),
     /// Ctrl-D on an empty input.
     Eof,
-    /// Ctrl-C: the input is cleared; the console applies the interrupt rules.
+    /// Ctrl-C: the input is cleared; the workspace applies the interrupt rules.
     Interrupt,
-    /// Tab: the console completes (it knows the commands and the directory).
+    /// Tab: the workspace completes (it knows the commands and the directory).
     Complete,
     ClearScreen,
     /// Ctrl-Z.
@@ -731,7 +731,7 @@ mod tests {
         typed(&mut e, "u32");
         e.key(key(KeyCode::Esc, NONE));
         assert_eq!(e.buffer(), "Add a function b.");
-        // Ctrl-C always reaches the console, even while searching.
+        // Ctrl-C always reaches the workspace, even while searching.
         e.key(key(KeyCode::Char('r'), CTRL));
         assert_eq!(e.key(key(KeyCode::Char('c'), CTRL)), Outcome::Interrupt);
         assert_eq!(e.buffer(), "");

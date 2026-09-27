@@ -56,14 +56,42 @@ pub use embedding::{DoctorCheck, DoctorContext, Embedding, Product};
 #[command(
     name = "duet",
     version,
-    about = "Frontier-level coding with sensitive information kept on your machine"
+    about = "Frontier-level coding with sensitive information kept on your machine",
+    long_about = "Frontier-level coding with sensitive information kept on your machine.\n\n\
+`duet` alone opens the workspace: a session in full screen, where each message you type is a \
+turn duet works on (with the same boundary, sandbox, budgets and audit as a run), beside the \
+files it changed and what it withheld; settings, models and the audit are inside. Without a \
+terminal the session is line by line. The commands below are for scripts and one-off checks."
 )]
 struct Cli {
     /// Repository to work in (default: current directory).
     #[arg(long, global = true)]
     workspace: Option<PathBuf>,
+    #[command(flatten)]
+    session: SessionArgs,
     #[command(subcommand)]
-    command: Cmd,
+    command: Option<Cmd>,
+}
+
+/// `duet` without a command: the workspace (a session).
+#[derive(clap::Args)]
+struct SessionArgs {
+    /// The first message (otherwise typed in the workspace).
+    message: Option<String>,
+    #[arg(long, value_enum, default_value = "hybrid")]
+    mode: Mode,
+    /// Override the frontier endpoint for this session.
+    #[arg(long)]
+    frontier_url: Option<String>,
+    /// Override the frontier model for this session.
+    #[arg(long)]
+    frontier_model: Option<String>,
+    /// Acknowledge that `--mode passthrough` turns the privacy boundary off.
+    #[arg(long)]
+    no_privacy: bool,
+    /// Continue a session: the one named, or the most recent open one.
+    #[arg(long, num_args = 0..=1, value_name = "SESSION_ID")]
+    resume: Option<Option<String>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum, Serialize, Deserialize)]
@@ -121,28 +149,6 @@ enum Cmd {
         #[arg(long)]
         quiet: bool,
     },
-    /// Code in a conversation: each message you type is a turn duet works
-    /// on, with the same boundary, sandbox, budgets and audit as a run; duet
-    /// replies, asks when it needs a decision, and keeps the context for your
-    /// next message. /help inside lists the commands.
-    Chat {
-        /// The first message (otherwise typed at the prompt).
-        message: Option<String>,
-        #[arg(long, value_enum, default_value = "hybrid")]
-        mode: Mode,
-        /// Override the frontier endpoint for this session.
-        #[arg(long)]
-        frontier_url: Option<String>,
-        /// Override the frontier model for this session.
-        #[arg(long)]
-        frontier_model: Option<String>,
-        /// Acknowledge that `--mode passthrough` turns the privacy boundary off.
-        #[arg(long)]
-        no_privacy: bool,
-        /// Continue a session: the one named, or the most recent open one.
-        #[arg(long, num_args = 0..=1, value_name = "SESSION_ID")]
-        resume: Option<Option<String>>,
-    },
     /// Inspect what was sent to the frontier.
     Audit {
         #[command(subcommand)]
@@ -180,11 +186,6 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Terminal UI: settings screens generated from the registry (edits use the
-    /// same checks, confirmation and audit as `duet config set`), IP levels,
-    /// the audit viewer, and a run view with changed files and diffs that can
-    /// also start runs.
-    Tui,
 }
 
 #[derive(Subcommand)]
@@ -260,7 +261,7 @@ struct RunManifest {
     /// A local endpoint found by bootstrap for this run (no local model configured).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     local: Option<LocalOverride>,
-    /// A session (`duet chat`) rather than a one-shot run.
+    /// A session (`duet` without a command) rather than a one-shot run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     session: bool,
     /// Images attached to the task (`--image`, `--image-public`).
@@ -923,52 +924,6 @@ fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Res
     Ok(())
 }
 
-/// The TUI's cache-reuse probe against the configured local model: the same
-/// endpoint trust rules as a run, two identical short requests, no retries
-/// beyond two attempts. Prints nothing (the TUI owns the terminal).
-async fn tui_cache_probe(ws: &Path, emb: &Embedding) -> Result<duet_tui::CacheReport, String> {
-    let cfg = load_config(ws, emb).map_err(|e| format!("{e:#}"))?;
-    if cfg.origin("local.base_url") == Some(duet_config::Origin::Default) {
-        return Err(
-            "no local endpoint is configured: l detects servers on loopback and u uses one".into(),
-        );
-    }
-    let text = |k: &str| cfg.str(k).map_err(|e| e.to_string());
-    let (url, model) = (text("local.base_url")?, text("local.model")?);
-    let allowlist = cfg.list("local.allowlist").map_err(|e| e.to_string())?;
-    let allow_plaintext = cfg
-        .bool("local.allow_plaintext")
-        .map_err(|e| e.to_string())?;
-    let mut pc = ProviderConfig::new(
-        &url,
-        &model,
-        Role::Local {
-            allowlist,
-            allow_plaintext,
-        },
-    );
-    pc.max_attempts = Some(2);
-    pc.first_byte_timeout = Duration::from_secs(120);
-    let key_env = text("local.api_key_env")?;
-    if !key_env.is_empty() {
-        pc.api_key_env = Some(key_env);
-    }
-    let provider = ChatProvider::with_reqwest(pc).map_err(|e| e.message)?;
-    let r = duet_provider::probe::cache_reuse(&provider)
-        .await
-        .map_err(|e| e.message)?;
-    Ok(duet_tui::CacheReport {
-        base_url: url,
-        model,
-        prompt_tokens: r.prompt_tokens,
-        first_cached: r.first_cached,
-        second_cached: r.second_cached,
-        first_seconds: r.first_seconds,
-        second_seconds: r.second_seconds,
-        unreported: r.unreported,
-    })
-}
-
 /// Runs `duet`'s command line (from the process's arguments) with what
 /// `embedding` adds, and returns the exit code the process should end with:
 /// the `duet` binary is `main_with(Embedding::default())`.
@@ -1029,7 +984,38 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
     let matches = cmd.clone().get_matches_from(args);
     let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.format(&mut cmd).exit());
     let ws = workspace(&cli)?;
-    match cli.command {
+    // No command: the workspace (a session).
+    let Some(command) = cli.command else {
+        let SessionArgs {
+            message,
+            mode,
+            frontier_url,
+            frontier_model,
+            no_privacy,
+            resume,
+        } = cli.session;
+        let args = chat::ChatArgs {
+            message,
+            mode,
+            frontier_url,
+            frontier_model,
+            no_privacy,
+            resume,
+        };
+        return chat::chat(ws, args, emb).await;
+    };
+    let session = &cli.session;
+    ensure!(
+        session.message.is_none()
+            && session.mode == Mode::Hybrid
+            && session.frontier_url.is_none()
+            && session.frontier_model.is_none()
+            && !session.no_privacy
+            && session.resume.is_none(),
+        "a message, --mode, --frontier-url, --frontier-model, --no-privacy and --resume before a \
+command are for a session (`duet` alone); give a command its own options after its name"
+    );
+    match command {
         Cmd::Run {
             objective,
             objective_file,
@@ -1104,7 +1090,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             );
             ensure!(
                 !manifest.session,
-                "{run_id} is a session; continue it with `duet chat --resume {run_id}`"
+                "{run_id} is a session; continue it with `duet --resume {run_id}`"
             );
             if let Err(why) = duet_agent::resumable(&run_dir) {
                 bail!("run {run_id} cannot be resumed: {why}");
@@ -1112,24 +1098,6 @@ Add --no-privacy to confirm, or use --mode hybrid."
             // What it recorded when it started must still be allowed.
             overrides::check(&load_config(&ws, emb)?, &manifest)?;
             execute(ws, manifest, true, quiet, emb).await
-        }
-        Cmd::Chat {
-            message,
-            mode,
-            frontier_url,
-            frontier_model,
-            no_privacy,
-            resume,
-        } => {
-            let args = chat::ChatArgs {
-                message,
-                mode,
-                frontier_url,
-                frontier_model,
-                no_privacy,
-                resume,
-            };
-            chat::chat(ws, args, emb).await
         }
         Cmd::Audit { action } => {
             match action {
@@ -1280,50 +1248,6 @@ Add --no-privacy to confirm, or use --mode hybrid."
             if let Some(p) = out {
                 std::fs::write(p, serde_json::to_vec_pretty(&report)?)?;
             }
-            Ok(0)
-        }
-        Cmd::Tui => {
-            let handle = tokio::runtime::Handle::current();
-            let (at, on, with) = (ws.clone(), handle.clone(), emb.clone());
-            let doctor: duet_tui::Doctor = Box::new(move |online| {
-                on.block_on(doctor::run(&at, online, &with))
-                    .into_iter()
-                    .map(|c| duet_tui::DoctorLine {
-                        status: format!("{:?}", c.status).to_lowercase(),
-                        name: c.name.into(),
-                        detail: c.detail,
-                        fix: c.fix,
-                    })
-                    .collect()
-            });
-            let on = handle.clone();
-            let detect = std::sync::Arc::new(move || {
-                on.block_on(duet_provider::backends::discover_loopback(
-                    &setup::bootstrap_ports(),
-                    Duration::from_millis(1500),
-                ))
-                .into_iter()
-                .map(|s| duet_tui::LocalServer {
-                    backend: s.backend.unwrap_or("OpenAI-compatible server").into(),
-                    base_url: s.base_url,
-                    models: s.models,
-                })
-                .collect()
-            });
-            let (on, at, with) = (handle.clone(), ws.clone(), emb.clone());
-            let cache_probe = std::sync::Arc::new(move || on.block_on(tui_cache_probe(&at, &with)));
-            let services = duet_tui::Services {
-                doctor,
-                detect,
-                cache_probe,
-                duet: std::env::current_exe().ok(),
-            };
-            // Settings edits in the TUI are bounded by the same policy layer.
-            let paths = duet_tui::Paths {
-                policy: emb.policy.clone(),
-                ..duet_tui::Paths::for_workspace(ws)
-            };
-            tokio::task::block_in_place(|| duet_tui::run(paths, services))?;
             Ok(0)
         }
         Cmd::Doctor { online, json } => {
