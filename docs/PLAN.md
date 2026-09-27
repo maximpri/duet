@@ -762,9 +762,12 @@ passes no policy source and no hooks. Added for a policy to have something to bo
 version and doctor checks (the `duet` binary is `main_with(Embedding::default())`), so an
 enterprise build does not repeat it.
 
-The single egress choke point (in progress) is the other Core dependency: an Enterprise receipt's
-claim that nothing else left is only as strong as Core's guarantee that every outbound path goes
-through one checked channel.
+The single egress choke point is the other Core dependency: an Enterprise receipt's claim that
+nothing else left is only as strong as Core's guarantee that every outbound path goes through one
+checked channel. Done 2026-09-26: third-party HTTP only through `duet-net`, which sends only
+requests the boundary checked; the egress audit (DUET-2026-025 to 030) and the inventory in
+SECURITY.md ("Egress"); `tools/gate.sh` refuses networking code outside `duet-net`,
+`duet-provider` and the egress proxy. Duet Enterprise links Core at a pinned revision (`c64de28`).
 
 ### M5 — Public benchmark (days 32–35)
 
