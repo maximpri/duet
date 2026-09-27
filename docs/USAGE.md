@@ -155,6 +155,12 @@ everything said and done so far.
   session budget ends it until the budget is raised. `oversight.approve` and commits ask in a
   dialog (No is the default; ↑↓ or y/n, Enter answers, Esc denies); with approval on, a session
   needs a terminal.
+- **Memory.** Every command, MCP server and language server Duet starts is held to
+  `limits.process_memory_mb` per process and `limits.command_memory_mb` for all of a command's
+  processes together (defaults: an eighth and a quarter of this machine's memory, counting
+  compressed and swapped memory too). A process above them is stopped and the command's output
+  says which and why; when the whole machine is critically short of memory, the command's largest
+  process is stopped. Duet never stops a process it did not start.
 - **Commits.** In a git repository, a session at a terminal offers `git_commit` with the defaults
   (`git.commit = "ask"`, approval off): before each commit it shows the files and the message and
   waits for your `y`. Nothing else is asked unless `oversight.approve` is on.

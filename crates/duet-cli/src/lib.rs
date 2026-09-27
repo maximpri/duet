@@ -732,6 +732,11 @@ async fn prepare(
     let git = duet_git::Git::locate()?;
     let _ = git.exclude_state_dir(ws);
     let sandbox = duet_sandbox::detect()?;
+    // Every command and server started from here on is held to these.
+    duet_sandbox::governor::set_limits(duet_sandbox::governor::MemoryLimits {
+        process_mb: cfg.int("limits.process_memory_mb")? as u64,
+        total_mb: cfg.int("limits.command_memory_mb")? as u64,
+    });
 
     if manifest.mode == Mode::Passthrough {
         eprintln!("{PASSTHROUGH_BANNER}");

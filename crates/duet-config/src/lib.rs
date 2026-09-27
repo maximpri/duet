@@ -492,6 +492,30 @@ pub const REGISTRY: &[Setting] = &[
         "Timeout for each sandboxed command."
     ),
     s!(
+        "limits.process_memory_mb",
+        Int {
+            min: 0,
+            max: 1_048_576
+        },
+        "0",
+        Owner,
+        Any,
+        false,
+        "Most memory one process started by a command, an MCP server or a language server may use, in MB: its physical footprint (resident plus compressed or swapped memory). A process above it is stopped and the command's output says why. 0: an eighth of this machine's memory. When the whole machine is critically short of memory, the command's largest process is stopped whatever its size. Duet only ever stops processes it started."
+    ),
+    s!(
+        "limits.command_memory_mb",
+        Int {
+            min: 0,
+            max: 1_048_576
+        },
+        "0",
+        Owner,
+        Any,
+        false,
+        "Most memory all the processes of one command (or one MCP or language server) may use together, in MB; above it the largest is stopped. 0: a quarter of this machine's memory."
+    ),
+    s!(
         "session.frontier_usd",
         Float {
             min: 0.0,

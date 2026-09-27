@@ -628,19 +628,17 @@ dependencies = [
  "bytes",
  "clap",
  "duet-config",
+ "duet-governor",
  "duet-provider",
  "futures-util",
  "hex",
  "http-body-util",
  "hyper",
  "hyper-util",
- "libproc",
  "reqwest",
- "rustix 0.38.44",
  "serde",
  "serde_json",
  "sha2",
- "sysinfo",
  "tempfile",
  "time",
  "tokio",
@@ -666,6 +664,17 @@ dependencies = [
  "ignore",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "duet-governor"
+version = "0.1.0"
+dependencies = [
+ "libproc",
+ "rustix 0.38.44",
+ "serde",
+ "sysinfo",
+ "tempfile",
 ]
 
 [[package]]
@@ -744,6 +753,7 @@ dependencies = [
 name = "duet-sandbox"
 version = "0.1.0"
 dependencies = [
+ "duet-governor",
  "rustix 0.38.44",
  "tempfile",
  "thiserror",

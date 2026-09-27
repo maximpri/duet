@@ -39,7 +39,8 @@ gate** for the frontier and a single **checked client** (`duet-net`) for every o
 ## 2. Crates and dependencies
 
 ```
-duet-provider    duet-fs    duet-sandbox                  (leaf crates)
+duet-provider    duet-fs    duet-governor                 (leaf crates)
+duet-sandbox                 → duet-governor   (every command's and server's tree held to memory limits)
 duet-git, duet-config        → duet-fs
 duet-boundary                → duet-provider, duet-fs
 duet-net                     → duet-boundary   (the one HTTP client and resolver for third parties; reqwest)
@@ -50,7 +51,8 @@ duet-egress                  → duet-boundary, duet-sandbox, duet-web   (host-s
 duet-agent                   → duet-boundary, duet-config, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
-duet-evals links no duet crate: it drives the duet binary as a black box and has its own
+duet-evals links no duet crate but duet-governor (a leaf that watches process trees and knows
+nothing of the boundary): it drives the duet binary as a black box and has its own
 pricing and usage parsing (its tests check that table against duet-provider's prices and its
 lanes' owner configs with duet-config's loader). duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
 ratatui): everything the operator sees on a terminal (the workspace, `term`, the settings
@@ -63,6 +65,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 |---|---|---|
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
+| `duet-governor` | Memory limits for a process tree: follows the tree from its root (id plus start time), reads the physical footprint, stops a process above the per-process limit, the largest above the tree limit or under critical machine pressure, and every member left when the watch ends; the configured limits (`set_limits`) | Signal a process outside the tree it watches |
 | `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
 | `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, each plain request and tunnel host checked by the run's guard, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
 | `duet-net` | The product's one HTTP client and resolver for third parties: sends only a `duet_boundary::third_party::Checked` request (no redirects, no proxy from the environment, a checked address pinned), adds owner credentials after the check, resolves only a checked request's host | Build a request itself, or send anything unchecked |
@@ -1006,14 +1009,17 @@ of `pricing.toml`. Both go into the batch's `report.md` and `cost-profile.json`.
 
 A run must not take over the machine it runs on (`crates/duet-evals/src/governor.rs`). A lane's
 agent and each grading command are started at a scheduling priority every descendant inherits (a
-QoS clamp through `taskpolicy -c utility` on macOS, `nice` elsewhere) and watched by the resource
-governor, because the kernel cannot bound a process tree's memory on macOS (a spawn-time limit
-does not reach children; the runaway that prompted it was a test binary three levels below the
-lane). The governor reads the process table in-process every 2 s to follow the tree from its root
-(members whose parent died stay members; identity is id plus start time) and the members' memory
-every 0.5 s (about 0.6% of one core in all); it kills a member above the per-process limit, the
-largest member while the tree is above the per-run limit, and every member still alive when the
-step ends, so a timeout ends the whole tree and no orphan holds a grading command's output open.
+QoS clamp through `taskpolicy -c utility` on macOS, `nice` elsewhere) and watched by the memory
+governor (`crates/duet-governor`, the one that also holds Duet's own commands and servers),
+because the kernel cannot bound a process tree's memory on macOS (a spawn-time limit does not
+reach children; the runaway that prompted it was a test binary three levels below the lane). The
+governor reads the process table in-process every 2 s to follow the tree from its root (members
+whose parent died stay members; identity is id plus start time) and the members' physical
+footprint (resident plus compressed or swapped memory) every 0.5 s (about 0.6% of one core in
+all); it kills a member above the per-process limit, the largest member while the tree is above
+the per-run limit, the largest while the machine is critically short of memory, and every member
+still alive when the step ends, so a timeout ends the whole tree and no orphan holds a grading
+command's output open.
 Kills, peaks and CPU go into the run record. Build output is deleted after grading.
 
 Duet's security engine takes its local reader as an option: `local.enabled = false` opens it with

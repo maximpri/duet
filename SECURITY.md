@@ -526,7 +526,22 @@ both never writable, at any depth; writes only in the
 workspace and the scratch `TMPDIR`; no network, including Unix sockets, or with the egress proxy's
 route only the proxy and the command's own loopback servers (`crates/duet-sandbox/tests/network.rs`,
 `crates/duet-agent/tests/egress.rs`); the credential stores of a home directory unreadable; the
-environment cleared to the allowlist; the whole process tree killed on timeout and on interrupt.
+environment cleared to the allowlist; the whole process tree killed on timeout and on interrupt;
+a process holding more memory than the per-process limit stopped, with the reason at the end of
+the command's output (`a_runaway_process_is_stopped_and_the_output_says_why`).
+
+**Memory.** Duet cannot have the kernel bound a command's process tree (on macOS a spawn-time
+limit covers that process only; on Linux it takes a cgroup an ordinary user may not be allowed to
+create), and the runaway that prompted this was a test binary three levels below the command. So
+every command, MCP server and language server is watched by the memory governor
+(`crates/duet-governor`, shared with the evaluation harness). It follows the tree
+from its root (process id plus start time, so a reused id is never adopted), reads the members'
+physical footprint (resident plus compressed memory on macOS, resident plus swapped on Linux;
+resident alone missed a 62 GB runaway that was mostly compressed) every 0.5 s, and stops a process
+above `limits.process_memory_mb`, the largest while the tree is above `limits.command_memory_mb`
+(defaults: an eighth and a quarter of the machine's memory), and the largest (from 256 MB) while
+the kernel reports critical memory pressure. It only ever signals members of the tree it watches:
+processes Duet did not start are never touched, whatever they use.
 
 - **macOS (Seatbelt)**: tested in the gate on every commit. A refused read prints "Operation not
   permitted".

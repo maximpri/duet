@@ -45,6 +45,7 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 duet-provider = { path = "crates/duet-provider" }
 duet-fs = { path = "crates/duet-fs" }
 duet-sandbox = { path = "crates/duet-sandbox" }
+duet-governor = { path = "crates/duet-governor" }
 duet-lsp = { path = "crates/duet-lsp" }
 duet-git = { path = "crates/duet-git" }
 duet-config = { path = "crates/duet-config" }

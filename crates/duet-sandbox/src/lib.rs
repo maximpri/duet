@@ -7,7 +7,8 @@
 //! and the run's scratch directory, never write `.git` or `.duet` at any depth,
 //! and reach the network only as [`Network`] says: not at all, only through the
 //! host's egress proxy, or freely. Resolution fails closed: without a sandbox
-//! binary at its fixed absolute path, no command runs.
+//! binary at its fixed absolute path, no command runs. Every command's and
+//! server's process tree is held to memory limits ([`governor`]).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 
 pub mod bridge;
+pub use duet_governor as governor;
 mod home_secrets;
 
 pub const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
@@ -283,6 +285,9 @@ pub struct Output {
     /// `.git` and `.duet` entries the command created and the sandbox removed
     /// afterwards (bubblewrap only; Seatbelt refuses to create them).
     pub removed_reserved: Vec<PathBuf>,
+    /// Processes the memory governor stopped (see [`governor`]); each is also
+    /// named at the end of `stderr`.
+    pub memory_kills: Vec<governor::Kill>,
     pub duration: Duration,
 }
 
@@ -856,7 +861,16 @@ pub async fn run_until(
     cwd: &Path,
     stop: impl std::future::Future<Output = ()>,
 ) -> Result<Output, SandboxError> {
-    run_with(kind, Path::new(BWRAP), spec, argv, cwd, stop).await
+    run_with(
+        kind,
+        Path::new(BWRAP),
+        spec,
+        argv,
+        cwd,
+        stop,
+        governor::limits(),
+    )
+    .await
 }
 
 static MARKERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1096,6 +1110,7 @@ async fn run_with(
     argv: &[String],
     cwd: &Path,
     stop: impl std::future::Future<Output = ()>,
+    limits: governor::MemoryLimits,
 ) -> Result<Output, SandboxError> {
     let program = argv.first().cloned().unwrap_or_default();
     // In a block of its own: what `prepare` holds is gone before any await.
@@ -1119,6 +1134,7 @@ async fn run_with(
         SandboxKind::Seatbelt => SandboxError::Spawn(format!("{program}: {e}")),
     })?;
     let pid = child.id();
+    let watch = pid.map(|p| governor::Governor::watch(p, limits));
     let mut out = child
         .stdout
         .take()
@@ -1149,6 +1165,12 @@ async fn run_with(
         kill_tree(pid);
     }
     let _ = child.kill().await;
+    let memory = match watch {
+        Some(g) => tokio::task::spawn_blocking(move || g.finish())
+            .await
+            .unwrap_or_default(),
+        None => governor::Usage::default(),
+    };
     let stdout = tokio::time::timeout(Duration::from_secs(5), read_out)
         .await
         .ok()
@@ -1201,18 +1223,49 @@ async fn run_with(
         v.truncate(spec.output_cap);
         v
     };
+    // After the cap, so a long output cannot hide why a process stopped.
+    let mut stderr = cap(stderr);
+    for k in &memory.kills {
+        stderr.extend_from_slice(memory_note(k, &limits).as_bytes());
+    }
     Ok(Output {
         exit_code,
         timed_out,
         interrupted,
         stdout: cap(stdout),
-        stderr: cap(stderr),
+        stderr,
         stdout_total,
         stderr_total,
         spilled_to,
         removed_reserved,
+        memory_kills: memory.kills,
         duration: started.elapsed(),
     })
+}
+
+/// The line a command's error output ends with for each process the memory
+/// governor stopped.
+fn memory_note(k: &governor::Kill, limits: &governor::MemoryLimits) -> String {
+    const GROWING: &str =
+        "A process that keeps growing is usually looping or collecting without bound.";
+    let why = match k.rule {
+        governor::KillRule::MachinePressure => format!(
+            "{}, and it was the command's largest process.",
+            k.limit(limits)
+        ),
+        governor::KillRule::ProcessLimit => format!(
+            "over the limit of {} (limits.process_memory_mb). {GROWING}",
+            k.limit(limits)
+        ),
+        governor::KillRule::TotalLimit => format!(
+            "the command's processes were over the limit of {} (limits.command_memory_mb) and it was the largest. {GROWING}",
+            k.limit(limits)
+        ),
+    };
+    format!(
+        "\n[sandbox] stopped {} (pid {}) at {} MB of memory: {why}\n",
+        k.name, k.pid, k.mb
+    )
 }
 
 /// A long-running sandboxed program that talks to the host over its standard
@@ -1232,6 +1285,8 @@ pub struct Process {
     fifo: Option<PathBuf>,
     /// `.git` and `.duet` entries it creates are removed when it stops (bubblewrap).
     sweep: bool,
+    /// Holds its tree to the memory limits while it runs.
+    governor: Option<governor::Governor>,
 }
 
 /// The standard streams of a [`Process`]: its input, output and error output.
@@ -1287,8 +1342,10 @@ pub async fn spawn(
             .take()
             .map(|s| Box::new(s) as Box<dyn tokio::io::AsyncWrite + Send + Unpin>),
     };
+    let pid = child.id();
     Ok(Process {
-        pid: child.id(),
+        governor: pid.map(|p| governor::Governor::watch(p, governor::limits())),
+        pid,
         stdout: child.stdout.take(),
         stderr: child.stderr.take(),
         child,
@@ -1327,6 +1384,9 @@ impl Process {
             kill_tree(pid);
         }
         let _ = self.child.kill().await;
+        if let Some(g) = self.governor.take() {
+            let _ = tokio::task::spawn_blocking(move || g.finish()).await;
+        }
         for p in [self.marker.take(), self.fifo.take()].into_iter().flatten() {
             let _ = std::fs::remove_file(p);
         }
@@ -1341,6 +1401,9 @@ impl Drop for Process {
     fn drop(&mut self) {
         if let Some(pid) = self.pid.take() {
             kill_tree(pid);
+        }
+        if let Some(g) = self.governor.take() {
+            g.abandon();
         }
         for p in [self.marker.take(), self.fifo.take()].into_iter().flatten() {
             let _ = std::fs::remove_file(p);
@@ -1873,6 +1936,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_runaway_process_is_stopped_and_the_output_says_why() {
+        let (_d, ws) = setup();
+        let s = spec(&ws);
+        // `dd` holds a 300 MB block two levels below the command while `sleep`
+        // leaves it blocked on the pipe; the shells around it are small.
+        let script = "/bin/sh -c 'dd if=/dev/zero bs=314572800 count=1 2>/dev/null | sleep 5'; echo survived";
+        let limits = governor::MemoryLimits {
+            process_mb: 64,
+            total_mb: 10_000,
+        };
+        let o = run_with(
+            KIND,
+            Path::new(BWRAP),
+            &s,
+            &["/bin/sh".into(), "-c".into(), script.into()],
+            &ws,
+            std::future::pending(),
+            limits,
+        )
+        .await
+        .unwrap();
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert_eq!(
+            String::from_utf8_lossy(&o.stdout).trim(),
+            "survived",
+            "{err}"
+        );
+        assert_eq!(o.exit_code, Some(0), "the command itself goes on: {err}");
+        assert_eq!(o.memory_kills.len(), 1, "{:?}", o.memory_kills);
+        let k = &o.memory_kills[0];
+        assert_eq!(
+            (k.name.as_str(), k.rule),
+            ("dd", governor::KillRule::ProcessLimit)
+        );
+        assert!(k.mb > 64, "{k:?}");
+        assert!(
+            err.contains(&format!(
+                "[sandbox] stopped dd (pid {}) at {} MB of memory: over the limit of 64 MB per process (limits.process_memory_mb).",
+                k.pid, k.mb
+            )),
+            "{err}"
+        );
+    }
+
+    #[tokio::test]
     async fn timeout_kills_detached_descendants() {
         let (_d, ws) = setup();
         let mut s = spec(&ws);
@@ -2007,6 +2115,7 @@ mod fail_closed_tests {
             &["/bin/sh".into(), "-c".into(), "echo ran > canary".into()],
             &s.workspace,
             std::future::pending(),
+            governor::limits(),
         )
         .await
     }
