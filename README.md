@@ -180,10 +180,10 @@ well as Duet's own audit log, records everything sent to the provider.
 
 | Question | Result so far (frontier `glm-5.3-flash`, local Qwen 3.8 27B) |
 |---|---|
-| Does sensitive data leave? | **0 canaries** in 18 of 18 Duet runs in the latest quality gate. The same frontier model alone sent **3,133 canaries** on the same tasks, in every run |
+| Does sensitive data leave? | **0 canaries** in the 18 Duet runs of the latest small-to-large batch and in the 12 of the large-repository batch. The same frontier model alone sent **3,720** and **26,838** canaries on the same tasks, in every run |
 | Does protected code leave? | **0** protected-source canaries in the IP gate, against 102 hits for the frontier alone |
-| Is the work as good? | Yes, within the pre-set margin. Two blind judges from different model families scored 20.1 vs 20.2 out of 30, and hidden tests passed 96.7% vs 95.9% |
-| What does it cost? | Frontier spend about **1.45–1.5×** the frontier alone on small-to-large tasks (1.6–1.8× including an upper-bound estimate of the local model's electricity), and about **0.87×** on the largest tasks; the ratios hold when the same tokens are priced at flagship models. It is slower. Privacy costs extra frontier turns, because the frontier has to ask about data it cannot read |
+| Is the work as good? | On small-to-large tasks, yes, within the pre-set margin: two blind judges from different model families scored 20.1 vs 19.9 out of 30, and hidden tests passed 98.3% vs 97.5%. On two real open-source repositories (about 30K and 57K lines), not yet reliably: hidden tests passed 85.0% vs 94.2% with the default settings, because on some seeds Duet misses cases whose evidence is in sensitive samples and logs; 94.7% with the local explorer on, in a small sample |
+| What does it cost? | Frontier spend about **1.2×** the frontier alone on small-to-large tasks and about **1.4×** on the large repositories (1.1–1.7× depending on settings), before the local model's electricity; priced at flagship models the same tokens give 1.2–1.6×. It is slower: about 2× the wall time, up to 3× on the large repositories. Privacy costs extra frontier turns, because the frontier has to ask about data it cannot read |
 
 How Duet looks for its own weaknesses:
 

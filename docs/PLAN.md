@@ -630,6 +630,14 @@ not by the work itself; privacy mode adds turns (`ask_local`), which is its 1.6�
 Each item ships behind a setting and is kept only if, head to head on the Gate 2 set and X1/X2, it
 lowers frontier cost (projected at flagship prices too) with no quality loss and zero leaks.
 
+*Outcome (`m52-sl`, `m52-xl`; §10, 2026-09-27):* items 1, 3 and 4 stay on (condensed output,
+structure views and synthetic samples: on S–L the frontier premium fell from 1.45–1.50× to 1.18×
+with quality non-inferior). Item 2, compaction, stays off: it is the cheapest XL lane (1.07×) but
+missed the X2 evidence cluster on both seeds (67.3% and 70.9% vs 96.4%). Item 5, the explorer,
+stays off pending attribution: its lane matched the frontier alone on XL (94.7% vs 94.2%) at 1.71×,
+but `explore` was called only 3 times in 4 runs. Open: the X2 cases whose evidence is in sensitive
+samples and logs, which default hybrid misses on some seeds (63.6% and 96.4%).
+
 *Built (branch `compaction`), item 2:* `context.compaction` (off), `context.compact_at` (100K
 estimated tokens), `context.compact_to` (0.4). Masking first; when it cannot reach the target, the
 local model condenses everything between the first message and the recent turns (whole turns, at
