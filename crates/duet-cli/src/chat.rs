@@ -886,6 +886,16 @@ async fn converse(
         git: &git,
         presenter,
     };
+    if let Some(w) = io.screen.workspace() {
+        // The side panel follows the files this session changes, holding
+        // back what the engine holds back.
+        w.attach(
+            ws.to_path_buf(),
+            run_dir.to_path_buf(),
+            audit_log_path(ws, &manifest.run_id),
+            crate::policy(cfg)?,
+        );
+    }
     show_status(io, &session, manifest, cfg);
     if resume {
         recap(&session, &manifest.run_id, &io.screen);
@@ -1031,7 +1041,8 @@ async fn take_turn(
         }
         None => printed(t.shown.clone()),
     };
-    let follower = tokio::spawn(follow(path, from, done.clone(), sink));
+    let shared = Arc::new(Mutex::new(Follow::new(path, from, sink)));
+    let follower = tokio::spawn(following(shared.clone(), done.clone()));
     let steering = session.steering();
     let mut held = Vec::new();
     io.working.store(true, Ordering::SeqCst);
@@ -1039,7 +1050,13 @@ async fn take_turn(
     let end = {
         // In the workspace the frontier's responses show as they stream.
         let turn = match io.screen.workspace() {
-            Some(c) => Either::Left(duet_boundary::live::observe(c.tap(), session.turn(message))),
+            Some(c) => {
+                let tap = Arc::new(Ordered {
+                    follow: shared.clone(),
+                    inner: c.tap(),
+                });
+                Either::Left(duet_boundary::live::observe(tap, session.turn(message)))
+            }
             None => Either::Right(session.turn(message)),
         };
         if let Some(c) = io.screen.workspace() {
@@ -1115,14 +1132,24 @@ fn show_status(io: &Io, session: &Session<'_>, manifest: &RunManifest, cfg: &due
             .then(|| cfg.str("local.model").ok())
             .flatten(),
     };
+    let s = session.stats();
     w.status(Status {
         session: manifest.run_id.clone(),
         mode: mode_name(manifest.mode).to_owned(),
         frontier: manifest.frontier_model.clone(),
         local,
         turns: u32::try_from(session.turns()).unwrap_or(u32::MAX),
-        cost_usd: session.stats().cost_usd,
+        cost_usd: s.cost_usd,
         budget_usd: cfg.float("session.frontier_usd").unwrap_or(0.0),
+        requests: s.turns,
+        tool_calls: s.tool_calls,
+        tokens_in: s.usage.input + s.usage.cache_read + s.usage.cache_write,
+        tokens_cached: s.usage.cache_read,
+        tokens_out: s.usage.output,
+        turn_budget_usd: cfg.float("limits.frontier_usd").unwrap_or(0.0),
+        worked_secs: session.worked().as_secs(),
+        budget_minutes: u64::try_from(cfg.int("session.wall_clock_minutes").unwrap_or(0))
+            .unwrap_or(0),
     });
 }
 
@@ -1257,36 +1284,90 @@ fn printed(shown: Arc<dyn Fn(&str) -> String + Send + Sync>) -> Box<dyn FnMut(En
     })
 }
 
+/// The transcript from a byte offset on: each entry written since is handed
+/// to the sink once, in order.
+pub(crate) struct Follow {
+    path: PathBuf,
+    from: u64,
+    partial: String,
+    sink: Box<dyn FnMut(Entry) + Send>,
+}
+
+impl Follow {
+    pub(crate) fn new(path: PathBuf, from: u64, sink: Box<dyn FnMut(Entry) + Send>) -> Self {
+        Follow {
+            path,
+            from,
+            partial: String::new(),
+            sink,
+        }
+    }
+
+    /// Hands every entry written so far to the sink.
+    pub(crate) fn drain(&mut self) {
+        if std::fs::metadata(&self.path).is_ok_and(|m| m.len() <= self.from) {
+            return;
+        }
+        if let Ok(mut f) = std::fs::File::open(&self.path)
+            && f.seek(SeekFrom::Start(self.from)).is_ok()
+        {
+            let mut chunk = String::new();
+            if let Ok(n) = f.read_to_string(&mut chunk) {
+                self.from += n as u64;
+                self.partial.push_str(&chunk);
+            }
+        }
+        while let Some(at) = self.partial.find('\n') {
+            let line: String = self.partial.drain(..=at).collect();
+            if let Ok(entry) = serde_json::from_str::<Entry>(&line) {
+                (self.sink)(entry);
+            }
+        }
+    }
+}
+
 /// Follows the transcript from byte `from` as it is written, handing each
 /// entry to `sink`, until `done` is raised (then reads what is left).
 pub(crate) async fn follow(
     path: PathBuf,
-    mut from: u64,
+    from: u64,
     done: Arc<AtomicBool>,
-    mut sink: Box<dyn FnMut(Entry) + Send>,
+    sink: Box<dyn FnMut(Entry) + Send>,
 ) {
-    let mut partial = String::new();
+    following(Arc::new(Mutex::new(Follow::new(path, from, sink))), done).await;
+}
+
+/// [`follow`] over a follower others may drain too.
+async fn following(f: Arc<Mutex<Follow>>, done: Arc<AtomicBool>) {
     loop {
         let last = done.load(Ordering::SeqCst);
-        if let Ok(mut f) = std::fs::File::open(&path)
-            && f.seek(SeekFrom::Start(from)).is_ok()
-        {
-            let mut chunk = String::new();
-            if let Ok(n) = f.read_to_string(&mut chunk) {
-                from += n as u64;
-                partial.push_str(&chunk);
-            }
-        }
-        while let Some(at) = partial.find('\n') {
-            let line: String = partial.drain(..=at).collect();
-            if let Ok(entry) = serde_json::from_str::<Entry>(&line) {
-                sink(entry);
-            }
-        }
+        f.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .drain();
         if last {
             return;
         }
         tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+}
+
+/// Streamed responses shown after every step recorded before them: at the
+/// start of each request the transcript is read up to its end first, so a
+/// step's progress line never shows after the reply that followed it.
+struct Ordered {
+    follow: Arc<Mutex<Follow>>,
+    inner: Arc<dyn duet_boundary::live::StreamTap>,
+}
+
+impl duet_boundary::live::StreamTap for Ordered {
+    fn event(&self, event: duet_boundary::live::StreamEvent<'_>) {
+        if matches!(event, duet_boundary::live::StreamEvent::Attempt(_)) {
+            self.follow
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .drain();
+        }
+        self.inner.event(event);
     }
 }
 

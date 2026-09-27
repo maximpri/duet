@@ -38,7 +38,15 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     ])
     .areas(area);
     status_bar(f, s, top);
-    conversation(f, s, body, now);
+    let panel_width = s.panel.width(area.width);
+    if panel_width > 0 {
+        let [talk, side] =
+            Layout::horizontal([Constraint::Min(30), Constraint::Length(panel_width)]).areas(body);
+        conversation(f, s, talk, now);
+        s.panel.draw(f, side, &s.status);
+    } else {
+        conversation(f, s, body, now);
+    }
     input_box(f, s, input_area, input_rows, cursor);
     key_line(f, s, keys);
 }
@@ -161,9 +169,11 @@ fn input_box(
 fn key_line(f: &mut Frame<'_>, s: &State, area: Rect) {
     let keys = match s.mode {
         Mode::Working => {
-            " ⏎ steer · /stop after this step · Ctrl-C stop now · PgUp/PgDn scroll · /help"
+            " ⏎ steer · /stop after this step · Ctrl-C stop now · PgUp/PgDn scroll · Ctrl-T panel · /help"
         }
-        _ => " ⏎ send · Alt-⏎ new line · Tab complete · PgUp/PgDn scroll · /help · Ctrl-D leave",
+        _ => {
+            " ⏎ send · Alt-⏎ new line · Tab complete · PgUp/PgDn scroll · Ctrl-T panel · /help · Ctrl-D leave"
+        }
     };
     f.render_widget(
         Paragraph::new(keys).style(Style::new().add_modifier(Modifier::DIM)),

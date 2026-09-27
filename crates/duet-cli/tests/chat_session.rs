@@ -547,14 +547,19 @@ session {id} left open (${cost:.4} so far); continue with: duet --resume {id}\n"
 /// `duet` on a real terminal (a pseudo-terminal from `script`, 30 rows by 100
 /// columns), its screen read back through a terminal emulator: the workspace
 /// takes the screen, shows the status bar and the input, takes a typed
-/// message, shows the reply and what other code printed, and gives the
-/// terminal back when the operator leaves.
+/// message, shows the reply and what other code printed, lists the file the
+/// turn wrote with its diff in the side panel, and gives the terminal back
+/// when the operator leaves.
 #[test]
 fn the_workspace_on_a_terminal() {
     let e = env();
     let f = Frontier::start();
     f.script(vec![
         Step::Call("read_file", json!({"path": "src/lib.rs"})),
+        Step::Call(
+            "write_file",
+            json!({"path": "src/b.rs", "content": "pub fn b() -> u32 { 2 }\n"}),
+        ),
         Step::Call("reply", json!({"message": "Hello from the workspace."})),
     ]);
     let url = f.url();
@@ -622,6 +627,23 @@ fn the_workspace_on_a_terminal() {
     // session's setup: it lands in the conversation, not over the screen.
     wait_for("│ session ");
     wait_for("turn 1 · $");
+    // Ctrl-T opens the side panel (closed below 110 columns): the file the
+    // turn wrote, with its diff.
+    keys.write_all(b"\x14").unwrap();
+    // Each step's progress shows before the reply that followed it.
+    let order = shown();
+    let at = |what: &str| {
+        order
+            .find(what)
+            .unwrap_or_else(|| panic!("{what}:\n{order}"))
+    };
+    assert!(
+        at("· write_file src/b.rs") < at("Hello from the workspace."),
+        "{order}"
+    );
+    wait_for("changed files 1");
+    wait_for("src/b.rs");
+    wait_for("pub fn b() -> u32 { 2 }");
     // Shown with `--nocapture`, for looking at the layout.
     eprintln!("{}", shown());
     keys.write_all(b"/quit\r").unwrap();
@@ -632,5 +654,5 @@ fn the_workspace_on_a_terminal() {
     let main = shown();
     assert!(main.contains("left open"), "{main}");
     assert!(!main.contains("conversation"), "{main}");
-    assert_eq!(f.requests(), 2);
+    assert_eq!(f.requests(), 3);
 }

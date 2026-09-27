@@ -10,7 +10,7 @@
 //! reads the same way.
 
 use crate::audit::list_runs;
-use crate::changes::{self, ChangedFile, Held, RowKind, Status};
+use crate::changes::{self, ChangedFile};
 use duet_agent::TurnEnd;
 use duet_agent::transcript::{Entry, Transcript};
 use duet_boundary::audit::{self, AuditEvent, Line as Record};
@@ -21,7 +21,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -606,7 +606,14 @@ pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect, input: Option<&Inp
         }
         None => draw_main(f, view, main),
     }
-    draw_side(f, view, side);
+    changes::draw_files(
+        f,
+        &view.files,
+        view.file,
+        view.diff_scroll,
+        view.focus == Focus::Side,
+        side,
+    );
 }
 
 fn draw_input(f: &mut Frame, input: &Input, area: Rect) {
@@ -689,179 +696,5 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
             .scroll((skip.min(u16::MAX as usize) as u16, 0))
             .block(Block::bordered().title(" withheld and blocked ")),
         withheld_area,
-    );
-}
-
-fn status_mark(file: &ChangedFile) -> (&'static str, Color) {
-    match (file.held, file.status) {
-        (Some(_), _) => ("held", Color::Yellow),
-        (None, Status::Created) => ("new ", Color::Green),
-        (None, Status::Deleted) => ("gone", Color::Red),
-        (None, Status::Unchanged) => ("same", Color::DarkGray),
-        (None, Status::ByCommand) => ("cmd ", Color::Yellow),
-        (None, Status::Edited) => ("edit", Color::Cyan),
-    }
-}
-
-fn draw_side(f: &mut Frame, view: &RunView, area: Rect) {
-    let list_height = (view.files.len() as u16 + 2).clamp(3, (area.height / 2).max(3));
-    let [list_area, diff_area] =
-        Layout::vertical([Constraint::Length(list_height), Constraint::Min(3)]).areas(area);
-    let focused = view.focus == Focus::Side;
-    let (added, removed) = view
-        .files
-        .iter()
-        .fold((0, 0), |(a, r), f| (a + f.added, r + f.removed));
-    let items: Vec<ListItem> = view
-        .files
-        .iter()
-        .map(|file| {
-            let (mark, color) = status_mark(file);
-            let mut spans = vec![
-                Span::styled(format!("{mark} "), Style::new().fg(color)),
-                Span::raw(file.path.clone()),
-            ];
-            if file.held.is_some() {
-                spans.push(Span::styled(
-                    "  held locally",
-                    Style::new().fg(Color::Yellow),
-                ));
-            } else {
-                if file.added > 0 {
-                    spans.push(Span::styled(
-                        format!("  +{}", file.added),
-                        Style::new().fg(Color::Green),
-                    ));
-                }
-                if file.removed > 0 {
-                    spans.push(Span::styled(
-                        format!("  -{}", file.removed),
-                        Style::new().fg(Color::Red),
-                    ));
-                }
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect();
-    let title = if view.files.is_empty() {
-        " changed files: none yet ".to_owned()
-    } else {
-        format!(" changed files {} (+{added} -{removed}) ", view.files.len())
-    };
-    let mut state =
-        ListState::default().with_selected((!view.files.is_empty()).then_some(view.file));
-    f.render_stateful_widget(
-        List::new(items)
-            .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-            .block(
-                Block::bordered()
-                    .title(title)
-                    .border_style(focus_style(focused)),
-            ),
-        list_area,
-        &mut state,
-    );
-    draw_diff(f, view, diff_area);
-}
-
-fn draw_diff(f: &mut Frame, view: &RunView, area: Rect) {
-    let Some(file) = view.files.get(view.file) else {
-        f.render_widget(
-            Paragraph::new("The files this run writes appear here with their diffs.")
-                .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(" diff ")),
-            area,
-        );
-        return;
-    };
-    if let Some(held) = file.held {
-        let why = match held {
-            Held::Sensitive => "it matches the sensitivity rules",
-            Held::Derived => "a command that could read sensitive data created or changed it",
-        };
-        f.render_widget(
-            Paragraph::new(vec![
-                Line::styled("held locally", Style::new().fg(Color::Yellow)),
-                Line::from(format!("{}: {why}; its content is not shown.", file.path)),
-            ])
-            .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(format!(" {} ", file.path))),
-            area,
-        );
-        return;
-    }
-    let width = file
-        .rows
-        .iter()
-        .filter_map(|r| r.old.max(r.new))
-        .max()
-        .unwrap_or(1)
-        .to_string()
-        .len();
-    let number = |n: Option<u32>| n.map_or(" ".repeat(width), |n| format!("{n:>width$}"));
-    let visible = area.height.saturating_sub(2) as usize;
-    let lines: Vec<Line> = file
-        .rows
-        .iter()
-        .skip(view.diff_scroll)
-        .take(visible)
-        .map(|r| {
-            let gutter = format!("{} {} ", number(r.old), number(r.new));
-            match r.kind {
-                RowKind::Hunk => Line::styled(
-                    format!("{:┄<w$} {}", "", r.text, w = width * 2 + 1),
-                    Style::new().fg(Color::DarkGray),
-                ),
-                RowKind::Note => Line::styled(
-                    format!("{gutter}  {}", r.text),
-                    Style::new()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-                RowKind::Added => Line::from(vec![
-                    Span::styled(gutter, Style::new().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("+ {}", r.text),
-                        Style::new().fg(Color::Green).bg(Color::Rgb(16, 48, 24)),
-                    ),
-                ]),
-                RowKind::Removed => Line::from(vec![
-                    Span::styled(gutter, Style::new().fg(Color::DarkGray)),
-                    Span::styled(
-                        format!("- {}", r.text),
-                        Style::new().fg(Color::Red).bg(Color::Rgb(56, 16, 16)),
-                    ),
-                ]),
-                RowKind::Context => Line::from(vec![
-                    Span::styled(gutter, Style::new().fg(Color::DarkGray)),
-                    Span::raw(format!("  {}", r.text)),
-                ]),
-            }
-        })
-        .collect();
-    let what = match file.status {
-        Status::Created => "created",
-        Status::Deleted => "deleted",
-        Status::Unchanged => "back to its content before the run",
-        Status::ByCommand => "changed by a command",
-        Status::Edited => "edited",
-    };
-    let position = if file.rows.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "; rows {}-{} of {}",
-            view.diff_scroll + 1,
-            (view.diff_scroll + visible).min(file.rows.len()),
-            file.rows.len()
-        )
-    };
-    f.render_widget(
-        Paragraph::new(lines).block(
-            Block::bordered()
-                .title(format!(" {} ({what}{position}) ", file.path))
-                .border_style(focus_style(view.focus == Focus::Side)),
-        ),
-        area,
     );
 }

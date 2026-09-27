@@ -17,6 +17,7 @@
 //! drawn through [`ansi`], which draws no escape sequence of its own.
 
 mod ansi;
+mod panel;
 mod terminal;
 mod view;
 
@@ -28,9 +29,10 @@ use duet_agent::transcript::Entry;
 use duet_boundary::live::{StreamEvent, StreamTap};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, MouseEventKind};
-use ratatui::text::Line;
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind};
+use ratatui::text::{Line, Span};
 use std::fs::File;
+use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -58,6 +60,18 @@ pub struct Status {
     pub turns: u32,
     pub cost_usd: f64,
     pub budget_usd: f64,
+    /// Frontier requests and tool calls so far.
+    pub requests: u64,
+    pub tool_calls: u64,
+    /// Tokens sent (of them cached) and received.
+    pub tokens_in: u64,
+    pub tokens_cached: u64,
+    pub tokens_out: u64,
+    /// The most one turn may cost.
+    pub turn_budget_usd: f64,
+    /// Working time so far, and the session's budget in minutes.
+    pub worked_secs: u64,
+    pub budget_minutes: u64,
 }
 
 /// What the workspace reports to the session.
@@ -82,6 +96,14 @@ enum Msg {
     End(TurnEnd),
     Mode(Mode),
     Status(Status),
+    /// The session's workspace, run directory, audit log and policy, for
+    /// the side panel.
+    Attach {
+        ws: PathBuf,
+        run_dir: PathBuf,
+        audit: PathBuf,
+        policy: Box<duet_boundary::policy::Policy>,
+    },
     /// A line another part of the process printed.
     Output(String),
     Remember(Vec<String>),
@@ -193,6 +215,23 @@ impl Workspace {
         self.send(Msg::Status(status));
     }
 
+    /// The session is open: the side panel follows its run directory (the
+    /// files it changes) under `policy` (which files are held locally).
+    pub fn attach(
+        &self,
+        ws: PathBuf,
+        run_dir: PathBuf,
+        audit: PathBuf,
+        policy: duet_boundary::policy::Policy,
+    ) {
+        self.send(Msg::Attach {
+            ws,
+            run_dir,
+            audit,
+            policy: Box::new(policy),
+        });
+    }
+
     /// The operator's earlier messages, for the input's history.
     pub fn remember(&self, entries: Vec<String>) {
         self.send(Msg::Remember(entries));
@@ -261,14 +300,16 @@ pub(crate) struct State {
     status: Status,
     hooks: Hooks,
     commands: &'static [&'static str],
-    /// The conversation, as logical lines and as rows wrapped at `width`.
-    lines: Vec<Line<'static>>,
+    /// The conversation, as logical lines (each with a lead its every row
+    /// starts with) and as rows wrapped at `width`.
+    lines: Vec<(Line<'static>, Option<Span<'static>>)>,
     rows: Vec<Line<'static>>,
     width: usize,
     /// Rows scrolled up from the bottom (0: the view follows new output).
     scroll: usize,
     /// Rows the conversation shows (set when drawn), for paging.
     page: usize,
+    panel: panel::Panel,
     dirty: bool,
     /// The screen must be drawn whole (after Ctrl-Z).
     redraw: bool,
@@ -291,6 +332,7 @@ impl State {
             width: 80,
             scroll: 0,
             page: 20,
+            panel: panel::Panel::default(),
             dirty: true,
             redraw: false,
             drawn_at: Instant::now(),
@@ -299,13 +341,20 @@ impl State {
 
     /// Adds lines with duet's styles to the conversation.
     fn push(&mut self, lines: impl IntoIterator<Item = String>) {
+        self.push_led(lines.into_iter().map(|l| (ansi::line(&l), None)));
+    }
+
+    /// Adds lines whose every row starts with its lead.
+    fn push_led(
+        &mut self,
+        lines: impl IntoIterator<Item = (Line<'static>, Option<Span<'static>>)>,
+    ) {
         let mut added = 0;
         for l in lines {
-            let line = ansi::line(&l);
-            let rows = ansi::wrap(&line, self.width);
+            let rows = rows_of(&l, self.width);
             added += rows.len();
             self.rows.extend(rows);
-            self.lines.push(line);
+            self.lines.push(l);
         }
         if self.lines.len() > KEEP {
             let drop = self.lines.len() - KEEP;
@@ -323,7 +372,7 @@ impl State {
         self.rows = self
             .lines
             .iter()
-            .flat_map(|l| ansi::wrap(l, self.width))
+            .flat_map(|l| rows_of(l, self.width))
             .collect();
         self.scroll = self.scroll.min(self.rows.len());
     }
@@ -367,6 +416,7 @@ impl State {
                 );
             }
             Msg::Entry(e) => {
+                self.panel.entry(&e);
                 let lines = self.feed.entry(&e);
                 self.push(lines);
             }
@@ -381,14 +431,26 @@ impl State {
             Msg::End(end) => {
                 let lines = self.feed.end(&end);
                 self.push(lines);
+                self.panel.refresh(true);
             }
             Msg::Mode(mode) => self.mode = mode,
             Msg::Status(s) => self.status = s,
+            Msg::Attach {
+                ws,
+                run_dir,
+                audit,
+                policy,
+            } => self.panel.attach(ws, run_dir, audit, *policy),
             Msg::Output(line) => {
                 let line = safe(&line);
                 if !line.trim().is_empty() {
-                    let shown = styled(&format!("│ {line}"), TStyle::DIM, self.colour);
-                    self.push([shown]);
+                    // Every row of it marked as printed elsewhere.
+                    let dim =
+                        ratatui::style::Style::new().add_modifier(ratatui::style::Modifier::DIM);
+                    self.push_led([(
+                        Line::from(Span::styled(line, dim)),
+                        Some(Span::styled("│ ", dim)),
+                    )]);
                 }
             }
             Msg::Remember(entries) => self.editor.remember(entries),
@@ -401,6 +463,20 @@ impl State {
     fn event(&mut self, ev: Event, tty: &mut File) {
         match ev {
             Event::Key(k) if k.kind != KeyEventKind::Release => match k.code {
+                // The side panel.
+                KeyCode::Char('t' | 'T') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.panel.cycle();
+                }
+                KeyCode::Up if k.modifiers.contains(KeyModifiers::CONTROL) => self.panel.select(-1),
+                KeyCode::Down if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.panel.select(1)
+                }
+                KeyCode::PageUp if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.panel.scroll_diff(-(self.page as isize));
+                }
+                KeyCode::PageDown if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.panel.scroll_diff(self.page as isize);
+                }
                 KeyCode::PageUp => self.scroll_by(self.page.saturating_sub(2).max(1) as isize),
                 KeyCode::PageDown => {
                     self.scroll_by(-(self.page.saturating_sub(2).max(1) as isize));
@@ -511,12 +587,36 @@ fn run(
             s.answering = answering;
             s.dirty = true;
         }
+        if s.mode == Mode::Working {
+            // The files duet writes show as it writes them.
+            s.panel.refresh(false);
+        }
         let now = Instant::now();
         let ticking = s.mode == Mode::Working && s.feed.working();
         if s.dirty || (ticking && now.duration_since(s.drawn_at) >= TICK) {
             let _ = screen.draw(|f| view::draw(f, s, now));
             s.dirty = false;
             s.drawn_at = now;
+        }
+    }
+}
+
+/// A logical line's rows at `width`, each starting with its lead.
+fn rows_of(
+    (line, lead): &(Line<'static>, Option<Span<'static>>),
+    width: usize,
+) -> Vec<Line<'static>> {
+    match lead {
+        None => ansi::wrap(line, width),
+        Some(lead) => {
+            let room = width.saturating_sub(lead.width()).max(1);
+            ansi::wrap(line, room)
+                .into_iter()
+                .map(|mut row| {
+                    row.spans.insert(0, lead.clone());
+                    row
+                })
+                .collect()
         }
     }
 }
@@ -585,6 +685,7 @@ mod tests {
             turns: 2,
             cost_usd: 0.0123,
             budget_usd: 5.0,
+            ..Status::default()
         }));
         s.message(Msg::Mode(Mode::Prompt));
         s.message(Msg::Lines(vec!["you> add hex literals".into()]));
@@ -660,6 +761,80 @@ mod tests {
         assert_eq!(*sent.lock().unwrap(), ["fix it"]);
         let rows = screen(&mut s, 80, 16);
         assert!(rows.iter().any(|r| r.contains("you> fix it")));
+    }
+
+    fn ctrl(c: char) -> Event {
+        Event::Key(ratatui::crossterm::event::KeyEvent::new(
+            KeyCode::Char(c),
+            KeyModifiers::CONTROL,
+        ))
+    }
+
+    #[test]
+    fn the_side_panel_opens_on_a_wide_screen_and_ctrl_t_cycles_it() {
+        let (mut s, _, _) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        // Wide: open by itself, on Changes.
+        let rows = screen(&mut s, 130, 20);
+        let all = rows.concat();
+        assert!(all.contains(" Changes "), "{all}");
+        assert!(all.contains("changed files: none yet"), "{all}");
+        // Ctrl-T: Privacy, Session, closed, Changes again.
+        s.event(ctrl('t'), &mut tty);
+        let all = screen(&mut s, 130, 20).concat();
+        assert!(all.contains("nothing withheld so far"), "{all}");
+        s.event(ctrl('t'), &mut tty);
+        let all = screen(&mut s, 130, 20).concat();
+        assert!(
+            all.contains("the session starts with your first message"),
+            "{all}"
+        );
+        s.event(ctrl('t'), &mut tty);
+        let all = screen(&mut s, 130, 20).concat();
+        assert!(!all.contains(" Changes "), "closed: {all}");
+        // Narrow: closed until asked for (the operator's choice then holds).
+        let (mut n, _, _) = state();
+        assert!(!screen(&mut n, 100, 20).concat().contains(" Changes "));
+        n.event(ctrl('t'), &mut tty);
+        assert!(screen(&mut n, 100, 20).concat().contains(" Changes "));
+    }
+
+    #[test]
+    fn the_privacy_view_counts_what_the_boundary_withheld() {
+        let (mut s, _, _) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        for class in [
+            duet_boundary::view::ViewClass::Tokenized,
+            duet_boundary::view::ViewClass::Tokenized,
+            duet_boundary::view::ViewClass::HandleSummary,
+            duet_boundary::view::ViewClass::Raw,
+        ] {
+            s.message(Msg::Entry(Box::new(Entry::Shown {
+                call_id: "c1".into(),
+                class,
+            })));
+        }
+        s.message(Msg::Entry(Box::new(Entry::Usage {
+            turn: 3,
+            usage: Default::default(),
+            cost_usd: 0.0,
+            interventions: vec!["2 values replaced (EMAIL, CARD)".into()],
+        })));
+        s.event(ctrl('t'), &mut tty);
+        s.event(ctrl('t'), &mut tty);
+        let all = screen(&mut s, 130, 24).concat();
+        assert!(
+            all.contains("2 tool result(s): values replaced by"),
+            "{all}"
+        );
+        assert!(
+            all.contains("1 tool result(s): sensitive, held locally"),
+            "{all}"
+        );
+        assert!(
+            all.contains("turn 3: 2 values replaced (EMAIL, CARD)"),
+            "{all}"
+        );
     }
 
     #[test]
