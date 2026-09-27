@@ -75,6 +75,7 @@ v1 is frozen. It is used only as a source of the owner's own code to port, after
 | 2026-09-26 | Web search is executed by the host itself, built into duet (operator, chosen over a managed SearXNG and over keeping Z.ai's search): the `native` backend is the default of `web.search.backend = "auto"`. Duet's own code asks only sources that publish an API for automated use (Stack Exchange, MediaWiki, GitHub REST search without a token, crates.io, npm, PyPI exact names, Algolia HN, arXiv), never scraped result pages of general engines; every query is checked before any source is contacted, each source asked receives it (said in SECURITY.md and `duet doctor`), one audit event per source. SearXNG, Brave and Z.ai only when named |
 | 2026-09-25 | Practical toolset before M5 (operator: "secure but also very practical"; missing tools block developer experience): web search/fetch, MCP servers (the only plugin mechanism), sub-agents, language-server tools, image input, git history and commits, plus steering in sessions. Each is a new input or output channel and gets the same treatment as the existing tools: results through the boundary by trust class, outbound text checked, spawned processes sandboxed, every use audited, side effects behind the approval mode. See M5.1 |
 | 2026-09-25 | Interactive sessions before M5 (operator): duet must support coding in a conversation, not only one-shot tasks — `duet chat` and an input panel in the TUI Run view; follow-ups and corrections keep the context; duet may ask clarifying questions; review between steps with the diff panel. Same privacy engine, sandbox, audit and approval rules; user messages are sanitized like task text. Designed independently (novelty rule) |
+| 2026-09-26 | One interface (operator): `duet` with no subcommand opens one full-screen terminal workspace (conversation, side panel of changes and privacy, status bar, settings and audit as overlays); `duet chat` and `duet tui` are removed. Scriptable commands stay (`duet run`, `resume`, `config`, `doctor`, `audit`, `purge`); without a terminal `duet` keeps the line-by-line session. Plan: M5.1c |
 
 Open decisions: evaluation budget cap (set after the first pilot runs).
 
@@ -547,6 +548,48 @@ pass-through (`glm-5.3-flash`, default settings) that did the same by itself (8 
 (bubblewrap 0.8.0, OrbStack kernel), every test passing privileged, unprivileged and as root, the
 bridge with duet itself as the helper through the frontier loop. Found on the way: `sensitive_data` commands and checks had the unrestricted network
 of `sandbox.network = true`, and home credential files were readable (DUET-2026-022, fixed).
+
+### M5.1c — One interface: `duet` is the workspace
+
+Operator, 2026-09-26: one default interactive experience instead of two (`duet chat`, an inline
+console, and `duet tui`, full-screen settings that start sessions as child processes and only watch
+them). Chosen layout: full screen, like an IDE.
+
+```
+┌ duet · hybrid · <frontier> ▸ <local> ───── context · cost/budget · withheld · network ┐
+│ conversation (scrolls; follows the bottom)   │ side panel (Tab cycles):             │
+│   you › message                              │   Changes  files changed, +/−, diff  │
+│   progress: tool calls, what was withheld    │   Privacy  withheld by class,        │
+│   duet's reply, streamed, as Markdown        │            local answers, probes     │
+│   turn end                                   │   Session  turns, tokens, cost, time │
+├──────────────────────────────────────────────┴──────────────────────────────────────┤
+│ › input: multi-line, history, / commands and @ paths, typing while duet works steers │
+└ key line ────────────────────────────────────────────────────────────────────────────┘
+overlays: Settings (Models, Sensitivity, IP levels, Limits, Data), Audit, Sessions, Help;
+modals: approval questions, the passthrough confirmation
+```
+
+Architecture:
+- The session runs in-process as `duet chat`'s did: the same loop (`chat.rs`: inbox, steering at
+  safe points, `/stop`, approvals, `/undo`, images, budgets, resume) with a new front end, the
+  workspace, in place of the inline console (`term/console.rs`, removed). Without a terminal the
+  line-by-line mode is unchanged.
+- `duet-tui` holds everything the operator sees and no session or provider code: the terminal
+  presentation now in `duet-cli/src/term` (feed, Markdown, streaming, the input editor, `safe`)
+  moves there; the CLI supplies the session through a port of channels (operator lines and
+  interrupts in; transcript entries, stream events, notices, turn begin and end, status out).
+- The workspace owns the terminal: it draws on the controlling terminal, and while it runs the
+  process's standard output and error go to a pipe whose lines appear in the conversation, so no
+  print from any crate can corrupt the screen. The terminal is restored on exit, panic and Ctrl-Z.
+- Text from the frontier, tools and files passes `safe` before it is drawn, as today.
+- Starting one-shot runs from the interface is dropped (a session does the same, in-process);
+  past runs and sessions stay browsable read-only.
+
+Order: (1) the shell with the in-process session (conversation, input, status bar, approvals,
+interrupts, stdout/stderr capture, `duet --resume`, the non-terminal fallback; `chat`/`tui`
+removed); (2) the side panels; (3) the overlays (settings screens, audit, sessions, help); (4) input
+and navigation (history, completion, multi-line, scrolling, search); (5) documentation and a live
+check. Each step keeps `tools/gate.sh` green; `duet run` and the evaluation lanes do not change.
 
 ### M5.2 — Cost with security: the local model shrinks what the frontier reads
 
