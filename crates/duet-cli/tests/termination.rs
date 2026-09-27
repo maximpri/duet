@@ -533,8 +533,11 @@ async fn a_local_model_outage_ends_at_the_wall_clock_without_a_degraded_result()
             which: "wall_clock".into()
         }
     );
+    // Retried in place until the wall clock ended the run (above). How many
+    // attempts fit in 800 ms depends on the machine's load, so the count only
+    // has to show retrying.
     assert!(
-        *unreachable.0.lock().unwrap() > 7,
+        *unreachable.0.lock().unwrap() > 2,
         "local calls were not retried"
     );
     assert_eq!(frontier.requests(), 1);
