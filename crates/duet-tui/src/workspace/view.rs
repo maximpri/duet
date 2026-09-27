@@ -49,6 +49,18 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     }
     input_box(f, s, input_area, input_rows, cursor);
     key_line(f, s, keys);
+    if s.overlay
+        && let Some(app) = s.app.as_mut()
+    {
+        // Over everything but the status bar.
+        let over = Rect {
+            y: area.y + 1,
+            height: area.height - 1,
+            ..area
+        };
+        f.render_widget(ratatui::widgets::Clear, over);
+        crate::ui::draw_in(f, app, over);
+    }
 }
 
 fn status_bar(f: &mut Frame<'_>, s: &State, area: Rect) {
@@ -160,6 +172,9 @@ fn input_box(
         ..inner
     };
     f.render_widget(Paragraph::new(rows), inner);
+    if s.overlay {
+        return;
+    }
     f.set_cursor_position(Position {
         x: inner.x + (col as u16).min(inner.width.saturating_sub(1)),
         y: inner.y + (row as u16).min(inner.height.saturating_sub(1)),

@@ -548,8 +548,9 @@ session {id} left open (${cost:.4} so far); continue with: duet --resume {id}\n"
 /// columns), its screen read back through a terminal emulator: the workspace
 /// takes the screen, shows the status bar and the input, takes a typed
 /// message, shows the reply and what other code printed, lists the file the
-/// turn wrote with its diff in the side panel, and gives the terminal back
-/// when the operator leaves.
+/// turn wrote with its diff in the side panel, opens the settings over the
+/// conversation and comes back, and gives the terminal back when the
+/// operator leaves.
 #[test]
 fn the_workspace_on_a_terminal() {
     let e = env();
@@ -646,6 +647,18 @@ fn the_workspace_on_a_terminal() {
     wait_for("pub fn b() -> u32 { 2 }");
     // Shown with `--nocapture`, for looking at the layout.
     eprintln!("{}", shown());
+    // The settings open over the conversation (the doctor runs offline on
+    // the Models screen); Esc comes back.
+    keys.write_all(b"/models\r").unwrap();
+    wait_for("duet settings");
+    wait_for("doctor (offline)");
+    eprintln!("{}", shown());
+    keys.write_all(b"\x1b").unwrap();
+    let t = Instant::now();
+    while shown().contains("duet settings") && t.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    wait_for(" conversation ");
     keys.write_all(b"/quit\r").unwrap();
     let status = child.wait().unwrap();
     std::thread::sleep(Duration::from_millis(200));

@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! `duet tui`: configuration screens generated from the settings registry,
-//! an audit viewer, and a two-panel run view (the live run beside the files
-//! it changed and their diffs) from which runs can be started.
+//! Everything the operator sees of duet on a terminal: the workspace
+//! ([`workspace`], what `duet` opens: the conversation, the side panel, the
+//! status bar), how duet's output looks ([`term`]), and the settings overlay
+//! inside the workspace: screens generated from the settings registry, IP
+//! levels, the data screen, an audit viewer and a read-only view of the
+//! workspace's runs and sessions (each beside the files it changed and their
+//! diffs).
 //!
-//! The TUI holds no policy logic. Every edit is checked and applied by
+//! The settings screens hold no policy logic. Every edit is checked and applied by
 //! `duet_config::Config::propose` / `apply` (the path `duet config set` uses):
 //! a change that loosens privacy shows its policy diff and needs an explicit
 //! confirmation, the project file only ever tightens, owner-only keys never
@@ -17,7 +21,6 @@ mod audit;
 mod changes;
 mod data;
 mod ip;
-mod launch;
 mod models;
 mod runs;
 mod settings;
@@ -31,12 +34,10 @@ mod tests;
 pub use app::{App, DoctorLine, Paths, Tab};
 pub use models::{CacheReport, LocalServer};
 
-use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Runs `duet doctor`; the argument is whether to include the `--online` checks.
-pub type Doctor = Box<dyn Fn(bool) -> Vec<DoctorLine>>;
+pub type Doctor = Box<dyn Fn(bool) -> Vec<DoctorLine> + Send>;
 
 /// What the TUI asks of the rest of Duet. The CLI supplies these (the TUI
 /// holds no provider code); tests supply fakes. Nothing here runs unless the
@@ -48,8 +49,6 @@ pub struct Services {
     pub detect: Arc<dyn Fn() -> Vec<LocalServer> + Send + Sync>,
     /// The cache-reuse probe against the configured local model (two model calls).
     pub cache_probe: Arc<dyn Fn() -> Result<CacheReport, String> + Send + Sync>,
-    /// The `duet` executable runs are started with (`None`: starting runs is off).
-    pub duet: Option<std::path::PathBuf>,
 }
 
 /// The smallest terminal the screens are laid out for (columns, rows).
@@ -66,39 +65,4 @@ pub fn check_size(width: u16, height: u16) -> Result<(), String> {
             "terminal too small: need at least {w}x{h}, this one is {width}x{height}"
         ))
     }
-}
-
-/// Runs the TUI on the terminal until the user quits. Fails before touching
-/// the terminal when it has no usable size.
-pub fn run(paths: Paths, services: Services) -> anyhow::Result<()> {
-    use std::io::IsTerminal;
-    anyhow::ensure!(
-        std::io::stdin().is_terminal() && std::io::stdout().is_terminal(),
-        "no usable terminal: duet tui needs an interactive terminal on standard input and output"
-    );
-    let (width, height) = ratatui::crossterm::terminal::size()
-        .map_err(|e| anyhow::anyhow!("no usable terminal: {e}"))?;
-    check_size(width, height).map_err(anyhow::Error::msg)?;
-    let mut app = App::new(paths, services)?;
-    let mut terminal = ratatui::try_init().map_err(|e| {
-        ratatui::restore();
-        anyhow::anyhow!("no usable terminal: {e}")
-    })?;
-    let result = (|| -> anyhow::Result<()> {
-        while !app.quit {
-            terminal.draw(|f| ui::draw(f, &mut app))?;
-            if event::poll(Duration::from_millis(500))? {
-                if let Event::Key(k) = event::read()?
-                    && k.kind == KeyEventKind::Press
-                {
-                    app.key(k.code, k.modifiers);
-                }
-            } else {
-                app.tick();
-            }
-        }
-        Ok(())
-    })();
-    ratatui::restore();
-    result
 }

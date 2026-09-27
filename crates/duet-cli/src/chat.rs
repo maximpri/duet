@@ -544,7 +544,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         leave: leave.clone(),
         idle_press: Mutex::new(None),
     });
-    let (inbox, screen) = open_screen(tty, &interrupts);
+    let (inbox, screen) = open_screen(tty, &interrupts, || crate::workspace_settings(&ws, emb));
     // The terminal is given back on every way out.
     let _closing = Closing(screen.clone());
     // Refused before anything else when approval is on and nobody can answer.
@@ -740,7 +740,11 @@ struct Io {
 
 /// The workspace when standard input and output are a terminal that can take
 /// it (its lines go to the inbox), else the reader thread and plain lines.
-fn open_screen(tty: bool, interrupts: &Arc<Interrupts>) -> (Arc<Inbox>, Screen) {
+fn open_screen(
+    tty: bool,
+    interrupts: &Arc<Interrupts>,
+    settings: impl FnOnce() -> duet_tui::workspace::Settings,
+) -> (Arc<Inbox>, Screen) {
     let plain = || (Inbox::stdin(), Screen::Plain { tty });
     if !(tty && std::io::stdout().is_terminal() && crate::term::capable()) {
         return plain();
@@ -764,7 +768,7 @@ fn open_screen(tty: bool, interrupts: &Arc<Interrupts>) -> (Arc<Inbox>, Screen) 
             Box::new(move || inbox.answering())
         },
     };
-    match Workspace::start(hooks, COMMANDS) {
+    match Workspace::start(hooks, COMMANDS, Some(settings())) {
         Ok(workspace) => (inbox, Screen::Live(workspace)),
         Err(_) => plain(),
     }

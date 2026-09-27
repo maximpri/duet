@@ -74,6 +74,32 @@ pub struct Status {
     pub budget_minutes: u64,
 }
 
+/// The settings overlay's sources: where the configuration lives (and the
+/// embedding program's policy layer) and what the CLI does for the screens.
+pub struct Settings {
+    pub paths: crate::Paths,
+    pub services: crate::Services,
+}
+
+/// Commands the workspace answers itself (never sent to the session).
+pub const COMMANDS: &[&str] = &[
+    "/audit",
+    "/data",
+    "/ip",
+    "/limits",
+    "/models",
+    "/runs",
+    "/sensitivity",
+    "/settings",
+];
+
+/// The workspace's own part of `/help`.
+const HELP: &str = "\
+Workspace: PgUp/PgDn or the wheel scroll · Ctrl-T side panel (Changes, Privacy, Session) ·
+Ctrl-Up/Down pick a changed file · Ctrl-PgUp/PgDn scroll its diff · Ctrl-O settings.
+/settings /models /sensitivity /ip /limits /data /audit /runs open the settings screens
+(Esc comes back; changes apply from the next session).";
+
 /// What the workspace reports to the session.
 pub struct Hooks {
     /// A line the operator sent (continuation lines joined).
@@ -121,7 +147,11 @@ pub struct Workspace {
 
 impl Workspace {
     /// Takes over the terminal. `commands` are completed after `/`.
-    pub fn start(hooks: Hooks, commands: &'static [&'static str]) -> std::io::Result<Arc<Self>> {
+    pub fn start(
+        hooks: Hooks,
+        commands: &'static [&'static str],
+        settings: Option<Settings>,
+    ) -> std::io::Result<Arc<Self>> {
         let mut tty = terminal::tty()?;
         let draw_to = tty.try_clone()?;
         terminal::enter(&mut tty)?;
@@ -143,7 +173,8 @@ impl Workspace {
         })
         .inspect_err(|_| terminal::give_back())?;
         let colour = colour(true);
-        let state = State::new(colour, hooks, commands);
+        let mut state = State::new(colour, hooks, commands);
+        state.settings = settings;
         let thread = std::thread::Builder::new()
             .name("duet-workspace".into())
             .spawn(move || {
@@ -310,6 +341,11 @@ pub(crate) struct State {
     /// Rows the conversation shows (set when drawn), for paging.
     page: usize,
     panel: panel::Panel,
+    /// The settings overlay: its sources until first opened, then the app.
+    settings: Option<Settings>,
+    app: Option<crate::app::App>,
+    overlay: bool,
+    ticked: Instant,
     dirty: bool,
     /// The screen must be drawn whole (after Ctrl-Z).
     redraw: bool,
@@ -333,6 +369,10 @@ impl State {
             scroll: 0,
             page: 20,
             panel: panel::Panel::default(),
+            settings: None,
+            app: None,
+            overlay: false,
+            ticked: Instant::now(),
             dirty: true,
             redraw: false,
             drawn_at: Instant::now(),
@@ -395,6 +435,77 @@ impl State {
             self.scroll.saturating_sub(up.unsigned_abs())
         };
         self.dirty = true;
+    }
+
+    /// Opens the settings overlay, on `tab` when given.
+    fn open_settings(&mut self, tab: Option<crate::app::Tab>) {
+        if self.app.is_none() {
+            let Some(Settings { paths, services }) = self.settings.take() else {
+                let line = styled("settings are not available here", TStyle::WARN, self.colour);
+                self.push([line]);
+                return;
+            };
+            match crate::app::App::new(paths, services) {
+                Ok(app) => self.app = Some(app),
+                Err(e) => {
+                    let line = styled(
+                        &format!("settings: {}", safe(&format!("{e:#}"))),
+                        TStyle::BAD,
+                        self.colour,
+                    );
+                    self.push([line]);
+                    return;
+                }
+            }
+        }
+        if let (Some(app), Some(tab)) = (self.app.as_mut(), tab) {
+            app.enter_tab(tab);
+        }
+        self.overlay = true;
+    }
+
+    /// A key while the overlay is open: the screens take it; Esc (outside an
+    /// edit or a dialog) and `q` come back to the conversation.
+    fn overlay_key(&mut self, k: ratatui::crossterm::event::KeyEvent) {
+        let Some(app) = self.app.as_mut() else {
+            self.overlay = false;
+            return;
+        };
+        let idle = matches!(app.mode, crate::app::Mode::Normal)
+            && !(app.tab == crate::app::Tab::Audit && app.audit.focus_records);
+        if k.code == KeyCode::Esc && idle {
+            self.overlay = false;
+            return;
+        }
+        app.key(k.code, k.modifiers);
+        if app.quit {
+            app.quit = false;
+            self.overlay = false;
+        }
+    }
+
+    /// A command the workspace answers itself; `false` sends it on.
+    fn local_command(&mut self, text: &str) -> bool {
+        use crate::app::Tab;
+        let tab = match text.trim() {
+            "/settings" => None,
+            "/models" => Some(Tab::Models),
+            "/sensitivity" => Some(Tab::Sensitivity),
+            "/ip" => Some(Tab::Ip),
+            "/limits" => Some(Tab::Limits),
+            "/data" => Some(Tab::Data),
+            "/audit" => Some(Tab::Audit),
+            "/runs" => Some(Tab::Runs),
+            "/help" | "/?" => {
+                // Then the session's own commands.
+                let lines: Vec<String> = HELP.lines().map(str::to_owned).collect();
+                self.push(lines);
+                return false;
+            }
+            _ => return false,
+        };
+        self.open_settings(tab);
+        true
     }
 
     fn message(&mut self, m: Msg) {
@@ -461,11 +572,23 @@ impl State {
     }
 
     fn event(&mut self, ev: Event, tty: &mut File) {
+        if self.overlay {
+            if let Event::Key(k) = ev
+                && k.kind != KeyEventKind::Release
+            {
+                self.overlay_key(k);
+            }
+            self.dirty = true;
+            return;
+        }
         match ev {
             Event::Key(k) if k.kind != KeyEventKind::Release => match k.code {
-                // The side panel.
+                // The side panel and the settings.
                 KeyCode::Char('t' | 'T') if k.modifiers.contains(KeyModifiers::CONTROL) => {
                     self.panel.cycle();
+                }
+                KeyCode::Char('o' | 'O') if k.modifiers.contains(KeyModifiers::CONTROL) => {
+                    self.open_settings(None);
                 }
                 KeyCode::Up if k.modifiers.contains(KeyModifiers::CONTROL) => self.panel.select(-1),
                 KeyCode::Down if k.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -502,6 +625,9 @@ impl State {
         match outcome {
             Outcome::Edited => {}
             Outcome::Submit(text) => {
+                if self.local_command(&text) {
+                    return;
+                }
                 if !text.trim().is_empty() {
                     let mut lines = text.lines();
                     let mut shown = Vec::new();
@@ -523,7 +649,8 @@ impl State {
             }
             Outcome::Complete => {
                 let cwd = std::env::current_dir().unwrap_or_default();
-                let choices = self.editor.complete(&cwd, self.commands);
+                let all: Vec<&str> = self.commands.iter().chain(COMMANDS).copied().collect();
+                let choices = self.editor.complete(&cwd, &all);
                 if !choices.is_empty() {
                     let listed = styled(&safe(&choices.join("   ")), TStyle::DIM, self.colour);
                     self.push([listed]);
@@ -590,6 +717,15 @@ fn run(
         if s.mode == Mode::Working {
             // The files duet writes show as it writes them.
             s.panel.refresh(false);
+        }
+        if s.overlay
+            && s.ticked.elapsed() >= Duration::from_millis(500)
+            && let Some(app) = s.app.as_mut()
+        {
+            // Background jobs (detection, the cache probe), the Runs view.
+            app.tick();
+            s.ticked = Instant::now();
+            s.dirty = true;
         }
         let now = Instant::now();
         let ticking = s.mode == Mode::Working && s.feed.working();
@@ -835,6 +971,62 @@ mod tests {
             all.contains("turn 3: 2 values replaced (EMAIL, CARD)"),
             "{all}"
         );
+    }
+
+    fn key(code: KeyCode) -> Event {
+        Event::Key(ratatui::crossterm::event::KeyEvent::from(code))
+    }
+
+    fn type_line(s: &mut State, text: &str, tty: &mut File) {
+        for c in text.chars() {
+            s.event(key(KeyCode::Char(c)), tty);
+        }
+        s.event(key(KeyCode::Enter), tty);
+    }
+
+    #[test]
+    fn slash_settings_opens_the_screens_over_the_conversation_and_esc_comes_back() {
+        let (mut s, _, sent) = state();
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().join("ws");
+        std::fs::create_dir_all(ws.join(".duet")).unwrap();
+        s.settings = Some(Settings {
+            paths: crate::Paths {
+                owner: d.path().join("owner.toml"),
+                project: ws.join(".duet/config.toml"),
+                state: d.path().join("state"),
+                workspace: ws,
+                policy: None,
+            },
+            services: crate::tests::services(),
+        });
+        let mut tty = tempfile::tempfile().unwrap();
+        type_line(&mut s, "/audit", &mut tty);
+        assert!(s.overlay);
+        assert!(sent.lock().unwrap().is_empty(), "never sent to the session");
+        let all = screen(&mut s, 100, 30).concat();
+        assert!(all.contains("duet settings"), "{all}");
+        assert!(all.contains("runs: none yet"), "the Audit screen: {all}");
+        s.event(key(KeyCode::Esc), &mut tty);
+        assert!(!s.overlay);
+        let all = screen(&mut s, 100, 30).concat();
+        assert!(
+            all.contains("conversation") && !all.contains("duet settings"),
+            "{all}"
+        );
+        // Ctrl-O opens it again on the screen it was left at.
+        s.event(ctrl('o'), &mut tty);
+        assert!(screen(&mut s, 100, 30).concat().contains("runs: none yet"));
+    }
+
+    #[test]
+    fn help_adds_the_workspace_keys_and_goes_on_to_the_session() {
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        type_line(&mut s, "/help", &mut tty);
+        assert_eq!(*sent.lock().unwrap(), ["/help"]);
+        let all = screen(&mut s, 120, 30).concat();
+        assert!(all.contains("Ctrl-T side panel"), "{all}");
     }
 
     #[test]

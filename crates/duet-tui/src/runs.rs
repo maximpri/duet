@@ -19,8 +19,8 @@ use duet_boundary::policy::Policy;
 use duet_boundary::view::ViewClass;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::style::{Color, Style};
+use ratatui::text::Line;
 use ratatui::widgets::{Block, Paragraph, Wrap};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -53,8 +53,6 @@ pub struct RunView {
     derived_audit: Vec<String>,
     pub(crate) file: usize,
     pub(crate) diff_scroll: usize,
-    /// A run to select as soon as it is listed (one just started).
-    want: Option<String>,
     /// The selected run's session state, when it is a session.
     pub(crate) session: Option<SessionState>,
 }
@@ -132,7 +130,6 @@ impl Default for RunView {
             derived_audit: Vec::new(),
             file: 0,
             diff_scroll: 0,
-            want: None,
             session: None,
         }
     }
@@ -168,16 +165,6 @@ impl RunView {
         self.selected = current
             .and_then(|c| self.runs.iter().position(|r| *r == c))
             .unwrap_or(0);
-        if let Some(i) = self
-            .want
-            .as_ref()
-            .and_then(|w| self.runs.iter().position(|r| r == w))
-        {
-            self.want = None;
-            self.selected = i;
-            self.scroll = 0;
-            self.follow = true;
-        }
         let Some(id) = self.runs.get(self.selected).cloned() else {
             self.feed.clear();
             self.withheld.clear();
@@ -250,17 +237,6 @@ impl RunView {
     pub fn forget(&mut self) {
         self.seen = None;
         self.files_of = None;
-    }
-
-    /// The selected run's id.
-    pub fn selected_id(&self) -> Option<&str> {
-        self.runs.get(self.selected).map(String::as_str)
-    }
-
-    /// Selects `id` now, or as soon as it is listed.
-    pub fn show(&mut self, id: &str, ws: &Path, policy: &Policy) {
-        self.want = Some(id.to_owned());
-        self.refresh(ws, policy);
     }
 
     pub fn scroll_by(&mut self, d: isize) {
@@ -587,25 +563,10 @@ fn focus_style(on: bool) -> Style {
     }
 }
 
-/// The session input box under the conversation.
-pub(crate) struct Input {
-    pub text: String,
-    pub focused: bool,
-    pub hint: String,
-}
-
-pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect, input: Option<&Input>) {
+pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect) {
     let [main, side] =
         Layout::horizontal([Constraint::Percentage(56), Constraint::Percentage(44)]).areas(area);
-    match input {
-        Some(input) => {
-            let [main, input_area] =
-                Layout::vertical([Constraint::Min(8), Constraint::Length(3)]).areas(main);
-            draw_main(f, view, main);
-            draw_input(f, input, input_area);
-        }
-        None => draw_main(f, view, main),
-    }
+    draw_main(f, view, main);
     changes::draw_files(
         f,
         &view.files,
@@ -616,39 +577,12 @@ pub(crate) fn draw(f: &mut Frame, view: &RunView, area: Rect, input: Option<&Inp
     );
 }
 
-fn draw_input(f: &mut Frame, input: &Input, area: Rect) {
-    let width = area.width.saturating_sub(4) as usize;
-    let shown: String = {
-        let n = input.text.chars().count();
-        input.text.chars().skip(n.saturating_sub(width)).collect()
-    };
-    let line = if input.focused {
-        Line::from(vec![
-            Span::raw(format!("> {shown}")),
-            Span::styled("_", Style::new().add_modifier(Modifier::SLOW_BLINK)),
-        ])
-    } else {
-        Line::styled("> ", Style::new().fg(Color::DarkGray))
-    };
-    f.render_widget(
-        Paragraph::new(line).block(
-            Block::bordered()
-                .title(input.hint.clone())
-                .border_style(focus_style(input.focused)),
-        ),
-        area,
-    );
-}
-
 fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
     let withheld_height = (area.height / 3).max(4);
     let [feed_area, withheld_area] =
         Layout::vertical([Constraint::Min(4), Constraint::Length(withheld_height)]).areas(area);
     let title = match view.runs.get(view.selected) {
-        None => {
-            " run: none yet (n starts a session, o a one-shot run; they appear under .duet/runs) "
-                .to_owned()
-        }
+        None => " runs: none yet (sessions and runs appear here as they start) ".to_owned(),
         Some(id) => format!(
             " {} {id} ({}/{}, follow {}) ",
             if view.session.is_some() {

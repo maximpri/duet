@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Frame layout: the screen bar, the current screen, the key line with the
-//! edit prompt or the last status, and the confirmation dialog.
+//! The settings overlay's layout (inside the workspace): the screen bar, the
+//! current screen, the key line with the edit prompt or the last status, and
+//! the confirmation dialog.
 
 use crate::app::{App, Mode, Tab};
 use duet_config::{Origin, Proposal, Target};
@@ -29,10 +30,10 @@ pub(crate) fn status_style(status: &str) -> Style {
     }
 }
 
-pub(crate) fn draw(f: &mut Frame, app: &mut App) {
+/// Draws the screens into `area` (the workspace's overlay).
+pub(crate) fn draw_in(f: &mut Frame, app: &mut App, area: Rect) {
     // A terminal shrunk below the minimum while running shows why, not a
     // clipped screen.
-    let area = f.area();
     if let Err(message) = crate::check_size(area.width, area.height) {
         f.render_widget(
             Paragraph::new(format!("{message}; enlarge the window to continue"))
@@ -46,7 +47,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Min(8),
         Constraint::Length(3),
     ])
-    .areas(f.area());
+    .areas(area);
     let target = match app.target {
         Target::Owner => format!(
             " edits go to: owner config ({}) ",
@@ -71,30 +72,23 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App) {
                 .bg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )
-        .block(Block::bordered().title(" duet ").title_bottom(target)),
+        .block(
+            Block::bordered()
+                .title(" duet settings · Esc back to the conversation ")
+                .title_bottom(target),
+        ),
         bar,
     );
     match app.tab {
         Tab::Ip => crate::ip::draw(f, app, body),
         Tab::Audit => crate::audit::draw(f, &mut app.audit, body),
-        Tab::Run => {
-            let input = session_input(app);
-            crate::runs::draw(f, &app.runs, body, input.as_ref())
-        }
+        Tab::Runs => crate::runs::draw(f, &app.runs, body),
         _ => crate::settings::draw(f, app, body),
     }
     draw_keys(f, app, keys);
     match &app.mode {
-        Mode::Confirm(p) => draw_confirm(f, app, p),
+        Mode::Confirm(p) => draw_confirm(f, app, p, area),
         Mode::ConfirmPurge(plan) => crate::data::draw_confirm(f, plan),
-        Mode::Launch {
-            objective,
-            mode,
-            session,
-        } => crate::launch::draw_dialog(f, objective, *mode, *session),
-        Mode::AckPassthrough { objective, session } => {
-            crate::launch::draw_ack(f, objective, *session)
-        }
         _ => {}
     }
 }
@@ -106,60 +100,22 @@ fn key_help(app: &App) -> &'static str {
         (Mode::Tester, _) => "type a workspace path · Enter or Esc done",
         (Mode::Sample, _) => "type sample text · Enter or Esc done",
         (Mode::ConfirmPurge(_), _) => "y delete · n or Esc cancel",
-        (Mode::Launch { session: true, .. }, _) => {
-            "type the first message · ↑↓ mode · Enter start · Esc cancel"
-        }
-        (Mode::Launch { .. }, _) => "type the objective · ↑↓ mode · Enter start · Esc cancel",
-        (Mode::Message { .. }, _) => {
-            "Enter send (while duet works it steers the turn) · /stop after this step · Ctrl-C stop now · ↑↓ scroll · Esc done"
-        }
-        (Mode::AckPassthrough { .. }, _) => {
-            "y start with the privacy boundary off · n or Esc cancel"
-        }
         (_, Tab::Models) => {
-            "Enter edit · d doctor · o online checks · l detect local · [ ] u use · c cache probe · p owner/project · q quit"
+            "Enter edit · d doctor · o online checks · l detect local · [ ] u use · c cache probe · p owner/project · Esc back"
         }
         (_, Tab::Sensitivity) => {
-            "Enter edit · a add entry · t test a path · s test text · p owner/project · Tab screens · q quit"
+            "Enter edit · a add entry · t test a path · s test text · p owner/project · Tab screens · Esc back"
         }
         (_, Tab::Data) => {
-            "Enter edit · x purge old runs · X purge all runs · p owner/project · Tab screens · q quit"
+            "Enter edit · x purge old runs · X purge all runs · p owner/project · Tab screens · Esc back"
         }
         (_, Tab::Ip) => {
-            "Enter open/close · i interface-only · s sealed · u unmark · p owner/project · q quit"
+            "Enter open/close · i interface-only · s sealed · u unmark · p owner/project · Esc back"
         }
-        (_, Tab::Audit) => "↑↓ select · Enter records · Esc runs · v verify · r reload · q quit",
-        (_, Tab::Run) => {
-            "n new session · o one-shot run · r resume · i type · s stop after step · x stop now · ←→ panel · ↑↓ scroll/file · J/K diff · [ ] run · f follow · q quit"
-        }
-        _ => "Enter edit · a add entry · p owner/project · Tab screens · q quit",
+        (_, Tab::Audit) => "↑↓ select · Enter records · Esc runs · v verify · r reload · Esc back",
+        (_, Tab::Runs) => "[ ] run · ↑↓ scroll/file · ←→ panel · J/K diff · f follow · Esc back",
+        _ => "Enter edit · a add entry · p owner/project · Tab screens · Esc back",
     }
-}
-
-/// The Run view's input box, when the selected run is a session.
-fn session_input(app: &App) -> Option<crate::runs::Input> {
-    let state = app.runs.session.as_ref()?;
-    let live = app.live_session().is_some();
-    let (text, focused) = match &app.mode {
-        Mode::Message { buffer } if live => (buffer.clone(), true),
-        _ => (String::new(), false),
-    };
-    let hint = match (live, focused, state.working) {
-        (true, true, true) => " duet is working: your message steers it after the current step ",
-        (true, true, false) if state.asked => " duet asked you a question: type the answer ",
-        (true, true, false) => " your message ",
-        (true, false, true) => {
-            " duet is working · i type to steer · s stop after step · x stop now "
-        }
-        (true, false, false) => " i type a message ",
-        (false, _, _) if state.closed => " this session is closed · n starts a new one ",
-        (false, _, _) => " not running here · r resumes this session ",
-    };
-    Some(crate::runs::Input {
-        text,
-        focused,
-        hint: hint.into(),
-    })
 }
 
 fn draw_keys(f: &mut Frame, app: &App, area: Rect) {
@@ -230,10 +186,10 @@ pub(crate) fn diff(old: &Value, new: &Value) -> Vec<(char, String)> {
     }
 }
 
-fn draw_confirm(f: &mut Frame, app: &App, p: &Proposal) {
+fn draw_confirm(f: &mut Frame, app: &App, p: &Proposal, within: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
-        .areas(f.area());
+        .areas(within);
     let [area] = Layout::vertical([Constraint::Length(16)])
         .flex(Flex::Center)
         .areas(area);

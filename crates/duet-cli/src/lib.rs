@@ -924,6 +924,100 @@ fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Res
     Ok(())
 }
 
+/// The settings' cache-reuse probe against the configured local model: the
+/// same endpoint trust rules as a run, two identical short requests, no
+/// retries beyond two attempts. Prints nothing (the workspace owns the
+/// terminal).
+async fn settings_cache_probe(ws: &Path, emb: &Embedding) -> Result<duet_tui::CacheReport, String> {
+    let cfg = load_config(ws, emb).map_err(|e| format!("{e:#}"))?;
+    if cfg.origin("local.base_url") == Some(duet_config::Origin::Default) {
+        return Err(
+            "no local endpoint is configured: l detects servers on loopback and u uses one".into(),
+        );
+    }
+    let text = |k: &str| cfg.str(k).map_err(|e| e.to_string());
+    let (url, model) = (text("local.base_url")?, text("local.model")?);
+    let allowlist = cfg.list("local.allowlist").map_err(|e| e.to_string())?;
+    let allow_plaintext = cfg
+        .bool("local.allow_plaintext")
+        .map_err(|e| e.to_string())?;
+    let mut pc = ProviderConfig::new(
+        &url,
+        &model,
+        Role::Local {
+            allowlist,
+            allow_plaintext,
+        },
+    );
+    pc.max_attempts = Some(2);
+    pc.first_byte_timeout = Duration::from_secs(120);
+    let key_env = text("local.api_key_env")?;
+    if !key_env.is_empty() {
+        pc.api_key_env = Some(key_env);
+    }
+    let provider = ChatProvider::with_reqwest(pc).map_err(|e| e.message)?;
+    let r = duet_provider::probe::cache_reuse(&provider)
+        .await
+        .map_err(|e| e.message)?;
+    Ok(duet_tui::CacheReport {
+        base_url: url,
+        model,
+        prompt_tokens: r.prompt_tokens,
+        first_cached: r.first_cached,
+        second_cached: r.second_cached,
+        first_seconds: r.first_seconds,
+        second_seconds: r.second_seconds,
+        unreported: r.unreported,
+    })
+}
+
+/// What the workspace's settings screens need from the CLI: the doctor, local
+/// server detection and the cache probe (run on the workspace's thread, on
+/// this runtime), and where the configuration lives under the embedding
+/// program's policy layer (settings edits are bounded by it too).
+pub(crate) fn workspace_settings(ws: &Path, emb: &Embedding) -> duet_tui::workspace::Settings {
+    let handle = tokio::runtime::Handle::current();
+    let (at, on, with) = (ws.to_path_buf(), handle.clone(), emb.clone());
+    let doctor: duet_tui::Doctor = Box::new(move |online| {
+        on.block_on(doctor::run(&at, online, &with))
+            .into_iter()
+            .map(|c| duet_tui::DoctorLine {
+                status: format!("{:?}", c.status).to_lowercase(),
+                name: c.name.into(),
+                detail: c.detail,
+                fix: c.fix,
+            })
+            .collect()
+    });
+    let on = handle.clone();
+    let detect = std::sync::Arc::new(move || {
+        on.block_on(duet_provider::backends::discover_loopback(
+            &setup::bootstrap_ports(),
+            Duration::from_millis(1500),
+        ))
+        .into_iter()
+        .map(|s| duet_tui::LocalServer {
+            backend: s.backend.unwrap_or("OpenAI-compatible server").into(),
+            base_url: s.base_url,
+            models: s.models,
+        })
+        .collect()
+    });
+    let (on, at, with) = (handle, ws.to_path_buf(), emb.clone());
+    let cache_probe = std::sync::Arc::new(move || on.block_on(settings_cache_probe(&at, &with)));
+    duet_tui::workspace::Settings {
+        paths: duet_tui::Paths {
+            policy: emb.policy.clone(),
+            ..duet_tui::Paths::for_workspace(ws.to_path_buf())
+        },
+        services: duet_tui::Services {
+            doctor,
+            detect,
+            cache_probe,
+        },
+    }
+}
+
 /// Runs `duet`'s command line (from the process's arguments) with what
 /// `embedding` adds, and returns the exit code the process should end with:
 /// the `duet` binary is `main_with(Embedding::default())`.
