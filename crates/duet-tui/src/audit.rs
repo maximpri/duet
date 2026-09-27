@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 use std::path::{Path, PathBuf};
 
 /// Messages of a request shown in its summary (the latest ones).
@@ -225,7 +225,7 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
         List::new(runs)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .block(
-                Block::bordered()
+                crate::ui::frame()
                     .title(if empty { " runs: none yet " } else { " runs " })
                     .border_style(focus(!view.focus_records)),
             ),
@@ -254,7 +254,7 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
         List::new(items)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .block(
-                Block::bordered()
+                crate::ui::frame()
                     .title(" records (Enter focuses, Esc returns) ")
                     .border_style(focus(view.focus_records)),
             ),
@@ -272,7 +272,7 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
     f.render_widget(
         Paragraph::new(text)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(" record ")),
+            .block(crate::ui::frame().title(" record ")),
         detail_area,
     );
     if let Some((id, code, lines)) = view
@@ -292,7 +292,7 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
         f.render_widget(
             Paragraph::new(text)
                 .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(format!(" verify {id} "))),
+                .block(crate::ui::frame().title(format!(" verify {id} "))),
             verify_area,
         );
     }

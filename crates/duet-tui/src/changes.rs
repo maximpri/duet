@@ -12,7 +12,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -372,7 +372,7 @@ pub(crate) fn draw_files(
         List::new(items)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
             .block(
-                Block::bordered()
+                crate::ui::frame()
                     .title(title)
                     .border_style(focus_style(focused)),
             ),
@@ -394,7 +394,7 @@ pub(crate) fn draw_diff(
         f.render_widget(
             Paragraph::new("The files this run writes appear here with their diffs.")
                 .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(" diff ")),
+                .block(crate::ui::frame().title(" diff ")),
             area,
         );
         return;
@@ -410,7 +410,7 @@ pub(crate) fn draw_diff(
                 Line::from(format!("{}: {why}; its content is not shown.", file.path)),
             ])
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(format!(" {} ", file.path))),
+            .block(crate::ui::frame().title(format!(" {} ", file.path))),
             area,
         );
         return;
@@ -483,7 +483,7 @@ pub(crate) fn draw_diff(
     };
     f.render_widget(
         Paragraph::new(lines).block(
-            Block::bordered()
+            crate::ui::frame()
                 .title(format!(" {} ({what}{position}) ", file.path))
                 .border_style(focus_style(focused)),
         ),

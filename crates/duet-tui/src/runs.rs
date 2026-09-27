@@ -21,7 +21,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -606,7 +606,7 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
         Paragraph::new(feed)
             .scroll((scroll.min(u16::MAX as usize) as u16, 0))
             .block(
-                Block::bordered()
+                crate::ui::frame()
                     .title(title)
                     .border_style(focus_style(view.focus == Focus::Main)),
             ),
@@ -628,7 +628,7 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
         Paragraph::new(withheld)
             .wrap(Wrap { trim: false })
             .scroll((skip.min(u16::MAX as usize) as u16, 0))
-            .block(Block::bordered().title(" withheld and blocked ")),
+            .block(crate::ui::frame().title(" withheld and blocked ")),
         withheld_area,
     );
 }

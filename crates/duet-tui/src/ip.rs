@@ -10,7 +10,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
 use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::Path;
@@ -150,7 +150,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     };
     f.render_widget(
         Paragraph::new(vec![list_line("ip.interface_only"), list_line("ip.sealed")])
-            .block(Block::bordered().title(" IP levels ")),
+            .block(crate::ui::frame().title(" IP levels ")),
         head,
     );
     let [tree_area, preview_area] =
@@ -203,7 +203,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(
         List::new(items)
             .highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-            .block(Block::bordered().title(title)),
+            .block(crate::ui::frame().title(title)),
         tree_area,
         &mut state,
     );
@@ -239,7 +239,7 @@ pub(crate) fn draw(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_widget(
         Paragraph::new(text)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
+            .block(crate::ui::frame().title(title)),
         preview_area,
     );
 }

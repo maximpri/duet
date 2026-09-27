@@ -64,7 +64,6 @@ fn is_word(c: char) -> bool {
 }
 
 impl Editor {
-    #[cfg(test)]
     pub fn buffer(&self) -> &str {
         &self.buf
     }

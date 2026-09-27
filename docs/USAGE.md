@@ -58,32 +58,40 @@ with duet's reply, a question for you, or a finished task; your next message con
 everything said and done so far.
 
 ```text
- duet · hybrid · glm-5.3-flash ▸ omlx-coding                    turn 2 · $0.0184 of $20.00
-╭ conversation ─────────────────────────────────────╮  Changes   Privacy   Session  Ctrl-T
-│ you> The CSV export drops the last row. Fix it.   │┌ changed files 1 (+3 -1) ──────────┐
-│   · search fn export_csv                          ││edit src/export.rs  +3  -1         │
-│   · read_file src/export.rs                       │└───────────────────────────────────┘
-│   ◦ withheld from the frontier: read_file result  │┌ src/export.rs (edited) ───────────┐
-│     sensitive, held locally (a summary was sent)  ││ 41 - for i in 0..rows.len() - 1 { │
-│ duet asks: Should an empty trailing line count?   ││ 41 + for i in 0..rows.len() {     │
-│ you> no                                           ││    …                              │
-│   · edit_file src/export.rs                       ││                                   │
-│   · finish (running the checks)                   ││                                   │
-│ duet finished: The loop stopped one row early.    ││                                   │
-╰───────────────────────────────────────────────────╯└───────────────────────────────────┘
-╭ message ───────────────────────────────────────────────────────────────────────────────╮
-│ › Also add a header row option.                                                         │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
- ⏎ send · Alt-⏎ new line · Tab complete · PgUp/PgDn scroll · Ctrl-T panel · /help
+  DUET  /  billing                        F1 help · Ctrl-O details · Ctrl-T panel · F2 settings
+  hybrid · frontier glm-5.3-flash · local omlx-coding · sensitive values stay on this machine
+                                                        │  Changes  Privacy  Session   Ctrl-T
+  › you                                                 │ 1 file(s)  +3 −1
+  │ The CSV export drops the last row. Fix it.          │ › ● src/export.rs  +3 −1
+                                                        │ ──────────────────────────────────
+  ● read  src/export.rs                                 │ 41 - for i in 0..rows.len() - 1 {
+    │ src/export.rs (lines 1-120 of 120)                │ 41 + for i in 0..rows.len() {
+    … 118 more lines · Ctrl-O                           │
+  ● read  data/customers.csv  ◦ held locally, a summary was sent
+                                                        │
+  ● edit  src/export.rs  ◦ +1 −1                        │
+    - for i in 0..rows.len() - 1 {                      │
+    + for i in 0..rows.len() {                          │
+  ✓ done                                                │
+    The loop stopped one row early; it reads to the end, with a test.
+╭ Message duet ──────────────────────────────────────────────────────────────────────────────╮
+│ Describe a task or ask a question · @ names a file · / for commands…                        │
+╰ Enter send · Alt-Enter new line · @ file · / commands ─────────────────────────────────────╯
+ DONE  │ turn 1 · $0.0184 of $20.00 · 42.1k in · 1.2k out                              F1 help
 ```
 
-- **The screen.** The status bar: the mode, the frontier and local models, the turn, and the cost
-  against the session budget. The conversation: your messages, duet's steps and what the boundary
-  withheld from the frontier, duet's text as the frontier writes it (formatted lightly: headings,
-  lists, quotes, code blocks set off with a bar, inline code and bold), how each turn ended; while
-  duet works, a status line shows the turn's time, its cost so far and what runs now. It follows new
-  output; PgUp/PgDn or the mouse wheel scroll back (it then stays put and says how many rows are
-  below). The side panel (Ctrl-T cycles it; it opens by itself on a window 110 columns or wider):
+- **The screen.** The header: the workspace, the mode, the frontier and local models, and where
+  sensitive values go (in passthrough, in red, that the privacy boundary is off). The conversation,
+  as cells: your messages (`› you`), duet's replies as the frontier writes them (`◆ duet`, formatted
+  lightly: headings, lists, quotes, code blocks, inline code and bold), each tool call (`● read`,
+  `● run`, `✗` when it failed) with its result as the frontier saw it (placeholders kept: that is what
+  left the machine) folded to its first lines (Ctrl-O shows all; a failure is shown longer), every
+  edit with its diff (a sensitive file is named, never shown), what the boundary withheld (`◦`), and
+  how each turn ended (`✓ done`, a question, a stop). While duet works a line under the conversation
+  shows the turn's time, its cost so far and what runs now. It follows new output; PgUp/PgDn or the
+  mouse wheel scroll back (it then stays put and says how many rows are below; Ctrl-End returns).
+  The status line's badge says READY, WORKING, DONE, YOUR ANSWER, STOPPED or FAILED, beside the
+  turn, the cost against the session budget and the tokens. The side panel (Ctrl-T cycles it; it opens by itself on a window 110 columns or wider):
   **Changes** lists the files the session changed with added/removed line counts above the selected
   file's diff (Ctrl-↑ ↓ pick a file, Ctrl-PgUp/PgDn scroll the diff); files that are sensitive, or
   were produced by a command that read sensitive data, are named and never shown. **Privacy** counts
@@ -103,16 +111,22 @@ everything said and done so far.
   | Backspace, Delete, Ctrl-W, Alt-Backspace, Alt-D, Ctrl-K, Ctrl-U, Ctrl-Y | delete; cut a word or to the line's end/start; put back what was cut |
   | ↑ ↓, Ctrl-P / Ctrl-N | move between the lines of a message, then through your earlier messages of this session |
   | Ctrl-R | search those messages (type to narrow, Ctrl-R for an older match, Enter takes it into the input, Esc cancels) |
-  | Tab | complete a command, an `@path`, or a path after `/image` (several choices show in a box above the input) |
+  | `/` | the command palette: every command with what it does (↑↓ pick, Enter runs it, Tab puts it in the input) |
+  | `@` | the file picker: the workspace's files as you type (↑↓ pick, Tab or Enter) |
+  | Tab | complete a command or a path after `/image` |
   | PgUp / PgDn, mouse wheel | scroll the conversation |
+  | Ctrl-O | show or fold tool results |
   | Ctrl-T | the side panel: Changes, Privacy, Session, closed |
   | Ctrl-↑ / Ctrl-↓, Ctrl-PgUp / Ctrl-PgDn | pick a changed file; scroll its diff |
-  | Ctrl-O | the settings (below) |
+  | F2 | the settings (below) |
+  | F1 | the keys and commands |
+  | mouse drag | select text of the conversation; it is copied when you let go |
   | Ctrl-Z, Ctrl-D | suspend (`fg` returns); on an empty input, leave (like the end of input) |
 
   History is the session's own messages, read from its transcript: nothing new is stored. Ctrl-C
-  follows the rules below whatever you were typing (the line is cleared). The mouse wheel is the
-  workspace's; to select text with the mouse, hold Option (macOS) or Shift while dragging. Anything
+  follows the rules below whatever you were typing (the line is cleared). Dragging selects text of
+  the conversation and copies it when you let go (with `pbcopy` on macOS, else through the terminal);
+  holding Option (macOS) or Shift while dragging uses the terminal's own selection instead. Anything
   else in the process prints (a warning, a setup note) appears in the conversation, dimmed and
   marked `│`, never over the screen.
 - **Steering while it works.** Type while duet is working: the message is delivered after the
@@ -138,8 +152,9 @@ everything said and done so far.
 - **Limits.** Each turn is held to `limits.frontier_usd` and `limits.wall_clock_minutes`; the
   session to `session.frontier_usd` and `session.wall_clock_minutes` (time duet works; time
   waiting for you does not count). A turn stopped by a limit leaves the session open; a spent
-  session budget ends it until the budget is raised. `oversight.approve` asks in the input box
-  (`approve? y/n`); with approval on, a session needs a terminal.
+  session budget ends it until the budget is raised. `oversight.approve` and commits ask in a
+  dialog (No is the default; ↑↓ or y/n, Enter answers, Esc denies); with approval on, a session
+  needs a terminal.
 - **Commits.** In a git repository, a session at a terminal offers `git_commit` with the defaults
   (`git.commit = "ask"`, approval off): before each commit it shows the files and the message and
   waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
@@ -153,7 +168,7 @@ runs now); otherwise one plain line per step with placeholders kept as the front
 a line every 30 seconds while nothing else happens. Standard output holds only the summary, as
 before; `--quiet` turns the progress off.
 
-**Settings, inside the workspace.** Ctrl-O or `/settings` (or `/models`, `/sensitivity`, `/ip`,
+**Settings, inside the workspace.** F2 or `/settings` (or `/models`, `/sensitivity`, `/ip`,
 `/limits`, `/data`, `/audit`, `/runs` for one screen) opens seven screens over the conversation;
 Esc (or `q`) comes back. Models (frontier and local settings, with `duet doctor` offline; `o` adds
 the online checks of connection and context window; `l` looks for local servers on loopback (the

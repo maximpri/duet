@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Flex, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Clear, Paragraph, Wrap};
 use std::path::Path;
 
 /// Runs listed in the confirmation.
@@ -104,7 +104,7 @@ pub(crate) fn draw_confirm(f: &mut Frame, plan: &PurgePlan) {
     f.render_widget(Clear, area);
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered()
+            crate::ui::frame()
                 .title(" confirm purge ")
                 .border_style(Style::new().fg(Color::Red)),
         ),

@@ -97,6 +97,47 @@ pub(super) fn suspend(out: &mut File) {
     let _ = enter(out);
 }
 
+/// Puts `text` on the clipboard: `pbcopy` on macOS (Terminal.app does not
+/// take OSC 52), else OSC 52 to the terminal (which most terminals and tmux
+/// honour).
+pub(super) fn copy(text: &str, tty: &mut File) {
+    if cfg!(target_os = "macos")
+        && let Ok(mut child) = std::process::Command::new("pbcopy")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        if child.wait().is_ok_and(|s| s.success()) {
+            return;
+        }
+    }
+    let _ = write!(tty, "\x1b]52;c;{}\x07", base64(text.as_bytes()));
+    let _ = tty.flush();
+}
+
+/// Standard base64 (RFC 4648), for OSC 52.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 /// Standard output and error redirected to a pipe; each line read from it is
 /// handed to `line`.
 pub(super) struct Capture;
@@ -147,5 +188,17 @@ fn release_capture() {
         let _ = std::io::stderr().flush();
         let _ = rustix::stdio::dup2_stdout(&out);
         let _ = rustix::stdio::dup2_stderr(&err);
+    }
+}
+
+#[cfg(test)]
+mod copy_tests {
+    #[test]
+    fn base64_matches_the_standard() {
+        assert_eq!(super::base64(b""), "");
+        assert_eq!(super::base64(b"f"), "Zg==");
+        assert_eq!(super::base64(b"fo"), "Zm8=");
+        assert_eq!(super::base64(b"foo"), "Zm9v");
+        assert_eq!(super::base64("duet ◆".as_bytes()), "ZHVldCDil4Y=");
     }
 }

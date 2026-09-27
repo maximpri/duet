@@ -11,7 +11,7 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Paragraph, Wrap};
+use ratatui::widgets::{Paragraph, Wrap};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 /// A local server that answered on a loopback port.
@@ -159,7 +159,7 @@ fn draw_doctor(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
+            .block(crate::ui::frame().title(title)),
         area,
     );
 }
@@ -214,7 +214,7 @@ llama.cpp, vLLM, oMLX or mlx_lm.server, then l again",
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(" local servers ([ ] pick, u use) ")),
+            .block(crate::ui::frame().title(" local servers ([ ] pick, u use) ")),
         area,
     );
 }
@@ -262,7 +262,7 @@ fn draw_cache(f: &mut Frame, app: &App, area: Rect) {
     };
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered().title(" cache reuse (two identical requests to the local model) "),
+            crate::ui::frame().title(" cache reuse (two identical requests to the local model) "),
         ),
         area,
     );

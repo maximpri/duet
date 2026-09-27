@@ -544,7 +544,7 @@ session {id} left open (${cost:.4} so far); continue with: duet --resume {id}\n"
     );
 }
 
-/// `duet` on a real terminal (a pseudo-terminal from `script`, 30 rows by 100
+/// `duet` on a real terminal (a pseudo-terminal from `script`, 44 rows by 100
 /// columns), its screen read back through a terminal emulator: the workspace
 /// takes the screen, shows the status bar and the input, takes a typed
 /// message, shows the reply and what other code printed, lists the file the
@@ -572,7 +572,7 @@ fn the_workspace_on_a_terminal() {
     };
     let duet = env!("CARGO_BIN_EXE_duet");
     let inner = format!(
-        "stty rows 30 cols 100; exec '{duet}' --workspace '{}' --mode passthrough --no-privacy \
+        "stty rows 44 cols 100; exec '{duet}' --workspace '{}' --mode passthrough --no-privacy \
 --frontier-url '{url}' --frontier-model glm-5.3-flash",
         e.ws.display()
     );
@@ -594,7 +594,7 @@ fn the_workspace_on_a_terminal() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = c.spawn().unwrap();
-    let screen = Arc::new(Mutex::new(vt100::Parser::new(30, 100, 0)));
+    let screen = Arc::new(Mutex::new(vt100::Parser::new(44, 100, 0)));
     let mut out = child.stdout.take().unwrap();
     let feed = screen.clone();
     std::thread::spawn(move || {
@@ -618,12 +618,12 @@ fn the_workspace_on_a_terminal() {
         panic!("the screen never showed {what:?}:\n{}", shown());
     };
     let mut keys = child.stdin.take().unwrap();
-    wait_for(" message ");
-    wait_for("duet · passthrough · glm-5.3-flash");
+    wait_for(" Message duet ");
+    wait_for("passthrough · frontier glm-5.3-flash");
     keys.write_all(b"Say hello.\r").unwrap();
     wait_for("Hello from the workspace.");
-    wait_for("you> Say hello.");
-    wait_for("read_file src/lib.rs");
+    wait_for("│ Say hello.");
+    wait_for("read  src/lib.rs");
     // `session <id> (Passthrough)` is printed on standard error by the
     // session's setup: it lands in the conversation, not over the screen.
     wait_for("│ session ");
@@ -639,10 +639,10 @@ fn the_workspace_on_a_terminal() {
             .unwrap_or_else(|| panic!("{what}:\n{order}"))
     };
     assert!(
-        at("· write_file src/b.rs") < at("Hello from the workspace."),
+        at("write  src/b.rs") < at("Hello from the workspace."),
         "{order}"
     );
-    wait_for("changed files 1");
+    wait_for("1 file(s)");
     wait_for("src/b.rs");
     wait_for("pub fn b() -> u32 { 2 }");
     // Shown with `--nocapture`, for looking at the layout.
@@ -658,7 +658,7 @@ fn the_workspace_on_a_terminal() {
     while shown().contains("duet settings") && t.elapsed() < Duration::from_secs(10) {
         std::thread::sleep(Duration::from_millis(50));
     }
-    wait_for(" conversation ");
+    wait_for(" Message duet ");
     keys.write_all(b"/quit\r").unwrap();
     let status = child.wait().unwrap();
     std::thread::sleep(Duration::from_millis(200));
@@ -666,7 +666,7 @@ fn the_workspace_on_a_terminal() {
     // The terminal is given back: the main screen holds the closing line.
     let main = shown();
     assert!(main.contains("left open"), "{main}");
-    assert!(!main.contains("conversation"), "{main}");
+    assert!(!main.contains("Message duet"), "{main}");
     assert_eq!(f.requests(), 3);
 }
 
@@ -727,12 +727,12 @@ fn the_workspace_live() {
         panic!("the screen never showed {what:?}:\n{}", shown());
     };
     let mut keys = child.stdin.take().unwrap();
-    wait_for(" message ", 30);
+    wait_for(" Message duet ", 30);
     keys.write_all(
         b"Read .env and tell me in one short sentence which port the service uses. Change nothing.\r",
     )
     .unwrap();
-    wait_for("duet:", 300);
+    wait_for("◆ duet", 300);
     wait_for("turn 1 · $", 30);
     eprintln!("{}", shown());
     // Privacy: Ctrl-T twice (Changes opens by itself at this width).

@@ -242,9 +242,13 @@ before a response shows before it. One thread owns the screen and the keyboard (
 alternate screen, mouse wheel, bracketed paste); it draws with ratatui on `/dev/tty`, and while it
 runs the process's standard output and error are a pipe whose lines it shows in the conversation
 (dimmed, through `term::safe`), so no print from any crate can corrupt the screen; the terminal and
-both descriptors are restored on exit, panic and Ctrl-Z. duet's styled lines are translated from its
+both descriptors are restored on exit, panic and Ctrl-Z. the conversation is a list of cells
+(`workspace::cells`: the operator's messages, replies rendered as Markdown, tool calls with their
+results as the frontier saw them, edits with their diffs, the boundary's interventions, turn ends),
+each rendered at the view's width and cached by version; duet's styled text is translated from its
 own SGR codes into ratatui spans (`workspace::ansi`; any other escape is dropped) and wrapped at
-spaces; each line may carry a lead its every row repeats. The editor (`term::editor`) sends lines to
+spaces. The palette, the `@` picker (the workspace's files from `duet_git`), the approval dialog,
+help and mouse selection with copy (`pbcopy`, else OSC 52) are the workspace's own. The editor (`term::editor`) sends lines to
 the same inbox the reader thread fills without a terminal, and Ctrl-C keys go through the same
 `Interrupts::press` as the signal. The side panel's Changes view follows the session's write journal
 (`changes::update`) with the engine's own policy, which the CLI hands over when the session opens,

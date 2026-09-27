@@ -10,7 +10,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Paragraph, Row, Table, TableState, Wrap};
+use ratatui::widgets::{Cell, Paragraph, Row, Table, TableState, Wrap};
 use std::path::Path;
 
 /// The screen that shows `key`, by its section. Every registered key has one
@@ -106,7 +106,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App, area: Rect) {
             .style(Style::new().add_modifier(Modifier::BOLD)),
     )
     .row_highlight_style(Style::new().add_modifier(Modifier::REVERSED))
-    .block(Block::bordered().title(format!(" {} settings ", tab.title())));
+    .block(crate::ui::frame().title(format!(" {} settings ", tab.title())));
     let mut state = TableState::default().with_selected(Some(app.rows[tab.index()]));
     f.render_stateful_widget(table, table_area, &mut state);
 
@@ -120,7 +120,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App, area: Rect) {
         _ => f.render_widget(
             Paragraph::new(help_for(tab))
                 .wrap(Wrap { trim: false })
-                .block(Block::bordered().title(" about ")),
+                .block(crate::ui::frame().title(" about ")),
             side,
         ),
     }
@@ -179,7 +179,7 @@ fn draw_detail(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(" setting ")),
+            .block(crate::ui::frame().title(" setting ")),
         area,
     );
 }
@@ -246,7 +246,7 @@ fn draw_tester(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
+            .block(crate::ui::frame().title(title)),
         area,
     );
 }
@@ -342,7 +342,7 @@ fn draw_sample(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(
         Paragraph::new(lines)
             .wrap(Wrap { trim: false })
-            .block(Block::bordered().title(title)),
+            .block(crate::ui::frame().title(title)),
         area,
     );
 }

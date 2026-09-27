@@ -12,6 +12,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Clear, Paragraph, Tabs, Wrap};
 use toml::Value;
 
+/// The frame of every settings screen's panel: rounded, muted (a panel that
+/// shows focus or a warning sets its own border colour after it).
+pub(crate) fn frame() -> Block<'static> {
+    Block::bordered()
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::new().fg(Color::DarkGray))
+}
+
 pub(crate) fn origin_name(origin: Option<Origin>) -> &'static str {
     match origin {
         Some(Origin::Default) | None => "default",
@@ -73,7 +81,7 @@ pub(crate) fn draw_in(f: &mut Frame, app: &mut App, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )
         .block(
-            Block::bordered()
+            crate::ui::frame()
                 .title(" duet settings · Esc back to the conversation ")
                 .title_bottom(target),
         ),
@@ -232,7 +240,7 @@ fn draw_confirm(f: &mut Frame, app: &App, p: &Proposal, within: Rect) {
     f.render_widget(Clear, area);
     f.render_widget(
         Paragraph::new(lines).wrap(Wrap { trim: false }).block(
-            Block::bordered()
+            crate::ui::frame()
                 .title(" confirm loosening ")
                 .border_style(Style::new().fg(Color::Red)),
         ),
