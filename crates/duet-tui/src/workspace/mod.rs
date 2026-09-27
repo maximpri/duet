@@ -341,6 +341,8 @@ pub(crate) struct State {
     /// Rows the conversation shows (set when drawn), for paging.
     page: usize,
     panel: panel::Panel,
+    /// Completions shown above the input until the next key.
+    choices: Vec<String>,
     /// The settings overlay: its sources until first opened, then the app.
     settings: Option<Settings>,
     app: Option<crate::app::App>,
@@ -369,6 +371,7 @@ impl State {
             scroll: 0,
             page: 20,
             panel: panel::Panel::default(),
+            choices: Vec::new(),
             settings: None,
             app: None,
             overlay: false,
@@ -581,6 +584,12 @@ impl State {
             self.dirty = true;
             return;
         }
+        if let Event::Key(k) = &ev
+            && k.kind != KeyEventKind::Release
+            && k.code != KeyCode::Tab
+        {
+            self.choices.clear();
+        }
         match ev {
             Event::Key(k) if k.kind != KeyEventKind::Release => match k.code {
                 // The side panel and the settings.
@@ -650,11 +659,15 @@ impl State {
             Outcome::Complete => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let all: Vec<&str> = self.commands.iter().chain(COMMANDS).copied().collect();
-                let choices = self.editor.complete(&cwd, &all);
-                if !choices.is_empty() {
-                    let listed = styled(&safe(&choices.join("   ")), TStyle::DIM, self.colour);
-                    self.push([listed]);
-                }
+                // Several: listed above the input until the next key.
+                self.choices = self
+                    .editor
+                    .complete(&cwd, &all)
+                    .iter()
+                    .map(|c| safe(c))
+                    .collect();
+                self.choices.sort();
+                self.choices.dedup();
             }
             // The screen is redrawn whole; the view goes to the bottom.
             Outcome::ClearScreen => self.scroll = 0,
@@ -1027,6 +1040,23 @@ mod tests {
         assert_eq!(*sent.lock().unwrap(), ["/help"]);
         let all = screen(&mut s, 120, 30).concat();
         assert!(all.contains("Ctrl-T side panel"), "{all}");
+    }
+
+    #[test]
+    fn several_completions_show_above_the_input_until_the_next_key() {
+        let (mut s, _, _) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        s.event(key(KeyCode::Char('/')), &mut tty);
+        s.event(key(KeyCode::Tab), &mut tty);
+        let all = screen(&mut s, 100, 30).concat();
+        assert!(all.contains("Tab completes"), "{all}");
+        assert!(all.contains("/settings") && all.contains("/help"), "{all}");
+        assert!(
+            !s.rows.iter().any(|r| r.to_string().contains("/settings")),
+            "not in the conversation"
+        );
+        s.event(key(KeyCode::Char('s')), &mut tty);
+        assert!(!screen(&mut s, 100, 30).concat().contains("Tab completes"));
     }
 
     #[test]

@@ -49,6 +49,7 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     }
     input_box(f, s, input_area, input_rows, cursor);
     key_line(f, s, keys);
+    choices(f, s, input_area);
     if s.overlay
         && let Some(app) = s.app.as_mut()
     {
@@ -179,6 +180,43 @@ fn input_box(
         x: inner.x + (col as u16).min(inner.width.saturating_sub(1)),
         y: inner.y + (row as u16).min(inner.height.saturating_sub(1)),
     });
+}
+
+/// The completions, in a box just above the input.
+fn choices(f: &mut Frame<'_>, s: &State, input: Rect) {
+    const SHOWN: usize = 10;
+    if s.choices.is_empty() {
+        return;
+    }
+    let mut lines: Vec<Line<'static>> = s
+        .choices
+        .iter()
+        .take(SHOWN)
+        .map(|c| Line::from(c.clone()))
+        .collect();
+    if s.choices.len() > SHOWN {
+        lines.push(Line::styled(
+            format!("… {} more (type more of it)", s.choices.len() - SHOWN),
+            Style::new().add_modifier(Modifier::DIM),
+        ));
+    }
+    let width = lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4;
+    let height = lines.len() as u16 + 2;
+    let area = Rect {
+        x: input.x + 2,
+        y: input.y.saturating_sub(height),
+        width: width.min(input.width.saturating_sub(2)),
+        height: height.min(input.y),
+    };
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(
+        Paragraph::new(lines).block(
+            Block::bordered()
+                .border_type(BorderType::Rounded)
+                .title(" Tab completes "),
+        ),
+        area,
+    );
 }
 
 fn key_line(f: &mut Frame<'_>, s: &State, area: Rect) {

@@ -593,6 +593,12 @@ fn completions(
             .collect();
         return (!choices.is_empty()).then_some((before.len(), choices, " "));
     }
+    // `@path` anywhere in a message: a file of the workspace named in it.
+    let word = &before[before.rfind(char::is_whitespace).map_or(0, |i| i + 1)..];
+    if let Some(path) = word.strip_prefix('@') {
+        let choices = paths(path, cwd)?;
+        return Some((path.len(), choices, " "));
+    }
     let arg = before
         .strip_prefix("/image")
         .filter(|r| r.starts_with(char::is_whitespace))?
@@ -604,6 +610,13 @@ fn completions(
         Some(rest) if rest.starts_with(char::is_whitespace) => rest.trim_start(),
         _ => arg,
     };
+    let choices = paths(path, cwd)?;
+    Some((path.len(), choices, ""))
+}
+
+/// The entries of `path`'s directory that complete its last part, each the
+/// whole path (a directory ends with `/`); hidden ones only when asked for.
+fn paths(path: &str, cwd: &Path) -> Option<Vec<String>> {
     let (dir, name) = match path.rfind('/') {
         Some(i) => (&path[..=i], &path[i + 1..]),
         None => ("", path),
@@ -629,7 +642,7 @@ fn completions(
         })
         .collect();
     choices.sort();
-    (!choices.is_empty()).then_some((path.len(), choices, ""))
+    (!choices.is_empty()).then_some(choices)
 }
 
 #[cfg(test)]
@@ -638,6 +651,25 @@ mod tests {
 
     fn key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, modifiers)
+    }
+
+    #[test]
+    fn at_names_a_file_anywhere_in_a_message() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("src")).unwrap();
+        std::fs::write(d.path().join("src/tokenizer.rs"), "").unwrap();
+        std::fs::write(d.path().join("src/parser.rs"), "").unwrap();
+        let mut e = Editor::default();
+        e.insert("look at @src/tok");
+        assert!(
+            e.complete(d.path(), &[]).is_empty(),
+            "one choice: completed"
+        );
+        assert_eq!(e.buffer(), "look at @src/tokenizer.rs ");
+        e.insert("and @src/");
+        let mut listed = e.complete(d.path(), &[]);
+        listed.sort();
+        assert_eq!(listed, ["parser.rs", "tokenizer.rs"]);
     }
 
     fn typed(e: &mut Editor, text: &str) {
