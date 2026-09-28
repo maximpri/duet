@@ -283,7 +283,7 @@ fn grouped_like_a_card(number: &str) -> bool {
 /// Whether the digits at `start` are the fraction of a decimal
 /// (`80.95999999999948`).
 fn in_a_decimal(text: &str, start: usize) -> bool {
-    let before = text[..start].as_bytes();
+    let before = &text.as_bytes()[..start];
     before.len() >= 2
         && before[before.len() - 1] == b'.'
         && before[before.len() - 2].is_ascii_digit()
