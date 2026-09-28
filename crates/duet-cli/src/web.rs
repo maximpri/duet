@@ -82,7 +82,7 @@ fn var(env: &dyn Fn(&str) -> Option<String>, name: &str) -> Option<String> {
 }
 
 /// Web access for this run, or `None` when `web.enabled` is off. `frontier`
-/// is the run's frontier (`None` in local-only mode); `ws` the workspace,
+/// is the run's frontier; `ws` the workspace,
 /// whose languages pick the native backend's package registries. A search
 /// backend that cannot be used leaves `web_search` out with a warning;
 /// `web_fetch` is still offered.
@@ -416,7 +416,7 @@ mod tests {
     fn auto_searches_natively_whatever_else_is_set_up() {
         let key = [("ZAI_API_KEY", "zk-1"), ("BRAVE_API_KEY", "bk-1")];
         // The default setup (the coding plan's frontier and its key), a
-        // Brave key, another frontier, a local-only run: all native.
+        // Brave key, another frontier, a run without one: all native.
         let anthropic = Some(Frontier {
             base_url: "https://api.anthropic.com/v1",
             key_env: "ANTHROPIC_API_KEY",

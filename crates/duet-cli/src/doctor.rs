@@ -981,7 +981,7 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
             check(
                 "local model",
                 Status::Pass,
-                "off (local.enabled = false): hybrid runs show sensitive content as handles only; ask_local, edit_protected and local-only mode are refused",
+                "off (local.enabled = false): hybrid runs show sensitive content as handles only; ask_local, edit_protected and top clearance are refused",
             )
         }];
     }

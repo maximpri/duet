@@ -43,10 +43,10 @@ pub(crate) fn from_args(images: &[PathBuf], public: &[PathBuf]) -> Result<Vec<At
 }
 
 /// Whether the model that reads the run's images accepts them: the frontier
-/// (`frontier.vision`), or in local-only mode the local model (`local.vision`).
+/// (`frontier.vision`), or in top clearance the local model (`local.vision`).
 fn driver_vision(cfg: &Config, mode: Mode) -> Result<bool> {
     Ok(match mode {
-        Mode::LocalOnly => cfg.bool("local.vision")?,
+        Mode::TopClearance => cfg.bool("local.vision")?,
         Mode::Passthrough | Mode::Hybrid => cfg.bool("frontier.vision")?,
     })
 }

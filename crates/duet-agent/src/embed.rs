@@ -122,7 +122,7 @@ pub enum RunKind {
 pub struct Ending<'a> {
     pub kind: RunKind,
     /// The mode as the audit log's `run_start` event names it (`hybrid`,
-    /// `passthrough`, `localonly`).
+    /// `passthrough`, `top-clearance`).
     pub mode: &'a str,
     /// This invocation continued an earlier one (`duet resume`,
     /// `duet --resume`).

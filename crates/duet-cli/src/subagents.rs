@@ -27,10 +27,10 @@ pub(crate) fn setup(
         return Ok(None);
     }
     let asked = cfg.str("subagents.model")?.trim().to_owned();
-    let local_only = manifest.mode == Mode::LocalOnly;
+    let local_only = manifest.mode == Mode::TopClearance;
     if local_only && !asked.is_empty() {
         eprintln!(
-            "warning: subagents.model is ignored in local-only mode; sub-agents use the local model"
+            "warning: subagents.model is ignored in top clearance; sub-agents use the local model"
         );
     }
     let own = asked.is_empty() || asked == manifest.frontier_model || local_only;

@@ -49,8 +49,8 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
   no model reads sensitive content: the frontier gets only what the detectors, the vault and the
   copied-span filter leave of it (a handle's sanitized error lines and line shapes), and `ask_local`
   and `edit_protected` are refused. A setting that needs a local model to protect data
-  (`sensitivity.local_pii_pass`) is refused with it off rather than skipped silently, and local-only
-  mode will not start. Tested end to end with planted values in `crates/duet-cli/tests/no_local.rs`.
+  (`sensitivity.local_pii_pass`) is refused with it off rather than skipped silently, and top
+  clearance will not start. Tested end to end with planted values in `crates/duet-cli/tests/no_local.rs`.
 - The frontier provider is treated as an honest-but-curious recipient: everything it receives may be
   retained.
 
@@ -582,6 +582,37 @@ Linux differences and limits:
 - Tested in containers on one kernel (OrbStack's, AArch64), not yet on a distribution host with
   AppArmor user-namespace restrictions (such as Ubuntu 24.04); there Duet either works or refuses
   to run commands.
+
+## Top clearance
+
+`--mode top-clearance` (`/mode top-clearance` in a session; required for a repository with
+`clearance.required = "top"`) is for content that may not leave the machine at all. The local model
+does all the work, and every way out that hybrid mode checks is closed instead:
+
+| Way out | Hybrid | Top clearance |
+|---|---|---|
+| Frontier provider | placeholders, handles, local answers | none: no frontier is built for the run; `--frontier-url`/`--frontier-model` are refused |
+| Web tools | checked requests to public hosts | not offered |
+| Commands' network | `sandbox.network` (the egress proxy to package registries by default) | none, whatever `sandbox.network` says, loopback included |
+| MCP servers | as configured | only stdio servers without network; servers reached over HTTP (loopback too) or with `network = true` are not started, and the run says which |
+| Sub-agents | the frontier, or `subagents.model` | the local model |
+| Local model | reads sensitive content | reads and writes everything; the only connection that leaves Duet |
+
+What it still relies on: the local endpoint is loopback or an owner-allowlisted host, and over plain
+HTTP only with the owner's opt-in (`local.allow_plaintext`, warned at every run): then everything
+the local model reads crosses the network unencrypted, so for top clearance use loopback or TLS.
+Language servers run sandboxed without network; the git tools are local (no push or fetch); Duet
+has no telemetry. The audit log records every request to the local model.
+
+Switching is one way. A session moves up with `/mode top-clearance`: it is left open and a new
+top-clearance session starts, fresh (it is not given the earlier conversation, and the earlier
+session is not given its conversation). Leaving top clearance takes a new session, because its
+conversation holds what only the local model may see; a later hybrid session reads the files it
+wrote like any other file. Tested in `crates/duet-cli/tests/top_clearance.rs`: a run with
+`sandbox.network = "all"` and an HTTP MCP server configured contacts no frontier, is offered no web
+tool, gets no egress proxy and cannot reach a loopback server; a repository's requirement refuses
+hybrid and passthrough; a session switched with `/mode` sends each model only its own session's
+messages and refuses to switch back.
 
 ## Egress: everything that leaves this machine
 

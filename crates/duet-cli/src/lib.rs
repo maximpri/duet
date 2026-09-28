@@ -78,8 +78,9 @@ struct Cli {
 struct SessionArgs {
     /// The first message (otherwise typed in the workspace).
     message: Option<String>,
-    #[arg(long, value_enum, default_value = "hybrid")]
-    mode: Mode,
+    /// The mode [default: hybrid; top-clearance where clearance.required is top].
+    #[arg(long, value_enum)]
+    mode: Option<Mode>,
     /// Override the frontier endpoint for this session.
     #[arg(long)]
     frontier_url: Option<String>,
@@ -101,8 +102,24 @@ enum Mode {
     Passthrough,
     /// Frontier decides; sensitive content is processed only by the local model.
     Hybrid,
-    /// The local model does everything (reference lane).
-    LocalOnly,
+    /// Top clearance: the local model does all the work and nothing leaves
+    /// this machine but its requests to the local model (no frontier, no web,
+    /// no network for commands, no networked MCP servers). `local-only` is
+    /// the same mode.
+    #[value(name = "top-clearance", alias = "local-only")]
+    #[serde(rename = "top-clearance", alias = "local-only")]
+    TopClearance,
+}
+
+impl Mode {
+    /// The mode as the CLI, the audit log and the status bar name it.
+    fn as_str(self) -> &'static str {
+        match self {
+            Mode::Passthrough => "passthrough",
+            Mode::Hybrid => "hybrid",
+            Mode::TopClearance => "top-clearance",
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -114,8 +131,9 @@ enum Cmd {
         /// Read the task from a file.
         #[arg(long)]
         objective_file: Option<PathBuf>,
-        #[arg(long, value_enum, default_value = "hybrid")]
-        mode: Mode,
+        /// The mode [default: hybrid; top-clearance where clearance.required is top].
+        #[arg(long, value_enum)]
+        mode: Option<Mode>,
         /// Override the frontier endpoint for this run.
         #[arg(long)]
         frontier_url: Option<String>,
@@ -425,8 +443,8 @@ pub(crate) fn local_enabled(cfg: &Config, mode: Mode) -> Result<bool> {
         return Ok(true);
     }
     match mode {
-        Mode::LocalOnly => {
-            bail!("--mode local-only needs a local model, and local.enabled is false")
+        Mode::TopClearance => {
+            bail!("top clearance needs a local model, and local.enabled is false")
         }
         Mode::Hybrid => ensure!(
             !cfg.bool("sensitivity.local_pii_pass")?,
@@ -456,6 +474,14 @@ const PASSTHROUGH_BANNER: &str = "\
  File contents, command output, secrets and personal data are sent to
  the frontier provider unfiltered. Use it only on repositories with
  nothing sensitive, as a reference lane.
+=====================================================================";
+
+const TOP_CLEARANCE_BANNER: &str = "\
+=====================================================================
+ TOP CLEARANCE: only the local model works; nothing leaves this machine
+ but its requests to the local model. No frontier, no web tools, no
+ network for commands, no MCP servers with network. Leaving top
+ clearance needs a new session.
 =====================================================================";
 
 fn audit_log_path(ws: &Path, run_id: &str) -> PathBuf {
@@ -643,7 +669,7 @@ async fn execute(
         &stats,
         &duet_agent::Ending {
             kind: duet_agent::RunKind::Run,
-            mode: &format!("{:?}", manifest.mode).to_lowercase(),
+            mode: manifest.mode.as_str(),
             resumed: resume,
             policy: cfg.policy().map(duet_config::Policy::meta),
             hooks: emb.hooks(),
@@ -741,6 +767,10 @@ async fn prepare(
     if manifest.mode == Mode::Passthrough {
         eprintln!("{PASSTHROUGH_BANNER}");
     }
+    let top_clearance = manifest.mode == Mode::TopClearance;
+    if top_clearance {
+        eprintln!("{TOP_CLEARANCE_BANNER}");
+    }
     let mut trust = None;
     let engine = match manifest.mode {
         Mode::Hybrid if !local_enabled(cfg, Mode::Hybrid)? => {
@@ -775,8 +805,8 @@ async fn prepare(
             )?,
             manifest.frontier_model.clone(),
         ),
-        Mode::LocalOnly => {
-            local_enabled(cfg, Mode::LocalOnly)?;
+        Mode::TopClearance => {
+            local_enabled(cfg, Mode::TopClearance)?;
             let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
             (local, String::new())
@@ -797,7 +827,7 @@ async fn prepare(
         ))));
     *audit = Some(frontier.audit().clone());
     frontier.audit().record(AuditEvent::RunStart {
-        mode: format!("{:?}", manifest.mode).to_lowercase(),
+        mode: manifest.mode.as_str().to_owned(),
         boundary: manifest.mode != Mode::Passthrough,
     });
     if let Some(event) = trust {
@@ -817,10 +847,16 @@ async fn prepare(
         workspace: ws.to_path_buf(),
         run_dir: run_dir.to_path_buf(),
         objective: manifest.objective.clone(),
-        mode: format!("{:?}", manifest.mode).to_lowercase(),
+        mode: manifest.mode.as_str().to_owned(),
         checks: cfg.list("checks.commands")?,
         sandbox,
-        network: egress::network(cfg)?,
+        // Top clearance: commands get no network at all, whatever
+        // sandbox.network says (no egress proxy, no package registries).
+        network: if top_clearance {
+            duet_agent::egress::Network::Off
+        } else {
+            egress::network(cfg)?
+        },
         command_timeout: Duration::from_secs(cfg.int("limits.command_timeout_seconds")? as u64),
         wall_clock: Duration::from_secs(wall_minutes * 60),
         frontier_usd: cfg.float("limits.frontier_usd")?,
@@ -840,15 +876,20 @@ async fn prepare(
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
-        web: web::access(
-            cfg,
-            // Local-only runs have no frontier.
-            (manifest.mode != Mode::LocalOnly).then(|| web::Frontier {
-                base_url: &manifest.frontier_url,
-                key_env: &frontier_key_env,
-            }),
-            ws,
-        )?,
+        // Top clearance offers no web tools: a query or a URL would leave
+        // this machine.
+        web: if top_clearance {
+            None
+        } else {
+            web::access(
+                cfg,
+                Some(web::Frontier {
+                    base_url: &manifest.frontier_url,
+                    key_env: &frontier_key_env,
+                }),
+                ws,
+            )?
+        },
         git_author: approve::git_author(cfg)?,
         mcp: mcp::start(
             cfg,
@@ -859,6 +900,7 @@ async fn prepare(
                 .as_deref()
                 .map(|e| e as &dyn duet_boundary::view::Presenter),
             frontier.audit(),
+            top_clearance,
         )
         .await?,
         lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
@@ -1106,7 +1148,7 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
     let session = &cli.session;
     ensure!(
         session.message.is_none()
-            && session.mode == Mode::Hybrid
+            && session.mode.is_none()
             && session.frontier_url.is_none()
             && session.frontier_model.is_none()
             && !session.no_privacy
@@ -1127,12 +1169,12 @@ command are for a session (`duet` alone); give a command its own options after i
             quiet,
         } => {
             match (mode, no_privacy) {
-                (Mode::Passthrough, false) => bail!(
+                (Some(Mode::Passthrough), false) => bail!(
                     "--mode passthrough turns the privacy boundary off: everything the model reads, \
 including secrets and personal data, is sent to the frontier provider unfiltered. \
 Add --no-privacy to confirm, or use --mode hybrid."
                 ),
-                (Mode::Hybrid | Mode::LocalOnly, true) => {
+                (Some(Mode::Hybrid | Mode::TopClearance) | None, true) => {
                     bail!("--no-privacy only applies to --mode passthrough")
                 }
                 _ => {}
@@ -1145,13 +1187,17 @@ Add --no-privacy to confirm, or use --mode hybrid."
             };
             let cfg = load_config(&ws, emb)?;
             // Refused before bootstrap probes anything.
-            overrides::mode_allowed(&cfg, mode)?;
+            let mode = overrides::resolve_mode(
+                &cfg,
+                mode,
+                frontier_url.is_some() || frontier_model.is_some(),
+            )?;
             approve::require_terminal(&cfg)?;
             let attached = images::from_args(&image, &image_public)?;
             images::precheck(&ws, &cfg, mode, &attached)?;
             // With the local model off nothing is probed for one.
             let local = match mode {
-                Mode::Hybrid | Mode::LocalOnly if local_enabled(&cfg, mode)? => {
+                Mode::Hybrid | Mode::TopClearance if local_enabled(&cfg, mode)? => {
                     match setup::bootstrap(&cfg).await {
                         Ok(found) => found.map(|b| LocalOverride {
                             base_url: b.base_url,

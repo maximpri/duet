@@ -59,7 +59,7 @@ pub enum Mode {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Status {
     pub session: String,
-    /// `hybrid`, `local-only` or `passthrough`.
+    /// `hybrid`, `top clearance` or `passthrough`.
     pub mode: String,
     pub frontier: String,
     /// The local model, when the session has one.
@@ -331,6 +331,10 @@ const DESCRIBED: &[(&str, &str)] = &[
     ("/undo", "revert the file writes of the last turn"),
     ("/stop", "end duet's turn after its current step"),
     ("/image", "attach an image to your next message"),
+    (
+        "/mode",
+        "this session's mode; top-clearance continues with the local model only",
+    ),
     ("/settings", "the settings screens"),
     ("/models", "frontier and local models; the doctor"),
     ("/sensitivity", "what is sensitive; test a path or text"),
@@ -344,7 +348,7 @@ const DESCRIBED: &[(&str, &str)] = &[
 ];
 
 /// Commands that take an argument: the palette puts them in the input.
-const WITH_ARGUMENT: &[&str] = &["/image"];
+const WITH_ARGUMENT: &[&str] = &["/image", "/mode"];
 
 /// The `@` picker's matches shown at most.
 const PICKS: usize = 8;

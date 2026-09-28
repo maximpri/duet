@@ -57,7 +57,7 @@ use std::time::Duration;
 /// The session's arguments (`duet` without a command).
 pub(crate) struct ChatArgs {
     pub message: Option<String>,
-    pub mode: Mode,
+    pub mode: Option<Mode>,
     pub frontier_url: Option<String>,
     pub frontier_model: Option<String>,
     pub no_privacy: bool,
@@ -250,13 +250,15 @@ pub(crate) enum Command {
         path: String,
         public: bool,
     },
+    /// Show the mode, or switch to top clearance (`/mode [top-clearance]`).
+    Mode(Option<String>),
     Unknown(String),
     Empty,
 }
 
 /// The commands, for completion.
 pub(crate) const COMMANDS: &[&str] = &[
-    "/close", "/diff", "/exit", "/help", "/image", "/quit", "/status", "/stop", "/undo",
+    "/close", "/diff", "/exit", "/help", "/image", "/mode", "/quit", "/status", "/stop", "/undo",
 ];
 
 pub(crate) fn parse(line: &str) -> Command {
@@ -283,6 +285,12 @@ pub(crate) fn parse(line: &str) -> Command {
             public,
         };
     }
+    if let Some(rest) = word.strip_prefix("mode")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        let rest = rest.trim();
+        return Command::Mode((!rest.is_empty()).then(|| rest.to_owned()));
+    }
     match word {
         "status" => Command::Status,
         "diff" => Command::Diff,
@@ -307,6 +315,10 @@ Commands (never sent to the model):
                           local model describes it (needs local.vision)
   /image --public <path>  attach an image the frontier may see itself (not scanned;
                           never from a sensitive path; needs frontier.vision)
+  /mode    the session's mode (hybrid, top clearance or passthrough)
+  /mode top-clearance     continue in top clearance: this session stays open and
+                          a new one starts where only the local model works and
+                          nothing leaves this machine (no frontier, web or network)
   /quit    leave; the session stays open for `duet --resume`
   /close   end the session for good
   //text   send a message that starts with /
@@ -520,20 +532,23 @@ fn image_path(ws: &Path, raw: &str) -> PathBuf {
 /// closed, 3 when a session budget is spent, 1 when it could not start.
 pub(crate) async fn chat(ws: PathBuf, args: ChatArgs, emb: &Embedding) -> Result<i32> {
     match (args.mode, args.no_privacy) {
-        (Mode::Passthrough, false) if args.resume.is_none() => bail!(
+        (Some(Mode::Passthrough), false) if args.resume.is_none() => bail!(
             "--mode passthrough turns the privacy boundary off: everything the model reads, \
 including secrets and personal data, is sent to the frontier provider unfiltered. \
 Add --no-privacy to confirm, or use --mode hybrid."
         ),
-        (Mode::Hybrid | Mode::LocalOnly, true) => {
+        (Some(Mode::Hybrid | Mode::TopClearance) | None, true) => {
             bail!("--no-privacy only applies to --mode passthrough")
         }
         _ => {}
     }
     let cfg = load_config(&ws, emb)?;
-    if args.resume.is_none() {
-        crate::overrides::mode_allowed(&cfg, args.mode)?;
-    }
+    let frontier_override = args.frontier_url.is_some() || args.frontier_model.is_some();
+    let mut mode = match args.resume {
+        None => crate::overrides::resolve_mode(&cfg, args.mode, frontier_override)?,
+        // The session's own mode, from its record, once it is read.
+        Some(_) => args.mode.unwrap_or(Mode::Hybrid),
+    };
     let tty = std::io::stdin().is_terminal();
     let interrupted = Arc::new(AtomicBool::new(false));
     let working = Arc::new(AtomicBool::new(false));
@@ -557,90 +572,6 @@ Add --no-privacy to confirm, or use --mode hybrid."
         })
     })?;
     watch_interrupts(interrupts, screen.clone());
-    if let Some(w) = screen.workspace() {
-        w.status(Status {
-            mode: mode_name(args.mode).to_owned(),
-            frontier: args
-                .frontier_model
-                .clone()
-                .map_or_else(|| cfg.str("frontier.model"), Ok)
-                .unwrap_or_default(),
-            local: (args.mode != Mode::Passthrough
-                && local_enabled(&cfg, args.mode).unwrap_or(false))
-            .then(|| cfg.str("local.model").ok())
-            .flatten(),
-            budget_usd: cfg.float("session.frontier_usd").unwrap_or(0.0),
-            ..Status::default()
-        });
-    }
-
-    let (manifest, resume) = match args.resume {
-        Some(id) => {
-            ensure!(
-                args.message.is_none(),
-                "--resume continues a session; send the message once it is open"
-            );
-            (resumed(&ws, id)?, true)
-        }
-        None => {
-            let (first, first_images) = match args.message {
-                Some(m) => (m, Vec::new()),
-                None => match first_message(&inbox, &leave, &screen, &ws, &cfg, args.mode).await {
-                    Some(m) => m,
-                    None => return Ok(0),
-                },
-            };
-            // Setting up prints freely.
-            screen.hide();
-            // With the local model off nothing is probed for one.
-            let local = match args.mode {
-                Mode::Hybrid | Mode::LocalOnly if local_enabled(&cfg, args.mode)? => {
-                    match setup::bootstrap(&cfg).await {
-                        Ok(found) => found.map(|b| LocalOverride {
-                            base_url: b.base_url,
-                            model: b.model,
-                        }),
-                        Err(code) => return Ok(code),
-                    }
-                }
-                _ => None,
-            };
-            let manifest = RunManifest {
-                run_id: new_run_id(),
-                mode: args.mode,
-                objective: first,
-                frontier_url: args
-                    .frontier_url
-                    .map_or_else(|| cfg.str("frontier.base_url"), Ok)?,
-                frontier_model: args
-                    .frontier_model
-                    .map_or_else(|| cfg.str("frontier.model"), Ok)?,
-                frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
-                local,
-                session: true,
-                images: first_images,
-            };
-            (manifest, false)
-        }
-    };
-    crate::overrides::check(&cfg, &manifest)?;
-    eprintln!("session {} ({:?})", manifest.run_id, manifest.mode);
-    let _lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
-    let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
-    duet_fs::private::ensure_private_dir(&run_dir)?;
-    duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
-    if !resume {
-        duet_fs::private::write_private(
-            &run_dir.join("run.json"),
-            &serde_json::to_vec_pretty(&manifest)?,
-        )?;
-    }
-    // Sessions last as long as the operator keeps them open: the provider's
-    // own retry deadline is far away, and each turn sets its own.
-    let limits = RunLimits {
-        deadline: tokio::time::Instant::now() + Duration::from_secs(7 * 24 * 3600),
-        interrupted: interrupted.clone(),
-    };
     let io = Io {
         inbox,
         tty,
@@ -648,83 +579,196 @@ Add --no-privacy to confirm, or use --mode hybrid."
         leave,
         screen: screen.clone(),
     };
-    let mut audit = None;
-    let driven = std::panic::AssertUnwindSafe(converse(
-        &ws,
-        &manifest,
-        &cfg,
-        oversight,
-        &run_dir,
-        resume,
-        &limits,
-        &mut audit,
-        &io,
-        emb.hooks(),
-    ))
-    .catch_unwind()
-    .await;
-    let (terminal, stats) = match driven {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err(e)) => (
-            Terminal::Failed {
-                reason: format!("{e:#}"),
+    let mut message = args.message;
+    let mut resume = args.resume;
+    // One session per pass; `/mode top-clearance` ends the pass with the
+    // session left open and starts the next in top clearance.
+    loop {
+        if let Some(w) = screen.workspace() {
+            w.status(Status {
+                mode: mode_name(mode).to_owned(),
+                frontier: args
+                    .frontier_model
+                    .clone()
+                    .map_or_else(|| cfg.str("frontier.model"), Ok)
+                    .unwrap_or_default(),
+                local: (mode != Mode::Passthrough && local_enabled(&cfg, mode).unwrap_or(false))
+                    .then(|| cfg.str("local.model").ok())
+                    .flatten(),
+                budget_usd: cfg.float("session.frontier_usd").unwrap_or(0.0),
+                ..Status::default()
+            });
+        }
+        let (manifest, resuming) = match resume.take() {
+            Some(id) => {
+                ensure!(
+                    message.is_none(),
+                    "--resume continues a session; send the message once it is open"
+                );
+                (resumed(&ws, id)?, true)
+            }
+            None => {
+                let (first, first_images) = match message.take() {
+                    Some(m) => (m, Vec::new()),
+                    None => {
+                        match first_message(&io.inbox, &io.leave, &screen, &ws, &cfg, mode).await {
+                            Some(m) => m,
+                            None => return Ok(0),
+                        }
+                    }
+                };
+                // Setting up prints freely.
+                screen.hide();
+                // With the local model off nothing is probed for one.
+                let local = match mode {
+                    Mode::Hybrid | Mode::TopClearance if local_enabled(&cfg, mode)? => {
+                        match setup::bootstrap(&cfg).await {
+                            Ok(found) => found.map(|b| LocalOverride {
+                                base_url: b.base_url,
+                                model: b.model,
+                            }),
+                            Err(code) => return Ok(code),
+                        }
+                    }
+                    _ => None,
+                };
+                let manifest = RunManifest {
+                    run_id: new_run_id(),
+                    mode,
+                    objective: first,
+                    frontier_url: args
+                        .frontier_url
+                        .clone()
+                        .map_or_else(|| cfg.str("frontier.base_url"), Ok)?,
+                    frontier_model: args
+                        .frontier_model
+                        .clone()
+                        .map_or_else(|| cfg.str("frontier.model"), Ok)?,
+                    frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
+                    local,
+                    session: true,
+                    images: first_images,
+                };
+                (manifest, false)
+            }
+        };
+        mode = manifest.mode;
+        crate::overrides::check(&cfg, &manifest)?;
+        eprintln!("session {} ({:?})", manifest.run_id, manifest.mode);
+        let lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
+        let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
+        duet_fs::private::ensure_private_dir(&run_dir)?;
+        duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
+        if !resuming {
+            duet_fs::private::write_private(
+                &run_dir.join("run.json"),
+                &serde_json::to_vec_pretty(&manifest)?,
+            )?;
+        }
+        // Sessions last as long as the operator keeps them open: the provider's
+        // own retry deadline is far away, and each turn sets its own.
+        let limits = RunLimits {
+            deadline: tokio::time::Instant::now() + Duration::from_secs(7 * 24 * 3600),
+            interrupted: interrupted.clone(),
+        };
+        let mut audit = None;
+        let driven = std::panic::AssertUnwindSafe(converse(
+            &ws,
+            &manifest,
+            &cfg,
+            oversight.clone(),
+            &run_dir,
+            resuming,
+            &limits,
+            &mut audit,
+            &io,
+            emb.hooks(),
+        ))
+        .catch_unwind()
+        .await;
+        let (terminal, stats, switch) = match driven {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(e)) => (
+                Terminal::Failed {
+                    reason: format!("{e:#}"),
+                },
+                RunStats::default(),
+                None,
+            ),
+            Err(panic) => (
+                Terminal::internal_error(panic.as_ref()),
+                RunStats::default(),
+                None,
+            ),
+        };
+        if switch.is_none() {
+            screen.close();
+        }
+        let audit = match audit {
+            Some(a) => Some(a),
+            None => open_audit(&ws, &manifest.run_id, emb.hooks())
+                .map(AuditHandle::new)
+                .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
+                .ok(),
+        };
+        // `duet` itself embeds nothing, so it adds no hooks (see ARCHITECTURE.md,
+        // "Embedding Duet").
+        duet_agent::conclude_with(
+            &run_dir,
+            &manifest.run_id,
+            audit.as_ref(),
+            &audit_log_path(&ws, &manifest.run_id),
+            &terminal,
+            &stats,
+            &duet_agent::Ending {
+                kind: duet_agent::RunKind::Session,
+                mode: manifest.mode.as_str(),
+                resumed: resuming,
+                policy: cfg.policy().map(duet_config::Policy::meta),
+                hooks: emb.hooks(),
             },
-            RunStats::default(),
-        ),
-        Err(panic) => (
-            Terminal::internal_error(panic.as_ref()),
-            RunStats::default(),
-        ),
-    };
-    screen.close();
-    let audit = match audit {
-        Some(a) => Some(a),
-        None => open_audit(&ws, &manifest.run_id, emb.hooks())
-            .map(AuditHandle::new)
-            .map_err(|e| eprintln!("warning: audit log not opened: {e:#}"))
-            .ok(),
-    };
-    // `duet` itself embeds nothing, so it adds no hooks (see ARCHITECTURE.md,
-    // "Embedding Duet").
-    duet_agent::conclude_with(
-        &run_dir,
-        &manifest.run_id,
-        audit.as_ref(),
-        &audit_log_path(&ws, &manifest.run_id),
-        &terminal,
-        &stats,
-        &duet_agent::Ending {
-            kind: duet_agent::RunKind::Session,
-            mode: &format!("{:?}", manifest.mode).to_lowercase(),
-            resumed: resume,
-            policy: cfg.policy().map(duet_config::Policy::meta),
-            hooks: emb.hooks(),
-        },
-    )?;
-    let id = &manifest.run_id;
-    Ok(match &terminal {
-        Terminal::Completed { .. } => {
-            println!("session {id} closed (${:.4} in total)", stats.cost_usd);
-            0
-        }
-        Terminal::Failed { reason } if reason == duet_agent::session::SESSION_LEFT => {
-            println!(
-                "session {id} left open (${:.4} so far); continue with: duet --resume {id}",
+        )?;
+        drop(lock);
+        let id = &manifest.run_id;
+        if let Some(next) = switch {
+            screen.line(&format!(
+                "session {id} ({}) left open (${:.4} so far); continue it with: duet --resume {id}",
+                mode_name(mode),
                 stats.cost_usd
+            ));
+            screen.line(
+                "top clearance: a new session starts with your next message. Only the local \
+model works in it, and nothing leaves this machine but its requests to the local model: no \
+frontier, no web tools, no network for commands. It starts fresh, so nothing said here ever \
+reaches the frontier; leaving top clearance needs a new session.",
             );
-            0
+            mode = next;
+            continue;
         }
-        Terminal::Failed { reason } => {
-            eprintln!("session {id} stopped: {reason}");
-            1
-        }
-        Terminal::BudgetStopped { which } => {
-            println!(
-                "session {id}: {which} is spent; raise it to continue with duet --resume {id}"
-            );
-            3
-        }
-    })
+        return Ok(match &terminal {
+            Terminal::Completed { .. } => {
+                println!("session {id} closed (${:.4} in total)", stats.cost_usd);
+                0
+            }
+            Terminal::Failed { reason } if reason == duet_agent::session::SESSION_LEFT => {
+                println!(
+                    "session {id} left open (${:.4} so far); continue with: duet --resume {id}",
+                    stats.cost_usd
+                );
+                0
+            }
+            Terminal::Failed { reason } => {
+                eprintln!("session {id} stopped: {reason}");
+                1
+            }
+            Terminal::BudgetStopped { which } => {
+                println!(
+                    "session {id}: {which} is spent; raise it to continue with duet --resume {id}"
+                );
+                3
+            }
+        });
+    }
 }
 
 /// The operator's side of the conversation.
@@ -838,7 +882,7 @@ async fn converse(
     audit: &mut Option<AuditHandle>,
     io: &Io,
     hooks: &duet_agent::Hooks,
-) -> Result<(Terminal, RunStats)> {
+) -> Result<(Terminal, RunStats, Option<Mode>)> {
     let Prepared {
         git,
         engine,
@@ -907,15 +951,15 @@ async fn converse(
         turns(&mut session, manifest.objective.clone(), &ctx).await;
         show_status(io, &session, manifest, cfg);
     }
-    let closed = loop {
+    let (closed, switch) = loop {
         if io.leave.load(Ordering::SeqCst) {
-            break false;
+            break (false, None);
         }
         if let Some(which) = session.spent() {
             io.screen.line(&format!(
                 "the session budget {which} is spent; no further turns can start"
             ));
-            break false;
+            break (false, None);
         }
         io.screen.prompt();
         let line = loop {
@@ -932,13 +976,13 @@ async fn converse(
             if matches!(io.screen, Screen::Plain { tty: true }) {
                 println!();
             }
-            break false;
+            break (false, None);
         };
         let say = |text: &str| io.screen.line(text);
         match parse(&line) {
             Command::Empty => {}
-            Command::Quit => break false,
-            Command::Close => break true,
+            Command::Quit => break (false, None),
+            Command::Close => break (true, None),
             Command::Help => io.screen.text(&format!("{HELP}\n")),
             Command::Status => say(&status(&session, &manifest.run_id, cfg)),
             Command::Diff => io.screen.diff(&local_diff(&git, ws, run_dir, presenter)),
@@ -957,6 +1001,10 @@ async fn converse(
             },
             Command::Stop => say("duet is not working; nothing to stop"),
             Command::Unknown(c) => say(&format!("unknown command /{c}; /help lists the commands")),
+            Command::Mode(asked) => match mode_change(manifest.mode, asked.as_deref()) {
+                ModeChange::Switch(to) => break (false, Some(to)),
+                ModeChange::Say(text) => say(&text),
+            },
             Command::Image { path, .. } if path.is_empty() => say(&format!(
                 "usage: /image [--public] <path>{}",
                 match session.attached().len() {
@@ -987,7 +1035,7 @@ async fn converse(
         lsp.shutdown().await;
     }
     stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
-    Ok((terminal, stats))
+    Ok((terminal, stats, switch))
 }
 
 /// What a turn needs besides the session.
@@ -1096,6 +1144,7 @@ async fn take_turn(
                             | Command::Close
                             | Command::Undo
                             | Command::Status
+                            | Command::Mode(_)
                             | Command::Image { .. } => {
                                 say(&format!("  (after this turn: {})", line.trim()));
                                 held.push(line);
@@ -1114,11 +1163,64 @@ async fn take_turn(
     (end, steering.take())
 }
 
+/// What `/mode` does.
+#[derive(Debug, PartialEq, Eq)]
+enum ModeChange {
+    /// End this session (left open) and continue in this mode.
+    Switch(Mode),
+    /// Only say something.
+    Say(String),
+}
+
+/// `/mode [asked]` in a session of mode `now`. The only switch is up to top
+/// clearance: from there, going back would send the frontier a conversation
+/// in which the local model saw what the frontier may not, so leaving takes a
+/// new session; and a session cannot turn its privacy boundary off.
+fn mode_change(now: Mode, asked: Option<&str>) -> ModeChange {
+    let say = |s: String| ModeChange::Say(s);
+    let Some(asked) = asked else {
+        return say(format!(
+            "this session is {}. /mode top-clearance continues in top clearance: only the local \
+model works and nothing leaves this machine (this session stays open)",
+            mode_name(now)
+        ));
+    };
+    let to = match asked.to_ascii_lowercase().as_str() {
+        "top-clearance" | "top" | "top clearance" | "local-only" => Mode::TopClearance,
+        "hybrid" => Mode::Hybrid,
+        "passthrough" => Mode::Passthrough,
+        other => {
+            return say(format!(
+                "unknown mode {other:?}: /mode top-clearance, or /mode to see this session's mode"
+            ));
+        }
+    };
+    match (now, to) {
+        (a, b) if a == b => say(format!("this session is already {}", mode_name(now))),
+        (_, Mode::TopClearance) => ModeChange::Switch(Mode::TopClearance),
+        (Mode::TopClearance, _) => say(format!(
+            "top clearance cannot be left in a session: its conversation holds what only the \
+local model may see. /close this session, then start one with `duet --mode {}`",
+            to.as_str()
+        )),
+        (_, Mode::Passthrough) => say(
+            "a session cannot turn its privacy boundary off: start one with `duet --mode \
+passthrough --no-privacy`"
+                .to_owned(),
+        ),
+        (_, _) => say(format!(
+            "a {} session continues as it is: start one with `duet --mode {}`",
+            mode_name(now),
+            to.as_str()
+        )),
+    }
+}
+
 /// How the mode reads in the status bar.
 fn mode_name(mode: Mode) -> &'static str {
     match mode {
         Mode::Hybrid => "hybrid",
-        Mode::LocalOnly => "local-only",
+        Mode::TopClearance => "top clearance",
         Mode::Passthrough => "passthrough",
     }
 }
@@ -1386,6 +1488,12 @@ mod tests {
         assert_eq!(parse(" /quit "), Command::Quit);
         assert_eq!(parse("/close"), Command::Close);
         assert_eq!(parse("/nope"), Command::Unknown("nope".into()));
+        assert_eq!(parse("/mode"), Command::Mode(None));
+        assert_eq!(
+            parse("/mode  top-clearance "),
+            Command::Mode(Some("top-clearance".into()))
+        );
+        assert_eq!(parse("/modes"), Command::Unknown("modes".into()));
         assert_eq!(
             parse("//etc is a dir"),
             Command::Message("/etc is a dir".into())
@@ -1399,6 +1507,36 @@ mod tests {
         assert_eq!(parse("/image --public ui.png "), image("ui.png", true));
         assert_eq!(parse("/image"), image("", false));
         assert_eq!(parse("/images"), Command::Unknown("images".into()));
+    }
+
+    #[test]
+    fn mode_only_ever_switches_up_to_top_clearance() {
+        use ModeChange::{Say, Switch};
+        for now in [Mode::Hybrid, Mode::Passthrough] {
+            for asked in ["top-clearance", "top", "Top-Clearance", "local-only"] {
+                assert_eq!(
+                    mode_change(now, Some(asked)),
+                    Switch(Mode::TopClearance),
+                    "{now:?} {asked}"
+                );
+            }
+        }
+        let says = |now, asked| match mode_change(now, asked) {
+            Say(s) => s,
+            Switch(m) => panic!("switched to {m:?}"),
+        };
+        assert!(says(Mode::Hybrid, None).contains("this session is hybrid"));
+        assert!(says(Mode::TopClearance, Some("top")).contains("already top clearance"));
+        // Top clearance is never left in a session.
+        for asked in ["hybrid", "passthrough"] {
+            let s = says(Mode::TopClearance, Some(asked));
+            assert!(s.contains("cannot be left in a session"), "{s}");
+            assert!(s.contains(&format!("duet --mode {asked}")), "{s}");
+        }
+        // Nor is the boundary turned off, or a mode changed sideways.
+        assert!(says(Mode::Hybrid, Some("passthrough")).contains("cannot turn its privacy"));
+        assert!(says(Mode::Passthrough, Some("hybrid")).contains("duet --mode hybrid"));
+        assert!(says(Mode::Hybrid, Some("fast")).contains("unknown mode"));
     }
 
     #[test]

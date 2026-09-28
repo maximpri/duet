@@ -9,6 +9,7 @@ every security rule in detail: [SECURITY.md](../SECURITY.md).
 ```sh
 duet                            # the workspace: code in a conversation (hybrid mode by default)
 duet "fix the failing export"   # the same, with the first message given
+duet --mode top-clearance       # only the local model works; nothing leaves this machine
 duet --resume                   # continue the most recent open session (or --resume <id>)
 duet run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
 duet run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
@@ -31,6 +32,24 @@ duet purge                      # delete raw run data older than the retention p
 evaluation baseline). A repository can forbid it, for new and resumed runs and sessions alike:
 `duet config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
 with `--confirm`).
+
+**Top clearance.** For work whose content may not leave the machine at all, `--mode
+top-clearance` (in a session, `/mode top-clearance`) has the local model do everything: it reads,
+decides and writes the code, and nothing leaves this machine but its requests to the local model.
+There is no frontier; the web tools are not offered; commands get no network whatever
+`sandbox.network` says (no egress proxy, no package registries: dependencies must already be on
+disk); MCP servers reached over HTTP or with `network = true` are not started; sub-agents use the
+local model. The header shows TOP CLEARANCE, and the audit log records every request to the local
+model, so what left can be checked (`duet audit show`). The work is only as good as the local
+model: expect far less than hybrid mode on hard tasks. In a session, `/mode top-clearance` leaves the
+current session open (`duet --resume` continues it) and starts a new one in top clearance, fresh:
+nothing said in it ever reaches the frontier. It cannot be left again within that session, because
+its conversation holds what only the local model may see; `/close` it and start another session.
+`/mode` alone shows the session's mode. A repository can require it for every run and session:
+`duet config set --project clearance.required '"top"'`; `duet` and `duet run` then start in top
+clearance without `--mode`, and every other mode is refused (lifting it is the owner's, confirmed).
+`--mode local-only` is the same mode under its old name. Details: [SECURITY.md](../SECURITY.md)
+(Top clearance).
 
 **Project instructions.** Put how to work in a repository (conventions, the commands that build and
 test it, its layout) in `DUET.md` at its root, and your own standing instructions for every
@@ -139,7 +158,8 @@ everything said and done so far.
   duet wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts
   the files the last turn wrote through its tools; repeat to go back further; changes made by
   commands are not reverted), `/image <path>` and `/image --public <path>` (attach an image to your
-  next message; see Images below), `/quit` (leave; the session stays open), `/close` (end it for
+  next message; see Images below), `/mode` (the session's mode) and `/mode top-clearance`
+  (continue in top clearance, above), `/quit` (leave; the session stays open), `/close` (end it for
   good), `/help`; and the settings screens: `/settings`, `/models`, `/sensitivity`, `/ip`,
   `/limits`, `/data`, `/audit`, `/runs`.
 - **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `duet
@@ -541,7 +561,7 @@ does that, through the same `--confirm` and audit path as any endpoint change.
 config may set it too) runs hybrid mode with no local model: nothing is probed or contacted, no
 model reads sensitive content, and the frontier sees it only as handles (their error lines with
 values replaced, and line shapes or structure views) and synthetic samples. `ask_local` and `edit_protected` are refused, and the task tells
-the frontier so. Local-only mode, and `sensitivity.local_pii_pass` (which would otherwise be skipped
+the frontier so. Top clearance, and `sensitivity.local_pii_pass` (which would otherwise be skipped
 without a word), refuse to start. Turning it back on lets a local model read sensitive content
 again, so it needs `--confirm`. The work is harder for the frontier without answers about the
 data; the evaluation lane `duet-hybrid-nolocal` measures by how much.

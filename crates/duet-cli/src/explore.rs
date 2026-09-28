@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// The run's explorer, or `None` when `explore.enabled` is off or nothing
-/// local can drive it: local-only mode (the local model is the one working
+/// local can drive it: top clearance (the local model is the one working
 /// already) or `local.enabled` off. Its model is the configured local model
 /// under the same endpoint rules as the engine's, with the run's deadline and
 /// interrupt; in pass-through, where nothing else reaches it, the endpoint's
@@ -22,7 +22,7 @@ pub(crate) fn setup(
     audit: &AuditHandle,
     limits: &RunLimits,
 ) -> Result<Option<Arc<Explorer>>> {
-    if !cfg.bool("explore.enabled")? || manifest.mode == Mode::LocalOnly {
+    if !cfg.bool("explore.enabled")? || manifest.mode == Mode::TopClearance {
         return Ok(None);
     }
     if !local_enabled(cfg, manifest.mode)? {

@@ -94,6 +94,8 @@ pub fn for_run(cfg: &Config) -> Result<Vec<ServerConfig>> {
 
 /// Starts the enabled servers for a run or session (see `duet_agent::mcp`);
 /// `None` when none are configured. `presenter` is the engine in hybrid mode.
+/// In top clearance only servers that cannot reach the network start: stdio
+/// programs whose sandbox has no network (see [`reaches_network`]).
 pub async fn start(
     cfg: &Config,
     ws: &std::path::Path,
@@ -101,8 +103,25 @@ pub async fn start(
     sandbox: duet_sandbox::SandboxKind,
     presenter: Option<&dyn duet_boundary::view::Presenter>,
     audit: &duet_boundary::audit::AuditHandle,
+    top_clearance: bool,
 ) -> Result<Option<std::sync::Arc<duet_agent::mcp::Hub>>> {
-    let servers = for_run(cfg)?;
+    let mut servers = for_run(cfg)?;
+    if top_clearance {
+        servers.retain(|s| {
+            let reaches = reaches_network(s);
+            if reaches {
+                eprintln!(
+                    "top clearance: MCP server `{}` is not started (it {reaches_how}; data sent to it could leave this machine)",
+                    s.name,
+                    reaches_how = match s.launch {
+                        Launch::Url(_) => "is reached over HTTP",
+                        Launch::Command { .. } => "has network (network = true)",
+                    }
+                );
+            }
+            !reaches
+        });
+    }
     if servers.is_empty() {
         return Ok(None);
     }
@@ -128,6 +147,13 @@ pub async fn start(
         }
     }
     Ok(Some(std::sync::Arc::new(hub)))
+}
+
+/// Whether what is sent to a server could leave this machine: it is reached
+/// over HTTP (a loopback URL too: whatever listens there may forward it), or
+/// its sandbox has network.
+pub fn reaches_network(s: &ServerConfig) -> bool {
+    matches!(s.launch, Launch::Url(_)) || s.network
 }
 
 /// Ends the servers' sessions and stops their processes.

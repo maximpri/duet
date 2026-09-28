@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! What a run or session uses in place of its configuration, checked against
 //! it before the run starts: the mode (`--mode passthrough` needs
-//! `frontier.allow_passthrough`), command-line overrides (`--frontier-url`,
+//! `frontier.allow_passthrough`; `clearance.required = "top"` allows top
+//! clearance only), command-line overrides (`--frontier-url`,
 //! `--frontier-model`), the values a resumed run recorded when it started,
 //! and the local server the bootstrap found. The policy layer, when the
 //! configuration has one (`duet_config::policy`), bounds every one of them
@@ -12,26 +13,69 @@ use anyhow::{Result, bail};
 use duet_config::{Config, Origin};
 use toml::Value;
 
-/// Refuses `--mode passthrough` when `frontier.allow_passthrough` is off,
-/// saying who turned it off.
-pub(crate) fn mode_allowed(cfg: &Config, mode: Mode) -> Result<()> {
-    if mode != Mode::Passthrough || cfg.bool("frontier.allow_passthrough")? {
-        return Ok(());
-    }
-    let by = match cfg.origin("frontier.allow_passthrough") {
-        Some(Origin::Project) => "by this repository's .duet/config.toml".to_owned(),
-        Some(Origin::Owner) => "in your config".to_owned(),
+/// Who set a setting, for a refusal: "by this repository's .duet/config.toml",
+/// "in your config", "by the policy …", or nothing for a default.
+fn set_by(cfg: &Config, key: &str) -> String {
+    match cfg.origin(key) {
+        Some(Origin::Project) => " by this repository's .duet/config.toml".to_owned(),
+        Some(Origin::Owner) => " in your config".to_owned(),
         Some(Origin::Policy) => format!(
-            "by the policy {}",
+            " by the policy {}",
             cfg.policy()
                 .map(|p| p.meta().to_string())
                 .unwrap_or_default()
         ),
         Some(Origin::Default) | None => String::new(),
+    }
+}
+
+/// Whether every run and session here must be in top clearance.
+pub(crate) fn top_clearance_required(cfg: &Config) -> Result<bool> {
+    Ok(cfg.str("clearance.required")? == "top")
+}
+
+/// The mode of a new run or session: the one asked for, else hybrid, or top
+/// clearance where `clearance.required = "top"`; refused when the
+/// configuration does not allow it ([`mode_allowed`]), and top clearance
+/// with a frontier override (it has no frontier).
+pub(crate) fn resolve_mode(
+    cfg: &Config,
+    asked: Option<Mode>,
+    frontier_override: bool,
+) -> Result<Mode> {
+    let mode = match asked {
+        Some(m) => m,
+        None if top_clearance_required(cfg)? => Mode::TopClearance,
+        None => Mode::Hybrid,
     };
+    mode_allowed(cfg, mode)?;
+    if mode == Mode::TopClearance && frontier_override {
+        bail!(
+            "top clearance uses no frontier: --frontier-url and --frontier-model do not apply to it"
+        );
+    }
+    Ok(mode)
+}
+
+/// Refuses every mode but top clearance where `clearance.required = "top"`,
+/// and `--mode passthrough` when `frontier.allow_passthrough` is off, saying
+/// who set it.
+pub(crate) fn mode_allowed(cfg: &Config, mode: Mode) -> Result<()> {
+    if mode != Mode::TopClearance && top_clearance_required(cfg)? {
+        bail!(
+            "--mode {} is not allowed here: clearance.required is top{} (only the local model \
+works, nothing leaves this machine); use --mode top-clearance, or leave --mode out",
+            mode.as_str(),
+            set_by(cfg, "clearance.required")
+        );
+    }
+    if mode != Mode::Passthrough || cfg.bool("frontier.allow_passthrough")? {
+        return Ok(());
+    }
     bail!(
-        "--mode passthrough is not allowed here: frontier.allow_passthrough is off {by} \
-(passthrough sends everything the model reads to the frontier unfiltered); use --mode hybrid"
+        "--mode passthrough is not allowed here: frontier.allow_passthrough is off{} \
+(passthrough sends everything the model reads to the frontier unfiltered); use --mode hybrid",
+        set_by(cfg, "frontier.allow_passthrough")
     )
 }
 
@@ -41,7 +85,7 @@ pub(crate) fn mode_allowed(cfg: &Config, mode: Mode) -> Result<()> {
 pub(crate) fn check(cfg: &Config, m: &RunManifest) -> Result<()> {
     mode_allowed(cfg, m.mode)?;
     let text = |s: &str| Value::String(s.to_owned());
-    if m.mode != Mode::LocalOnly {
+    if m.mode != Mode::TopClearance {
         cfg.allows("frontier.base_url", &text(&m.frontier_url))?;
         cfg.allows("frontier.model", &text(&m.frontier_model))?;
         if let Some(d) = &m.frontier_dialect {
@@ -167,7 +211,7 @@ mod tests {
             &cfg,
             &RunManifest {
                 frontier_url: "https://elsewhere.example/v1".into(),
-                ..manifest(&cfg, Mode::LocalOnly)
+                ..manifest(&cfg, Mode::TopClearance)
             },
         )
         .unwrap();
@@ -191,5 +235,41 @@ mod tests {
         let e = crate::setup::preset(&mut cfg, Some("ollama"), None, None, true).unwrap_err();
         assert!(e.to_string().contains("local.base_url"), "{e}");
         assert_eq!(std::fs::read_to_string(&cfg.owner_path).unwrap(), "");
+    }
+
+    #[test]
+    fn a_repository_can_require_top_clearance() {
+        // Standard: hybrid by default, every mode asked for.
+        let (_d, cfg) = config("", "", None);
+        assert_eq!(resolve_mode(&cfg, None, false).unwrap(), Mode::Hybrid);
+        assert_eq!(
+            resolve_mode(&cfg, Some(Mode::TopClearance), false).unwrap(),
+            Mode::TopClearance
+        );
+        // Top clearance has no frontier to override.
+        let e = resolve_mode(&cfg, Some(Mode::TopClearance), true).unwrap_err();
+        assert!(e.to_string().contains("uses no frontier"), "{e}");
+        // Required by the project: the default, and the only mode, resumed
+        // sessions included.
+        let (_d, cfg) = config("", "[clearance]\nrequired = \"top\"\n", None);
+        assert_eq!(resolve_mode(&cfg, None, false).unwrap(), Mode::TopClearance);
+        for m in [Mode::Hybrid, Mode::Passthrough] {
+            let e = resolve_mode(&cfg, Some(m), false).unwrap_err().to_string();
+            assert!(
+                e.contains("clearance.required is top by this repository's .duet/config.toml"),
+                "{e}"
+            );
+            assert!(check(&cfg, &manifest(&cfg, m)).is_err());
+        }
+        assert!(check(&cfg, &manifest(&cfg, Mode::TopClearance)).is_ok());
+        // A project cannot lift what the owner requires: its file is refused.
+        let d = tempfile::tempdir().unwrap();
+        let (o, p) = (d.path().join("owner.toml"), d.path().join("project.toml"));
+        std::fs::write(&o, "[clearance]\nrequired = \"top\"\n").unwrap();
+        std::fs::write(&p, "[clearance]\nrequired = \"standard\"\n").unwrap();
+        let e = Config::load_with(&o, Some(&p), None)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("clearance.required"), "{e}");
     }
 }

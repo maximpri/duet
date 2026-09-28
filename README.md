@@ -69,6 +69,11 @@ Duet splits the work along that line:
                           └──────────────────────────────────────────────────────────────────────┘
 ```
 
+For work whose content may not leave the machine at all, **top clearance** (`duet --mode
+top-clearance`, or `/mode top-clearance` in a session) has the local model do everything, with no
+frontier, no web tools and no network for commands; a repository can require it
+(`clearance.required = "top"`). The work is then only as good as the local model.
+
 ## How Duet keeps the premise
 
 ### 1. Sensitive by default, classified by where content comes from

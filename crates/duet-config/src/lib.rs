@@ -177,13 +177,22 @@ pub const REGISTRY: &[Setting] = &[
         "Allow `--mode passthrough` in `duet run` and a `duet` session: the privacy boundary off, everything the model reads sent to the frontier unfiltered (each use still needs --no-privacy). false refuses such runs and sessions, and resuming one. A project may turn it off for its repository; turning it back on is the owner's, confirmed."
     ),
     s!(
+        "clearance.required",
+        Choice(&["standard", "top"]),
+        r#""standard""#,
+        Project,
+        OnlyLaterChoice,
+        true,
+        "`top`: every run and session here is in top clearance: only the local model works, and nothing leaves this machine but its requests to the local model (no frontier, no web tools, no network for commands, no MCP server with network). `duet` and `duet run` start in it without --mode; other modes are refused, and resuming a session of another mode too. A project may require it for its repository; lifting it is the owner's, confirmed. `standard`: every mode is available (top clearance with --mode top-clearance or /mode in a session)."
+    ),
+    s!(
         "local.enabled",
         Bool,
         "true",
         Project,
         OnlyFalse,
         true,
-        "Use a local model. false: hybrid runs without one: no local server is probed, no model reads sensitive content, the frontier sees it only as handles (their sanitized error lines and line shapes), and ask_local and edit_protected are refused; local-only mode and sensitivity.local_pii_pass refuse to start. Measures what the local model adds (evaluation lane duet-hybrid-nolocal)."
+        "Use a local model. false: hybrid runs without one: no local server is probed, no model reads sensitive content, the frontier sees it only as handles (their sanitized error lines and line shapes), and ask_local and edit_protected are refused; top clearance and sensitivity.local_pii_pass refuse to start. Measures what the local model adds (evaluation lane duet-hybrid-nolocal)."
     ),
     s!(
         "local.base_url",

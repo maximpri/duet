@@ -131,18 +131,32 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
                 Style::new().fg(BAD),
             ));
         }
+        "top clearance" => {
+            spans.push(Span::styled(
+                "TOP CLEARANCE",
+                Style::new().fg(HELD).add_modifier(Modifier::BOLD),
+            ));
+            spans.push(dot());
+            match &st.local {
+                Some(l) => spans.push(Span::styled(format!("local {l} only"), palette::muted())),
+                None => spans.push(Span::styled("no local model", Style::new().fg(WARN))),
+            }
+            spans.push(dot());
+            spans.push(Span::styled(
+                "nothing leaves this machine: no frontier, web or network",
+                Style::new().fg(HELD),
+            ));
+        }
         mode => {
             spans.push(Span::styled(
                 mode.to_owned(),
                 Style::new().fg(GOOD).add_modifier(Modifier::BOLD),
             ));
-            if mode != "local-only" {
-                spans.push(dot());
-                spans.push(Span::styled(
-                    format!("frontier {}", st.frontier),
-                    palette::muted(),
-                ));
-            }
+            spans.push(dot());
+            spans.push(Span::styled(
+                format!("frontier {}", st.frontier),
+                palette::muted(),
+            ));
             spans.push(dot());
             match &st.local {
                 Some(l) => spans.push(Span::styled(format!("local {l}"), palette::muted())),
@@ -150,11 +164,7 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
             }
             spans.push(dot());
             spans.push(Span::styled(
-                if mode == "local-only" {
-                    "nothing leaves this machine"
-                } else {
-                    "sensitive values stay on this machine"
-                },
+                "sensitive values stay on this machine",
                 Style::new().fg(HELD),
             ));
         }
