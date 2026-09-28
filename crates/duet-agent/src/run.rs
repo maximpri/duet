@@ -1055,7 +1055,9 @@ pub(crate) async fn work(
                     .into());
                 }
                 // Tool calls in a truncated response are never executed.
-                let nudge = Item::User { text: "Your last response was cut off at the output limit, so none of its tool calls ran. Continue with smaller steps.".into() };
+                let nudge = Item::User {
+                    text: length_nudge(cfg.max_output_tokens),
+                };
                 stored!(
                     host,
                     transcript.append(&Entry::Item {
@@ -1358,6 +1360,18 @@ pub(crate) async fn work(
     }
 }
 
+/// What the frontier is told after a response hit the output limit. Seen on a
+/// one-page game: the whole page in one `write_file` was cut off, and "smaller
+/// steps" alone did not say how to write one file in several.
+fn length_nudge(limit: u32) -> String {
+    format!(
+        "Your last response was cut off at the output limit ({limit} tokens), so none of its tool \
+calls ran and nothing was written. Continue with smaller steps. A large file, even one the brief \
+asks for as a single file, is written in parts: create it with `write_file` holding the first part, \
+then add each further part with `edit_file` in a later response, each response well under the limit."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1380,5 +1394,18 @@ mod tests {
         };
         assert_eq!((cfg.price)(&usage), 0.0);
         assert!(cfg.frontier_usd <= 5.0 && cfg.wall_clock <= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn a_cut_off_response_is_told_the_limit_and_how_to_write_a_file_in_parts() {
+        let nudge = length_nudge(32_768);
+        for want in [
+            "output limit (32768 tokens)",
+            "nothing was written",
+            "`write_file` holding the first part",
+            "`edit_file` in a later response",
+        ] {
+            assert!(nudge.contains(want), "{want}: {nudge}");
+        }
     }
 }
