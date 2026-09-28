@@ -9,7 +9,7 @@ partial = 0
 
 # Hard negatives: lines holding a finding, scanned as that file (its name as the
 # path, so path conditions and path allowlists apply) and as text of unknown
-# origin. Measured 2026-09-26: 37 of 1,513 lines (2.4%). Before long tokens
+# origin. Measured 2026-09-27: 34 of 1,534 lines (2.2%); 2026-09-26: 37 of 1,513. Before long tokens
 # were judged by their parts (paths, hashed file names, identifiers) and ISBNs
 # told from card numbers, 148 (9.8%): 57 of the 688 synthetic lines and 91 of
 # the 825 lines of real toolchain output. Before the rule import, 80 of the
@@ -60,20 +60,23 @@ as_text = 0
 as_file = 0
 as_text = 0
 
-# A 13-digit millisecond timestamp that passes the card checksum.
+# A 13-digit millisecond timestamp that passes the card checksum was the one
+# finding until card numbers had to start as a network's do (2026-09-27).
 [negatives."logs.txt"]
-as_file = 1
-as_text = 1
+as_file = 0
+as_text = 0
 
 # `t.tokenHeader="X-CSRF-Token"`: a credential-named assignment.
 [negatives."minified.js"]
 as_file = 1
 as_text = 1
 
-# Two digit runs that pass the card checksum; `1.2.3.4.5` read as an IPv4 address.
+# `1.2.3.4.5` read as an IPv4 address. Two digit runs that pass the card
+# checksum were findings until card numbers had to start as a network's do
+# (2026-09-27).
 [negatives."numbers.txt"]
-as_file = 3
-as_text = 3
+as_file = 1
+as_text = 1
 
 [negatives."package-lock.json"]
 as_file = 0

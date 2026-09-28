@@ -228,6 +228,67 @@ fn luhn(digits: &str) -> bool {
     sum.is_multiple_of(10)
 }
 
+/// Whether `digits` start as a card network's numbers do, at a length that
+/// network issues: Visa (4: 13, 16, 19), Mastercard (51–55, 2221–2720),
+/// Mir (2200–2204), American Express (34, 37: 15), Diners (300–305, 3095,
+/// 36, 38–39), JCB (3528–3589), Discover (6011, 644–649, 65), UnionPay (62),
+/// Maestro and other debit ranges (50, 56–69), RuPay (60, 81, 82, 508) and
+/// Troy (9792). Timestamps (`20170806110612`, `1510067557121`), snowflake
+/// ids and the digits of a long decimal mostly start otherwise.
+fn card_network(digits: &str) -> bool {
+    let d = digits.as_bytes();
+    let n = d.len();
+    let prefix = |k: usize| -> u32 { digits.get(..k).and_then(|p| p.parse().ok()).unwrap_or(0) };
+    match d.first() {
+        Some(b'4') => matches!(n, 13 | 16 | 19),
+        Some(b'3') => match prefix(2) {
+            34 | 37 => n == 15,
+            36 | 38 | 39 => (14..=19).contains(&n),
+            35 => (3528..=3589).contains(&prefix(4)) && (16..=19).contains(&n),
+            30 => ((300..=305).contains(&prefix(3)) || prefix(4) == 3095) && (14..=19).contains(&n),
+            _ => false,
+        },
+        Some(b'2') => {
+            ((2221..=2720).contains(&prefix(4)) || (2200..=2204).contains(&prefix(4)))
+                && (16..=19).contains(&n)
+        }
+        Some(b'5') => matches!(prefix(2), 50..=58) && (12..=19).contains(&n),
+        Some(b'6') => (12..=19).contains(&n),
+        Some(b'8') => matches!(prefix(2), 81 | 82) && n == 16,
+        Some(b'9') => prefix(4) == 9792 && n == 16,
+        _ => false,
+    }
+}
+
+/// Card-shaped numbers that pass Luhn, whatever their network: what sensitive
+/// content is held to (a data file's card column is withheld as cards, with
+/// every run of their digits, even when its numbers start as no network's
+/// do). Public text is held to the network check as well ([`scan_each`]).
+pub(crate) fn luhn_numbers(text: &str) -> Vec<std::ops::Range<usize>> {
+    CARD.find_iter(text)
+        .filter(|m| {
+            luhn(m.as_str()) && !isbn(text, m.start(), m.as_str()) && !in_a_decimal(text, m.start())
+        })
+        .map(|m| m.range())
+        .collect()
+}
+
+/// Whether `number` is printed in groups the way cards are: three groups or
+/// more, the first of four digits (`4111 1111 1111 1111`, `3782 822463 10005`).
+fn grouped_like_a_card(number: &str) -> bool {
+    let groups: Vec<&str> = number.split([' ', '-']).filter(|g| !g.is_empty()).collect();
+    groups.len() >= 3 && groups[0].len() == 4
+}
+
+/// Whether the digits at `start` are the fraction of a decimal
+/// (`80.95999999999948`).
+fn in_a_decimal(text: &str, start: usize) -> bool {
+    let before = text[..start].as_bytes();
+    before.len() >= 2
+        && before[before.len() - 1] == b'.'
+        && before[before.len() - 2].is_ascii_digit()
+}
+
 /// Whether the card-shaped number `number` at `start` is an ISBN: printed in
 /// the ISBN-13 layout (five groups, a three-digit prefix first and the check
 /// digit last: `978-0-596-51004-6`), or 978 or 979 and a valid ISBN-13 check
@@ -488,7 +549,16 @@ pub fn scan_each_in(text: &str, d: Detectors, path: Option<&str>) -> Vec<Finding
         }
         if on(Own::Card) {
             for m in CARD.find_iter(text) {
-                if luhn(m.as_str()) && !isbn(text, m.start(), m.as_str()) {
+                let number = m.as_str();
+                let digits: String = number.chars().filter(char::is_ascii_digit).collect();
+                // Luhn alone passes one number in ten: a card also starts as a
+                // network's do, or is printed grouped like one (a card
+                // labelled as such is found by the labelled-number rule).
+                if luhn(number)
+                    && !isbn(text, m.start(), number)
+                    && !in_a_decimal(text, m.start())
+                    && (card_network(&digits) || grouped_like_a_card(number))
+                {
                     push(Kind::Card, m.range(), None);
                 }
             }
@@ -665,6 +735,51 @@ mod tests {
         ] {
             assert!(kinds(text).is_empty(), "{text}: {:?}", kinds(text));
         }
+    }
+
+    #[test]
+    fn luhn_valid_timestamps_ids_and_decimals_are_not_cards() {
+        // Measured on public pages and the XL tasks (2026-09-27): about one
+        // in ten of these passes Luhn and became a card placeholder.
+        for text in [
+            "https://web.archive.org/web/20170806110612/https://example.com/",
+            "$fromMillis(1510067557121)",
+            "pl.x 80.95999999999948",
+            "tweet 1184523000453971961 was deleted",
+        ] {
+            assert!(luhn_passing_run(text), "pick a Luhn-valid example: {text}");
+            assert!(
+                !kinds(text).iter().any(|(k, _)| *k == Kind::Card),
+                "{text}: {:?}",
+                kinds(text)
+            );
+        }
+        // Real test numbers of every network are still cards, bare or grouped.
+        for card in [
+            "4111111111111111",
+            "4222222222222",
+            "5555555555554444",
+            "2223003122003222",
+            "378282246310005",
+            "30569309025904",
+            "6011111111111117",
+            "3530111333300000",
+            "6200000000000005",
+            "4111 1111 1111 1111",
+            "3782 822463 10005",
+        ] {
+            assert_eq!(
+                kinds(&format!("paid with {card}")),
+                vec![(Kind::Card, card.to_owned())],
+                "{card}"
+            );
+        }
+    }
+
+    /// Whether `text` holds a 13–19 digit run that passes Luhn (so the case
+    /// tests the network check, not the checksum).
+    fn luhn_passing_run(text: &str) -> bool {
+        CARD.find_iter(text).any(|m| luhn(m.as_str()))
     }
 
     #[test]

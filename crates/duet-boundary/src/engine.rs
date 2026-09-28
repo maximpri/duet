@@ -700,6 +700,15 @@ impl Engine {
                 }
                 spans.push((v.start(), v.start() + trimmed.len(), Kind::Name, None));
             }
+            // A Luhn-valid number in sensitive content is a card whatever
+            // its prefix (the network check keeps public text's timestamps
+            // and ids apart; a data file's card column needs no such help),
+            // so every run of its digits stays withheld too.
+            for r in crate::detect::luhn_numbers(text) {
+                if !spans.iter().any(|s| s.0 == r.start && s.1 == r.end) {
+                    spans.push((r.start, r.end, Kind::Card, None));
+                }
+            }
             for m in LONG_NUMBER.find_iter(text) {
                 spans.push((m.start(), m.end(), Kind::Data, None));
             }
@@ -2320,6 +2329,33 @@ mod tests {
             "{shown}"
         );
         assert!(shown.contains("# creds"));
+    }
+
+    #[test]
+    fn a_cards_digits_stay_withheld_in_sensitive_data_whatever_its_prefix() {
+        // Sensitive content is held to Luhn alone: a card column whose numbers
+        // start as no network's do (test data, a private-label card) is still
+        // withheld as cards, and a run of their digits refuses a request.
+        let (d, e) = engine();
+        let ws = d.path().join("ws");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        let csv = "id,holder,card\n1,Ysolde Marrquin,3762948510736285\n";
+        std::fs::write(ws.join("data/customers.csv"), csv).unwrap();
+        e.prime(&ws, &["data/customers.csv".into()], "");
+        let kind = e
+            .lock()
+            .vault
+            .values()
+            .find(|(v, _)| *v == "3762948510736285")
+            .map(|(_, entry)| entry.kind);
+        assert_eq!(kind, Some(Kind::Card));
+        assert!(e.check_outbound("docs.test", "/p/9485").is_err());
+        // The same number in public text starts as no network's does: no card.
+        let shown = e.present(
+            &file("src/ids.rs"),
+            b"const ID: u64 = 1184523000453971961;\n",
+        );
+        assert!(shown.contains("1184523000453971961"), "{shown}");
     }
 
     #[test]
