@@ -112,10 +112,8 @@ pub enum IpLevel {
 impl Policy {
     pub fn is_sensitive_path(&self, path: &Path) -> bool {
         let p = path.to_string_lossy();
-        self.sensitive_globs
-            .iter()
-            .chain(&self.protected_paths)
-            .any(|g| glob_match(g, &p))
+        self.protected_paths.iter().any(|g| glob_match(g, &p))
+            || !is_env_template(path) && self.sensitive_globs.iter().any(|g| glob_match(g, &p))
     }
 
     /// The IP level of `path`; Sealed wins when both lists match.
@@ -155,10 +153,28 @@ pub fn is_secret_bearing(path: &Path) -> bool {
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
+    !is_env_template(path)
+        && (name.starts_with(".env")
+            || name.ends_with(".env")
+            || name.contains("secret")
+            || name.contains("credential"))
+}
+
+/// A committed template of an environment file (`.env.example`,
+/// `.env.sample`, `.env.template`, `.env.dist`, `.env.defaults`): made to be
+/// shared, it holds placeholders and defaults, so it is public content
+/// (still scanned: a real key committed in one is found as in any file).
+pub fn is_env_template(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    const TEMPLATES: &[&str] = &["example", "sample", "template", "dist", "defaults"];
     name.starts_with(".env")
-        || name.ends_with(".env")
-        || name.contains("secret")
-        || name.contains("credential")
+        && name
+            .rsplit('.')
+            .next()
+            .is_some_and(|last| TEMPLATES.contains(&last))
 }
 
 #[cfg(test)]
@@ -175,6 +191,40 @@ mod tests {
         assert!(!glob_match("logs/**", "src/logs.rs"));
         assert!(glob_match("src/pricing/**", "src/pricing/engine.rs"));
         assert!(!glob_match("*.log", "src/log.rs"));
+    }
+
+    #[test]
+    fn env_templates_are_public_and_env_files_are_not() {
+        let p = Policy {
+            sensitive_globs: vec![".env*".into(), "**/.env*".into()],
+            ..Policy::default()
+        };
+        for public in [
+            ".env.example",
+            "services/api/.env.sample",
+            ".env.template",
+            ".env.production.example",
+            ".env.dist",
+            ".env.defaults",
+        ] {
+            assert!(!p.is_sensitive_path(Path::new(public)), "{public}");
+            assert!(!is_secret_bearing(Path::new(public)), "{public}");
+        }
+        for secret in [
+            ".env",
+            ".env.local",
+            "services/api/.env.prod",
+            ".env.examples.bak",
+        ] {
+            assert!(p.is_sensitive_path(Path::new(secret)), "{secret}");
+            assert!(is_secret_bearing(Path::new(secret)), "{secret}");
+        }
+        // A template the owner protects stays protected.
+        let p = Policy {
+            protected_paths: vec![".env.example".into()],
+            ..p
+        };
+        assert!(p.is_sensitive_path(Path::new(".env.example")));
     }
 
     #[test]

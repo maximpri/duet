@@ -807,6 +807,15 @@ impl Engine {
             match body.split_once('=') {
                 Some((key, value)) if !trimmed.starts_with('#') && !value.trim().is_empty() => {
                     let v = value.trim().trim_matches(|c| c == '"' || c == '\'');
+                    // A plainly public setting is shown as it is: in the vault
+                    // it would be replaced wherever it appears, public code
+                    // included, and refuse every request holding it (X1's
+                    // `GATEWAY_DIALECT=postgresql` refused postgresql.org).
+                    if self.public_setting(st, key.trim(), v) {
+                        out.push_str(line);
+                        out.push('\n');
+                        continue;
+                    }
                     let token = st
                         .vault
                         .token_for(v, Kind::Secret, Some(key.trim()), path)
@@ -821,8 +830,77 @@ impl Engine {
             }
         }
         format!(
-            "[values in this file are shown as placeholders; write them back verbatim and they are restored locally]\n{out}"
+            "[values in this file are shown as placeholders, except plainly public settings (booleans, levels, small numbers and limits, words public code uses); write placeholders back verbatim and they are restored locally]\n{out}"
         )
+    }
+
+    /// Whether `KEY=value` in an environment file is a plainly public
+    /// setting: the key names nothing secret or personal, no detector finds
+    /// anything in the value, and the value is a boolean, a level or an
+    /// environment name, a number of five digits at most (or any number
+    /// under a limit-like key: a size, a timeout, a port), or one word that
+    /// public content already uses (a dialect, an encoding, a region).
+    fn public_setting(&self, st: &State, key: &str, value: &str) -> bool {
+        static PRIVATE_KEY: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(
+                r"(?i)key|secret|token|pass|pwd|credential|private|auth|session|cookie|salt|sign|cert|dsn|webhook|conn|account|iban|card|ssn|email|mail|user|login|owner|phone|address|name|host|url|uri|endpoint|domain|ip\b",
+            )
+            .expect("static regex")
+        });
+        static LIMIT_KEY: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(
+                r"(?i)limit|max|min|size|timeout|ttl|port|count|retries|retry|interval|workers|threads|concurrency|batch|capacity|window|depth|pool|buffer|rate|delay|backoff|seconds|secs|ms\b|minutes|hours|days|bytes|mb\b|kb\b|gb\b|percent|ratio|version",
+            )
+            .expect("static regex")
+        });
+        const WORDS: &[&str] = &[
+            "true",
+            "false",
+            "yes",
+            "no",
+            "on",
+            "off",
+            "enabled",
+            "disabled",
+            "none",
+            "null",
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "warning",
+            "error",
+            "fatal",
+            "production",
+            "prod",
+            "staging",
+            "stage",
+            "development",
+            "dev",
+            "test",
+            "testing",
+            "local",
+        ];
+        if value.is_empty() || PRIVATE_KEY.is_match(key) {
+            return false;
+        }
+        if !scan_each_in(value, self.detectors, None).is_empty()
+            || !self.custom.find(value).is_empty()
+        {
+            return false;
+        }
+        let lower = value.to_lowercase();
+        if WORDS.contains(&lower.as_str()) {
+            return true;
+        }
+        if value.bytes().all(|b| b.is_ascii_digit()) {
+            return value.len() <= 5 || LIMIT_KEY.is_match(key);
+        }
+        value.len() <= 40
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+            && st.public_words.contains(&lower)
     }
 
     fn block_on<F: std::future::Future>(f: F) -> F::Output {
@@ -2242,6 +2320,61 @@ mod tests {
             "{shown}"
         );
         assert!(shown.contains("# creds"));
+    }
+
+    #[test]
+    fn plainly_public_settings_are_shown_and_block_nothing() {
+        let (d, e) = engine();
+        let ws = d.path().join("ws");
+        std::fs::create_dir_all(ws.join("src")).unwrap();
+        std::fs::write(
+            ws.join("src/dialect.rs"),
+            "pub const DIALECTS: &[&str] = &[\"postgresql\", \"mysql\"];\n",
+        )
+        .unwrap();
+        let env = format!(
+            "GATEWAY_DIALECT=postgresql\nLOG_LEVEL=info\nDEBUG=true\nMAX_ROWS=100000\nWORKERS=8\n\
+             DB_PASSWORD=hunter\nACCOUNT_ID=123456789\nDB_HOST=db.acme.internal\n\
+             TENANT=zqxv-internal\nPAYMENTS_API_KEY={KEY}\nREGION=5000123\n"
+        );
+        std::fs::write(ws.join(".env"), &env).unwrap();
+        e.prime(&ws, &["src/dialect.rs".into()], "");
+        let shown = e.present(&file(".env"), env.as_bytes());
+        for public in [
+            "GATEWAY_DIALECT=postgresql",
+            "LOG_LEVEL=info",
+            "DEBUG=true",
+            "MAX_ROWS=100000",
+            "WORKERS=8",
+        ] {
+            assert!(shown.contains(public), "{public} withheld:\n{shown}");
+        }
+        // Secret or personal keys, a detector's find, a word public content
+        // does not use, and a long number under a key that is no limit.
+        for withheld in [
+            "hunter",
+            "123456789",
+            "db.acme.internal",
+            "zqxv-internal",
+            KEY,
+            "5000123",
+        ] {
+            assert!(!shown.contains(withheld), "{withheld} shown:\n{shown}");
+        }
+        // Public code keeps its words, and no request is refused for them.
+        let code = e.present(
+            &file("src/dialect.rs"),
+            b"pub const DIALECTS: &[&str] = &[\"postgresql\", \"mysql\"];\n",
+        );
+        assert!(code.contains("\"postgresql\""), "{code}");
+        assert!(
+            e.check_outbound("www.postgresql.org", "/docs/current/sql-select.html")
+                .is_ok()
+        );
+        assert!(
+            e.check_outbound("example.com", "q=hunter zqxv-internal")
+                .is_err()
+        );
     }
 
     #[test]

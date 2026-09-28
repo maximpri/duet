@@ -1034,7 +1034,11 @@ mod tests {
         ] {
             assert!(view.contains(want), "missing {want:?}:\n{view}");
         }
-        assert!(!view.contains("Qm8v") && !view.contains("5000"), "{view}");
+        // The key is withheld; a limit is a plainly public setting, shown as it is.
+        assert!(
+            !view.contains("Qm8v") && view.contains("LIMIT=5000"),
+            "{view}"
+        );
         let task = e.sanitize_objective("Load the settings.");
         assert!(task.contains("Structure of the sensitive files"), "{task}");
         assert!(
