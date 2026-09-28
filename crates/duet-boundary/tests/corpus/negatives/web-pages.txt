@@ -1,0 +1,21 @@
+# Public web pages as web_fetch shows them: links with form-encoded titles and queries
+# (Wikipedia's article on The Adventures of Captain Comic, fetched 2026-09-27, whose
+# own title was taken for a key), result pages and site titles.
+https://en.wikipedia.org/w/index.php?title=Special:CreateAccount&returnto=The+Adventures+of+Captain+Comic
+https://en.wikipedia.org/w/index.php?title=Special:UserLogin&returnto=The+Adventures+of+Captain+Comic
+https://scholar.google.com/scholar?q=%22The+Adventures+of+Captain+Comic%22
+https://www.google.com/search?&q=%22The+Adventures+of+Captain+Comic%22&tbs=bkt:s&tbm=bks
+https://www.google.com/search?as_eq=wikipedia&q=%22The+Adventures+of+Captain+Comic%22
+https://www.google.com/search?tbm=nws&q=%22The+Adventures+of+Captain+Comic%22+-wikipedia&tbs=ar:1
+https://www.google.com/search?tbs=bks:1&q=%22The+Adventures+of+Captain+Comic%22+-wikipedia
+https://www.jstor.org/action/doBasicSearch?Query=%22The+Adventures+of+Captain+Comic%22&acc=on&wc=on
+[How to help and why Abandonware DOS needs support](https://www.abandonwaredos.com/forum.php?title=How+to+help+and+why+Abandonware+DOS+needs+support)
+https://www.abandonwaredos.com/abandonware-games.php?cat=Applications+for+DOS+and+other+legacy+systems
+https://www.abandonwaredos.com/companies.php?list=List+of+DOS+and+Windows+video+games+companies
+https://www.abandonwaredos.com/top.php?t=The+most+popular+games+on+Abandonware+DOS
+https://www.mobygames.com/game/671/the-adventures-of-captain-comic/
+https://duckduckgo.com/html/?q=captain+comic+1988+dos+walkthrough+lantern+boots
+https://stackoverflow.com/search?q=rust+tokio+select+cancellation+safety+example
+https://github.com/search?q=captain+comic+remake+javascript+canvas&type=repositories
+https://archive.org/advancedsearch.php?q=title%3A%28The+Adventures+of+Captain+Comic%29&fl%5B%5D=identifier
+https://www.bing.com/search?q=%22Captain+Comic%22+Michael+Denio+shareware+1988&form=QBLH

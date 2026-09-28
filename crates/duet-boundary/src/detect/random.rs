@@ -4,8 +4,9 @@
 //! Entropy alone does not tell a key from a name: once it is long enough, a
 //! path, a hashed bundle name or a long identifier has as many bits per
 //! character as a key (`/Volumes/EXT_DISK/duet_v2/app/data` scores 4.4, above
-//! the threshold). So a token is read by its parts, split at `/`, `-` and
-//! `_`:
+//! the threshold), and so do words joined by `+` in a form-encoded query or
+//! title (`The+Adventures+of+Captain+Comic`). So a token is read by its
+//! parts, split at `/`, `-`, `_` and `+`:
 //!
 //! - a **name** reads as words: a lower-case, ALL-CAPS or Capitalized word of
 //!   three letters or more, perhaps numbered (`python3`), or camel case with
@@ -22,7 +23,9 @@
 //!
 //! A token whose every part has one of these shapes and that holds at least
 //! two names is structured; any other token is judged whole, as before, and
-//! so is anything with `+` or `=` padding (base64). A structured token with
+//! so is anything ending in `=` padding (base64). Unpadded base64 is read by
+//! its parts like any token; they are random mixed-case runs that fit none
+//! of the shapes, so it is still judged whole. A structured token with
 //! no random long part is not a secret. One with a random long part is
 //! withheld whole, unless it is in an absolute path or a URL: there the part
 //! is a path segment of its own and is withheld alone (a key in a URL path
@@ -68,10 +71,27 @@ const DIGEST_PREFIXES: &[&str] = &["sha1-", "sha256-", "sha384-", "sha512-"];
 /// The spans of the candidate `text[start..end]` that are random: the whole
 /// candidate, some of its long parts, or none.
 pub(super) fn random_spans(text: &str, start: usize, end: usize) -> Vec<(usize, usize)> {
-    let token = &text[start..end];
     if text[..start].ends_with("h1:") {
         return Vec::new();
     }
+    // After a `%`, two hex digits belong to a percent escape, not to the
+    // token (`q=%22The+Adventures+of+Captain+Comic%22`); the rest is judged
+    // as any token is.
+    let start = if text[..start].ends_with('%')
+        && text.as_bytes()[start..end.min(start + 2)]
+            .iter()
+            .filter(|b| b.is_ascii_hexdigit())
+            .count()
+            == 2
+    {
+        start + 2
+    } else {
+        start
+    };
+    if end - start < LONG {
+        return Vec::new();
+    }
+    let token = &text[start..end];
     // An extension is short: the regex never needs the rest of the text.
     let mut to = (end + 40).min(text.len());
     while !text.is_char_boundary(to) {
@@ -123,8 +143,8 @@ fn rooted(text: &str, start: usize) -> bool {
 /// The parts of `token` when it reads as structured (see the module notes);
 /// `after` is the text that follows it.
 fn structured(token: &str, after: &str) -> Option<Vec<(usize, usize)>> {
-    // `+` and padding mark base64, whatever its parts look like.
-    if token.contains('+') || token.ends_with('=') {
+    // Padding marks base64, whatever its parts look like.
+    if token.ends_with('=') {
         return None;
     }
     let parts: Vec<(usize, usize)> = split(token);
@@ -155,12 +175,12 @@ fn structured(token: &str, after: &str) -> Option<Vec<(usize, usize)>> {
     (names >= ANCHORS).then_some(parts)
 }
 
-/// The non-empty runs of `token` between `/`, `-` and `_`.
+/// The non-empty runs of `token` between `/`, `-`, `_` and `+`.
 fn split(token: &str) -> Vec<(usize, usize)> {
     let mut parts = Vec::new();
     let mut from = 0;
     for (i, b) in token.bytes().enumerate() {
-        if matches!(b, b'/' | b'-' | b'_') {
+        if matches!(b, b'/' | b'-' | b'_' | b'+') {
             if i > from {
                 parts.push((from, i));
             }
@@ -360,7 +380,8 @@ mod tests {
     /// Measured at 200,000 per alphabet (2026-09-26): base62 2, base64 1,
     /// base64url 7, base36 0, letters 45. The rule before this one missed
     /// 12, 2, 2,041, 0 and 1,122 (camel-case letters, and any token with
-    /// `__`).
+    /// `__`). Reading `+` as a separator (2026-09-27) left them at 2, 2, 7,
+    /// 0 and 45.
     #[test]
     fn random_tokens_are_withheld_whole() {
         const SAMPLES: usize = 200_000;
@@ -406,26 +427,14 @@ mod tests {
         }
     }
 
+    /// What the detector withholds in `text`: its candidates, as the scan
+    /// finds them, judged by [`random_spans`].
     fn spans(text: &str) -> Vec<&str> {
-        let mut out = Vec::new();
-        let mut at = 0;
-        while let Some(i) =
-            text[at..].find(|c: char| c.is_ascii_alphanumeric() || "+/_-".contains(c))
-        {
-            let start = at + i;
-            let end = text[start..]
-                .find(|c: char| !(c.is_ascii_alphanumeric() || "+/_-=".contains(c)))
-                .map_or(text.len(), |e| start + e);
-            if end - start >= LONG {
-                out.extend(
-                    random_spans(text, start, end)
-                        .into_iter()
-                        .map(|(s, e)| &text[s..e]),
-                );
-            }
-            at = end;
-        }
-        out
+        super::super::HIGH_ENTROPY
+            .find_iter(text)
+            .flat_map(|m| random_spans(text, m.start(), m.end()))
+            .map(|(s, e)| &text[s..e])
+            .collect()
     }
 
     #[test]
@@ -479,9 +488,42 @@ mod tests {
         assert_eq!(spans(&format!("/srv/share/{key}/report")), vec![key]);
         let rel = format!("uploads/{key}/report");
         assert_eq!(spans(&rel), vec![rel.as_str()]);
-        // Base64 is never read by parts, whatever its parts look like.
-        let b64 = "SbwgEzi/l1oev15spEbJzpHxKPbbXeB5zBDDPAt/qfh+";
-        assert_eq!(spans(b64), vec![b64]);
+        // Base64 is judged whole: its parts fit none of the shapes, with or
+        // without `/`, and padding marks it whatever its parts look like.
+        for b64 in [
+            "SbwgEzi/l1oev15spEbJzpHxKPbbXeB5zBDDPAt/qfh+",
+            "SbwgEzil1oev15sp+EbJzpHxKPbbXeB5zBDDPAtqfh",
+            "Pp1+Word/Home+Tree/aBcDeFgHiJkLmNoPqRsTuVw==",
+        ] {
+            assert_eq!(spans(b64), vec![b64], "{b64}");
+        }
+    }
+
+    #[test]
+    fn words_joined_by_plus_are_not_random() {
+        // Form-encoded titles and queries in public pages: the Wikipedia
+        // article that took `The+Adventures+of+Captain+Comic` for a key
+        // (session 2026-09-27), and the titles another site linked to.
+        for text in [
+            "The+Adventures+of+Captain+Comic",
+            "https://en.wikipedia.org/w/index.php?search=The+Adventures+of+Captain+Comic&ns0=1",
+            "https://archive.org/details/The+Adventures+of+Captain+Comic+1988",
+            "How+to+help+and+why+Abandonware+DOS+needs+support",
+            "Applications+for+DOS+and+other+legacy+systems",
+            "List+of+DOS+and+Windows+video+games+companies",
+            "q=rust+async+runtime+comparison+2026&sort=relevance",
+            // Percent escapes glued to the words.
+            "https://scholar.google.com/scholar?q=%22The+Adventures+of+Captain+Comic%22",
+            "https://archive.org/advancedsearch.php?q=title%3A%28The+Adventures+of+Captain+Comic%29",
+        ] {
+            assert_eq!(spans(text), Vec::<&str>::new(), "{text}");
+        }
+        // A key among such words, or right after an escape, is still found.
+        let key = "Q8f2LmZ0x9R4tWvB7nC1pK6sD3hJ5gYa";
+        let text = format!("https://example.test/search?q=rotate+{key}+now");
+        assert_eq!(spans(&text), vec![format!("rotate+{key}+now")]);
+        let text = format!("https://example.test/hook?token=%22{key}%22");
+        assert_eq!(spans(&text), vec![key]);
     }
 
     #[test]

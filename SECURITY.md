@@ -387,7 +387,9 @@ character classes is a key of no known format, unless it reads as something publ
 cannot tell: a path, a hashed bundle name or a long identifier has as many bits per character as
 a key once it is long enough (a live run sent `dist/assets/index-DVuHW4gw.js`, the paths of a Node
 stack trace and of an EPERM error the frontier was debugging as placeholders). So a token is read
-by its parts (split at `/`, `-`, `_`; `crates/duet-boundary/src/detect/random.rs`): names (words,
+by its parts (split at `/`, `-`, `_` and `+`, the last for form-encoded words such as
+`The+Adventures+of+Captain+Comic`; the two hex digits of a percent escape before a token are not
+part of it; `crates/duet-boundary/src/detect/random.rs`): names (words,
 numbered words, camel case with acronyms such as `asyncRunEntryPointWithESMLoader`), ids (numbers
 and single-case hex: UUIDs, git object ids, digests, timestamps), a bundler's content hash between
 a name and a build-artifact extension (`index-DVuHW4gw.js`, `react-dom-Bx8f9aQz.js.map`, 6–16
@@ -395,7 +397,8 @@ characters), a Next.js build id (`.next/static/<id>/`), short one-case parts (`v
 long parts (24+), judged on their own. A token whose every part has one of these shapes and that
 holds two names is structured: a random long part in it is withheld (alone in an absolute path or a
 URL, `/v1/keys/⟨secret⟩/rotate`; with the whole token elsewhere), the rest is shown. Anything else,
-and anything with `+` or `=` padding (base64), is judged whole. `sha1-`…`sha512-` integrity
+and anything ending in `=` padding (base64), is judged whole; unpadded base64 is read by its parts
+too, which fit none of the shapes (random base64 left unwithheld: 2 in 200,000, 1 before). `sha1-`…`sha512-` integrity
 digests and `go.sum` `h1:` digests are public. A seeded measurement over a million random tokens
 of five alphabets (base62, base64, base64url, base36, letters) finds 55 not withheld whole, mostly
 letters that read as camel case; the rule this replaced let 3,177 of a like sample through (any token holding `__`,
@@ -441,7 +444,7 @@ prompt asks for exact copies, but its output never leaves the machine. With the 
 | Imported-rule positives: one generated from each rule's own expression, plus 7 hand-written realistic forms | 228 of 228 found by their rule and withheld by the full detector |
 | Hand-written positives for duet's own and the international formats, and keys inside paths, URLs and base64 | 34 of 34 withheld as their kind |
 | End to end, hybrid engine: each positive in a file the model reads and in the frontier's own text | 0 of 255 reach the frontier |
-| False positives on 1,513 lines of hard negatives (hashes, UUIDs, Cargo.lock and package-lock excerpts, base64 of public data, identifiers, fixtures, minified JS, logs, code, config, numbers; real vite, webpack and next builds, Node, Python, Rust and Java stack traces, npm, pip and cargo install logs, vitest, jest and pytest runs, a docker build) | 37 lines (2.4%): base64 of public data 18, placeholder and test values in fixtures 14, digit runs that pass the card checksum or read as an IPv4 address 4, a credential-named assignment in minified code 1. Before tokens were judged by their parts, 148 (9.8%), 91 of them in the 825 toolchain lines; 80 of the first 683 lines before this detection work; the imported rules add none |
+| False positives on 1,534 lines of hard negatives (public web pages with form-encoded links, hashes, UUIDs, Cargo.lock and package-lock excerpts, base64 of public data, identifiers, fixtures, minified JS, logs, code, config, numbers; real vite, webpack and next builds, Node, Python, Rust and Java stack traces, npm, pip and cargo install logs, vitest, jest and pytest runs, a docker build) | 37 lines (2.4%): base64 of public data 18, placeholder and test values in fixtures 14, digit runs that pass the card checksum or read as an IPv4 address 4, a credential-named assignment in minified code 1. Before tokens were judged by their parts, 148 (9.8%), 91 of them in the 825 toolchain lines; 80 of the first 683 lines before this detection work; the imported rules add none |
 | The toolchain output as the frontier sees it: each of 26 command outputs through the hybrid engine with the shipped policy (inline, or held with its error lines shown) | 0 placeholders (before: 11 of 26 outputs had some) |
 | Throughput, 10 MB of mixed log and code, release build, before and after in one process | 34–43 MB/s as one text, 49–50 MB/s in 8 KB pieces (before: 50–64 and 58–66); the imported rules alone 85–109 and 141–153 MB/s, 12 of 221 rules past the keyword prefilter (2026-09-25). Judging tokens by their parts: no difference beyond noise in five interleaved runs of each build on a loaded machine (2026-09-26) |
 

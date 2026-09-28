@@ -92,3 +92,12 @@ as_text = 0
 [negatives."uuids.txt"]
 as_file = 0
 as_text = 0
+
+# Public web pages as web_fetch shows them: links with form-encoded titles and
+# queries, percent escapes glued to words. Measured 2026-09-27: 0 of 21 lines;
+# before `+` was read as a separator and escapes were left out of tokens, 7
+# (a session took Wikipedia's `The+Adventures+of+Captain+Comic` for a key and
+# then refused a MobyGames URL holding the same words).
+[negatives."web-pages.txt"]
+as_file = 0
+as_text = 0
