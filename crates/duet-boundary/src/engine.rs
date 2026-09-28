@@ -460,6 +460,13 @@ impl Engine {
         {
             let mut st = self.lock();
             st.public_words.extend(words(objective));
+            // The paths are public (the file list, the task note's list of
+            // sensitive files); so is the text of public files, before the
+            // frontier reads it: a local answer quoting a file name or the
+            // program's own error message copies nothing from sensitive data.
+            let paths = files.join("\n");
+            st.public_words.extend(words(&paths));
+            st.overlap.add_public(&paths);
             for f in files {
                 let path = Path::new(f);
                 if self.is_sensitive(path) {
@@ -468,8 +475,9 @@ impl Engine {
                 if let Ok(bytes) = duet_fs::read_file(workspace, path, PRIME_MAX_BYTES as u64)
                     && sniff(&bytes).is_none()
                 {
-                    st.public_words
-                        .extend(words(&String::from_utf8_lossy(&bytes)));
+                    let text = String::from_utf8_lossy(&bytes);
+                    st.public_words.extend(words(&text));
+                    st.overlap.add_public(&text);
                 }
             }
         }
@@ -928,16 +936,7 @@ impl Engine {
             }
             let short: String = line.chars().take(400).collect();
             let clean = self.sanitize(st, &short, label, true);
-            let shape = PLACEHOLDER.replace_all(&clean, "⟨…⟩");
-            let shape = DIGITS.replace_all(&shape, "#");
-            let shape: String = shape
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join(" ")
-                .chars()
-                .take(PATTERN_CHARS)
-                .collect();
-            let e = groups.entry(shape).or_insert((0, i + 1));
+            let e = groups.entry(line_shape(&clean)).or_insert((0, i + 1));
             e.0 += 1;
         }
         let mut repeated: Vec<(String, usize, usize)> = groups
@@ -1033,16 +1032,41 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         if let Some(m) = &masked {
             out.push_str(m);
         } else if !error_lines.is_empty() {
-            out.push_str("Error lines (sensitive values replaced):\n");
-            for (n, l) in error_lines.iter().take(MAX_KEY_LINES) {
-                let shown: String = l.chars().take(300).collect();
-                out.push_str(&format!(
-                    "{n:>6}  {}\n",
-                    self.sanitize(&mut st, &shown, source_label, true)
-                ));
+            // One line per shape: a log repeats its failures daily, and the
+            // first few kinds would otherwise fill the list, hiding the
+            // one-off warnings (a ticket, a review) that say the most.
+            let mut kinds: Vec<(usize, String, usize)> = Vec::new(); // (line, shown, count)
+            let mut index: std::collections::HashMap<String, usize> = Default::default();
+            for (n, l) in &error_lines {
+                let short: String = l.chars().take(400).collect();
+                let shown = self.sanitize(&mut st, &short, source_label, true);
+                match index.entry(line_shape(&shown)) {
+                    std::collections::hash_map::Entry::Occupied(e) => kinds[*e.get()].2 += 1,
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(kinds.len());
+                        kinds.push((*n, shown, 1));
+                    }
+                }
             }
-            if error_lines.len() > MAX_KEY_LINES {
-                out.push_str(&format!("  … {} more\n", error_lines.len() - MAX_KEY_LINES));
+            out.push_str(
+                "Error lines (the first of each shape, with how many lines share it; sensitive values replaced):\n",
+            );
+            for (n, shown, count) in kinds.iter().take(MAX_KEY_LINES) {
+                // Shown now, so a local answer quoting it discloses nothing new.
+                st.overlap.add_public(shown);
+                let times = if *count > 1 {
+                    format!("  (×{count})")
+                } else {
+                    String::new()
+                };
+                out.push_str(&format!("{n:>6}  {shown}{times}\n"));
+            }
+            if kinds.len() > MAX_KEY_LINES {
+                let rest: usize = kinds[MAX_KEY_LINES..].iter().map(|k| k.2).sum();
+                out.push_str(&format!(
+                    "  … {} more shapes ({rest} lines)\n",
+                    kinds.len() - MAX_KEY_LINES
+                ));
             }
         }
         let structure = match masked {
@@ -2233,12 +2257,36 @@ is written or as a test fixture. At most {rows} records."
     }
 }
 
+/// The shape of a sanitized line: placeholders as `⟨…⟩`, digits as `#`,
+/// spaces collapsed, cut to [`PATTERN_CHARS`]. Lines with one shape are one
+/// kind of line.
+fn line_shape(clean: &str) -> String {
+    let shape = PLACEHOLDER.replace_all(clean, "⟨…⟩");
+    DIGITS
+        .replace_all(&shape, "#")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(PATTERN_CHARS)
+        .collect()
+}
+
+/// A calendar date written with separators (`2026-09-01`, `2026/09/01`),
+/// its year 1900–2099: its digits are the date's, not a fragment.
+static CALENDAR_DATE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:19|20)\d{2}([-/.])(?:0[1-9]|1[0-2])(?:([-/.])(?:0[1-9]|[12]\d|3[01]))?\b")
+        .expect("static regex")
+});
+
 /// `text` with every digit run that shares [`FRAGMENT_DIGITS`] or more
 /// consecutive digits with a withheld identifying number (card, account,
 /// national id, IBAN, phone) replaced by [`FRAGMENT`], and how many. A local
 /// answer once gave a card's first four digits as its "network prefix".
 /// Only numbers in the vault count, so unrelated years and counts pass; digits
-/// inside known placeholders are left alone.
+/// inside known placeholders are left alone, and so are a calendar date's
+/// (sixteen-digit order numbers checked as cards share their four digits with
+/// one year in ten, and every timestamp of a log lost its year).
 fn redact_fragments(vault: &Vault, text: &str) -> (String, usize) {
     let grams: std::collections::HashSet<&[u8]> = vault
         .values()
@@ -2253,6 +2301,14 @@ fn redact_fragments(vault: &Vault, text: &str) -> (String, usize) {
         .find_iter(text)
         .filter(|m| vault.is_token(m.as_str()))
         .map(|m| (m.start(), m.end()))
+        .chain(
+            CALENDAR_DATE
+                .captures_iter(text)
+                // One separator throughout: `2026-09/01` is not a date.
+                .filter(|c| c.get(2).is_none_or(|s| s.as_str() == &c[1]))
+                .filter_map(|c| c.get(0))
+                .map(|m| (m.start(), m.end())),
+        )
         .collect();
     let mut out = String::with_capacity(text.len());
     let (mut last, mut n) = (0, 0);
@@ -2431,6 +2487,58 @@ mod tests {
             assert!(!shown.contains(secret), "{secret} leaked: {shown}");
         }
         assert!(shown.contains("panicked parsing record"), "{shown}");
+    }
+
+    #[test]
+    fn error_lines_are_listed_one_per_shape_so_late_one_offs_show() {
+        // Seen on X2: a month of daily failures filled the list and the three
+        // tickets at the end, which carried the evidence, were never shown.
+        let (_d, e) = engine();
+        let mut log = String::new();
+        for day in 1..=28 {
+            log.push_str(&format!(
+                "2026-09-{day:02}T02:01:30Z ERROR partner ledgerly: compile failed at position 345\n\
+                 2026-09-{day:02}T02:03:45Z ERROR partner carriers: RangeError: Invalid array length\n\
+                 2026-09-{day:02}T02:04:00Z INFO partner quickship: manifest sent\n"
+            ));
+        }
+        log.push_str(
+            "2026-09-29T10:12:30Z WARN ticket NP-88412: capture times differ by up to ~16 minutes\n",
+        );
+        let shown = e.present(&file("logs/export.log"), log.as_bytes());
+        assert!(shown.contains("57 line(s) mention errors"), "{shown}");
+        assert!(
+            shown.contains("compile failed at position 345  (×28)"),
+            "{shown}"
+        );
+        assert!(shown.contains("Invalid array length  (×28)"), "{shown}");
+        assert!(
+            shown.contains("ticket NP-88412: capture times differ by up to ~16 minutes\n"),
+            "{shown}"
+        );
+        assert!(!shown.contains("more shapes"), "{shown}");
+    }
+
+    #[test]
+    fn a_dates_digits_are_not_a_fragment_of_a_withheld_number() {
+        // A card sharing four digits with the year took the year out of every
+        // timestamp of a log; the same four digits standing alone still go.
+        let (_d, e) = engine();
+        let log = "2026-09-25T10:00:00Z ERROR payment failed for card 4539202612345672\n\
+            2026-09-26T10:00:00Z WARN retry of batch 2026 failed on 2026/09/26\n";
+        let shown = e.present(&file("logs/pay.log"), log.as_bytes());
+        assert!(!shown.contains("4539202612345672"), "{shown}");
+        for kept in [
+            "2026-09-25T10:00:00Z",
+            "2026-09-26T10:00:00Z",
+            "on 2026/09/26",
+        ] {
+            assert!(shown.contains(kept), "{kept} lost: {shown}");
+        }
+        assert!(
+            shown.contains(&format!("batch {FRAGMENT} failed")),
+            "{shown}"
+        );
     }
 
     #[test]
@@ -3378,6 +3486,67 @@ mod prime_tests {
         // Nor may they go to a third party.
         assert!(e.check_outbound("search", "visa bin 4539 issuer").is_err());
         assert!(e.check_outbound("search", "rust 2026 edition").is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_local_answer_may_quote_what_was_shown_and_what_is_public() {
+        // Seen on X2: answers lost every error text, file name and ticket they
+        // quoted, though the view had shown the lines and the names are paths
+        // of the workspace.
+        let answer = "Line 1: partner ledgerly failed in mappings/accounting.jsonata with \
+            The symbol ? cannot be used as a unary operator. Line 2 names \
+            mappings/psp-reconcile.jsonata. Line 3: the board approved the secret merger \
+            with Northwind next quarter.";
+        let (local, _) = crate::testing::scripted_local(vec![
+            json!({"summary": "An export log.", "facts": []}).to_string(),
+            json!({"answer": answer, "evidence_lines": [1, 2, 3], "unanswerable": false})
+                .to_string(),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        for dir in ["logs", "src", "mappings"] {
+            std::fs::create_dir_all(ws.join(dir)).unwrap();
+        }
+        let log = "ERROR partner ledgerly (mappings/accounting.jsonata): compile failed: The symbol ? cannot be used as a unary operator\n\
+            INFO partner novapay (mappings/psp-reconcile.jsonata): 84 captures matched\n\
+            INFO note: the board approved the secret merger with Northwind next quarter\n";
+        std::fs::write(ws.join("logs/export.log"), log).unwrap();
+        std::fs::write(
+            ws.join("src/errors.js"),
+            "S0211: 'The symbol {{token}} cannot be used as a unary operator',\n",
+        )
+        .unwrap();
+        std::fs::write(ws.join("mappings/psp-reconcile.jsonata"), "orders.{}\n").unwrap();
+        let run = d.path().join("run");
+        let e = Engine::open(&run, super::tests::policy(), Some(local)).unwrap();
+        let files: Vec<String> = [
+            "logs/export.log",
+            "src/errors.js",
+            "mappings/psp-reconcile.jsonata",
+        ]
+        .map(String::from)
+        .to_vec();
+        e.prime(&ws, &files, "");
+        let source = Source::File {
+            path: "logs/export.log".into(),
+            ranged: false,
+        };
+        let shown = e.present(&source, log.as_bytes());
+        assert!(!shown.contains("merger"), "{shown}");
+        let handle = shown.split_whitespace().next().unwrap().to_owned();
+        let mut args = Map::new();
+        args.insert("handle".into(), json!(handle));
+        args.insert("question".into(), json!("What does each line say?"));
+        let got = e.call_tool("ask_local", &args).unwrap().unwrap();
+        for kept in [
+            "partner ledgerly failed in mappings/accounting.jsonata",
+            "cannot be used as a unary operator",
+            "names mappings/psp-reconcile.jsonata",
+        ] {
+            assert!(got.contains(kept), "{kept} lost: {got}");
+        }
+        assert!(!got.contains("secret merger"), "{got}");
+        assert!(got.contains(crate::overlap::REDACTED), "{got}");
     }
 
     #[tokio::test(flavor = "multi_thread")]

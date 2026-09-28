@@ -34,6 +34,8 @@ const EXACT_SHAPES_MAX: usize = 6;
 const LONG_VALUE: usize = 1000;
 /// 2^53: integers above it are not exact as IEEE doubles (JavaScript numbers).
 const EXACT_DOUBLE: u128 = 9_007_199_254_740_992;
+/// Integers this long get their digit count in the task note's outline.
+const LONG_INTEGER_DIGITS: usize = 10;
 
 /// Kinds whose values identify someone or something: shaped by runs.
 fn identifying(kind: Kind) -> bool {
@@ -1321,11 +1323,22 @@ impl Profile {
                 Format::Env => f.render_env().trim_start().replacen(" — ", " (", 1) + ")",
                 _ => {
                     let types: Vec<&str> = f.types.keys().copied().collect();
-                    let t = if types.is_empty() {
+                    let mut t = if types.is_empty() {
                         "null".to_owned()
                     } else {
                         types.join("|")
                     };
+                    // Long integers are where number handling goes wrong
+                    // (doubles hold 15-17 significant digits).
+                    match f.digits {
+                        Some((a, b)) if a >= LONG_INTEGER_DIGITS && a == b => {
+                            t.push_str(&format!(", {a} digits"));
+                        }
+                        Some((a, b)) if a >= LONG_INTEGER_DIGITS => {
+                            t.push_str(&format!(", {a}-{b} digits"));
+                        }
+                        _ => {}
+                    }
                     let mut pictures: Vec<(&String, &usize)> = f.pictures.iter().collect();
                     pictures.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
                     match pictures.as_slice() {
@@ -1478,6 +1491,12 @@ mod tests {
         ] {
             assert!(view.contains(want), "missing {want:?} in:\n{view}");
         }
+        // The task note's outline keeps a long integer's length.
+        let outline = p.outline(2000);
+        assert!(
+            outline.contains("orders[].order_ref (integer, 16 digits)"),
+            "{outline}"
+        );
         for value in [
             "Amelia",
             "Quenanlek",
