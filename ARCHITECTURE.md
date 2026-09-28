@@ -452,9 +452,9 @@ saying the content is data → a `web_request` audit event (tool, host, bytes, o
 The search backend is chosen once per run in `crates/duet-cli/src/web.rs` (`choose`) from
 `web.search.backend` (`auto` by default), `web.search.sources`, the workspace root (its manifest
 files pick the package registries), the run's frontier (its URL from the run manifest; none in
-top-clearance runs, which offer no web tools at all) and the environment. `auto` is the native backend; SearXNG, Brave, Wikipedia
-alone and Z.ai (with the frontier's key when Z.ai is the frontier; `web.search.zai_engine`) only
-when named. The same function feeds `duet doctor`'s "web search" check, and the tool's description
+top-clearance runs, which offer no web tools at all) and the environment. `auto` is Z.ai's search when the frontier is Z.ai and its key is set
+(`web.search.zai_engine`), else the native backend; SearXNG, Brave and Wikipedia alone only when
+named. The same function feeds `duet doctor`'s "web search" check, and the tool's description
 says what the backend searches (for native: each source, which are asked by default and which on
 request).
 

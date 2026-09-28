@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The run's web access, from the `web.*` settings, and the choice of search
-//! backend (`web.search.backend`, `auto` by default). `auto` is the native
-//! backend: the host asks public sources with open APIs itself (Stack
-//! Overflow, Wikipedia, GitHub and the workspace's package registries by
-//! default; `web.search.sources`), with no search provider in between. The
-//! owner's SearXNG, Brave, Wikipedia alone and Z.ai's search are used only
-//! when the owner selects them by name: a SearXNG URL or a Brave key alone no
-//! longer selects them, nor does a Z.ai frontier.
+//! backend (`web.search.backend`, `auto` by default). `auto` is Z.ai's search
+//! when the frontier is Z.ai and its key is set (queries go only to the
+//! provider that already receives the run), else the native backend: the host
+//! asks public sources with open APIs itself (Stack Overflow, Wikipedia,
+//! GitHub and the workspace's package registries by default;
+//! `web.search.sources`), with no search provider in between. The owner's
+//! SearXNG, Brave and Wikipedia alone are used only when the owner selects
+//! them by name: a SearXNG URL or a Brave key alone does not select them.
 
 use anyhow::{Context, Result, bail};
 use duet_config::Config;
@@ -138,8 +139,22 @@ pub fn choose(
         "wikipedia" => wikipedia("web.search.backend is wikipedia"),
         "native" => native(cfg, ws, None)?,
         _ => {
-            // `auto`: the native backend. What an earlier `auto` would have
-            // picked from the settings or the environment is only named.
+            // `auto` with a Z.ai frontier and its key: Z.ai's search, whose
+            // queries go only to the provider that already receives the run
+            // (the native sources found little for open-ended research: the
+            // same task reached MobyGames with it and Wikipedia alone
+            // without). Anything else: the native backend, and what an
+            // earlier `auto` would have picked is only named.
+            if frontier.is_some_and(|f| f.host_is_zai())
+                && let Ok(mut c) = zai(cfg, frontier, env)?
+            {
+                c.detail = format!(
+                    "{} [auto: the frontier's own search; web.search.backend = \"native\" asks \
+public sources directly instead]",
+                    c.detail
+                );
+                return Ok(c);
+            }
             let mut unused = Vec::new();
             if !cfg.str("web.search.searxng_url")?.trim().is_empty() {
                 unused.push("web.search.searxng_url is set: web.search.backend = \"searxng\" searches with it");
@@ -413,16 +428,31 @@ mod tests {
     }
 
     #[test]
-    fn auto_searches_natively_whatever_else_is_set_up() {
+    fn auto_uses_the_frontiers_own_search_else_searches_natively() {
         let key = [("ZAI_API_KEY", "zk-1"), ("BRAVE_API_KEY", "bk-1")];
-        // The default setup (the coding plan's frontier and its key), a
-        // Brave key, another frontier, a run without one: all native.
+        // The default setup (the coding plan's frontier and its key): Z.ai's
+        // search, its queries going only to the provider of the run.
+        let c = pick("", zai_frontier(CODING), &key);
+        assert_eq!(name(&c), Some("zai (coding plan)"), "{c:?}");
+        assert!(c.problem.is_none());
+        for want in [
+            "the frontier provider, which already receives the run",
+            "[auto: the frontier's own search",
+        ] {
+            assert!(c.detail.contains(want), "{want}: {}", c.detail);
+        }
+        assert!(!c.detail.contains("zk-1") && !c.detail.contains("bk-1"));
+        // Without its key, another frontier, a run without one: native.
         let anthropic = Some(Frontier {
             base_url: "https://api.anthropic.com/v1",
             key_env: "ANTHROPIC_API_KEY",
         });
-        for frontier in [zai_frontier(CODING), anthropic, None] {
-            let c = pick("", frontier, &key);
+        for (frontier, vars) in [
+            (zai_frontier(CODING), &key[1..]),
+            (anthropic, &key[..]),
+            (None, &key[..]),
+        ] {
+            let c = pick("", frontier, vars);
             assert_eq!(name(&c), Some("native"), "{c:?}");
             assert!(c.problem.is_none());
             assert_eq!(defaults(&c), ["stackoverflow", "wikipedia", "github"]);
@@ -437,10 +467,10 @@ mod tests {
             }
             assert!(!c.detail.contains("zk-1") && !c.detail.contains("bk-1"));
         }
-        // What an earlier `auto` would have used is named, not used.
+        // A SearXNG URL or a Brave key is named, not used.
         let c = pick(
             "[web.search]\nsearxng_url = \"http://127.0.0.1:8888\"\n",
-            zai_frontier(CODING),
+            anthropic,
             &key,
         );
         assert_eq!(name(&c), Some("native"));
@@ -453,23 +483,13 @@ mod tests {
         );
         let c = pick("", None, &[]);
         assert!(!c.detail.contains("auto searches natively"), "{}", c.detail);
+        // `native` by name keeps a Z.ai frontier's runs off Z.ai's search.
         let c = pick(
-            "[web.search]\nzai_engine = \"plan\"\n",
+            "[web.search]\nbackend = \"native\"\n",
             zai_frontier(CODING),
-            &[("ZAI_API_KEY", "zk")],
+            &key,
         );
         assert_eq!(name(&c), Some("native"));
-        assert!(
-            c.detail
-                .contains("web.search.backend = \"zai\" searches with Z.ai"),
-            "{}",
-            c.detail
-        );
-        // `native` by name is the same backend.
-        assert_eq!(
-            name(&pick("[web.search]\nbackend = \"native\"\n", None, &[])),
-            Some("native")
-        );
     }
 
     #[test]
@@ -629,10 +649,10 @@ mod tests {
             &[("ZAI_API_KEY", "zk")],
         );
         assert_eq!(name(&c), Some("zai (coding plan)"));
-        // The engine alone does not select Z.ai.
+        // The engine alone does not select Z.ai (without a Z.ai frontier).
         let c = pick(
             "[web.search]\nzai_engine = \"plan\"\n",
-            zai_frontier(CODING),
+            None,
             &[("ZAI_API_KEY", "zk")],
         );
         assert_eq!(name(&c), Some("native"));

@@ -792,10 +792,13 @@ fn doctor_names_the_search_backend_and_who_receives_the_queries() {
     ] {
         assert!(d.contains(want), "{want}: {d}");
     }
-    // A Z.ai frontier with its key no longer implies Z.ai's search.
+    // A Z.ai frontier with its key: `auto` is Z.ai's own search.
     let (_, report) = doctor(&e, &[], &[no_brave, ("ZAI_API_KEY", "zk-doctor-1")]);
     let d = detail(&report, "web search");
-    assert!(d.starts_with("native:"), "{d}");
+    assert!(
+        d.starts_with("zai:") && d.contains("[auto: the frontier's own search"),
+        "{d}"
+    );
     assert!(!report.to_string().contains("zk-doctor-1"));
     // Z.ai by name: the plan's search, and who receives the queries.
     owner_config(&e, "[web.search]\nbackend = \"zai\"\n");

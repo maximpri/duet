@@ -302,17 +302,19 @@ API for this, and Duet does not scrape their result pages.
 `web.search.sources` chooses the sources (owner only, confirmed): `["auto"]` (the default: the
 table above), `auto` plus names to ask those by default too, or names alone to allow only those.
 
-Other backends are used only when the owner names them in `web.search.backend`; `auto` never picks
-them (earlier versions picked Z.ai for a Z.ai frontier, a SearXNG instance whose URL was set, or
-Brave when its key was set; runs and `duet doctor` now name those settings as unused):
+With a Z.ai frontier and its key, `auto` uses Z.ai's own search instead: its queries go only to the
+provider that already receives the session, and it finds pages the native sources do not (set
+`web.search.backend = "native"` to keep searches off it). Other backends are used only when the
+owner names them in `web.search.backend`; a SearXNG URL or a Brave key alone does not select them
+(runs and `duet doctor` name those settings as unused):
 
 | Backend | Who receives the queries | Cost |
 |---|---|---|
-| `native` (`auto`) | each source asked (above) | none, no key |
+| `native` (`auto` without a Z.ai frontier) | each source asked (above) | none, no key |
 | `searxng` | your instance at `web.search.searxng_url`, which passes queries on to the engines it is set up with | none |
 | `brave` | Brave (key in `$BRAVE_API_KEY`) | Brave's plan |
 | `wikipedia` | the Wikimedia Foundation (English Wikipedia's search only) | none, no key |
-| `zai` | Z.ai (with a Z.ai frontier, the provider that already receives the run) | coding plan: the plan's search server, counted in the plan's credits; otherwise the Web Search API, billed per search to the account balance (`web.search.zai_engine`) |
+| `zai` (`auto` with a Z.ai frontier and its key) | Z.ai (with a Z.ai frontier, the provider that already receives the run) | coding plan: the plan's search server, counted in the plan's credits; otherwise the Web Search API, billed per search to the account balance (`web.search.zai_engine`) |
 
 ```sh
 duet doctor                                                               # "web search": the backend, its sources and their hosts

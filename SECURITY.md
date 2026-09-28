@@ -828,11 +828,11 @@ Who receives `web_search` queries, per backend (`duet doctor` shows the one in u
 
 | Backend | Recipient | Identity sent |
 |---|---|---|
-| `native` (the default: `auto`) | **several parties: every source asked receives the query.** By default Stack Exchange (`api.stackexchange.com`), the Wikimedia Foundation (`en.wikipedia.org`), GitHub (`api.github.com`) and the package registry of each language at the workspace root (crates.io, `registry.npmjs.org`, `pypi.org`); when the frontier names them, other Stack Exchange sites, GitHub's issue search, Algolia's Hacker News search (`hn.algolia.com`) and arXiv (`export.arxiv.org`) | your IP address, to each; a User-Agent naming Duet and its repository; no key, no token, no cookies |
+| `native` (`auto` unless the frontier is Z.ai) | **several parties: every source asked receives the query.** By default Stack Exchange (`api.stackexchange.com`), the Wikimedia Foundation (`en.wikipedia.org`), GitHub (`api.github.com`) and the package registry of each language at the workspace root (crates.io, `registry.npmjs.org`, `pypi.org`); when the frontier names them, other Stack Exchange sites, GitHub's issue search, Algolia's Hacker News search (`hn.algolia.com`) and arXiv (`export.arxiv.org`) | your IP address, to each; a User-Agent naming Duet and its repository; no key, no token, no cookies |
 | `searxng` | your instance, which forwards the query to the engines it is set up with (Google, Bing, DuckDuckGo, ... by default) | your IP address, to those engines; no account |
 | `brave` | Brave Search API | your Brave key |
 | `wikipedia` | the Wikimedia Foundation (`en.wikipedia.org`) | your IP address; a User-Agent naming Duet and its repository, nothing about you |
-| `zai` (only when named) | Z.ai; when Z.ai is the frontier provider it already receives everything the frontier sees. Coding plan: its Web Search server (`api.z.ai/api/mcp/web_search_prime`); otherwise the Web Search API (`api.z.ai/api/paas/v4/web_search`) | the frontier's key |
+| `zai` (`auto` with a Z.ai frontier and its key, or named) | Z.ai; when Z.ai is the frontier provider it already receives everything the frontier sees. Coding plan: its Web Search server (`api.z.ai/api/mcp/web_search_prime`); otherwise the Web Search API (`api.z.ai/api/paas/v4/web_search`) | the frontier's key |
 
 The native backend asks only sources that publish an API for automated use, under their terms
 (checked 2026-09-26): the MediaWiki Action API (Wikimedia's robot policy: one request at a time,
