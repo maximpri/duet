@@ -356,7 +356,8 @@ request and in any spelling the check reads (encoded, spelled out, cut into part
 withheld number), is refused before its name is resolved or anything is sent (for a native search,
 before any source is contacted; every request duet makes to a third party goes through one checked
 client), and fetched content and
-results are scanned like public content and shown as untrusted data. Every call is an audit event
+results are shown as untrusted data with your own sensitive values replaced (what a public page
+holds is public: nothing on it is withheld or blocks a later request). Every call is an audit event
 (host, bytes, outcome; a native search one per source asked). Native sources are held to the same
 address rules as `web_fetch`. Details: [SECURITY.md](../SECURITY.md) (Web tools).
 

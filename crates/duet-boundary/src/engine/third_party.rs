@@ -450,6 +450,51 @@ mod tests {
         );
         assert!(r.unwrap_err().reason.contains("ended"));
     }
+
+    #[test]
+    fn a_public_page_blocks_no_later_request_but_the_workspaces_values_still_do() {
+        // What public pages hold (measured 2026-09-27): OAuth examples, a
+        // form-encoded title, a Wayback timestamp that passes Luhn.
+        let (_d, e, _) = primed();
+        let known = e.lock().vault.values().count();
+        let web = |url: &str| Source::Web { url: url.into() };
+        let page = "{\"access_token\":\"2YotnFZFEjr1zCsicMWpAA\",\"token_type\":\"example\"}\n\
+            password: \"password\"\n\
+            https://web.archive.org/web/20170806110612/https://example.com/\n\
+            https://en.wikipedia.org/w/index.php?returnto=The+Adventures+of+Captain+Comic\n";
+        e.present(
+            &web("https://www.rfc-editor.org/rfc/rfc6749"),
+            page.as_bytes(),
+        );
+        assert_eq!(
+            e.lock().vault.values().count(),
+            known,
+            "public page vaulted"
+        );
+        for (host, text) in [
+            ("example.com", "http://example.com/"),
+            (
+                "www.mobygames.com",
+                "/game/671/the-adventures-of-captain-comic/",
+            ),
+            (
+                "duckduckgo.com",
+                "oauth token_type example password grant 2017",
+            ),
+        ] {
+            assert!(e.check_outbound(host, text).is_ok(), "{host} {text}");
+        }
+        // A workspace secret a page echoes is still replaced, and still blocks.
+        let shown = e.present(
+            &web("https://paste.example/leak"),
+            format!("password={PASSWORD}\n").as_bytes(),
+        );
+        assert!(!shown.contains(PASSWORD), "{shown}");
+        assert!(
+            e.check_outbound("example.com", &format!("q={PASSWORD}"))
+                .is_err()
+        );
+    }
 }
 
 #[cfg(test)]

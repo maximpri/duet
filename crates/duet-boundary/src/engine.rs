@@ -109,6 +109,15 @@ fn origin_path(origin: &str) -> Option<&str> {
     (!origin.contains(char::is_whitespace) && !origin.contains('`')).then_some(origin)
 }
 
+/// How the origin of web content (fetched pages, search results) begins; a
+/// public handle of one, and a local answer or summary about it, keep it.
+const WEB_ORIGIN: &str = "web content from ";
+
+/// Whether `origin` is public web content.
+fn is_web_origin(origin: &str) -> bool {
+    origin.starts_with(WEB_ORIGIN)
+}
+
 fn group(digits: &str) -> String {
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
@@ -1180,9 +1189,18 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
     }
 
     /// Public text as it may be shown: detected values replaced, copied
-    /// sensitive spans removed.
+    /// sensitive spans removed. Web content is public already (anyone can
+    /// fetch it): only the vault's values and copied sensitive spans are
+    /// replaced in it, and nothing detected in it joins the vault. A word, a
+    /// number or an example key on a public page is no secret of the
+    /// operator's, and in the vault it would block every later request that
+    /// holds it (`http://example.com` after an OAuth page vaulted "example").
     fn clean_public(&self, st: &mut State, text: &str, origin: &str) -> String {
-        let s = self.sanitize(st, text, origin, false);
+        let s = if is_web_origin(origin) {
+            st.vault.tokenize(text).0
+        } else {
+            self.sanitize(st, text, origin, false)
+        };
         st.overlap.redact(&s).0
     }
 
@@ -1795,11 +1813,10 @@ impl Presenter for Engine {
             Source::FileList if self.offload(&text) => {
                 self.bulky_view("file list", &text, Shape::Listing)
             }
-            // Public but untrusted: detected values and copied sensitive spans
-            // replaced like any public text, offloaded when bulky.
+            // Public but untrusted: the vault's values and copied sensitive
+            // spans replaced (see `clean_public`), offloaded when bulky.
             Source::Web { url } => {
-                let label = format!("web content from {url} (untrusted)");
-                self.local_pii_pass(&label, &text);
+                let label = format!("{WEB_ORIGIN}{url} (untrusted)");
                 if self.offload(&text) {
                     self.bulky_view(&label, &text, Shape::Output)
                 } else {
@@ -2440,19 +2457,28 @@ mod tests {
     }
 
     #[test]
-    fn web_content_is_scanned_like_public_content_and_offloaded_when_bulky() {
-        let (_d, e) = engine();
-        e.present(
-            &file("data/customers.csv"),
-            format!("id,email\n1,{EMAIL}\n").as_bytes(),
-        );
+    fn web_content_keeps_the_vaults_values_out_and_adds_none() {
+        let (d, e) = engine();
+        // The workspace's values are in the vault from the run's start.
+        let ws = d.path().join("ws");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::write(
+            ws.join("data/customers.csv"),
+            format!("id,email\n1,{EMAIL}\n"),
+        )
+        .unwrap();
+        e.prime(&ws, &["data/customers.csv".into()], "");
         let src = Source::Web {
             url: "https://example.org/page".into(),
         };
+        // The workspace's email is replaced; a key found only on the public
+        // page is public, shown, and does not join the vault.
         let page = format!("Contact {EMAIL} or use key {KEY} for the demo.\n");
         let shown = e.present(&src, page.as_bytes());
-        assert!(!shown.contains(EMAIL) && !shown.contains(KEY), "{shown}");
+        assert!(!shown.contains(EMAIL) && shown.contains(KEY), "{shown}");
         assert!(shown.contains("Contact ⟨"), "{shown}");
+        let later = e.present(&src, format!("The demo key is {KEY}.\n").as_bytes());
+        assert!(later.contains(KEY), "{later}");
         let bulky = "a line of documentation text\n".repeat(2000);
         let shown = e.present(&src, bulky.as_bytes());
         assert!(shown.contains("read_raw"), "{shown}");
