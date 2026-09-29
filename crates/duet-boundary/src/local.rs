@@ -405,20 +405,32 @@ out.\n\n<question>{question}</question>",
         question: &str,
     ) -> Result<Answer, ProviderError> {
         let chunks = chunk(&numbered(text));
-        let (i, context) = relevant(&chunks, question);
-        let prompt = format!(
-            "{}Answer this question about the content. Be precise about formats and structure; cite line \
-numbers in evidence_lines. If the content does not contain the answer, set unanswerable to true. Return \
-only {{\"answer\": ..., \"evidence_lines\": [...], \"unanswerable\": ...}}; leave every other field out.\n\n<question>{question}</question>",
-            framed(source, i, chunks.len(), context)
-        );
-        let v = self.ask(prompt, &["answer", "unanswerable"], 1500).await?;
-        let mut a: Answer = serde_json::from_value(v).unwrap_or(Answer {
+        // The best part first; a part that cannot answer passes the question
+        // to the next best once (a question about lines 105-111 was answered
+        // "not present" from the part holding lines 733-1468).
+        let mut a = Answer {
             answer: String::new(),
             evidence_lines: vec![],
             unanswerable: true,
-        });
-        a.answer = truncate(&a.answer, MAX_ANSWER);
+        };
+        for i in ranked(&chunks, question).into_iter().take(2) {
+            let prompt = format!(
+                "{}Answer this question about the content. Be precise about formats and structure; cite line \
+numbers in evidence_lines. If the content does not contain the answer, set unanswerable to true. Return \
+only {{\"answer\": ..., \"evidence_lines\": [...], \"unanswerable\": ...}}; leave every other field out.\n\n<question>{question}</question>",
+                framed(source, i, chunks.len(), &chunks[i])
+            );
+            let v = self.ask(prompt, &["answer", "unanswerable"], 1500).await?;
+            a = serde_json::from_value(v).unwrap_or(Answer {
+                answer: String::new(),
+                evidence_lines: vec![],
+                unanswerable: true,
+            });
+            a.answer = truncate(&a.answer, MAX_ANSWER);
+            if !a.unanswerable {
+                break;
+            }
+        }
         Ok(a)
     }
 
@@ -703,22 +715,48 @@ fn image_items(prompt: String, image: &Image) -> Vec<Item> {
     ]
 }
 
-/// The chunk most relevant to the question, with its index.
-fn relevant<'a>(chunks: &'a [String], question: &str) -> (usize, &'a str) {
+/// Line numbers a question names: every number after "line" or "lines" up
+/// to the end of its clause ("lines 105 through 111 and 602-607").
+static NAMED_LINES: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"(?i)\blines?\b([^.?!;:]*)").expect("static regex")
+});
+
+/// The first and last line number of a numbered chunk (see [`numbered`]).
+fn line_span(chunk: &str) -> Option<(usize, usize)> {
+    let num = |l: &str| l.split_whitespace().next()?.parse::<usize>().ok();
+    Some((num(chunk.lines().next()?)?, num(chunk.lines().last()?)?))
+}
+
+/// Chunk indices, most relevant to the question first: the chunk holding
+/// most of the lines it names, then the one sharing most of its words.
+fn ranked(chunks: &[String], question: &str) -> Vec<usize> {
     let words: Vec<String> = question
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| w.len() > 3)
         .map(str::to_lowercase)
         .collect();
-    chunks
+    let lines: Vec<usize> = NAMED_LINES
+        .captures_iter(question)
+        .flat_map(|c| {
+            c[1].split(|ch: char| !ch.is_ascii_digit())
+                .filter_map(|n| n.parse::<usize>().ok())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let mut order: Vec<(usize, usize, usize)> = chunks
         .iter()
         .enumerate()
-        .max_by_key(|(i, c)| {
+        .map(|(i, c)| {
+            let named = line_span(c).map_or(0, |(a, b)| {
+                lines.iter().filter(|&&n| a <= n && n <= b).count()
+            });
             let lc = c.to_lowercase();
             let hits: usize = words.iter().map(|w| lc.matches(w.as_str()).count()).sum();
-            (hits, std::cmp::Reverse(*i))
+            (i, named, hits)
         })
-        .map_or((0, ""), |(i, c)| (i, c.as_str()))
+        .collect();
+    order.sort_by(|a, b| b.1.cmp(&a.1).then(b.2.cmp(&a.2)).then(a.0.cmp(&b.0)));
+    order.into_iter().map(|(i, _, _)| i).collect()
 }
 
 /// The first JSON object in `text` (models sometimes wrap it in prose or fences).
@@ -778,5 +816,63 @@ mod tests {
         assert!(c.len() >= 2);
         assert!(c.iter().all(|x| x.len() <= CHUNK_CHARS + 10));
         assert_eq!(chunk("").len(), 1);
+    }
+
+    /// Three parts of an audit log: `report` is common in the first, the
+    /// marker line only in the second.
+    fn three_part_log() -> String {
+        let mut text = String::new();
+        for n in 1..=3600 {
+            let line = if n < 1200 {
+                format!("INFO report run {n} for the weekly report of the report desk")
+            } else if n == 1500 {
+                "WARN gateway rejected: Expected AND, found: 50000 (MARKER)".to_owned()
+            } else {
+                format!("INFO heartbeat {n} ok, nothing to note for this minute")
+            };
+            text.push_str(&line);
+            text.push('\n');
+        }
+        text
+    }
+
+    #[test]
+    fn a_question_naming_lines_goes_to_the_part_holding_them() {
+        let chunks = chunk(&numbered(&three_part_log()));
+        assert!(chunks.len() >= 3, "{}", chunks.len());
+        let holding = |n: usize| {
+            chunks
+                .iter()
+                .position(|c| line_span(c).is_some_and(|(a, b)| a <= n && n <= b))
+                .unwrap()
+        };
+        let q = "Quote the report lines 1500 through 1502 and line 1501 exactly.";
+        assert_eq!(ranked(&chunks, q)[0], holding(1500));
+        // Without line numbers, the words decide, as before.
+        assert_eq!(ranked(&chunks, "What does the weekly report say?")[0], 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_part_that_cannot_answer_passes_the_question_to_the_next() {
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = calls.clone();
+        let (local, _) = crate::testing::responsive_local(move |prompt| {
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if prompt.contains("MARKER") {
+                json!({"answer": "Line 1500: Expected AND, found: 50000", "evidence_lines": [1500],
+                    "unanswerable": false})
+            } else {
+                json!({"answer": "not in this part", "evidence_lines": [], "unanswerable": true})
+            }
+            .to_string()
+        });
+        // Words point at the first part (`report`), the answer is in the second.
+        let q = "Which report run was rejected by the gateway, and with what error?";
+        let a = local
+            .answer("logs/audit.log", &three_part_log(), q)
+            .await
+            .unwrap();
+        assert!(!a.unanswerable && a.answer.contains("50000"), "{a:?}");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 }
