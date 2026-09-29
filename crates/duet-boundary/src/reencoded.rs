@@ -275,7 +275,11 @@ pub fn html_unescape(text: &str) -> String {
     while let Some(at) = rest.find('&') {
         out.push_str(&rest[..at]);
         rest = &rest[at..];
-        let Some(end) = rest[..rest.len().min(12)].find(';') else {
+        // Bytes, not a string slice: 12 bytes can end inside a character (`©`).
+        let Some(end) = rest.as_bytes()[..rest.len().min(12)]
+            .iter()
+            .position(|&b| b == b';')
+        else {
             out.push('&');
             rest = &rest[1..];
             continue;
@@ -450,6 +454,14 @@ pub fn spelled_digits(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn html_unescape_survives_characters_across_its_window() {
+        // A run died on `© Copyright IBM` in command output: the 12-byte
+        // window for a reference's `;` ended inside the `©`.
+        let text = "&xxxxxxxxxx© Copyright IBM &amp; &#169; ok";
+        assert_eq!(html_unescape(text), "&xxxxxxxxxx© Copyright IBM & © ok");
+    }
 
     #[test]
     fn outbound_spellings_are_decoded() {

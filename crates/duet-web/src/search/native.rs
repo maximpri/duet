@@ -455,7 +455,7 @@ impl Source {
                         num(h, "points"),
                         num(h, "num_comments"),
                         str_of(h, "created_at")
-                            .map(|d| format!(" ({})", &d[..d.len().min(10)]))
+                            .map(|d| format!(" ({})", d.chars().take(10).collect::<String>()))
                             .unwrap_or_default(),
                     );
                     out.push(hit(clean(title), link, note));
