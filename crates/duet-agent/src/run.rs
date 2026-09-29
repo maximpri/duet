@@ -114,6 +114,9 @@ pub struct RunConfig {
     pub max_output_tokens: u32,
     /// Sent as `reasoning_effort` unless `None`.
     pub reasoning_effort: Option<String>,
+    /// Whether earlier responses' reasoning is sent back to the frontier
+    /// (`frontier.resend_reasoning`). The transcript keeps it either way.
+    pub resend_reasoning: bool,
     /// Prices a response's usage in dollars.
     pub price: Box<dyn Fn(&Usage) -> f64 + Send + Sync>,
     /// Operator approval of risky actions (`oversight.approve`, `git.commit`).
@@ -189,6 +192,7 @@ impl RunConfig {
             compaction: None,
             max_output_tokens: 1000,
             reasoning_effort: None,
+            resend_reasoning: true,
             price: Box::new(|_| 0.0),
             oversight: crate::oversight::Oversight::default(),
             web: None,
@@ -238,6 +242,20 @@ fn reasoning_extra(effort: Option<&str>) -> serde_json::Map<String, serde_json::
         extra.insert("reasoning_effort".into(), e.into());
     }
     extra
+}
+
+/// The conversation with no response's reasoning text: every request then
+/// shares one prefix with the next, and past reasoning (two fifths of the
+/// input the XL runs re-sent) is not read again. Provider state a dialect
+/// must get back unchanged (signed reasoning) is kept.
+fn without_reasoning(items: &[Item]) -> Vec<Item> {
+    let mut items = items.to_vec();
+    for item in &mut items {
+        if let Item::Assistant { reasoning, .. } = item {
+            *reasoning = None;
+        }
+    }
+    items
 }
 
 fn is_zero(n: &u64) -> bool {
@@ -983,7 +1001,11 @@ pub(crate) async fn work(
         }
         let request = Request {
             system: system.clone(),
-            items: items.clone(),
+            items: if cfg.resend_reasoning {
+                items.clone()
+            } else {
+                without_reasoning(items)
+            },
             tools: conv.specs.clone(),
             max_output_tokens: Some(cfg.max_output_tokens),
             extra: reasoning_extra(cfg.reasoning_effort.as_deref()),
@@ -1394,6 +1416,34 @@ mod tests {
         };
         assert_eq!((cfg.price)(&usage), 0.0);
         assert!(cfg.frontier_usd <= 5.0 && cfg.wall_clock <= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn without_reasoning_drops_only_the_reasoning_text() {
+        let items = vec![
+            Item::User {
+                text: "task".into(),
+            },
+            Item::Assistant {
+                text: "reading".into(),
+                reasoning: Some("long private chain of thought".into()),
+                tool_calls: vec![],
+                replay: None,
+            },
+        ];
+        let sent = without_reasoning(&items);
+        assert_eq!(sent[0], items[0]);
+        match &sent[1] {
+            Item::Assistant {
+                text, reasoning, ..
+            } => {
+                assert_eq!(text, "reading");
+                assert!(reasoning.is_none());
+            }
+            other => panic!("{other:?}"),
+        }
+        let cfg = RunConfig::new("/ws", "/ws/.duet/runs/r", "task");
+        assert!(cfg.resend_reasoning, "on unless the operator turns it off");
     }
 
     #[test]

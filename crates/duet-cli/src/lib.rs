@@ -874,6 +874,7 @@ async fn prepare(
             .transpose()?,
         max_output_tokens: 32_768,
         reasoning_effort: Some(cfg.str("frontier.reasoning_effort")?).filter(|e| e != "default"),
+        resend_reasoning: cfg.bool("frontier.resend_reasoning")?,
         price: Box::new(move |u| price.as_ref().map_or(0.0, |p| p.cost(u))),
         oversight,
         // Top clearance offers no web tools: a query or a URL would leave

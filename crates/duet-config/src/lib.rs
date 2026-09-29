@@ -141,6 +141,15 @@ pub const REGISTRY: &[Setting] = &[
         "Reasoning effort requested from the frontier (`default` sends none and lets the provider choose)."
     ),
     s!(
+        "frontier.resend_reasoning",
+        Bool,
+        "true",
+        Owner,
+        Any,
+        false,
+        "Send the frontier's earlier reasoning back with each request (Z.ai's Coding Plan preserves it by default). Off, only the conversation without past reasoning is sent: about a third fewer input tokens on long runs, with a possible loss of continuity. On until measured."
+    ),
+    s!(
         "frontier.api_key_env",
         Str,
         r#""ZAI_API_KEY""#,

@@ -467,6 +467,7 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
         compaction: cfg.compaction,
         max_output_tokens: cfg.max_output_tokens,
         reasoning_effort: cfg.reasoning_effort.clone(),
+        resend_reasoning: cfg.resend_reasoning,
         price: Box::new(move |u| price(u)),
         oversight: cfg.oversight.clone(),
         web: cfg.web.clone(),
