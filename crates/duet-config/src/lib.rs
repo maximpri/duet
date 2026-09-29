@@ -147,7 +147,7 @@ pub const REGISTRY: &[Setting] = &[
         Owner,
         Any,
         false,
-        "Send the frontier's earlier reasoning back with each request (Z.ai's Coding Plan preserves it by default). Off, only the conversation without past reasoning is sent: about a third fewer input tokens on long runs, with a possible loss of continuity. On until measured."
+        "Send the frontier's earlier reasoning back with each request (Z.ai's Coding Plan preserves it by default). Off, past reasoning is not sent. Measured on X2 (2026-09-29): off, the frontier lost its thread (4-6x the requests, every run stopped by the wall clock, one at 27/55); keep it on."
     ),
     s!(
         "frontier.api_key_env",
