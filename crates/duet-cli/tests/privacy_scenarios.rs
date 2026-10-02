@@ -36,6 +36,34 @@ fn completed(t: &Terminal) -> bool {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn error_words_in_customer_data_do_not_publish_rows_as_diagnostics() {
+    // Found in a real launch dogfood run: `.invalid` in an email selected
+    // a CSV row as an error line. Pattern detection missed its arbitrary
+    // customer ID, reserved-domain email and ordinary monetary amount.
+    let f = Fixture::new(
+        "data-diagnostics",
+        "Inspect the customer export layout.",
+        Local::Cooperative,
+    );
+    std::fs::write(
+        f.ws.join("data/customers.csv"),
+        "customer_id,name,email,status,amount\nCUST-CANARY-ORCHID,Mira Canarystone,mira.canary@privacy-fixture.invalid,active,125.50\n",
+    )
+    .unwrap();
+    f.script(vec![
+        Step::Call("read_file", json!({"path": "data/customers.csv"})),
+        Step::Call("finish", json!({"summary": "Inspected the column layout."})),
+    ]);
+    assert!(completed(&f.run().await));
+    f.assert_no_leak(&f.canaries([
+        "CUST-CANARY-ORCHID",
+        "Mira Canarystone",
+        "mira.canary@privacy-fixture.invalid",
+        "125.50",
+    ]));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn card_a_a_labelled_number_failing_the_checksum_never_reaches_the_frontier() {
     // Seen in a live run (DUET-2026-011): no detector took it for a card.
     let objective =

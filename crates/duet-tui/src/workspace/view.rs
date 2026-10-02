@@ -149,7 +149,7 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
             }
             spans.push(dot());
             spans.push(Span::styled(
-                "nothing leaves this machine: no frontier, web or network",
+                "no frontier · web and command network off",
                 Style::new().fg(HELD),
             ));
         }

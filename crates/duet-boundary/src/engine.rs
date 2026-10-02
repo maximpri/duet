@@ -1078,6 +1078,14 @@ impl Engine {
             }
         };
         let lines: Vec<&str> = text.lines().collect();
+        // Error keywords are not evidence that content is a diagnostic. A
+        // customer email ending in `.invalid` used to publish its entire CSV
+        // row through this detector-only preview, including arbitrary IDs
+        // and amounts no detector knows. Keep this legacy diagnostic path
+        // restricted to explicitly named log files. Other sensitive sources
+        // get structure, synthetic samples and checked local answers only.
+        let diagnostic_source = matches!(origin, structure::Origin::File(path)
+            if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("log")));
         let error_lines: Vec<(usize, &str)> = lines
             .iter()
             .enumerate()
@@ -1107,7 +1115,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         };
         if let Some(m) = &masked {
             out.push_str(m);
-        } else if !error_lines.is_empty() {
+        } else if diagnostic_source && !error_lines.is_empty() {
             // One line per shape: a log repeats its failures daily, and the
             // first few kinds would otherwise fill the list, hiding the
             // one-off warnings (a ticket, a review) that say the most.
@@ -1151,7 +1159,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         };
         match structure {
             Some(view) => out.push_str(&view),
-            None if masked.is_none() && lines.len() > PATTERN_MIN_LINES => {
+            None if diagnostic_source && masked.is_none() && lines.len() > PATTERN_MIN_LINES => {
                 out.push_str(&self.line_patterns(&mut st, &lines, source_label));
             }
             None => {}
@@ -1221,9 +1229,11 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         // placeholders, a copied line splits into runs shorter than the window
         // and a field between two values (a date of birth) passes.
         let s = st.overlap.redact_strict(text).0;
+        st.structure.note_local_values(read, origin);
         let s = Self::respell(st, &s);
         let words: std::collections::HashSet<String> = words(read).collect();
         let s = self.sanitize_read(st, &s, origin, true, Some(&words));
+        let s = st.structure.clean_local_values(&s, &st.public_words);
         let s = st.overlap.redact(&s).0;
         // The local model describes; it never quotes. A request to "quote lines
         // 12-29 exactly" once carried a short fragment of hostile data out.
@@ -1260,6 +1270,9 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         for run in reencoded::encoded_runs(text) {
             let sensitive = run.decoded.iter().any(|d| {
                 st.vault.find_folded(d).is_some()
+                    || st
+                        .structure
+                        .contains_data_value(&String::from_utf8_lossy(d))
                     || st.overlap.redact_strict(&String::from_utf8_lossy(d)).1 > 0
             });
             if sensitive {
@@ -2633,6 +2646,33 @@ mod tests {
         assert_eq!(e.take_local_stats().unwrap().calls, 2);
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_digest_cannot_quote_short_structured_values() {
+        for views in [false, true] {
+            let (local, _) = crate::testing::scripted_local(vec![json!({
+                "summary": "Amounts include 125.50, 900.00 and 74.50.",
+                "facts": ["The ID is CUST-CANARY-ORCHID.", "Email: mira.canary@privacy-fixture.invalid"]
+            }).to_string()]);
+            let d = tempfile::tempdir().unwrap();
+            let mut p = policy();
+            p.structure.views = views;
+            let e = Engine::open(&d.path().join("run"), p, Some(local)).unwrap();
+            let shown = e.present(&file("data/customers.csv"), b"customer_id,email,amount\nCUST-CANARY-ORCHID,mira.canary@privacy-fixture.invalid,125.50\nCUST-CANARY-CEDAR,theo.canary@privacy-fixture.invalid,900.00\nCUST-CANARY-MAPLE,nora.canary@privacy-fixture.invalid,74.50\n");
+            for value in [
+                "125.50",
+                "900.00",
+                "74.50",
+                "CUST-CANARY-ORCHID",
+                "mira.canary@privacy-fixture.invalid",
+            ] {
+                assert!(
+                    !shown.contains(value),
+                    "views={views}: {value} leaked: {shown}"
+                );
+            }
+        }
+    }
+
     pub(super) fn policy() -> Policy {
         Policy {
             sensitive_globs: vec![
@@ -2780,6 +2820,38 @@ mod tests {
             assert!(!shown.contains(secret), "{secret} leaked: {shown}");
         }
         assert!(shown.contains("panicked parsing record"), "{shown}");
+    }
+
+    #[test]
+    fn sensitive_data_never_uses_detector_only_diagnostic_previews() {
+        for views in [true, false] {
+            for path in [
+                "data/customers.csv",
+                "data/customers.txt",
+                "data/customers.json",
+            ] {
+                let d = tempfile::tempdir().unwrap();
+                let mut p = policy();
+                p.structure.views = views;
+                let e = Engine::open(&d.path().join("run"), p, None).unwrap();
+                // Repetition also exercises the legacy line-pattern fallback
+                // when the richer structure view is disabled.
+                let row = "CUST-CANARY-ORCHID,mira.canary@privacy-fixture.invalid,125.50\n";
+                let text = format!("customer_id,email,amount\n{}", row.repeat(80));
+                let shown = e.present(&file(path), text.as_bytes());
+                assert!(shown.starts_with("h1"), "{shown}");
+                for value in [
+                    "CUST-CANARY-ORCHID",
+                    "mira.canary@privacy-fixture.invalid",
+                    "125.50",
+                ] {
+                    assert!(
+                        !shown.contains(value),
+                        "views={views} {path}: {value} leaked: {shown}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

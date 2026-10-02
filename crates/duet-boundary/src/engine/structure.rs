@@ -169,6 +169,44 @@ impl Fixtures {
 pub(super) struct Known<'a>(pub(super) &'a State);
 
 impl StructureState {
+    /// Exact structured values in local output, including short amounts that
+    /// do not match a secret/PII rule or a four-word copied span. Public words
+    /// already visible in open code (for example an enum's `active`) add no
+    /// new information. Do not add these values to the global vault: doing so
+    /// would rewrite unrelated public code and the frontier's test fixtures.
+    pub(super) fn note_local_values(&mut self, read: &str, origin: &str) {
+        let plain = crate::bulky::strip_line_numbers(read)
+            .map_or_else(|| read.to_owned(), |(_, body)| body);
+        self.note_values(structure::values(&plain, Some(Path::new(origin))));
+    }
+
+    pub(super) fn clean_local_values(&mut self, text: &str, public: &HashSet<String>) -> String {
+        let Some(matcher) = self.data_matcher() else {
+            return text.to_owned();
+        };
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for m in matcher.find_iter(text) {
+            let value = &text[m.start()..m.end()];
+            if public.contains(&value.to_lowercase())
+                || super::PLACEHOLDER
+                    .find_iter(text)
+                    .any(|p| p.start() <= m.start() && m.end() <= p.end())
+            {
+                continue;
+            }
+            out.push_str(&text[last..m.start()]);
+            out.push_str("⟨withheld:data-value⟩");
+            last = m.end();
+        }
+        out.push_str(&text[last..]);
+        out
+    }
+
+    pub(super) fn contains_data_value(&self, text: &str) -> bool {
+        self.data_matcher().is_some_and(|m| m.is_match(text))
+    }
+
     fn data_matcher(&self) -> Option<&AhoCorasick> {
         self.data_matcher
             .get_or_init(|| {

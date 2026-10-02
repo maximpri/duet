@@ -546,8 +546,8 @@ const PASSTHROUGH_BANNER: &str = "\
 
 const TOP_CLEARANCE_BANNER: &str = "\
 =====================================================================
- TOP CLEARANCE: only the local model works; nothing leaves this machine
- but its requests to the local model. No frontier, no web tools, no
+ TOP CLEARANCE: only the configured local model works. That endpoint
+ receives model requests. No frontier, no web tools, no
  network for commands, no MCP servers with network. Leaving top
  clearance needs a new session.
 =====================================================================";
