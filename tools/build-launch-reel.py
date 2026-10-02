@@ -21,8 +21,11 @@ def main():
     parser.add_argument('--xterm', type=Path, required=True)
     parser.add_argument('--chrome', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--evidence', type=Path,
+                        default=root / 'docs/evidence/launch-refresh-2026-10-01')
+    parser.add_argument('--name', default='duet-boundary', help='Output media basename')
     args = parser.parse_args()
-    evidence = root / 'docs/evidence/launch-refresh-2026-10-01'
+    evidence = args.evidence
     edit = json.loads((evidence / 'reel-edit.json').read_text())
     args.output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='duet-reel-') as temp:
@@ -48,11 +51,11 @@ def main():
         subprocess.run(common + [
             '-filter_complex',
             '[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3',
-            '-loop', '0', str(args.output / 'duet-boundary.gif'),
+            '-loop', '0', str(args.output / f'{args.name}.gif'),
         ], check=True)
         subprocess.run(common + [
             '-vf', 'fps=30,format=yuv420p', '-c:v', 'libx264', '-crf', '18',
-            '-movflags', '+faststart', str(args.output / 'duet-boundary.mp4'),
+            '-movflags', '+faststart', str(args.output / f'{args.name}.mp4'),
         ], check=True)
     print(json.dumps({'output': str(args.output), 'frames': len(edit['source_seconds']),
                       'seconds': len(edit['source_seconds']) / edit['fps']}))

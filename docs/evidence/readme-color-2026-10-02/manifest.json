@@ -1,0 +1,34 @@
+{
+  "recorded_date": "2026-10-02",
+  "source_session": "20261002-031043-4ce452",
+  "capture_binary_sha256": "44703f8c42fffa1b607420fd17b731c5166f74283a7b8721f6fda52992782e14",
+  "capture_environment": {
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "NO_COLOR": "unset"
+  },
+  "scope": "Review of a disposable copy of a completed synthetic session; no new model requests; original evidence unchanged.",
+  "media": {
+    "width": 1288,
+    "height": 792,
+    "frames": 54,
+    "seconds": 18.0,
+    "distinct_states": 4,
+    "minimum_vivid_pixels_per_frame": 12211,
+    "loop": 0
+  },
+  "artifact_digests": {
+    "docs/evidence/readme-color-2026-10-02/review.cast.gz": {
+      "sha256": "eaee5d3d0193a64020bbec0491a10878548b35adfd5004077347a5e5bef94c6b",
+      "bytes": 8485
+    },
+    "docs/evidence/readme-color-2026-10-02/reel-edit.json": {
+      "sha256": "f6788dfe095adab4acd0ac5b11069d21fda2825d31879366d9de28e6ae545990",
+      "bytes": 951
+    },
+    "docs/assets/launch/duet-security.gif": {
+      "sha256": "d0e095d5d9ba551e0f59ffb251496f47ce266a4e6f7f68c770d41af12bdab916",
+      "bytes": 240647
+    }
+  }
+}
