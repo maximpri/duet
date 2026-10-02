@@ -1,0 +1,9 @@
+test_decimal_precision (test_billing.BillingTests) ... ok
+test_empty_export (test_billing.BillingTests) ... ok
+test_exact_status (test_billing.BillingTests) ... ok
+test_excludes_inactive (test_billing.BillingTests) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+OK

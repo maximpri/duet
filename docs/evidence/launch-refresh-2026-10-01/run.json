@@ -1,0 +1,12 @@
+{
+  "run_id": "20261002-031043-4ce452",
+  "mode": "hybrid",
+  "objective": "Fix the billing total bug in billing.py. Read data/customers.csv through Duet to understand the schema, but keep actual customer values and the database credential local. Use structure or synthetic examples for reasoning. Run python3 -m unittest -v. Make the smallest code fix and summarize what changed.",
+  "checks": [
+    "python3 -m unittest -v"
+  ],
+  "frontier_url": "https://api.z.ai/api/coding/paas/v4",
+  "frontier_model": "glm-5.3-flash",
+  "frontier_dialect": "chat",
+  "session": true
+}

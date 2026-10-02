@@ -19,7 +19,7 @@ Worktree: `duet-launch`; branch: `launch/privacy-first-story`. The original work
 
 That is **360 distinct targeted tests passed and one failed**, without double-counting reruns. The full workspace test/dependency gate was **not** run to completion and this branch is not claimed to have passed it.
 
-The failing test is `frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request` in `top_clearance.rs`. Its known-alias case stops with “no usable token price for private-alias,” despite an explicit `pricing.frontier_model` setting. It failed before the launch fixes and again with an isolated build target afterward. Its underlying cause was not resolved here. The four actual top-clearance behavior tests pass; the pricing failure remains a release issue, not a hidden green check. [Initial test output](../evidence/launch-2026-10-01/initial-cli-tests.txt).
+The historical failure was `frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request`. Its unknown-model assertion expected “no unique token price” instead of “no usable token price for private-alias”; the known-alias checks had passed. Main commit `45ea45c` corrected the assertion, incorporated by merge `6a751e2`. A fresh run on `launch/duet-evidence-campaign` passed **all five top-clearance tests**, including this case. [Fresh output](../evidence/launch-refresh-2026-10-01/top-clearance-tests.txt). The earlier interpretation as a pricing-resolution defect was incorrect. Historical test counts above describe the earlier capture validation, not a new full-suite run.
 
 Reproduce the targeted checks with an isolated Cargo target directory if another checkout is building concurrently:
 
@@ -45,3 +45,15 @@ The new regression was observed failing before its fix. The live task then found
 - The prepared evidence/media were checked for exact values of the credential environment variables used by the local/frontier endpoints. Only fictional fixture credentials are intended for publication. This is a targeted check, not an exhaustive secret-detection guarantee.
 
 No posts, outreach, GitHub push or release publication were performed. [The campaign](CAMPAIGN.md#before-a-broad-launch) identifies remaining work before a broad security-led launch.
+
+
+## Campaign refresh
+
+Worktree: `duet-evidence-campaign`; branch: `launch/duet-evidence-campaign`, based on `6a751e2`. This pass preserves the other worktrees and their uncommitted edits. It rewrites the README and launch drafts, extends research and institutional evaluation, clarifies local-endpoint wording, and adds a new real dogfood capture. The prior source fixes and media are inherited, not newly authored in this pass.
+
+The fresh dogfood uses the previously captured `c9e1d5a` binary, verified by SHA-256 before copying, rather than silently claiming the merged branch is that binary. Its run, tests, request checks, media edits and limitations are in [the fresh packet](FRESH_DOGFOOD.md). No new product runtime changes were made in this refresh.
+
+
+Fresh validation: **5/5 top-clearance tests**, the repository fast gate, both fresh packet verifiers, the expected failed disclosure controls (36 and 9 matches) and the tampered-copy rejection passed their expected outcomes. All 64 inherited manifest digests still match. The README and launch-document relative links/anchors resolve. The preview loads both GIFs without horizontal overflow at desktop or mobile widths; selected full-resolution TUI frames were visually inspected. The MP4 is 1288×792, 20 seconds, 600 frames. A targeted scan found no prepared-artifact matches to four available credential environment values. [Machine-readable check record](../evidence/launch-refresh-2026-10-01/validation.json).
+
+The new replay builder was exercised end to end on the published cast and edit map. The full repository gate was not rerun for this documentation/media refresh. No push or publication was performed.

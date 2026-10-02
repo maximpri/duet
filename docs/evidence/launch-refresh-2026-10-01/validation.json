@@ -1,0 +1,27 @@
+{
+  "fresh_canaries": {
+    "actual_exit": 0,
+    "expected_exit": 0
+  },
+  "fresh_audit": {
+    "actual_exit": 0,
+    "expected_exit": 0
+  },
+  "old_negative": {
+    "actual_exit": 1,
+    "expected_exit": 1
+  },
+  "tampered_copy": {
+    "actual_exit": 1,
+    "expected_exit": 1
+  },
+  "top_clearance_tests_passed": 5,
+  "top_clearance_tests_failed": 0,
+  "fast_gate": "passed",
+  "full_gate": "not run in this refresh; no push performed",
+  "local_links_and_anchors": "all launch documents and README resolve",
+  "readme_preview": "images load; no horizontal overflow at 1280px or 390px; first screen visually inspected",
+  "media": "1288x792; MP4 20s/600 frames at 30fps; GIF 60 source frames at 3fps; selected stills visually inspected",
+  "inherited_manifest": "64 SHA-256 matches",
+  "credential_scan": "no matches to 4 available credential environment values in prepared evidence/media; targeted check only"
+}

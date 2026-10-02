@@ -4,6 +4,8 @@ The final hybrid task fixed a billing bug, passed **4/4 tests**, and recorded **
 
 Recorded October 1, 2026 in Toronto (October 2 UTC). All customer records and the database password are invented. Code used for the successful captures: [`c9e1d5a`](../../crates/duet-boundary/src/engine.rs), with binary and artifact digests in the [manifest](../evidence/launch-2026-10-01/manifest.json).
 
+A [fresh capture of the same task](FRESH_DOGFOOD.md) accompanies the revised README. It has its own run ID, five frontier requests, original recording and checks; the runs below are the earlier failure/fix sequence.
+
 ## Watch the workflow
 
 ![Real hybrid TUI: billing repair, privacy handling and outbound record](../assets/launch/duet-privacy.gif)

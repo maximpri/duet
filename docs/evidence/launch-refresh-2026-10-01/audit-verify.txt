@@ -1,0 +1,2 @@
+chain intact: 10 records
+anchor matches (/tmp/duet-evidence-capture/config/state/audit-anchors/runs/20261002-031043-4ce452/c834ca3d9c3b4916.json)

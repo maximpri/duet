@@ -4,7 +4,7 @@ Research checked 2026-10-01, America/Toronto (some captures after midnight UTC).
 
 ## Start with the success we actually have
 
-Maxim reports **50,000 LinkedIn impressions and 90 GitHub stars** for mlxtop. Treat those as owner-supplied launch figures, not independently measured attribution. The public [mlxtop post](https://www.linkedin.com/posts/maximpriezjev_a-top-for-local-llms-on-your-mac-ive-activity-7504045817205272576-7uJZ) showed 232 reactions and 15 comments when inspected. Public comments include interest in Duet's architecture and in trying Duet itself. Impressions are not publicly verifiable here.
+The inherited launch brief records **50,000 LinkedIn impressions and 90 GitHub stars** for mlxtop. Those private figures were not verified in this pass; confirm their dates and source before using them in publishable copy or a 10× comparison. The public [mlxtop post](https://www.linkedin.com/posts/maximpriezjev_a-top-for-local-llms-on-your-mac-ive-activity-7504045817205272576-7uJZ) showed 232 reactions and 15 comments when rechecked in the public browser during this pass. Public comments include interest in Duet's architecture and in trying Duet itself. Impressions are not publicly verifiable here.
 
 The useful continuation is: **“mlxtop was the output. Here is the coding agent behind it—and the data boundary inside that agent.”** Link the [working mlxtop repository](https://github.com/maximpri/mlxtop) as an artifact. It demonstrates that useful software was built; it does not establish that Duet prevents all leaks or has equivalent quality on every task.
 
@@ -27,7 +27,7 @@ The first screen should make one argument: **capable coding help with an inspect
 
 LinkedIn's [March 2026 feed update](https://news.linkedin.com/2026/ImprovingTheFeed) says it is reducing repetitive, low-substance content and engagement bait and acting against automated comments and artificial engagement. Our inference: first-person engineering experience, a real artifact and a specific question fit better than generic superlatives or “comment DEMO” bait. There is no evidence here for an exact best time, a guaranteed link penalty, or a reach multiplier.
 
-Use the former **Senior Managing Architect at TD Bank** role once to explain the perspective. It is an owner-supplied credential, not a bank's endorsement. Lead with a technical decision and show its consequence. Upload the included MP4 for the terminal clip: LinkedIn [supports MP4 uploads](https://www.linkedin.com/help/linkedin/answer/a548372). The GIF remains useful in GitHub. Write an accompanying text explanation for readers who cannot read a small terminal video.
+The earlier brief includes a former **Senior Managing Architect at TD Bank** role. Verify that credential before adding it to new posts; it would provide personal context, not a bank's endorsement. The refreshed primary draft instead leads with the public mlxtop artifact. Lead with a technical decision and show its consequence. Upload the included MP4 for the terminal clip: LinkedIn [supports MP4 uploads](https://www.linkedin.com/help/linkedin/answer/a548372). The GIF remains useful in GitHub. Write an accompanying text explanation for readers who cannot read a small terminal video.
 
 Test two hooks on different substantive posts, without reposting identical copy:
 
@@ -71,3 +71,17 @@ The [security evidence guide](../SECURE_BY_DESIGN.md) contains the banking/publi
 | Proven secure | Tested controls and observed run evidence, with limits | No finite benchmark proves universal security |
 
 The campaign uses the strongest current claim and gives people the means to challenge it.
+
+## Decisions applied in this refresh
+
+The public mlxtop post is short: a familiar analogy, a concrete set of useful measurements, an actual terminal image and a repository link. Its comments ask about Duet and the dual-model architecture. **Inference:** the natural next story is the agent behind that working tool, followed by a visible demonstration of its data boundary. Neither comments nor a screenshot prove the reason for the post's reach.
+
+- **README:** one category sentence, the real GIF, a compact benefit table, then setup. Separate detailed security evidence from first-use instructions without hiding hybrid disclosure or costs.
+- **Media:** capture a new genuine PTY run; show the code change, sensitive-file decision, withheld values in the outbound text and audit verification. Preserve its original recording and edit map. Keep the older tamper and top-clearance clips as separately identified runs.
+- **LinkedIn:** lead with a relevant engineering question and native MP4; follow with the failed privacy check and its fix. The platform's current guidance supports authentic, useful content, not a guaranteed posting time or a magic hashtag count.
+- **Reddit:** retain author briefs for communities that prohibit generated copy; a generic draft is only for a venue whose rules permit it. Rechecked r/LocalLLaMA rules 3–4 and r/opensource rules 2–6 from their public sidebars; redirected rules pages did not expose the full text.
+- **Institutional audience:** offer the [evaluation packet](../INSTITUTIONAL_EVALUATION.md), including actual audit fields and deployment gaps. No regulatory badges or fabricated customer evidence.
+- **Cost:** attach a [preregistered comparison proposal](COST_QUALITY_PLAN.md) that separates boundary overhead from replacing an expensive frontier workflow. Do not silently switch baselines.
+- **10×:** use a named outcome and matched measurement windows. The [campaign](CAMPAIGN.md) replaces the earlier unrelated 10,000-star target with that definition.
+
+Primary sources rechecked: [GitHub README guidance](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes), [LinkedIn feed update](https://news.linkedin.com/2026/ImprovingTheFeed), [Reddit spam policy](https://support.reddithelp.com/hc/en-us/articles/360043504051-Spam), [r/LocalLLaMA sidebar](https://www.reddit.com/r/LocalLLaMA/), [r/opensource sidebar](https://www.reddit.com/r/opensource/), [Aider](https://github.com/Aider-AI/aider), [Crush](https://github.com/charmbracelet/crush), and the government sources linked in the institutional guide. These are qualitative design references, not an empirical model of virality.

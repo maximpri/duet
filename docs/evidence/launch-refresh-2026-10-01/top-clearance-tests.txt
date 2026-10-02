@@ -1,0 +1,28 @@
+   Compiling duet-fs v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-fs)
+   Compiling duet-provider v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-provider)
+   Compiling duet-review v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-review)
+   Compiling duet-governor v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-governor)
+   Compiling duet-config v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-config)
+   Compiling duet-git v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-git)
+   Compiling duet-extensions v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-extensions)
+   Compiling duet-sandbox v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-sandbox)
+   Compiling duet-lsp v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-lsp)
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-boundary)
+   Compiling duet-net v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-net)
+   Compiling duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-mcp)
+   Compiling duet-web v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-web)
+   Compiling duet-egress v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-egress)
+   Compiling duet-agent v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-agent)
+   Compiling duet-tui v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-tui)
+   Compiling duet-cli v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-cli)
+    Finished `release` profile [optimized] target(s) in 2m 16s
+     Running tests/top_clearance.rs (/tmp/duet-launch-target/release/deps/top_clearance-c674337bd56859d6)
+
+running 5 tests
+test a_repository_can_require_top_clearance ... ok
+test only_the_local_model_works_and_nothing_leaves ... ok
+test frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request ... ok
+test local_token_cost_defaults_to_zero_and_uses_owner_rates_when_set ... ok
+test a_session_continues_in_top_clearance_and_cannot_leave_it ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s

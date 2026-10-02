@@ -1,80 +1,37 @@
 # Duet
 
-### Frontier reasoning. Local secrets. Verifiable boundaries.
+### Frontier coding. Local sensitive data. An audit you can verify.
 
-**A coding agent built around a security boundary you can inspect.** A frontier model plans and writes code. A model you control handles sensitive content. Duet checks what may cross between them and records the outbound requests.
+**A coding agent for work you cannot casually send to the cloud.** Duet pairs a frontier coding model with a local model that handles sensitive content. The application checks what crosses the boundary, sandboxes tools, and records outbound requests for inspection.
 
-For engineers working with customer records, credentials and proprietary code—and the security teams who need to know what their AI tools disclose.
+From the creator of [mlxtop](https://github.com/maximpri/mlxtop), built with Duet.
 
-[Try it](#try-it) · [Security design and proof](docs/SECURE_BY_DESIGN.md) · [Watch the dogfood run](docs/launch/DEMO.md) · [Measured results](docs/VALUE_EVIDENCE.md) · [Threat model](SECURITY.md)
+[Try it](#try-it) · [Watch the real run](docs/launch/FRESH_DOGFOOD.md) · [Inspect the security design](docs/SECURE_BY_DESIGN.md) · [Evaluate for your organization](docs/INSTITUTIONAL_EVALUATION.md)
 
-![Actual Duet TUI: a synthetic billing repair, privacy decisions and the resulting code change; edited highlights from a real recorded session](docs/assets/launch/duet-privacy.gif)
+![Real Duet terminal: fixing a billing bug, inspecting the privacy decision and the outbound record](docs/assets/launch/duet-boundary.gif)
 
-*Real TUI, real model calls, fictional customer data. Highlights are shortened; [run IDs, original recordings, audit records and reproduction steps](docs/launch/DEMO.md) are included. This capture uses an owner-configured model on a LAN host; see the transport limitation there.*
+*Actual model calls and TUI output; fictional customer data. Edited highlights from a fresh dogfood run: **4/4 tests passed**, **0 matches for 13 planted values in 5 recorded frontier requests**. Local inference used an owner-controlled LAN endpoint. [Original recording, checks, transport limits and reproduction](docs/launch/FRESH_DOGFOOD.md).*
 
-> **Development preview.** No independent audit or certification. Hybrid mode sends open code and checked context to a cloud provider. Detection and local summaries have limits. Use top clearance with an approved local endpoint when no frontier disclosure is acceptable.
+## Give the model the problem. Control the context.
 
-## The model fixing your code does not need your customer records
+A billing bug needs the schema and failing tests. It does not need your customers' names or account balances. An integration can often work from an interface without seeing the proprietary implementation.
 
-A billing bug needs column names, value formats and failing tests. A database integration needs to know where a connection setting is used. A caller of your proprietary pricing engine may need its interface.
+Duet is designed to make that separation practical:
 
-Duet separates those needs from the underlying values:
-
-| Inside your trusted environment | What the frontier may receive |
+| What you need | What Duet does |
 | --- | --- |
-| Credentials and detected secrets | Placeholders, resolved locally when appropriate |
-| Sensitive CSVs, databases and data files | Handles, structure, synthetic examples and checked local answers |
-| Sensitive logs | Sanitized diagnostics, structure and checked local summaries; see the [remaining limits](SECURITY.md#what-is-not-protected) |
-| Source marked interface-only | Signatures and types; implementation withheld |
-| Source marked sealed | Existence only |
+| **Capable coding** | A frontier model plans, edits open code and runs checks; diffs and results stay visible in the terminal |
+| **Local handling of sensitive content** | Sensitive files become references, structure and checked local answers; detected credentials become placeholders |
+| **Control over proprietary code** | Mark source interface-only or sealed to limit what the frontier sees |
+| **Enforcement outside the model** | Outbound checks, OS tool isolation and owner policy constrain model and repository instructions |
+| **Detailed audit logs** | Inspect prepared requests, endpoint/model, timestamps, hashes and boundary events; verify the chain against an external local anchor |
+| **A workflow with no frontier** | Top clearance uses the configured local model and disables frontier calls, web tools and command networking |
 
-```mermaid
-flowchart LR
-    subgraph Local[Your trusted environment]
-      Repo[Repository and sensitive data] --> Boundary[Classification and privacy engine]
-      Boundary <--> Reader[Local model · no agent tools in hybrid]
-      Boundary --> Gate[Outbound filter and final check]
-      Gate --> Audit[Hash-chained audit · external anchor]
-    end
-    Gate -->|Approved context| Frontier[Frontier model]
-    Frontier -->|Plans and tool requests| Boundary
-```
-
-**Local means an endpoint you control and trust.** Loopback keeps model traffic on the workstation. A self-hosted server adds that host and network path to the trust boundary; use TLS or an SSH tunnel. Open code, file structure and some semantic information are still disclosed in hybrid mode.
-
-## Secure by design, with evidence
-
-The model is not responsible for enforcing its own permissions.
-
-| Control | How it is enforced | Inspect the proof |
-| --- | --- | --- |
-| **A checked outbound boundary** | Frontier requests pass filtering and a final check; uncleared content is withheld or the request fails | [Gate and transport tests](docs/SECURE_BY_DESIGN.md#1-outbound-requests-have-one-checked-path) |
-| **Tools cannot simply read around it** | OS sandbox denies ordinary commands sensitive paths, `.git`, Duet state and credential stores | [Command isolation tests](docs/SECURE_BY_DESIGN.md#2-tool-permissions-live-outside-the-model) |
-| **Local answers are untrusted too** | Copied spans, encoded values and repeated extraction probes are checked | [Adversarial scenarios](crates/duet-cli/tests/privacy_scenarios.rs) |
-| **Repository instructions cannot grant privileges** | Project settings can tighten owner policy; they cannot set endpoints or loosen it | [Configuration and policy tests](docs/SECURE_BY_DESIGN.md#3-the-repository-cannot-promote-its-own-permissions) |
-| **A record you can verify** | Request bodies and decisions enter a hash chain, anchored outside the repository | [Live audit and tamper demonstration](docs/launch/DEMO.md) |
-| **A mode with no frontier** | Top clearance uses the configured local model; web and command networking are disabled | [Mode tests and live capture](docs/SECURE_BY_DESIGN.md#5-top-clearance-removes-the-frontier) |
-
-Our launch dogfood found disclosure gaps in a diagnostic preview and a local summary. We retained the failed audit, reproduced it in a transport-level test, fixed those paths, and reran the task. [Read the before/after evidence](docs/launch/DEMO.md#what-the-first-run-found). Security claims should survive inspection.
-
-## What the measurements say
-
-The frozen development comparison used **18 paired runs per lane**, the same frontier model (`glm-5.3-flash`), six tasks and three seeds. Duet hybrid used local Qwen 3.8 27B; the comparison was the same agent with the privacy boundary disabled.
-
-| Measure | Duet hybrid | Passthrough |
-| --- | ---: | ---: |
-| Planted canary occurrences in outbound traffic | **0** | 3,720 |
-| Hidden tests passed | **98.3%** | 97.5% |
-| Mean modeled total cost | $0.02565 | $0.01892 |
-| Mean wall time | 539 seconds | 259 seconds |
-
-That is quality retention on this suite at **1.36× modeled cost and 2.08× time**. The first XL batch missed its quality target. Zero observed canaries is not proof against every disclosure; the new dogfood failure illustrates why. These are project-run measurements, not an independent audit or a comparison against every coding agent. [Methods, failed results, later fixes and accounting limits](docs/VALUE_EVIDENCE.md).
-
-**Frontier-level results at a fraction of the cost remain the goal.** The current paired privacy benchmark does not establish cost savings. Software has no license fee; inference, hardware, electricity and operations still have costs.
+**Hybrid sends open code and checked context to your frontier provider.** Classification and summaries have limits. “Local” means your configured, trusted endpoint: loopback for same-device inference, or a secured self-hosted server. Duet is a development preview; the [threat model](SECURITY.md) defines what it protects and what it does not.
 
 ## Try it
 
-Development source build for macOS or Linux; Rust 1.90+, Cargo and Git required. Linux command isolation requires bubblewrap and seccomp support. No published release binary yet.
+Source build for **macOS or Linux**, with Rust 1.90+, Cargo and Git. Linux command isolation requires bubblewrap and seccomp support. Start an approved local model server and configure a frontier provider key using the [model setup guide](docs/USAGE.md#models). No published release binary yet.
 
 ```sh
 git clone https://github.com/maximpri/duet.git
@@ -85,49 +42,63 @@ duet setup
 duet doctor
 ```
 
-Start your local model server and set your chosen frontier provider's API key in its documented environment variable before `duet setup`. Setup discovers models and shows the configuration before saving. [Providers, endpoint configuration and prerequisites](docs/USAGE.md#models).
+Open your repository and give Duet a task:
 
 ```sh
-duet                                         # interactive workspace
-duet --check 'cargo test --offline'           # require tests before finish
-duet run "Fix the failing billing export"     # one task
-duet audit show <run-id>                      # inspect outbound request records
-duet audit verify <run-id>                    # verify chain and external anchor
-duet audit disclosure <run-id>                # disclosure counts by class
+duet --check 'python3 -m unittest -v'
+# Or run a single task:
+duet run --check 'cargo test --offline' 'Fix the failing export'
 ```
 
-Start with the [reproducible fictional billing task](docs/launch/DEMO.md#reproduce-the-task). For work that must not go to a frontier provider:
+For a first trial, use the [fictional billing repository](docs/launch/DEMO.md#reproduce-the-task). Watch the fix in **Changes**, switch to **Privacy** with **Tab**, and press **Ctrl-O** to inspect the selected record. [Full usage guide](docs/USAGE.md).
+
+For repositories that allow no frontier disclosure:
 
 ```sh
 duet --mode top-clearance
-# Or require this mode for a repository:
+# Require this mode for the repository:
 duet config set --project clearance.required top
 ```
 
-Top clearance still contacts your configured local endpoint. Its coding quality depends on that model; it does not inherit frontier quality. The operating environment and endpoint must satisfy your organization's requirements.
+This mode still contacts the configured local endpoint. Coding quality depends on that model. [Watch the separate real top-clearance run](docs/launch/DEMO.md#a-separate-top-clearance-task).
 
-## A terminal you can work in
+## See what left. Verify the record.
 
-![Real Duet TUI after the billing fix, with the changes panel](docs/assets/launch/duet-changes.png)
+```sh
+duet audit show <run-id>
+duet audit verify <run-id>
+duet audit disclosure <run-id>
+```
 
-Streamed conversation, code diffs, selectable privacy decisions, exact outbound records and session budgets live together. **Tab** changes panels; **Ctrl-O** opens a privacy record; **F4** opens commands. Goals, saved sessions, attachments, skills, MCP and Git follow the agent's boundary. [Complete usage guide](docs/USAGE.md) · [Extension model](docs/EXTENSIONS.md).
+![Actual TUI audit inspection and CLI verification: the original matches its anchor; a modified copy is rejected](docs/assets/launch/duet-audit.gif)
 
-## Evaluating Duet for a bank or government team
+The audit records the prepared outbound body and security decisions. Image payloads are represented by digests. The hash chain and owner-state anchor expose changes to the saved record; they do not prove the content was safe or that the provider received it. Logs can themselves hold sensitive content and need protected storage. [Audit fields, custody and verification](docs/INSTITUTIONAL_EVALUATION.md#what-the-audit-actually-records).
 
-Start with a synthetic pilot and review the actual data flows. The [security evidence guide](docs/SECURE_BY_DESIGN.md) maps controls to code and tests and identifies work still needed for an institutional deployment: independent assessment, managed endpoints and policy, durable audit collection, retention, incident response and release provenance.
+Our first launch dogfood **passed its coding tests and failed its privacy check**. We kept both failed audits, fixed the diagnostic-preview and local-summary paths, and reran the task. [Inspect the failure, regression tests and successful rerun](docs/launch/DEMO.md#what-the-first-run-found).
 
-Duet does not currently claim regulatory approval, bank certification, universal data residency, or to be the “most secure” coding agent. A compromised host, unrecognized sensitive content and meaning conveyed by summaries remain risks. [Full threat model](SECURITY.md).
+## Quality and cost, measured
 
-## Why I’m building it
+The frozen development comparison used the same frontier model (`glm-5.3-flash`), six tasks and three paired seeds: **18 runs per lane**. Hybrid used local Qwen 3.8 27B; passthrough used the same agent with the privacy boundary disabled.
 
-Created by **Maxim Priezjev, former Senior Managing Architect at TD Bank**, and creator of [mlxtop](https://github.com/maximpri/mlxtop). Duet is an independent personal project; the former role does not imply TD Bank endorsement or use.
+| Measure | Duet hybrid | Passthrough |
+| --- | ---: | ---: |
+| Planted canary occurrences in outbound traffic | **0** | 3,720 |
+| Hidden tests passed | **98.3%** | 97.5% |
+| Mean modeled total cost | $0.02565 | $0.01892 |
+| Mean wall time | 539 s | 259 s |
 
-The aim is practical: let engineers use capable coding models while giving security teams inspectable control over what those models receive.
+Similar task results on this suite, at **1.36× cost and 2.08× time**. The initial harder XL batch missed the quality goal. These are project-run measurements with accounting limits, not universal frontier parity. [Methods, failures and later fixes](docs/VALUE_EVIDENCE.md).
 
-## Help make the boundary stronger
+**Frontier-level results at a fraction of the cost are the goal.** The current privacy benchmark does not demonstrate savings. The [next comparison protocol](docs/launch/COST_QUALITY_PLAN.md) defines the quality, privacy and total-cost evidence needed to earn that claim.
 
-Try a fictional-data task. Inspect the outbound audit. Share a reproducible failure or help build a missing platform check. [Report non-sensitive bugs](https://github.com/maximpri/duet/issues); follow [the security policy](SECURITY.md#reporting-a-vulnerability) for disclosure paths. A working private reporting contact is a [public-launch prerequisite](docs/launch/CAMPAIGN.md#before-a-broad-launch).
+## Built for scrutiny
 
-If this is a tool you want to follow, star the repository.
+If you build software for a bank, government department or another organization handling confidential data, start with a question your team can test: **what is this agent allowed to disclose, and how would we know if it did?**
 
-[GPL-3.0-or-later](LICENSE) · [Architecture](ARCHITECTURE.md) · [Acceptance gates](docs/ACCEPTANCE.md) · [Development plan](docs/PLAN.md)
+The [institutional evaluation guide](docs/INSTITUTIONAL_EVALUATION.md) provides a synthetic pilot, a control-to-evidence map and the remaining deployment work: managed identity and policy, secured endpoints, external audit custody, release provenance and independent assessment. Duet does not yet claim certification, institutional approval or comparative “most secure” status.
+
+Try the fixture. Inspect the requests. Contribute a reproducible test that makes the boundary stronger. [Non-sensitive issues](https://github.com/maximpri/duet/issues) · [Security reporting status](SECURITY.md#reporting-a-vulnerability) · [Contributing](CONTRIBUTING.md).
+
+If this is a tool you want to use, **star Duet to follow its development**.
+
+[GPL-3.0-or-later](LICENSE) · [Architecture](ARCHITECTURE.md) · [Extensions](docs/EXTENSIONS.md) · [Measured evidence](docs/VALUE_EVIDENCE.md) · [Development plan](docs/PLAN.md)

@@ -9,7 +9,7 @@ every security rule in detail: [SECURITY.md](../SECURITY.md).
 ```sh
 duet                            # the workspace: code in a conversation (hybrid mode by default)
 duet "fix the failing export"   # the same, with the first message given
-duet --mode top-clearance       # only the local model works; nothing leaves this machine
+duet --mode top-clearance       # configured local model only; no frontier
 duet --resume                   # continue the most recent open session (or --resume <id>)
 duet --goal "fix and verify the export" --check 'cargo test'  # keep working within budgets
 duet history                    # recent sessions and runs, with resume commands
@@ -95,9 +95,11 @@ headless browser. A parse check alone does not establish that the game meets its
 checks use local command time and the run's finish-attempt budget without a separate model reviewer;
 failures can add frontier repair turns and cost.
 
-**Top clearance.** For work whose content may not leave the machine at all, `--mode
+**Top clearance.** For work whose content may not reach a frontier provider, `--mode
 top-clearance` (in a session, `/mode top-clearance`) has the local model do everything: it reads,
-decides and writes the code, and nothing leaves this machine but its requests to the local model.
+decides and writes the code. Requests go to the configured local endpoint, which may be a
+self-hosted server. Use an approved loopback endpoint for same-device inference; a remote endpoint
+adds that server and its transport to the trusted environment.
 There is no frontier; the web tools are not offered; commands get no network whatever
 `sandbox.network` says (no egress proxy, no package registries: dependencies must already be on
 disk); MCP servers reached over HTTP or with `network = true` are not started; sub-agents use the

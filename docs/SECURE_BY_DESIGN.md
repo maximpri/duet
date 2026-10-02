@@ -71,6 +71,8 @@ duet audit disclosure <run-id>
 - New observation: [live verification and deliberate corruption of a copy](launch/DEMO.md).
 - Limits: the record is not an acknowledgement from the provider. Someone controlling both log and anchor can rewrite both. Local transcripts/handles can contain sensitive content; top-clearance audit bodies can contain raw requests to the local model. A disclosure bug can also leave sensitive content in a hybrid audit. Protect storage, backups and access. Tamper evidence is not encryption or an immutable external archive. A session's disclosure report can lack per-result counts when no run `summary.json` exists; do not mistake that for a zero.
 
+See the [detailed institutional evaluation guide](INSTITUTIONAL_EVALUATION.md) for actual audit fields, a synthetic pilot and a control-to-evidence map.
+
 ## An institutional evaluation path
 
 These are engineering evaluation suggestions, not a compliance determination. Canadian banking guidance makes classification, protection and security logging useful evaluation dimensions; it does not approve Duet. See [OSFI B-13](https://www.osfi-bsif.gc.ca/en/guidance/guidance-library/technology-cyber-risk-management). The Cyber Centre recommends avoiding sensitive corporate information in generative-AI prompts and managing deployment risks; see [ITSAP.00.041](https://www.cyber.gc.ca/en/guidance/generative-artificial-intelligence-ai-itsap00041). The [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) provides a broader risk-management reference, not a product certification.

@@ -1,90 +1,93 @@
-# LinkedIn drafts
+# LinkedIn launch drafts
 
-Drafts for Maxim's review. Use the native MP4 clips from `docs/assets/launch/`; the GitHub GIF is also included. Publish only when the linked revision and evidence are public and the campaign's release prerequisites are met. No post or outreach has been sent.
+Drafts for the author's review and personal use; nothing has been posted. Publish against a reviewed public revision so every evidence link works. The primary post continues the actual mlxtop conversation without repeating private analytics as verified facts.
 
-The former TD Bank role is owner-supplied. These drafts describe an independent personal project and imply neither TD Bank endorsement nor an institutional deployment.
+## 1. Launch: the coding agent behind mlxtop
 
-## 1. Founder launch — recommended first post
+**Attachment:** [duet-boundary.mp4](../assets/launch/duet-boundary.mp4). Cover: [fresh privacy panel](../assets/launch/duet-fresh-privacy.png).
 
-**Attachment:** `duet-privacy.mp4`.
+The coding agent behind mlxtop has a question for your security team:
 
-My mlxtop post reached 50,000 impressions. The project reached 90 GitHub stars.
+What did the model actually see?
 
-Here’s the coding agent behind it: Duet.
+I built Duet for engineering work that involves customer records, credentials and proprietary code.
 
-I’m a former Senior Managing Architect at TD Bank. The question I want a coding agent to answer is simple:
+Two models. Different access.
 
-What, exactly, did you send outside my environment?
+A frontier model handles coding. A local model handles sensitive content. Duet checks the information crossing between them, sandboxes tools and records outbound requests.
 
-Duet is built around that question.
+The clip is a real terminal run on fictional billing data:
 
-A frontier model plans and writes code. A model you control handles sensitive content. The host enforces the boundary: classification, sandboxed tools, checked outbound requests and an audit trail you can inspect.
+→ Fix the bug and pass the tests.
+→ Open the privacy decision.
+→ Inspect the prepared outbound text.
+→ Verify the audit.
 
-In the clip, Duet fixes a billing bug using fictional customer data. You can follow the privacy decision, inspect the code change and verify the outbound audit.
+Four tests passed. A separate checker found zero matches for 13 planted values across five recorded frontier requests. The recording, original requests and checker are in the repository. Local inference in this demo ran on my configured LAN server.
 
-That run passed all four task tests. A separate checker found zero matches for 13 complete planted values across four recorded frontier requests. The check's scope and original records are public with the demo.
+If a repository permits no frontier at all, top clearance uses only the approved local endpoint.
 
-There’s also a top-clearance mode: the configured local model does the work, with no frontier, web tools or command networking.
+Duet is a development preview. The goal is frontier-quality work with less disclosure and lower cost. Today's paired privacy benchmark retains similar task results but costs more; I publish that tradeoff too.
 
-This is a development preview. The current paired privacy benchmark retained similar task results but cost more. Lower cost remains a goal. The security evidence includes a leak our own dogfood found, its fix and the rerun.
-
-Code, demo and reproducible evidence:
+Try the fictional-data task and inspect the boundary:
 https://github.com/maximpri/duet
 
-If you evaluate coding agents for sensitive repositories, what evidence would you need before trying one?
+For teams evaluating coding agents: which evidence is hardest to obtain today—data flow, tool permissions or audit history?
 
-## 2. Engineering follow-up — publish the failure and fix
+## 2. Follow-up: the failure that improved the boundary
 
-**Attachment:** `duet-audit.mp4`, plus a direct link to the final published demo evidence.
+**Attachment:** [duet-audit.mp4](../assets/launch/duet-audit.mp4). This older recording is labelled separately in the evidence packet.
 
-Our coding-agent launch demo passed its tests.
+Our coding-agent demo passed every coding test.
 
-Then we checked what it sent to the model.
+Its privacy check failed.
 
-A diagnostic preview had exposed fictional customer values. An email ending in `.invalid` was enough to make a CSV row look like an error line. The detector removed the name but left an arbitrary customer ID, email and amount.
+While dogfooding Duet, we found a diagnostic preview that exposed fictional customer values. An email ending in .invalid made a CSV row look like an error message. Removing the name still left the ID, email and amount.
 
-The code fix worked. The privacy check failed.
+The next run found a second path: the local model copied short amounts into its summary.
 
-We preserved the failed audit, reproduced the disclosure in a test that records the frontier's requests, and removed that preview path for non-log sensitive files. The next run caught another gap: the local summary quoted exact amounts. We added a structured-value check too, then reran the task against the same canaries.
+We retained both failed audits, added regression tests, fixed both paths and reran the task. The complete-value checker then found zero matches. The limits of that check are documented alongside the records.
 
-That’s the standard I want for Duet: a security claim with an implementation, a test and evidence someone else can inspect.
+One lesson matters for anyone buying or building coding agents:
 
-A hash chain makes a record tamper-evident. It doesn’t make the recorded content safe. You have to inspect both.
+An intact audit log can faithfully record a disclosure.
 
-The before/after evidence and limits are in the repo:
+Verify the chain. Inspect the content. Test the boundary independently.
+
+Here are the failures, fixes and real terminal recordings:
 https://github.com/maximpri/duet/blob/main/docs/launch/DEMO.md
 
-What other paths would you test—tool output, local summaries, plugins, or derived files?
+I'm interested in synthetic cases that challenge this design, especially inference from summaries and repeated extraction attempts. Live vulnerabilities should go through the verified private reporting route once it is established.
 
-## 3. Institutional evaluation — after release blockers are closed
+## 3. Evaluation: a concrete packet for security teams
 
-**Attachment:** `duet-privacy.png` or a readable audit screenshot. Use a still when the relevant text is too small in video.
+**Attachment:** [fresh audit screenshot](../assets/launch/duet-fresh-audit.png).
 
-“Secure by design” should come with something an evaluator can inspect.
+Before a coding agent touches a sensitive repository, I want answers to five questions:
 
-I’m building Duet with a specific split: a frontier model handles coding decisions; a model you control handles sensitive content; the host checks the boundary.
+1. Which model can see which data?
+2. Can tools bypass that decision?
+3. Can repository instructions weaken policy?
+4. Can we inspect and verify the outbound record?
+5. What happens when cloud disclosure is prohibited?
 
-As a former Senior Managing Architect at TD Bank, I want the evaluation to start with concrete questions:
+Duet's evaluation guide maps those questions to code, tests and actual dogfood evidence. It includes a synthetic pilot and identifies the operational work still needed: managed policy and identity, approved endpoints, protected audit custody, release provenance and independent assessment.
 
-• Which content can reach a provider?
-• Can a command or plugin bypass that decision?
-• Can repository instructions weaken policy?
-• What record exists of the outbound requests?
-• What changes when the repository permits no frontier at all?
+The design pairs frontier coding with local handling of sensitive content. Top clearance removes the frontier when that is the required policy.
 
-Duet’s evidence guide links those questions to the code, adversarial tests and actual dogfood runs. It also names what is still missing for an institutional deployment, including independent assessment and managed audit custody.
+This is an independent project in development, not a claim of bank certification or government approval.
 
-This is an independent project in development. It is not bank-certified, government-approved or a substitute for an organization’s own assessment.
+The evaluation packet:
+https://github.com/maximpri/duet/blob/main/docs/INSTITUTIONAL_EVALUATION.md
 
-If you are evaluating this problem, the synthetic pilot and threat model are here:
-https://github.com/maximpri/duet
+If you own developer tooling or security review, try the synthetic task and tell me where the evidence falls short.
 
-## Editorial notes
+## Publishing notes
 
-- Keep “secure by design” tied to mechanisms, not “unhackable,” “zero risk” or “most secure.”
-- The first post uses the owner's mlxtop figures; do not call those Duet adoption metrics.
-- Do not reuse the older 64%-savings article as evidence for this architecture. See the research note.
-- The LAN endpoint limitation must stay in the linked demo and caption. It is not a same-device demonstration.
-- Links above assume the work is merged into `main`; update them to the actual public release before posting.
-- Add video alt/context text: “Actual Duet terminal run with fictional billing data. Privacy panel shows handling; acceptance tests pass. The linked audit records and canary check give the evidence.”
-- Answer comments personally. Do not script engagement, request coordinated likes or gate the repo link behind a comment.
+- Use the native MP4 and a plain-text description. The GitHub GIF is an alternative, not evidence of real-time duration.
+- Suggested media description: “Actual Duet terminal with fictional billing data. The agent fixes a status check; the operator inspects filtered context and verifies the audit. Pauses are cut. The linked packet contains the original request log and test results.”
+- Put the repository link in the body. We found no primary evidence requiring a first-comment link or promising a reach multiplier.
+- Use no more than a few directly relevant hashtags if desired; their effect is an experiment, not a guarantee. Do not gate access behind comments or script responses.
+- Answer the existing public interest in Duet's architecture with substantive follow-up content. Contacting or replying to anyone is a separate owner action; no outreach has been sent.
+- The earlier launch brief contains private impression/star figures and a former banking title. These drafts do not depend on them. Verify any personal credential or private metric before adding it.
+- Recheck community/product readiness and replace future `main` links if publishing a different reviewed revision.
