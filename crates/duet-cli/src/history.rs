@@ -430,11 +430,10 @@ fn read_record(
                 record.status = match end["state"].as_str().unwrap_or("") {
                     "completed" if session => "Closed",
                     "completed" => "Completed",
+                    "open" => "Open",
                     "budget_stopped" => "Budget limit reached",
                     "failed"
-                        if end["reason"]
-                            .as_str()
-                            .is_some_and(|s| s.contains("session left open")) =>
+                        if end["reason"].as_str() == Some(duet_agent::session::SESSION_LEFT) =>
                     {
                         "Open"
                     }
@@ -709,6 +708,48 @@ mod tests {
         let ws = tempfile::tempdir().unwrap();
         assert!(summary(ws.path()).unwrap().contains("Start one with duet"));
         assert!(!ws.path().join(".duet").exists());
+    }
+
+    #[test]
+    fn open_sessions_and_exact_legacy_exits_are_resumable_without_hiding_real_failures() {
+        let ws = tempfile::tempdir().unwrap();
+        for (id, terminal, expected) in [
+            (
+                "open-session",
+                json!({"state":"open","reason":duet_agent::session::SESSION_LEFT}),
+                "Open",
+            ),
+            (
+                "legacy-session",
+                json!({"state":"failed","reason":duet_agent::session::SESSION_LEFT}),
+                "Open",
+            ),
+            (
+                "failed-session",
+                json!({"state":"failed","reason":format!("save failed: {}", duet_agent::session::SESSION_LEFT)}),
+                "Failed",
+            ),
+        ] {
+            let dir = saved(
+                ws.path(),
+                id,
+                json!({"session":true,"objective":"Test task"}),
+                &[
+                    json!({"kind":"turn_start","exchange":1,"message":"Test task"}),
+                    json!({"kind":"item","item":{"type":"user","text":"Test task"}}),
+                    json!({"kind":"turn_end","end":{"state":"interrupted"}}),
+                    json!({"kind":"end","terminal":terminal}),
+                ],
+            );
+            let before = std::fs::read(dir.join("transcript.jsonl")).unwrap();
+            let record = read(ws.path(), id);
+            assert_eq!(record.status, expected);
+            assert_eq!(
+                record.resume_command.as_deref(),
+                Some(format!("duet --resume {id}").as_str())
+            );
+            assert_eq!(std::fs::read(dir.join("transcript.jsonl")).unwrap(), before);
+        }
     }
 
     #[test]

@@ -745,11 +745,7 @@ async fn execute(
         },
     )?;
     println!("{}", serde_json::to_string_pretty(&summary)?);
-    Ok(match terminal {
-        Terminal::Completed { .. } => 0,
-        Terminal::Failed { .. } => 1,
-        Terminal::BudgetStopped { .. } => 3,
-    })
+    Ok(terminal.exit_code())
 }
 
 /// Sets the run up and drives it to a terminal state. `audit` receives the

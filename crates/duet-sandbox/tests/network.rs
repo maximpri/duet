@@ -228,6 +228,31 @@ async fn without_network_a_command_reaches_not_even_the_proxy() {
 }
 
 #[tokio::test]
+async fn a_long_lived_server_cannot_start_with_a_proxy_route() {
+    let (_d, ws) = workspace();
+    let (network, seen) = stand_in().await;
+    let s = spec(&ws, network);
+    let argv = [
+        "/bin/sh".into(),
+        "-c".into(),
+        "echo started > server-started; curl -sS -m 3 http://registry.example/secret".into(),
+    ];
+    let err = match duet_sandbox::spawn(KIND, &s, &argv, &ws).await {
+        Err(err) => err,
+        Ok(mut process) => {
+            process.stop(Duration::from_secs(1)).await;
+            panic!("a server started with the egress proxy route");
+        }
+    };
+    assert!(
+        err.to_string()
+            .contains("server process cannot use the egress proxy")
+    );
+    assert!(!ws.join("server-started").exists());
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn unix_sockets_stay_unreachable_with_the_proxy_route() {
     let (_d, ws) = workspace();
     let path = ws.join("engine.sock");

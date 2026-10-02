@@ -290,8 +290,42 @@ fn said(shown: &str, image: &Image, route: Route) -> Result<String, String> {
 gets the description",
             image.describe()
         )),
-        Route::Refuse { message, .. } => Err(format!("{shown} cannot be attached: {message}")),
+        Route::Refuse { rule, message } => Err(format!(
+            "{shown} cannot be attached: {message}. {}",
+            refusal_help(rule)
+        )),
     }
+}
+
+/// A routing refusal happens before a content handle is stored. In particular,
+/// `ask_local` cannot recover a refused image by accepting its file path.
+fn refusal_help(rule: &str) -> String {
+    let next = match rule {
+        "protected_path" => {
+            "This path's policy blocks image inspection; explain that limit to the operator."
+        }
+        "sensitive_path" => {
+            "The operator can configure a local vision-capable model with local.vision enabled, \
+then attach the image without --public. Sensitive-path images cannot be sent to the frontier."
+        }
+        "no_frontier_vision" => {
+            "Ask the operator to select a frontier model that supports images and verify \
+frontier.vision before retrying."
+        }
+        "no_local_vision" | "no_vision" => {
+            "Ask the operator to configure a local vision-capable model with local.vision enabled, \
+then retry the image read. Alternatively, only the operator may approve an image with no sensitive \
+content using /image --public PATH in a session or duet run --image-public PATH for a new run; \
+this needs a vision-capable frontier with frontier.vision enabled and never overrides sensitive \
+or protected paths."
+        }
+        _ => "Ask the operator to resolve the stated image restriction before retrying.",
+    };
+    format!(
+        "No content handle was created by this refusal. ask_local cannot inspect this path; \
+it requires a handle returned by a successful read. Do not invent a handle or change image \
+permissions to bypass the refusal. {next}"
+    )
 }
 
 /// The attachment's origin and bytes. A path inside the workspace is that
@@ -491,8 +525,11 @@ fn place(
             destination,
             bytes,
         },
-        Route::Refuse { message, .. } => Placed {
-            text: Err(format!("{shown} is an image and was not shown: {message}")),
+        Route::Refuse { rule, message } => Placed {
+            text: Err(format!(
+                "{shown} is an image and was not shown: {message}. {}",
+                refusal_help(rule)
+            )),
             images: Vec::new(),
             destination,
             bytes,
@@ -562,6 +599,80 @@ mod tests {
             DEFAULT_MAX_SIDE,
             attachment,
         )
+    }
+
+    #[test]
+    fn refused_image_reads_explain_handles_and_preserve_privacy() {
+        let (_directory, cfg, png) = fixture();
+        std::fs::create_dir_all(cfg.workspace.join("docs")).unwrap();
+        std::fs::write(cfg.workspace.join("docs/ui.png"), &png).unwrap();
+        let (local, received) = duet_boundary::testing::scripted_local(Vec::new());
+        let engine = Engine::open(&cfg.run_dir, Policy::default(), Some(local)).unwrap();
+        let args = serde_json::json!({"path": "docs/ui.png"});
+        let placed = read(&cfg, engine.as_ref(), None, args.as_object().unwrap());
+        assert_eq!(placed.destination, Some("none"));
+        assert!(placed.images.is_empty());
+        let error = placed.text.unwrap_err();
+        for expected in [
+            "No content handle was created",
+            "ask_local cannot inspect this path",
+            "local vision-capable model",
+            "only the operator may approve",
+            "/image --public PATH",
+            "duet run --image-public PATH",
+            "never overrides sensitive or protected paths",
+        ] {
+            assert!(error.contains(expected), "{expected}: {error}");
+        }
+        assert!(
+            received.bodies().is_empty(),
+            "refusal must not call a model"
+        );
+        let ask = serde_json::json!({"handle": "h1", "question": "What is shown?"});
+        assert!(
+            engine
+                .call_tool("ask_local", ask.as_object().unwrap())
+                .unwrap()
+                .unwrap_err()
+                .contains("unknown handle")
+        );
+        let attachment = selected(cfg.workspace.join("docs/ui.png"), false);
+        for error in [
+            preflight(&cfg, &Policy::default(), &attachment).unwrap_err(),
+            check_attachment(&cfg, engine.as_ref(), &attachment).unwrap_err(),
+        ] {
+            assert!(error.contains("No content handle was created"));
+            assert!(error.contains("only the operator may approve"));
+        }
+    }
+
+    #[test]
+    fn protected_and_sensitive_refusals_do_not_offer_public_routing() {
+        let (_directory, cfg, png) = fixture();
+        let image = prepare_image(&png, DEFAULT_MAX_SIDE).unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["private/**".into()],
+            sealed: vec!["sealed/**".into()],
+            ..Policy::default()
+        };
+        let engine = Engine::open(&cfg.run_dir, policy, None).unwrap();
+        for path in ["private/ui.png", "sealed/ui.png"] {
+            let placed = place(
+                &cfg,
+                engine.as_ref(),
+                None,
+                &Origin::Workspace(path.into()),
+                image.clone(),
+                true,
+                true,
+            );
+            assert_eq!(placed.destination, Some("none"));
+            assert!(placed.images.is_empty());
+            let error = placed.text.unwrap_err();
+            assert!(error.contains("No content handle was created"));
+            assert!(!error.contains("/image --public"), "{error}");
+            assert!(!error.contains("duet run --image-public"), "{error}");
+        }
     }
 
     #[test]
@@ -683,18 +794,18 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn macos_temporary_aliases_are_readable_without_erasing_workspace_policy() {
-        for base in [std::env::temp_dir(), PathBuf::from("/private/tmp")] {
+        // Test the two macOS aliases themselves, independent of the caller's
+        // TMPDIR (which may point to another volume during a build).
+        for (base, physical, alias) in [
+            (PathBuf::from("/private/var/tmp"), "/private/var", "/var"),
+            (PathBuf::from("/private/tmp"), "/private/tmp", "/tmp"),
+        ] {
             let directory = tempfile::tempdir_in(base).unwrap();
             let root = directory.path().canonicalize().unwrap();
             let workspace = root.join("workspace");
             std::fs::create_dir_all(workspace.join("private")).unwrap();
             let cfg = RunConfig::new(&workspace, workspace.join(".duet/runs/images"), "Task");
             let png = solid_png(8, 8, [12, 34, 56]);
-            let (physical, alias) = if root.starts_with("/private/var") {
-                ("/private/var", "/var")
-            } else {
-                ("/private/tmp", "/tmp")
-            };
             let alias_root = Path::new(alias).join(root.strip_prefix(physical).unwrap());
             let actual = cfg.workspace.join("private/ui.png");
             std::fs::write(&actual, &png).unwrap();

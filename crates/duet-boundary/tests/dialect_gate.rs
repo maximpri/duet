@@ -6,11 +6,11 @@
 //! resend without it.
 
 use bytes::Bytes;
-use duet_boundary::OutboundGate;
 use duet_boundary::audit::{AuditLog, Line, read};
 use duet_boundary::engine::Engine;
 use duet_boundary::model::{Item, Request, ToolCall};
 use duet_boundary::policy::Policy;
+use duet_boundary::{OutboundCheck, OutboundGate};
 use duet_provider::client::{HttpReply, Transport};
 use duet_provider::types::{Part, Replay};
 use duet_provider::{ChatProvider, Dialect, ProviderConfig, ProviderError, Role};
@@ -218,6 +218,76 @@ async fn a_blocked_body_is_blocked_in_every_dialect() {
             "{dialect:?}: {err}"
         );
         assert!(script.sent().is_empty());
+    }
+}
+
+struct RejectImage {
+    digest: String,
+    seen: Arc<Mutex<Vec<Vec<String>>>>,
+}
+
+impl OutboundCheck for RejectImage {
+    fn name(&self) -> &'static str {
+        "image-policy"
+    }
+
+    fn check(&self, body: &Value) -> Result<(), String> {
+        assert!(!body.to_string().contains("data:image/"));
+        Ok(())
+    }
+
+    fn check_images(&self, digests: &[String]) -> Result<(), String> {
+        self.seen.lock().unwrap().push(digests.to_vec());
+        if digests.contains(&self.digest) {
+            Err("image is private".into())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_image_never_reaches_any_dialect_or_the_audit_log() {
+    let image =
+        duet_provider::image::prepare(&duet_provider::image::solid_png(16, 16, [9, 17, 25]), 64)
+            .unwrap();
+    let request = Request {
+        items: vec![
+            Item::User {
+                text: "Inspect this image".into(),
+            },
+            Item::Images {
+                call_id: None,
+                images: vec![image.clone()],
+            },
+        ],
+        ..Request::default()
+    };
+    for dialect in [Dialect::Chat, Dialect::Anthropic, Dialect::Responses] {
+        let d = tempfile::tempdir().unwrap();
+        let audit = d.path().join("audit.jsonl");
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let script = Script::new(vec![]);
+        let gated = OutboundGate::new(AuditLog::open(&audit).unwrap())
+            .with_check(Box::new(RejectImage {
+                digest: image.sha256.clone(),
+                seen: seen.clone(),
+            }))
+            .wrap(provider(dialect, &script));
+
+        let err = gated.create(&request).await.unwrap_err();
+        assert!(
+            matches!(err, duet_boundary::GateError::Blocked { .. }),
+            "{dialect:?}: {err}"
+        );
+        assert_eq!(*seen.lock().unwrap(), [vec![image.sha256.clone()]]);
+        assert!(script.sent().is_empty(), "{dialect:?}");
+        let lines = read(&audit).unwrap();
+        assert!(matches!(lines.as_slice(), [Line::Event(_)]), "{lines:?}");
+        let log = std::fs::read_to_string(&audit).unwrap();
+        assert!(log.contains("image-policy"), "{dialect:?}: {log}");
+        assert!(!log.contains(&image.sha256), "{dialect:?}: {log}");
+        assert!(!log.contains(&image.base64()), "{dialect:?}: {log}");
     }
 }
 

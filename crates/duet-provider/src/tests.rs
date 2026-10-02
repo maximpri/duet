@@ -738,6 +738,56 @@ async fn an_explicit_attempt_cap_is_honoured() {
     assert_eq!(e.kind, ErrorKind::Status(503));
 }
 
+#[tokio::test(start_paused = true)]
+async fn excessive_retry_after_cannot_panic_or_outlive_the_run_deadline() {
+    // Retry-After is controlled by the remote provider, including when an
+    // intermediary returns a rate-limit page. A huge valid integer must not
+    // overflow Duration arithmetic or prevent the run deadline from ending it.
+    let script = Script::new(vec![Scripted::Reply {
+        status: 429,
+        headers: vec![("retry-after".into(), u64::MAX.to_string())],
+        chunks: vec![Ok("rate limited")],
+    }]);
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+    let started = tokio::time::Instant::now();
+    cfg.deadline = Some(started + Duration::from_secs(10));
+    let err = ChatProvider::new(cfg, Box::new(script.clone()))
+        .unwrap()
+        .create(&request())
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Deadline);
+    assert_eq!(script.bodies.lock().unwrap().len(), 1);
+    assert_eq!(started.elapsed(), Duration::from_secs(10));
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_after_honours_ordinary_delays_and_bounds_extreme_unbudgeted_waits() {
+    for (header, expected) in [
+        ("120".to_owned(), Duration::from_secs(120)),
+        (u64::MAX.to_string(), Duration::from_secs(60 * 60)),
+    ] {
+        let script = Script::new(vec![
+            Scripted::Reply {
+                status: 429,
+                headers: vec![("retry-after".into(), header)],
+                chunks: vec![Ok("rate limited")],
+            },
+            ok(),
+        ]);
+        let cfg = ProviderConfig::new("https://frontier.example/v1", "m", Role::Frontier);
+        let started = tokio::time::Instant::now();
+        let response = ChatProvider::new(cfg, Box::new(script.clone()))
+            .unwrap()
+            .create(&request())
+            .await
+            .unwrap();
+        assert_eq!(response.attempts.attempts, 2);
+        assert_eq!(script.bodies.lock().unwrap().len(), 2);
+        assert_eq!(started.elapsed(), expected);
+    }
+}
+
 /// Fails every request the same way and counts them; `cancel_after` sets the
 /// cancel flag once that many requests were made.
 #[derive(Clone)]

@@ -297,10 +297,15 @@ impl Output {
     /// denied path is replaced by an empty file or directory that nobody may
     /// open, so the refusal is `EACCES` ("Permission denied").
     pub fn shows_denial(&self) -> bool {
-        let needle = DENIAL_MESSAGE.as_bytes();
-        [&self.stdout, &self.stderr]
-            .iter()
-            .any(|b| b.windows(needle.len()).any(|w| w == needle))
+        [&self.stdout, &self.stderr].iter().any(|bytes| {
+            ["operation not permitted", "permission denied"]
+                .iter()
+                .any(|message| {
+                    bytes
+                        .windows(message.len())
+                        .any(|window| window.eq_ignore_ascii_case(message.as_bytes()))
+                })
+        })
     }
 }
 
@@ -1475,6 +1480,37 @@ pub fn kill_tree(root: u32) {
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_denials_match_native_and_runtime_error_casing() {
+        let mut output = Output {
+            exit_code: Some(1),
+            timed_out: false,
+            interrupted: false,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            stdout_total: 0,
+            stderr_total: 0,
+            spilled_to: None,
+            removed_reserved: Vec::new(),
+            memory_kills: Vec::new(),
+            duration: Duration::ZERO,
+        };
+        for message in [
+            "Operation not permitted",
+            "Error: EPERM: operation not permitted, open '/tmp/maps.json'",
+            "Permission denied",
+            "permission denied (os error 13)",
+        ] {
+            output.stderr = message.as_bytes().to_vec();
+            assert!(output.shows_denial(), "{message}");
+            output.stdout = std::mem::take(&mut output.stderr);
+            assert!(output.shows_denial(), "stdout: {message}");
+            output.stdout.clear();
+        }
+        output.stderr = b"AssertionError: expected 4, got 3".to_vec();
+        assert!(!output.shows_denial());
+    }
 
     const KIND: SandboxKind = if cfg!(target_os = "linux") {
         SandboxKind::Bubblewrap

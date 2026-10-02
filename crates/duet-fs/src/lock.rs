@@ -14,6 +14,14 @@ pub struct WorkspaceLock {
     _file: File,
 }
 
+impl Drop for WorkspaceLock {
+    fn drop(&mut self) {
+        // Release the advisory lock before closing the descriptor. On macOS,
+        // close alone can leave a brief stale lock visible to another thread.
+        let _ = rustix::fs::flock(&self._file, FlockOperation::Unlock);
+    }
+}
+
 impl WorkspaceLock {
     pub fn acquire(workspace: &Path) -> Result<Self, FsError> {
         let dir = workspace.join(crate::registry::DUET_DIR);
@@ -48,6 +56,10 @@ mod tests {
             Err(FsError::Locked)
         ));
         drop(a);
-        assert!(WorkspaceLock::acquire(d.path()).is_ok());
+        let reacquired = WorkspaceLock::acquire(d.path());
+        assert!(
+            reacquired.is_ok(),
+            "lock stayed held after drop: {reacquired:?}"
+        );
     }
 }

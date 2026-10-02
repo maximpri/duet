@@ -1710,11 +1710,24 @@ the audit log.]",
         let inner = id.trim().trim_start_matches('⟨').trim_end_matches('⟩');
         match st.vault.value_of(&format!("⟨{inner}⟩")) {
             Some((_, entry)) => format!(
-                "unknown handle {id}: that placeholder stands for a value from {}; ask about the \
-handle of that content instead",
+                "unknown handle: that placeholder stands for a value from {}; use the exact \
+content handle ID returned when that content was read instead",
                 entry.origin
             ),
-            None => format!("unknown handle {id}"),
+            None => {
+                let path = id.contains(['/', '\\']) || Path::new(id).extension().is_some();
+                let why = if path {
+                    "a file path is not a content handle. "
+                } else {
+                    ""
+                };
+                format!(
+                    "unknown handle: {why}Use the exact hN ID returned by read_file or another \
+tool in this run. For a file, call read_file with its path first; use a handle only if that read \
+returns one. A refused read creates no handle: follow its diagnostic instead of retrying \
+ask_local. Do not invent IDs."
+                )
+            }
         }
     }
 
@@ -1760,11 +1773,12 @@ value; run_command with sensitive_data resolves placeholders in the command on t
             .get("handle")
             .and_then(Value::as_str)
             .ok_or("missing `handle`")?;
-        let (info, bytes) = self
-            .lock()
-            .handles
-            .get(id)
-            .ok_or_else(|| format!("unknown handle {id}"))?;
+        let (info, bytes) = {
+            let st = self.lock();
+            st.handles
+                .get(id)
+                .ok_or_else(|| Self::unknown_handle(&st, id))?
+        };
         if !info.public {
             return Err(format!(
                 "{id} holds sensitive content; use ask_local instead"
@@ -2704,6 +2718,46 @@ mod tests {
             path: PathBuf::from(path),
             ranged: false,
         }
+    }
+
+    #[test]
+    fn missing_handles_explain_recovery_without_echoing_paths_or_calling_a_model() {
+        let d = tempfile::tempdir().unwrap();
+        let (local, received) = crate::testing::scripted_local(Vec::new());
+        let mut policy = policy();
+        policy.structure.synthetic_rows = 1;
+        let e = Engine::open(d.path(), policy, Some(local)).unwrap();
+        for id in [
+            "private/incident-screenshot.png",
+            r"C:\private\incident-screenshot.png",
+            "incident-screenshot.png",
+            "h999999",
+            "arbitrary-private-canary",
+        ] {
+            let args = json!({"handle": id, "question": "What is shown?"});
+            for tool in ["ask_local", "read_raw", "synthetic_sample"] {
+                let error = e
+                    .call_tool(tool, args.as_object().unwrap())
+                    .unwrap()
+                    .unwrap_err();
+                assert!(!error.contains(id), "{error}");
+                assert!(error.contains("exact hN ID"), "{error}");
+                assert!(error.contains("read_file"), "{error}");
+                assert!(
+                    error.contains("A refused read creates no handle"),
+                    "{error}"
+                );
+                assert!(error.contains("Do not invent IDs"), "{error}");
+                if id.ends_with(".png") {
+                    assert!(
+                        error.contains("a file path is not a content handle"),
+                        "{error}"
+                    );
+                }
+            }
+        }
+        assert!(received.bodies().is_empty());
+        assert!(e.lock().handles.get("h1").is_none());
     }
 
     #[test]

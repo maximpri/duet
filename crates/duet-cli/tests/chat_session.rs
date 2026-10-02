@@ -599,7 +599,12 @@ fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
         &std::fs::read(e.ws.join(".duet/runs").join(&id).join("summary.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(summary["terminal"]["state"], "failed");
+    assert_eq!(summary["terminal"]["state"], "open");
+    let history = command(&e, &["history", &id, "--json"]).output().unwrap();
+    assert!(history.status.success(), "{}", text(&history));
+    let open_record: Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_eq!(open_record["status"], "Open");
+    assert_eq!(open_record["resume_command"], format!("duet --resume {id}"));
 
     // `duet resume` is for one-shot runs.
     let o = command(&e, &["resume", &id]).output().unwrap();
@@ -630,6 +635,11 @@ fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
     let (code, out) = chat.finish();
     assert_eq!(code, 0, "{out}");
     assert!(out.contains(&format!("session {id} closed")), "{out}");
+    let history = command(&e, &["history", &id, "--json"]).output().unwrap();
+    assert!(history.status.success(), "{}", text(&history));
+    let closed_record: Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_eq!(closed_record["status"], "Closed");
+    assert!(closed_record["resume_command"].is_null());
     assert!(
         !command(&e, &["--resume", &id])
             .output()

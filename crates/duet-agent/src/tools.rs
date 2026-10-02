@@ -126,14 +126,15 @@ repository: the files you wrote, compared with their content before the run).",
         ),
         t(
             "edit_file",
-            "Edit a file by exact text replacement. Each `old` must occur exactly once in the file. \
-All edits are applied together or not at all.",
+            "Edit one file by exact text replacement. Put `path` once at the top level; each item in \
+`edits` contains only `old` and `new`. Use separate calls for different files. Each `old` must occur \
+exactly once. Edits run in order and are applied together or not at all.",
             json!({"type": "object", "properties": {
                 "path": {"type": "string"},
                 "edits": {"type": "array", "minItems": 1, "items": {"type": "object", "properties": {
                     "old": {"type": "string", "description": "Exact existing text, including indentation."},
                     "new": {"type": "string"}
-                }, "required": ["old", "new"]}}
+                }, "required": ["old", "new"], "additionalProperties": false}}
             }, "required": ["path", "edits"]}),
         ),
         t(
@@ -164,13 +165,11 @@ All edits are applied together or not at all.",
     specs
 }
 
+mod command_guidance;
+
 /// `run_command`'s description for a run with `network`.
 pub(crate) fn run_command_description(network: &crate::egress::Network) -> String {
-    format!(
-        "Run a shell command in the repository root (sandboxed: {}, writes limited to the repository). \
-Returns the exit code and output.",
-        network.describe()
-    )
+    command_guidance::description(network)
 }
 
 pub async fn dispatch(ctx: &mut Ctx<'_>, name: &str, args: &Map<String, Value>) -> Outcome {
@@ -475,7 +474,9 @@ fn apply_edits_with(
         match text.matches(old).count() {
             1 => text = text.replacen(old, new, 1),
             0 => {
-                let hint = closest_line(&text, old);
+                // No staged edits reach disk on failure. Any re-read hint
+                // must therefore refer to the original, persisted file.
+                let hint = closest_line(original, old);
                 return Err(format!(
                     "edit {i}: `old` text not found; no edits applied.{hint}"
                 ));
@@ -512,13 +513,36 @@ fn closest_line(text: &str, needle: &str) -> String {
         .unwrap_or_default()
 }
 
-fn edit_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, String> {
-    let raw = string_arg(args, "path")?;
-    let rel = duet_fs::writable_relative(raw).map_err(fs_err)?;
+/// Reject ambiguous edit targets before reading a file or noting authored text.
+/// Per-edit paths are not a multi-file transaction and must never be ignored.
+fn edit_arguments(args: &Map<String, Value>) -> Result<(&str, &[Value]), String> {
+    let raw = string_arg(args, "path").map_err(|_| {
+        "edit_file requires a top-level string `path`: \
+{\"path\":\"file.ext\",\"edits\":[{\"old\":\"exact existing text\",\"new\":\"replacement\"}]}. \
+Each call edits one file; use separate calls for different files. No edits applied."
+            .to_owned()
+    })?;
     let edits = args
         .get("edits")
         .and_then(Value::as_array)
         .ok_or("missing array argument `edits`")?;
+    if edits.is_empty() {
+        return Err("`edits` must contain at least one replacement; no edits applied.".into());
+    }
+    for (i, edit) in edits.iter().enumerate() {
+        if edit.get("path").is_some() {
+            return Err(format!(
+                "edit {i}: put `path` once at the top level, not inside `edits`. \
+Each call edits one file; use separate calls for different files. No edits applied."
+            ));
+        }
+    }
+    Ok((raw, edits))
+}
+
+fn edit_file(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<String, String> {
+    let (raw, edits) = edit_arguments(args)?;
+    let rel = duet_fs::writable_relative(raw).map_err(fs_err)?;
     let bytes = duet_fs::read_file(ctx.workspace, &rel, MAX_READ_BYTES).map_err(fs_err)?;
     let original =
         String::from_utf8(bytes.clone()).map_err(|_| "file is not valid UTF-8".to_owned())?;
@@ -852,6 +876,10 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         }
     };
     let mut shown = ctx.presenter.present(&source, &render_output(&o));
+    // Never reveal even a failure category from a local-only command.
+    if !sensitive_data {
+        command_guidance::append_recovery(&mut shown, command, ctx.network, &o);
+    }
     // A command that tried to use `.git` is pointed at the git tools, or,
     // outside a repository, told that duet tracks the changes itself.
     if GIT_WORD.is_match(command)
@@ -1040,6 +1068,62 @@ mod tests {
         assert!(missing.unwrap_err().contains("not found"));
         let dup = apply_edits("x\nx\n", &[json!({"old": "x", "new": "y"})]);
         assert!(dup.unwrap_err().contains("2 times"));
+    }
+
+    #[test]
+    fn edit_arguments_require_one_explicit_file_and_a_nonempty_batch() {
+        // A live run supplied nine replacements with a path on every item.
+        // Explain the expected shape; never infer or ignore edit targets.
+        let mut args = json!({"edits": (0..9).map(|i| json!({
+            "path": "game.js", "old": format!("old{i}"), "new": format!("new{i}")
+        })).collect::<Vec<_>>()});
+        let error = edit_arguments(args.as_object().unwrap()).unwrap_err();
+        assert!(error.contains("top-level string `path`"), "{error}");
+        assert!(error.contains("No edits applied"), "{error}");
+
+        // A top-level path must not silently override per-edit paths either.
+        args["path"] = json!("different.js");
+        let error = edit_arguments(args.as_object().unwrap()).unwrap_err();
+        assert!(error.contains("not inside `edits`"), "{error}");
+        assert!(error.contains("separate calls"), "{error}");
+
+        let empty = json!({"path": "game.js", "edits": []});
+        assert!(
+            edit_arguments(empty.as_object().unwrap())
+                .unwrap_err()
+                .contains("at least one")
+        );
+        let valid = json!({"path": "game.js", "edits": [{"old": "a", "new": "b"}]});
+        let (path, edits) = edit_arguments(valid.as_object().unwrap()).unwrap();
+        assert_eq!(path, "game.js");
+        assert_eq!(edits.len(), 1);
+    }
+
+    #[test]
+    fn failed_edit_batch_hints_refer_to_the_original_file() {
+        let original = "header\nfunction target() {\n    original();\n}\n";
+        let error = apply_edits(
+            original,
+            &[
+                json!({"old": "header", "new": "header\ninserted\nlines"}),
+                json!({"old": "function target() {\n    stale();", "new": "changed"}),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.contains("no edits applied"), "{error}");
+        assert!(error.contains("appears at line 2;"), "{error}");
+        assert!(!error.contains("appears at line 4;"), "{error}");
+
+        // An anchor introduced by an earlier staged edit is absent on disk.
+        let error = apply_edits(
+            original,
+            &[
+                json!({"old": "header", "new": "staged"}),
+                json!({"old": "staged\nmissing", "new": "changed"}),
+            ],
+        )
+        .unwrap_err();
+        assert!(!error.contains("appears at line"), "{error}");
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
