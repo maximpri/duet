@@ -1,0 +1,41 @@
+   Compiling libc v0.2.189
+   Compiling syn v3.0.6
+   Compiling rustix v0.38.44
+   Compiling rustix v1.1.5
+   Compiling once_cell v1.21.4
+   Compiling thiserror-impl v2.0.20
+   Compiling errno v0.3.14
+   Compiling cpufeatures v0.2.17
+   Compiling getrandom v0.4.3
+   Compiling sha2 v0.10.9
+   Compiling thiserror v2.0.20
+   Compiling tempfile v3.27.0
+   Compiling duet-fs v0.1.0 (/Users/maximp/OpenCode/duet-evidence-campaign/crates/duet-fs)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.27s
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet-launch-gate-target/debug/deps/duet_fs-bdce243428265bea)
+
+running 16 tests
+test path::tests::normalizes_and_rejects_escapes ... ok
+test host::tests::other_errors_and_no_wait_fail_at_once ... ok
+test path::tests::reserved_directories_at_any_depth ... ok
+test host::tests::host_shortages_are_retried_until_the_wait_gives_up ... ok
+test error::tests::os_errors_keep_their_number_and_host_shortages_are_recognised ... ok
+test lock::tests::second_lock_fails_until_first_drops ... ok
+test ops::tests::size_cap_and_missing_files ... ok
+test private::tests::complete_read_only_logs_remain_readable ... ok
+test registry::tests::lookup_covers_nested_paths ... ok
+test registry::tests::every_duet_path_in_the_sources_is_registered ... ok
+test private::tests::repair_refuses_a_fifo_without_waiting_for_a_writer ... ok
+test ops::tests::refuses_symlinks_on_the_path_and_at_the_leaf ... ok
+test private::tests::repair_refuses_symlinks_without_reading_or_truncating_the_target ... ok
+test private::tests::private_modes_and_torn_tail_repair ... ok
+test ops::tests::writes_reads_and_checks_preconditions ... ok
+test private::tests::a_failed_append_or_write_leaves_nothing_behind ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests duet_fs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

@@ -45,3 +45,20 @@ SHA-256: `0514a12347f17efd7db7278456ad3b21a81b18679cfba800bb01a3efda1e5311`.
 The increase from 1,220 to 1,227 counts new behavior checks, not a measured
 line or branch coverage percentage. Live-service and manual benchmark cases
 remain outside this local run.
+
+## Validation after integrating `origin/main`
+
+The combined tree exposed an intermittent macOS workspace-lock failure under
+parallel tests: after dropping a lock handle, the next acquisition could still
+return `Locked`. The same test passed in isolation but failed among its crate
+tests. `WorkspaceLock` now explicitly unlocks on drop. The crate's 16 tests
+passed in 100 consecutive parallel runs after this fix, and the existing lock
+test passed in the full gate.
+
+The final merged gate passed with **1,230 tests passed, 0 failed, 22 ignored**.
+All 18 documentation-test targets and every policy check passed. The merged
+tree includes three additional tests from the integrated upstream changes;
+the seven behavior tests described above are this review's new coverage.
+
+Final merged gate log: `/private/tmp/duet-merged-coverage-gate-3.log`.
+SHA-256: `a51fa532843ce850fb85dab892272206bbe4cdc8a50129ca85c6c0600af08794`.

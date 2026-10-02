@@ -10,6 +10,12 @@ Integrated `702ae7d` with current main `7fb7119` in the isolated campaign worktr
 
 The gate used `CARGO_TARGET_DIR=/Volumes/EXT_DISK/duet-launch-gate-target`, `CARGO_INCREMENTAL=0`, `CARGO_BUILD_JOBS=4` and `CARGO_NET_OFFLINE=true`. Launch artifact hashes and local link targets were also rechecked; the fresh audit still reports five frontier requests and zero complete-value canary matches. This validation covers the committed merge content, not the separately edited lock file. No remote push or social publication was performed by this merge operation.
 
+### Final main amendment
+
+During validation, the original main checkout amended `7fb7119` to `5f7e849`, committing the previously separate workspace-lock fix and its validation record. That amendment is now integrated too. The final runtime source matches `5f7e849` exactly; no existing work was discarded.
+
+The amendment's recorded complete gate passed **1,230 tests, 0 failed, 22 ignored**. Its original log was checked against the SHA-256 in the committed coverage review and is retained [here](../evidence/campaign-merge-current-main-gate-2026-10-02.txt): `a51fa532843ce850fb85dab892272206bbe4cdc8a50129ca85c6c0600af08794`. The final campaign worktree additionally passed **all 16 filesystem tests** ([output](../evidence/campaign-merge-fs-tests-2026-10-02.txt)) and the fast repository gate. The full gate was not redundantly rerun after that amendment: its only runtime delta was the lock fix, covered by those targeted tests and the amendment's verified complete-gate record.
+
 ## Earlier launch merge validation
 
 **The complete `tools/gate.sh` passed with exit 0 before publication: 1,211 tests passed, 0 failed, 22 ignored.** Workspace/fuzz formatting, workspace Clippy with warnings denied, documentation tests, dependency advisories/bans/licenses/sources, license headers, privacy/egress construction and provenance all passed. Ignored tests retain their existing live-service, fixture or manual requirements; no gate or sandbox check was disabled.

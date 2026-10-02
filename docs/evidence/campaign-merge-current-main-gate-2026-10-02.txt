@@ -1,0 +1,1879 @@
+
+== format
+
+== lints
+    Checking duet-fs v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-fs)
+    Checking duet-config v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-config)
+    Checking duet-extensions v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-extensions)
+    Checking duet-git v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-git)
+    Checking duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-boundary)
+    Checking duet-evals v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-evals)
+    Checking duet-net v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-net)
+    Checking duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-mcp)
+    Checking duet-web v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-web)
+    Checking duet-egress v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-egress)
+    Checking duet-agent v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-agent)
+    Checking duet-tui v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-tui)
+    Checking duet-cli v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.45s
+
+== tests
+   Compiling duet-fs v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-fs)
+   Compiling duet-config v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-config)
+   Compiling duet-git v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-git)
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-boundary)
+   Compiling duet-extensions v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-extensions)
+   Compiling duet-evals v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-evals)
+   Compiling duet-net v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-net)
+   Compiling duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-mcp)
+   Compiling duet-web v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-web)
+   Compiling duet-egress v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-egress)
+   Compiling duet-agent v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-agent)
+   Compiling duet-tui v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-tui)
+   Compiling duet-cli v0.1.0 (/Users/maximp/OpenCode/duet_v2/crates/duet-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 06s
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_agent-77d041660b37bc73)
+
+running 113 tests
+test code_nav::live::live_rust_analyzer ... ignored, needs rust-analyzer on PATH
+test code_nav::tests::edits_apply_from_the_end_and_refuse_stale_or_overlapping_ranges ... ok
+test code_nav::tests::resource_operations_and_empty_answers_are_refused ... ok
+test code_nav::tests::names_hover_text_and_symbol_kinds ... ok
+test compaction::tests::masking_alone_is_used_when_it_reaches_the_target ... ok
+test code_nav::tool_tests::columns_count_characters_and_answers_come_back_in_them ... ok
+test compaction::tests::nothing_happens_below_the_threshold ... ok
+test compaction::tests::masking_positions_replay_exactly ... ok
+test compaction::tests::the_local_model_reads_the_sent_form_shortened ... ok
+test changes::tests::a_link_put_in_place_of_a_written_file_is_not_followed ... ok
+test context::tests::a_turn_is_masked_whole_and_every_call_keeps_its_result ... ok
+test compaction::tests::the_cut_never_separates_a_call_from_its_result ... ok
+test context::tests::masks_oldest_turns_first_keeps_recent_and_drops_below_half ... ok
+test context::tests::nothing_masked_below_threshold ... ok
+test context::tests::request_masking_throughput ... ignored, manual throughput measurement; run with --release --ignored --nocapture
+test context::tests::short_results_stay ... ok
+test context::tests::stubs_name_the_call_and_the_handle ... ok
+test compaction::tests::the_operators_latest_message_is_carried_verbatim ... ok
+test compaction::tests::compaction_keeps_the_task_and_recent_turns_and_is_rare ... ok
+test context::tests::images_count_in_the_estimate_and_old_ones_are_masked_with_their_result ... ok
+test compaction::tests::failures_leave_the_conversation_and_wait_for_growth ... ok
+test compaction::tests::a_replayed_transcript_rebuilds_the_same_conversation ... ok
+test code_nav::tool_tests::a_rename_is_refused_whole_when_one_file_may_not_change ... ok
+test egress::tests::the_refusal_note_names_hosts_only ... ok
+test explore::tests::calls_are_checked ... ok
+test explore::tests::notes_find_their_references_after_cleaning ... ok
+test explore::tests::reports_are_read_leniently ... ok
+test explore::tests::scope_matches_globs_and_directories ... ok
+test explore::tests::the_secure_view_shows_content_as_it_is_and_hides_what_the_frontier_cannot_see ... ok
+test git_tools::tests::dates_and_revisions ... ok
+test git_tools::tests::policies_parse ... ok
+test disclosure::tests::passthrough_runs_are_reported_as_unprotected ... ok
+test disclosure::tests::secret_placeholders_are_counted_by_detection_rule ... ok
+test disclosure::tests::counts_withheld_content_by_class_without_values ... ok
+test disclosure::tests::images_are_counted_by_where_they_went ... ok
+test disclosure::tests::anthropic_and_responses_bodies_are_read_like_chat_bodies ... ok
+test images::tests::configured_workspace_root_alias_preserves_private_relative_paths ... ok
+test images::tests::attachment_symlinks_cannot_reclassify_private_paths_as_public_images ... ok
+test images::tests::hidden_reserved_oversized_and_nonregular_attachments_fail_closed ... ok
+test images::tests::macos_temporary_aliases_are_readable_without_erasing_workspace_policy ... ok
+test images::tests::protected_and_sensitive_refusals_do_not_offer_public_routing ... ok
+test images::tests::resumed_images_use_bounded_nofollow_reads_and_validate_digest_names ... ok
+test code_nav::tool_tests::a_rename_that_creates_files_is_refused ... ok
+test images::tests::refused_image_reads_explain_handles_and_preserve_privacy ... ok
+test images::tests::attachment_origins_keep_workspace_privacy_in_precheck_and_live_session ... ok
+test instructions::compat_tests::nested_rules_follow_ancestors_only_and_overrides_replace_generic_rules ... ok
+test instructions::tests::long_files_are_cut_at_a_line_and_binary_ones_refused ... ok
+test instructions::compat_tests::traversals_hidden_paths_symlinks_and_external_includes_do_not_expose_content ... ok
+test instructions::compat_tests::scoped_state_refreshes_changed_removed_and_newly_overridden_instructions ... ok
+test instructions::compat_tests::root_and_scoped_content_are_capped_and_always_use_the_boundary ... ok
+test instructions::tests::the_repository_file_is_read_inside_the_workspace_only ... ok
+test ledger::tests::counts_local_questions_sensitive_commands_and_denials ... ok
+test ledger::tests::explorer_timing_keeps_interrupted_attempts_and_legacy_uncertainty ... ok
+test ledger::tests::images_are_counted_by_destination_and_charged_per_request ... ok
+test ledger::tests::results_are_charged_to_their_class_for_every_request_that_carries_them ... ok
+test ledger::tests::serializes_classes_by_name ... ok
+test mcp::tests::names_are_sanitized_capped_and_distinct ... ok
+test mcp::tests::oversized_schemas_lose_their_docs_then_fall_back ... ok
+test oversight::tests::classification_by_mode ... ok
+test changes::tests::diffs_the_files_the_run_wrote_against_their_first_content ... ok
+test instructions::compat_tests::all_standard_root_sources_have_deterministic_order_and_named_audit_records ... ok
+test oversight::tests::source_and_test_files_are_defined_conservatively ... ok
+test prompt::tests::research_names_only_the_web_tools_the_run_offers ... ok
+test prompt::tests::the_run_prompt_changes_only_deliberately ... ok
+test code_nav::tool_tests::edits_carry_diagnostics_once_a_server_runs ... ok
+test journal::tests::interrupted_write_is_rolled_back ... ok
+test oversight::tests::decisions_are_asked_enforced_and_audited_without_content ... ok
+test review::external::tests::explicit_errors_and_skipped_analysis_are_not_clean_results ... ok
+test review::external::tests::untrusted_scanner_prose_is_never_a_report_and_paths_are_confined ... ok
+test purge::tests::selects_by_age_and_deletes_only_run_directories ... ok
+test review::context::tests::definitions_are_read_from_the_snapshot_and_private_documents_are_not_sent ... ok
+test journal::tests::written_lists_each_file_once_with_its_first_content ... ok
+test journal::tests::a_confined_journal_writes_only_its_paths_and_numbers_stay_unique ... ok
+test review::tests::unsupported_symlink_large_file_and_cancellation_are_not_clean ... ok
+test review::tests::host_inventory_and_deleted_authorization_checks_are_compared_to_the_baseline ... ok
+test run::tests::a_cut_off_response_is_told_the_limit_and_how_to_write_a_file_in_parts ... ok
+test run::tests::a_new_run_configuration_turns_every_capability_off ... ok
+test run::tests::open_terminal_roundtrips_and_only_the_exact_legacy_sentinel_is_normalized ... ok
+test run::tests::resume_charges_review_calls_without_adding_them_to_working_context ... ok
+test run::tests::without_reasoning_drops_only_the_reasoning_text ... ok
+test oversight::tests::commits_ask_by_git_commit_and_under_all ... ok
+test review::tests::dirty_start_command_writes_resume_and_fix ... ok
+test skills::tests::skills_catalog_pages_keep_later_entries_reachable ... ok
+test skills::tests::skills_disabled_for_models_require_explicit_host_authorization ... ok
+test subagents::tests::a_child_refuses_tools_it_was_not_given_and_sensitive_commands ... ok
+test subagents::tests::a_sub_agents_tools_are_the_parents_that_its_mode_allows ... ok
+test subagents::tests::line_changes_count_added_and_removed_lines ... ok
+test subagents::tests::read_requests_in_a_row_run_together_and_a_write_runs_alone ... ok
+test subagents::tests::requests_are_checked ... ok
+test tools::command_guidance::tests::connection_guidance_respects_the_active_network_mode ... ok
+test tools::command_guidance::tests::denied_command_guidance_never_repeats_the_raw_error ... ok
+test tools::command_guidance::tests::successful_commands_and_ordinary_test_failures_get_no_sandbox_hint ... ok
+test skills::tests::hidden_project_skills_and_resources_are_unavailable ... ok
+test skills::tests::skills_load_lazily_and_record_document_digests_without_changing_tools ... ok
+test review::tests::opinions_cannot_veto_or_create_blockers_and_racing_writes_invalidate ... ok
+test review::tests::finish_uses_private_value_hints_and_filters_the_report ... ok
+test tools::sensitive_command_tests::read_file_never_reads_run_state_or_git_internals ... ok
+test tools::tests::edit_arguments_require_one_explicit_file_and_a_nonempty_batch ... ok
+test tools::tests::edits_apply_all_or_nothing ... ok
+test tools::tests::every_other_process_denies_the_sensitive_commands_scratch ... ok
+test tools::tests::failed_edit_batch_hints_refer_to_the_original_file ... ok
+test host::tests::it_gives_up_at_the_deadline_or_on_an_interrupt ... ok
+test tools::tests::specs_are_sorted_and_stable ... ok
+test tools::tests::finish_requires_the_acceptance_command_to_pass_after_a_repair ... ok
+test transcript::tests::nested_entries_keep_the_replay_format ... ok
+test protected::tests::protected_edits_are_implemented_locally_and_checked ... ok
+test tools::sensitive_command_tests::commands_cannot_read_sensitive_files_unless_their_output_stays_local ... ok
+test tools::sensitive_command_tests::sensitive_commands_never_reach_run_state_and_resolve_placeholders_locally ... ok
+test tools::sensitive_command_tests::commands_cannot_read_git_history_or_run_state ... ok
+test skills::tests::skills_respect_project_sealing_and_sanitize_every_origin ... ok
+test egress::tests::cargo_home_links_the_operators_crates_and_takes_new_ones ... ok
+test tools::sensitive_command_tests::what_a_sensitive_command_writes_into_build_output_stays_sensitive ... ok
+test host::tests::a_shortage_is_reported_once_and_retried_until_it_clears ... ok
+
+test result: ok. 111 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.72s
+
+     Running tests/egress.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/egress-00a1369717613701)
+
+running 4 tests
+test without_network_nothing_is_reachable ... ok
+test sensitive_values_never_reach_a_registry_or_the_frontier ... ok
+test checks_that_read_protected_source_have_no_network ... ok
+test ordinary_commands_reach_listed_registries_only_in_both_modes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/git_tools.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/git_tools-c9e412c6d92ddcf9)
+
+running 5 tests
+test passthrough_history_is_shown_as_it_is ... ok
+test commits_need_an_operator_identity ... ok
+test git_through_a_command_points_at_the_git_tools ... ok
+test hybrid_history_never_shows_sensitive_values_or_protected_source ... ok
+test commits_follow_the_rules_and_leave_diff_rollback_and_resume_intact ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.20s
+
+     Running tests/mcp_hub.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/mcp_hub-a6276933da9c5262)
+
+running 6 tests
+test live_reference_server_through_npx ... ignored, downloads a server with npx
+test approval_follows_the_servers_setting_under_oversight ... ok
+test a_server_that_stops_or_never_starts_costs_its_calls_not_the_run ... ok
+test a_stdio_server_gets_the_commands_hidden_paths_and_named_variables_only ... ok
+test hybrid_nothing_sensitive_crosses_the_mcp_channel_in_either_direction ... ok
+test http_tools_in_both_modes_list_call_and_report_errors_as_tool_errors ... ok
+
+test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 4.55s
+
+     Running tests/tool_recovery.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/tool_recovery-02e5b4fab9b51f4e)
+
+running 2 tests
+test failed_edit_batches_leave_both_files_and_the_journal_untouched ... ok
+test sensitive_command_failure_does_not_expose_recovery_clues ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_boundary-6ad2eaeb3b138ffc)
+
+running 264 tests
+test audit::tests::logs_written_before_events_still_verify ... ok
+test audit::tests::events_join_the_chain_without_content ... ok
+test audit::tests::chain_verifies_and_detects_tampering ... ok
+test audit::tests::a_failing_subscriber_is_recorded_and_changes_nothing_else ... ok
+test audit::tests::subscribers_follow_every_record_in_chain_order ... ok
+test audit::tests::anchors_in_the_earlier_layout_are_still_read ... ok
+test bulky::engine_tests::a_bulky_listing_is_counted_per_directory ... ok
+test bulky::tests::listings_and_matches_are_counted ... ok
+test bulky::tests::output_outline_keeps_errors_and_the_tail ... ok
+test bulky::tests::source_outline_lists_declarations_after_the_head ... ok
+test bulky::tests::strips_read_file_numbering ... ok
+test bulky::tests::threshold_is_conservative_and_can_be_disabled ... ok
+test condense::tests::a_long_failure_keeps_its_ends_and_message_lines ... ok
+test audit::tests::anchor_detects_a_rewritten_or_truncated_log ... ok
+test bulky::engine_tests::small_results_are_unchanged ... ok
+test condense::tests::eligibility_follows_what_the_command_asked_to_see ... ok
+test condense::tests::an_overlong_view_is_cut_in_the_middle_keeping_start_and_end ... ok
+test bulky::engine_tests::the_task_is_never_offloaded ... ok
+test audit::tests::anchors_survive_a_moved_workspace ... ok
+test bulky::engine_tests::bulky_search_keeps_sensitive_matches_masked ... ok
+test condense::tests::escape_sequences_and_rewritten_lines_are_shown_as_a_terminal_would_leave_them ... ok
+test condense::tests::passing_result_lines_are_summed_and_a_single_one_is_kept ... ok
+test condense::tests::passing_tests_go_and_the_failure_stays_with_line_numbers_to_read_back ... ok
+test condense::tests::runs_shorter_than_their_marker_are_shown_and_repeats_are_counted_from_three ... ok
+test condense::tests::rustc_errors_keep_every_location_and_the_first_of_each_kind_whole ... ok
+test bulky::engine_tests::a_bulky_file_becomes_a_handle_with_head_and_outline ... ok
+test bulky::engine_tests::public_command_output_keeps_errors_and_tail_sensitive_output_does_not_change ... ok
+test detect::random::tests::content_hashes_in_file_names_are_not_random ... ok
+test detect::random::tests::identifiers_read_as_words ... ok
+test condense::tests::the_sandboxs_notes_are_kept_whole ... ok
+test detect::random::tests::module_digests_are_not_random ... ok
+test detect::random::tests::paths_are_judged_by_their_parts ... ok
+test detect::random::tests::words_joined_by_plus_are_not_random ... ok
+test detect::tests::absolute_paths_in_errors_are_not_secrets ... ok
+test condense::tests::unknown_or_short_or_failure_dense_output_is_not_condensed ... ok
+test detect::tests::camel_case_identifiers_with_acronyms_are_not_secrets ... ok
+test detect::tests::custom_patterns_find_data_values_and_refuse_bad_patterns ... ok
+test detect::tests::file_urls_in_stack_traces_are_not_secrets ... ok
+test bulky::engine_tests::a_ranged_read_is_shown_and_keeps_its_line_numbers_when_offloaded ... ok
+test detect::tests::build_and_package_identifiers_are_not_secrets ... ok
+test detect::tests::finds_provider_tokens_and_assignments ... ok
+test detect::tests::finds_url_credentials_private_keys_and_jwts ... ok
+test detect::tests::hashed_bundle_names_in_build_output_are_not_secrets ... ok
+test detect::tests::high_entropy_strings_are_flagged ... ok
+test detect::tests::identifiers_and_integrity_digests_are_not_random ... ok
+test detect::tests::finds_personal_data ... ok
+test detect::tests::luhn_and_iban_filter_false_positives ... ok
+test detect::tests::labelled_numbers_are_found_whatever_their_checksum ... ok
+test detect::tests::isbns_are_not_card_numbers ... ok
+test detect::tests::placeholders_and_references_are_not_secrets ... ok
+test detect::tests::ordinary_code_is_not_flagged ... ok
+test detect::tests::test_suite_paths_are_not_secrets ... ok
+test detect::tests::luhn_valid_timestamps_ids_and_decimals_are_not_cards ... ok
+test detect::tests::secrets_inside_paths_and_urls_are_still_found ... ok
+test engine::code_nav::tests::answers_are_shown_as_their_file_would_be ... ok
+test engine::explore::tests::a_question_for_characters_of_a_value_is_answered_as_a_format_and_recorded ... ok
+test bulky::engine_tests::a_local_summary_is_added_and_sanitized ... ok
+test engine::explore::tests::a_report_is_cleaned_as_local_output_about_what_the_explorer_read ... ok
+test engine::history::tests::protected_history_is_withheld ... ok
+test condense::tests::engine::a_value_is_judged_with_its_whole_context_before_lines_are_left_out ... ok
+test condense::tests::engine::unknown_long_output_falls_back_to_the_outline_without_a_local_model ... ok
+test condense::tests::engine::sensitive_output_is_held_as_before_never_condensed ... ok
+test engine::explore::tests::values_of_structured_data_are_withheld_wherever_the_report_names_them ... ok
+test engine::history::tests::public_history_and_metadata_are_scanned ... ok
+test engine::image::tests::without_local_vision_an_image_is_refused_not_described ... ok
+test engine::outbound::tests::a_value_the_filter_finds_in_a_later_item_is_replaced_in_earlier_ones ... ok
+test engine::history::tests::a_sensitive_path_is_sensitive_in_every_revision ... ok
+test engine::image::tests::only_images_routed_to_the_frontier_may_be_sent ... ok
+test engine::outbound::tests::filtering_details_locate_the_field_line_and_origin_without_copying_values ... ok
+test engine::pii_pass::tests::free_text_keeps_prose_and_drops_code ... ok
+test engine::outbound::tests::a_vault_value_that_spells_the_wire_format_blocks_nothing ... ok
+test engine::outbound::tests::json_is_read_by_the_filter_as_the_check_reads_it ... ok
+test engine::pii_pass::tests::only_plausible_values_are_kept ... ok
+test condense::tests::engine::checks_and_allowlisted_commands_are_condensed_and_off_means_as_before ... ok
+test engine::history::tests::git_headers_are_not_content ... ok
+test engine::outbound::tests::withholding_replaces_each_part_that_still_holds_a_value ... ok
+test engine::pii_pass::tests::names_and_addresses_in_public_prose_become_placeholders ... ok
+test engine::outbound::tests::the_system_prompt_tool_descriptions_and_replayed_reasoning_are_filtered ... ok
+test condense::tests::engine::planted_values_in_a_failing_assertion_are_tokenized_in_the_view_and_the_handle ... ok
+test engine::image::tests::a_description_is_cleaned_strictly_and_questions_see_the_image_again ... ok
+test engine::pii_pass::tests::off_by_default_short_text_skipped_and_failures_leave_the_detectors ... ok
+test engine::prime_tests::a_local_answer_may_quote_what_was_shown_and_what_is_public ... ok
+test engine::prime_tests::files_a_sensitive_command_writes_are_indexed_even_when_already_sensitive ... ok
+test engine::prime_tests::local_output_is_matched_as_written_spelled_out_and_encoded ... ok
+test engine::prime_tests::placeholder_field_values_never_block_duets_own_markers ... ok
+test engine::prime_tests::long_numbers_the_operator_types_become_placeholders_without_a_label ... ok
+test engine::prime_tests::a_local_answer_that_quotes_sensitive_lines_is_cut_down_to_a_description ... ok
+test engine::prime_tests::the_models_own_messages_are_sanitized_too ... ok
+test engine::prime_tests::local_output_never_repeats_digits_of_a_withheld_number_nor_invents_names ... ok
+test engine::prime_tests::numbers_are_replaced_in_their_other_spellings ... ok
+test engine::prime_tests::the_task_names_the_sensitive_paths ... ok
+test engine::prime_tests::values_the_frontier_wrote_are_shown_as_written ... ok
+test engine::prime_tests::the_task_carries_a_cleaned_local_brief_of_the_sensitive_files ... ok
+test engine::prime_tests::surnames_are_replaced_alone_unless_the_word_is_public ... ok
+test engine::prime_tests::narrow_questions_are_put_as_format_questions_budgeted_and_audited ... ok
+test engine::prime_tests::primed_values_are_replaced_in_any_later_output ... ok
+test engine::prime_tests::placeholders_from_operator_messages_are_handles_for_ask_local ... ok
+test engine::prime_tests::sensitive_files_git_does_not_list_are_primed_too ... ok
+test engine::prime_tests::without_a_local_model_the_task_says_so_and_handles_answer_nothing ... ok
+test engine::protected::tests::protected_files_cannot_be_written_directly ... ok
+test engine::protected::tests::copies_of_protected_code_do_not_cross_the_gate ... ok
+test engine::protected::tests::protected_source_is_hidden_from_commands_but_not_from_checks ... ok
+test engine::protected::tests::implementations_that_do_not_parse_are_refused ... ok
+test engine::protected::tests::interface_only_files_show_a_skeleton_with_stable_handles ... ok
+test engine::protected::tests::searches_listings_and_diffs_withhold_protected_content ... ok
+test engine::protected::tests::the_task_names_protected_paths_and_only_ip_runs_get_edit_protected ... ok
+test engine::protected::tests::runs_that_can_read_protected_code_show_result_lines_only ... ok
+test engine::protected::tests::sealed_files_show_existence_only ... ok
+test engine::protected::tests::the_local_model_implements_protected_changes ... ok
+test engine::structure::tests::a_sample_that_copies_sensitive_text_is_withheld ... ok
+test engine::tests::a_cards_digits_stay_withheld_in_sensitive_data_whatever_its_prefix ... ok
+test engine::structure::tests::a_data_files_view_has_its_structure_and_a_sample_without_values ... ok
+test engine::structure::tests::a_data_file_a_command_rewrote_gets_no_sample_or_outline ... ok
+test engine::tests::a_dates_digits_are_not_a_fragment_of_a_withheld_number ... ok
+test engine::structure::tests::env_files_get_value_formats_and_the_task_an_outline ... ok
+test engine::tests::a_stalled_local_summary_returns_the_file_structure_and_handle ... ok
+test engine::tests::a_sub_agents_report_is_scanned_like_public_text_and_kept_whole ... ok
+test engine::tests::a_value_that_spells_part_of_a_token_does_not_block_the_request ... ok
+test engine::tests::command_output_is_sensitive_unless_allowlisted ... ok
+test engine::structure::tests::a_file_written_from_sample_lines_is_a_fixture_until_it_changes ... ok
+test engine::structure::tests::synthetic_sample_gives_records_and_refuses_other_content ... ok
+test engine::tests::local_endpoint_error_body_never_enters_a_view ... ok
+test engine::tests::a_value_inside_a_longer_detected_span_is_known_alone ... ok
+test engine::structure::tests::masked_output_shows_structure_and_budgets_small_numbers ... ok
+test engine::tests::env_files_show_structure_not_values ... ok
+test engine::tests::error_lines_are_listed_one_per_shape_so_late_one_offs_show ... ok
+test engine::tests::missing_handles_explain_recovery_without_echoing_paths_or_calling_a_model ... ok
+test engine::tests::malformed_local_response_does_not_enter_sensitive_file_view ... ok
+test engine::tests::outbound_text_for_third_parties_refuses_placeholders_and_known_values ... ok
+test engine::tests::outbound_filter_and_check_stop_known_values ... ok
+test engine::tests::local_digest_cannot_quote_short_structured_values ... ok
+test engine::tests::mcp_results_follow_the_servers_trust_and_outbound_text_is_checked ... ok
+test engine::tests::search_hides_matches_in_sensitive_files ... ok
+test engine::structure::tests::short_outputs_of_sensitive_commands_are_budgeted_probes ... ok
+test engine::tests::secrets_are_restored_only_in_secret_files ... ok
+test engine::tests::logs_become_a_handle_with_sanitized_error_lines ... ok
+test engine::tests::secrets_in_public_source_are_replaced ... ok
+test engine::tests::repeated_values_keep_one_token_across_sources ... ok
+test engine::tests::person_fields_are_replaced_whatever_their_shape ... ok
+test engine::tests::values_escaped_in_tool_arguments_are_replaced_and_checked ... ok
+test engine::tests::custom_patterns_become_data_placeholders_in_public_and_sensitive_text ... ok
+test engine::tests::plainly_public_settings_are_shown_and_block_nothing ... ok
+test engine::tests::unchanged_sensitive_content_reuses_its_local_digest ... ok
+test engine::third_party::tests::a_guard_outliving_its_engine_refuses ... ok
+test gate::tests::a_blocked_send_is_audited_by_check_name_only ... ok
+test engine::third_party::public_answers::a_local_answer_about_public_web_content_does_not_withhold_its_numbers ... ok
+test gate::tests::a_request_still_refused_after_withholding_is_blocked_with_why ... ok
+test gate::tests::images_are_sent_but_audited_and_checked_as_digests ... ok
+test engine::tests::web_content_keeps_the_vaults_values_out_and_adds_none ... ok
+test engine::third_party::tests::a_public_page_blocks_no_later_request_but_the_workspaces_values_still_do ... ok
+test engine::third_party::tests::every_part_of_a_request_is_checked_and_split_values_are_found ... ok
+test images::tests::rules_matrix ... ok
+test images::tests::sensitive_and_protected_images_never_reach_the_frontier ... ok
+test images::tests::the_rule_that_decided_is_named ... ok
+test ip::tests::distinctive_literals_skip_public_words ... ok
+test ip::tests::lines_containing_protected_code_are_withheld ... ok
+test live::tests::a_tap_holds_inside_observe_only_and_quiet_hides_it ... ok
+test ip::tests::only_result_shaped_lines_survive ... ok
+test local::tests::a_question_naming_lines_goes_to_the_part_holding_them ... ok
+test local::tests::chunks_on_line_boundaries ... ok
+test local::tests::every_role_shares_one_schema ... ok
+test local::tests::extracts_json_from_fenced_or_prose_output ... ok
+test local::tests::implementation_output_loses_fences_and_line_numbers ... ok
+test local::tests::a_part_that_cannot_answer_passes_the_question_to_the_next ... ok
+test local::tests::malformed_local_reply_is_never_reflected_in_an_error ... ok
+test local::tests::old_call_stats_remain_readable ... ok
+test local::tests::malformed_reply_retries_are_distinct_from_second_chunk_attempts ... ok
+test local_eval::tests::leaks_are_counted ... ok
+test local_eval::tests::scoring_is_exact_and_unanswerable_aware ... ok
+test overlap::tests::case_and_punctuation_do_not_hide_copies ... ok
+test overlap::tests::copied_runs_split_by_a_public_window_are_merged ... ok
+test overlap::tests::matching_thresholds_count_overlapping_windows ... ok
+test overlap::tests::public_text_is_exempt ... ok
+test overlap::tests::redacts_long_copied_spans_only ... ok
+test overlap::tests::unicode_and_separate_runs_preserve_original_byte_ranges ... ok
+test local_eval::tests::fixtures_are_deterministic_and_plant_their_fact ... ok
+test engine::third_party::tests::every_spelling_of_a_withheld_value_is_refused ... ok
+test pii::tests::bsn_needs_its_label_and_the_eleven_test ... ok
+test pii::tests::eu_and_uk_national_ids_with_their_checks ... ok
+test pii::tests::ipv6_addresses_but_not_code_or_times ... ok
+test pii::tests::national_numbers_labelled_as_phones ... ok
+test pii::tests::ibans_of_every_registry_country_with_their_check ... ok
+test pii::tests::international_phone_numbers_of_major_regions ... ok
+test policy::tests::env_templates_are_public_and_env_files_are_not ... ok
+test policy::tests::globs_match_names_anywhere_and_paths_exactly ... ok
+test policy::tests::ip_levels_come_from_their_globs_and_sealed_wins ... ok
+test policy::tests::raw_ok_commands_match_by_prefix ... ok
+test local::tests::canceled_request_keeps_its_elapsed_local_time ... ok
+test probing::tests::answers_about_unknown_content_withhold_every_piece ... ok
+test probing::tests::pieces_are_short_values_not_counts_or_places ... ok
+test pii::tests::version_strings_timestamps_and_arithmetic_are_not_phone_numbers ... ok
+test probing::tests::positional_sentences_are_the_ones_naming_a_position ... ok
+test probing::tests::pieces_tied_to_positions_are_withheld_in_answers_and_summaries ... ok
+test reencoded::tests::encoded_runs_decode_at_every_alignment ... ok
+test reencoded::tests::html_unescape_survives_characters_across_its_window ... ok
+test reencoded::tests::outbound_spellings_are_decoded ... ok
+test reencoded::tests::spaced_out_values_are_found_whatever_the_separators ... ok
+test gate::tests::a_part_a_check_refuses_is_withheld_and_the_request_sent ... ok
+test rules::tests::expressions_read_as_re2_reads_them ... ok
+test probing::tests::pieces_of_one_value_add_up_to_a_budget_across_answers ... ok
+test rules::tests::marker_groups_never_leave_the_rest_of_the_secret ... ok
+test probing::tests::questions_for_characters_by_position_or_spelling_are_positional ... ok
+test rules::tests::spans_end_on_character_boundaries ... ok
+test skeleton::tests::languages_come_from_extensions ... ok
+test rules::tests::keywords_decide_which_rules_run ... ok
+test skeleton::tests::python_skeleton_keeps_docstrings_and_withholds_bodies ... ok
+test skeleton::tests::rust_skeleton_keeps_the_interface_and_withholds_bodies ... ok
+test rules::tests::rule_features_as_the_file_defines_them ... ok
+test structure::dates::tests::common_layouts_are_recognized_as_pictures ... ok
+test skeleton::tests::typescript_skeleton_keeps_the_interface_and_withholds_bodies ... ok
+test rules::tests::vendored_rules_match_their_notice ... ok
+test skeleton::tests::skeletons_are_deterministic_and_reject_broken_files ... ok
+test structure::masked::tests::toolchain_words_are_kept_unless_they_are_values_of_the_data ... ok
+test structure::dates::tests::generated_values_have_the_same_layout ... ok
+test structure::parse::tests::delimited_fields_follow_rfc_4180_quoting ... ok
+test structure::parse::tests::env_assignments_keep_value_spans ... ok
+test structure::parse::tests::fixed_width_columns_are_the_blank_gaps ... ok
+test structure::parse::tests::json_keeps_spans_duplicates_and_big_numbers ... ok
+test structure::parse::tests::json_lines_need_two_documents ... ok
+test structure::parse::tests::simple_xml_values_have_paths_and_records ... ok
+test structure::masked::tests::the_commands_own_words_are_kept ... ok
+test structure::profile::tests::csv_columns_embedded_delimiters_and_ragged_rows_are_counted ... ok
+test pii::tests::postal_addresses_in_labelled_fields ... ok
+test structure::profile::tests::env_keys_are_listed_with_value_formats_and_secrets_by_length ... ok
+test structure::masked::tests::values_words_and_numbers_become_shapes ... ok
+test structure::masked::tests::repeated_lines_group_into_templates_with_dates_kept_as_layouts ... ok
+test structure::shape::tests::exact_shapes_keep_lengths_and_punctuation ... ok
+test structure::shape::tests::run_shapes_collapse_letters_and_keep_digit_counts ... ok
+test structure::shape::tests::secrets_are_described_by_length_and_character_kinds ... ok
+test structure::tests::keys_that_look_like_values_are_not_schema ... ok
+test structure::tests::formats_are_detected_by_content_and_extension ... ok
+test structure::profile::tests::maps_keyed_by_values_show_their_keys_as_stars ... ok
+test structure::twin::tests::a_json_twin_keeps_layout_and_replaces_every_value ... ok
+test structure::twin::tests::csv_twins_keep_the_header_quoting_and_embedded_delimiters ... ok
+test structure::twin::tests::logs_have_no_twin ... ok
+test structure::twin::tests::env_twins_drop_comments_and_keep_keys ... ok
+test structure::profile::tests::xml_and_fixed_width_have_fields_too ... ok
+test testing::canary::tests::base64_whole_and_substrings_at_every_alignment ... ok
+test structure::profile::tests::a_json_export_is_described_by_paths_shapes_and_pictures ... ok
+test testing::canary::tests::case_variants ... ok
+test testing::canary::tests::digit_fragments ... ok
+test testing::canary::tests::hex_lower_upper_and_substrings ... ok
+test testing::canary::tests::exact_with_offset_and_index ... ok
+test testing::canary::tests::html_escaped ... ok
+test testing::canary::tests::json_escaped_once_twice_and_unicode ... ok
+test testing::canary::tests::separator_split ... ok
+test testing::canary::tests::short_canary_in_base64_must_be_whole ... ok
+test testing::canary::tests::spelled_digits ... ok
+test testing::canary::tests::reversed ... ok
+test third_party::tests::an_open_guard_passes_everything_and_a_policy_decides_otherwise ... ok
+test third_party::tests::every_part_of_a_request_is_read ... ok
+test testing::canary::tests::url_encoded ... ok
+test vault::tests::longer_values_replace_first_and_unknown_tokens_are_reported ... ok
+test vault::tests::a_value_that_spells_part_of_a_token_leaves_tokens_intact ... ok
+test vault::tests::stable_tokens_round_trip ... ok
+test testing::canary::tests::unrelated_text_and_other_numbers_find_nothing ... ok
+test handles::tests::public_flag_and_first_line_survive_a_reopen ... ok
+test vault::tests::persists_privately ... ok
+test handles::tests::stores_and_reopens ... ok
+test structure::twin::tests::fakes_keep_shape_and_validity ... ok
+test engine::prime_tests::long_sensitive_logs_get_a_map_of_repeated_line_shapes ... ok
+test engine::tests::sensitive_data_never_uses_detector_only_diagnostic_previews ... ok
+test testing::canary::tests::a_thousand_requests_are_fast ... ok
+test detect::random::tests::random_tokens_are_withheld_whole ... ok
+
+test result: ok. 264 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.49s
+
+     Running tests/backend_smoke.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/backend_smoke-77085a25429be6d9)
+
+running 6 tests
+test llamacpp ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+test lmstudio ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+test mlx ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+test ollama ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+test omlx ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+test vllm ... ignored, live: needs a running local server (DUET_LIVE_*_URL)
+
+test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/condense.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/condense-277cd29ee7d7aa73)
+
+running 4 tests
+test recorded_runs ... ignored, needs the recorded runs: DUET_CONDENSE_RESULTS=<results dir>
+test recorded_output_keeps_every_failure_and_gets_shorter ... ok
+test synthetic_output_of_every_runner_is_recognized_and_keeps_every_failure ... ok
+test every_line_is_shown_or_named_by_a_marker_in_order ... ok
+
+test result: ok. 3 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+     Running tests/corpus.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/corpus-858282ba675f596c)
+
+running 6 tests
+test hand_written_positives_are_withheld_as_their_kind ... ok
+test toolchain_output_reaches_the_frontier_without_placeholders ... ok
+test imported_rules_compile_and_find_their_positives ... ok
+test false_positives_stay_within_the_baseline ... ok
+test the_third_party_check_refuses_no_hard_negative ... ok
+test positives_reach_the_frontier_only_as_placeholders ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.24s
+
+     Running tests/dialect_gate.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/dialect_gate-3f0b0dc0a6863d2a)
+
+running 4 tests
+test a_rejected_image_never_reaches_any_dialect_or_the_audit_log ... ok
+test refused_replayed_reasoning_is_dropped_from_the_front_and_resent ... ok
+test a_blocked_body_is_blocked_in_every_dialect ... ok
+test every_dialect_sends_only_the_filtered_audited_body ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests/no_canary.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/no_canary-cc21798e5a6a4204)
+
+running 1 test
+test no_canary_survives_the_gate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.84s
+
+     Running tests/outbound_agreement.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/outbound_agreement-a33570b7b64f6381)
+
+running 1 test
+test the_check_passes_what_the_filter_returns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.59s
+
+     Running tests/properties.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/properties-be23df77747dc9c8)
+
+running 9 tests
+test tokens_are_bracketed ... ok
+test detokenize_leaves_unknown_text_alone ... ok
+test aliases_never_detokenize ... ok
+test overlap_redaction_leaves_no_copied_run ... ok
+test overlap_never_panics ... ok
+test vault_round_trips ... ok
+test tokenize_leaves_no_value ... ok
+test tokenize_is_idempotent ... ok
+test scan_spans_are_well_formed ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+
+     Running tests/security_review.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/security_review-9eff808cbf345583)
+
+running 7 tests
+test a_frontier_role_is_refused_before_any_transport_call ... ok
+test contradictory_judgments_and_private_literal_dismissals_become_uncertain ... ok
+test malformed_or_schema_invalid_opinions_are_not_reports ... ok
+test frontier_opinions_are_fresh_gated_budgeted_and_never_see_private_sources ... ok
+test protected_source_tokens_do_not_hide_known_private_values ... ok
+test privacy_sources_include_schema_known_values_and_detectors_not_literal_labels ... ok
+test tool_free_local_review_filters_private_prose_and_protected_source ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s
+
+     Running tests/structure_views.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/structure_views-423484e8e47f5261)
+
+running 2 tests
+test a_twin_holds_no_value_the_knowledge_knows_whatever_the_seed ... ok
+test no_value_leaks_through_views_samples_or_masked_output ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.06s
+
+     Running tests/throughput.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/throughput-e9638c19c75bc98b)
+
+running 3 tests
+test copied_span_matching ... ignored, measurement; run with --release -- --ignored --nocapture
+test throughput_10mb ... ignored, measurement; run with --release -- --ignored --nocapture
+test quick_throughput_report ... ok
+
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_cli-1344573f918a9ae2)
+
+running 78 tests
+test approve::tests::only_an_explicit_yes_approves ... ok
+test approve::tests::a_commit_question_shows_its_files_message_and_setting ... ok
+test chat::attachment_queue::tests::pending_attachments_can_be_listed_and_removed_without_touching_files ... ok
+test chat::attachment_queue::tests::failed_image_recovers_its_request_without_reordering_later_attachments ... ok
+test attachments::tests::dragged_paths_are_decoded_without_evaluation ... ok
+test acceptance_cli_tests::one_shot_and_session_accept_repeated_checks ... ok
+test acceptance_cli_tests::manifest_retains_empty_check_snapshot_and_reads_legacy_runs ... ok
+test acceptance_cli_tests::goals_have_bounded_turns_and_history_needs_no_provider_options ... ok
+test attachments::tests::a_snapshot_survives_changes_and_invalid_files_do_not_queue ... ok
+test approve::tests::an_interactive_session_asks_for_commits_with_approval_off ... ok
+test attachments::tests::sensitive_attachments_are_handles_and_public_secrets_are_redacted ... ok
+test chat::goal_tests::exit_controls_win_before_autonomous_work_and_normal_sessions_can_stop_and_close ... ok
+test chat::tests::a_trailing_backslash_continues_the_message ... ok
+test chat::tests::an_approval_answer_is_the_first_line_after_the_question ... ok
+test chat::tests::background_images_and_requeued_commands_never_answer_approval ... ok
+test chat::tests::commands_and_messages ... ok
+test chat::tests::ctrl_c_interrupts_a_turn_and_twice_at_the_prompt_leaves ... ok
+test chat::tests::dropped_images_and_pending_removal_work_before_the_first_message ... ok
+test chat::tests::invalid_initial_workflows_are_reported_before_a_session_starts ... ok
+test chat::tests::mode_only_ever_switches_up_to_top_clearance ... ok
+test doctor::tests::a_policy_layer_explains_itself ... ok
+test doctor::tests::detection_rules_report_their_version_and_failures ... ok
+test chat::goal_tests::invalid_initial_skill_keeps_the_session_open_for_a_corrected_request ... ok
+test doctor::tests::instruction_diagnostics_recognize_standard_files_and_overrides ... ok
+test egress::tests::the_built_in_credential_list_matches_the_sandbox ... ok
+test doctor::tests::release_keys_warn_only_in_a_release_build ... ok
+test chat::goal_tests::an_invalid_image_received_while_busy_does_not_send_its_dependent_message ... ok
+test chat::goal_tests::a_queued_image_that_disappears_does_not_send_its_dependent_message ... ok
+test egress::tests::the_mode_follows_the_configuration ... ok
+test goals::tests::failed_persistence_never_reserves_a_turn_or_replaces_good_state ... ok
+test goals::tests::links_and_unbounded_or_invalid_state_are_refused ... ok
+test goals::tests::completed_goals_are_preserved_and_only_finish_completes ... ok
+test goals::tests::private_text_is_preserved_but_terminal_status_has_no_escape_sequences ... ok
+test goals::tests::pausing_and_cancelling_without_an_unfinished_goal_are_noops ... ok
+test chat::goal_tests::a_failed_image_group_never_leaks_valid_siblings_into_the_next_request ... ok
+test history::tests::empty_history_is_helpful_and_creates_nothing ... ok
+test chat::goal_tests::goal_limit_stops_automatic_turns_and_resume_retains_counts_spend_and_worked_time ... ok
+test history::tests::bounded_reads_report_partial_metrics_without_changing_the_file ... ok
+test history::tests::incomplete_active_tail_is_never_repaired_or_truncated ... ok
+test history::tests::live_goal_status_is_read_without_pausing_or_rewriting_it ... ok
+test history::tests::legacy_runs_show_conversation_cost_and_resume_command ... ok
+test chat::goal_tests::asking_waits_for_an_answer_and_queued_quit_wins_over_another_automatic_turn ... ok
+test history::tests::search_finds_messages_and_closed_sessions_have_no_resume_action ... ok
+test images::tests::image_paths_decode_quotes_escapes_without_evaluating_text ... ok
+test goals::tests::turn_limit_and_crash_recovery_are_durable_and_bounded ... ok
+test images::tests::clipboard_images_are_private_external_validated_and_cleaned ... ok
+test overrides::tests::a_repository_can_require_top_clearance ... ok
+test overrides::tests::overrides_and_recorded_values_are_bounded_by_the_policy ... ok
+test plugins::tests::filenames_are_utf8_and_streaming_digest_retains_existing_package_identity ... ok
+test history::tests::unsafe_ids_and_symlinked_artifacts_are_rejected ... ok
+test history::tests::open_sessions_and_exact_legacy_exits_are_resumable_without_hiding_real_failures ... ok
+test overrides::tests::presets_cannot_change_what_the_policy_fixes ... ok
+test chat::goal_tests::images_received_while_busy_keep_their_next_message_and_fifo_order ... ok
+test plugins::tests::manifests_and_packages_refuse_links_traversal_and_unknown_permissions ... ok
+test overrides::tests::passthrough_needs_the_setting_and_says_who_turned_it_off ... ok
+test plugins::tests::pinned_handles_survive_parent_replacement_without_following_new_links ... ok
+test pricing::tests::owner_rate_is_bound_to_one_exact_model ... ok
+test goals::tests::questions_stops_errors_and_cancellation_are_not_completion ... ok
+test plugins::tests::owner_config_aliases_resolve_once_but_plugin_descendants_never_follow_links ... ok
+test plugins::tests::installed_snapshot_is_pinned_and_never_executes_install_scripts ... ok
+test pricing::tests::status_flags_canceled_local_requests_without_guessing_their_cost ... ok
+test plugins::tests::disabled_corrupt_snapshots_do_not_block_startup ... ok
+test plugins::tests::symlink_ancestors_cannot_redirect_package_reads_or_record_mutations ... ok
+test setup::tests::setup_does_not_guess_an_unknown_model_when_listing_fails ... ok
+test setup::tests::model_choice_prefers_a_live_default_and_rejects_a_typo ... ok
+test plugins::tests::plugin_mcp_contributions_cannot_loosen_the_organization_policy ... ok
+test pricing::tests::configured_local_rates_persist_and_resume_without_recharging_history ... ok
+test web::tests::the_workspace_languages_add_their_registries ... ok
+test web::tests::a_searxng_url_must_be_http ... ok
+test chat::goal_tests::pausing_during_an_in_flight_response_prevents_any_automatic_followup ... ok
+test chat::goal_tests::automatic_goal_turns_finish_and_each_continuation_crosses_the_privacy_boundary ... ok
+test web::tests::web_search_sources_pick_the_defaults_and_what_may_be_asked ... ok
+test web::tests::auto_uses_the_frontiers_own_search_else_searches_natively ... ok
+test web::tests::explicit_backends_are_used_or_reported_and_none_disables ... ok
+test scoped_instruction_tests::first_nested_write_delivers_guidance_before_any_batch_mutation ... ok
+test scoped_instruction_tests::first_nested_edit_delivers_guidance_before_any_batch_mutation ... ok
+test scoped_instruction_tests::first_nested_read_delivers_guidance_before_read_or_batch_mutations ... ok
+test term::live_tests::in_hybrid_the_operator_sees_values_as_they_stream_and_the_frontier_never_does ... ok
+
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.15s
+
+     Running unittests src/main.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet-add587a26dba62e2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/chat_session.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/chat_session-8dd8c6f0341645d9)
+
+running 11 tests
+test the_workspace_live ... ignored, calls the real frontier
+test approval_without_a_terminal_refuses_a_session ... ok
+test piped_output_is_plain_lines_as_before ... ok
+test goal_waits_for_an_actual_answer_then_continues ... ok
+test goal_continues_without_go_messages_and_history_reads_it ... ok
+test goal_turn_limit_survives_resume_and_never_claims_completion ... ok
+test goal_pause_during_work_and_session_resume_require_explicit_continuation ... ok
+test a_session_with_a_question_two_tasks_undo_interrupt_and_resume ... ok
+test a_message_typed_while_duet_works_steers_the_turn_and_stop_ends_it ... ok
+test dragged_text_attachments_reach_first_idle_and_steered_messages_and_resume ... ok
+test the_workspace_on_a_terminal ... ok
+
+test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.11s
+
+     Running tests/compaction.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/compaction-b4b452921ec27e6f)
+
+running 5 tests
+test a_long_run_is_compacted_and_the_new_prefix_stays_stable ... ok
+test a_run_resumed_after_a_compaction_sends_the_same_request ... ok
+test a_sessions_latest_operator_message_survives_a_compaction_verbatim ... ok
+test without_a_summary_the_run_masks_as_before_and_completes ... ok
+test planted_values_never_reach_the_frontier_through_a_summary ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.78s
+
+     Running tests/condensed_output.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/condensed_output-0e3eb9030520c9b3)
+
+running 3 tests
+test pass_through_mode_shows_a_test_run_whole ... ok
+test the_calls_of_one_response_run_in_the_order_given ... ok
+test a_test_run_is_condensed_in_hybrid_mode_and_read_back_whole_without_planted_values ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+
+     Running tests/cost_ledger.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/cost_ledger-2e1139cf6b685f3c)
+
+running 2 tests
+test passthrough_shows_the_whole_file_and_charges_it_as_raw ... ok
+test bulky_files_reach_the_frontier_as_a_preview_and_are_charged_as_such ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/egress_oracle.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/egress_oracle-539def367dc63601)
+
+running 5 tests
+test without_the_boundary_the_same_attempts_arrive ... ok
+test commands_reach_a_registry_with_no_withheld_value ... ok
+test web_fetch_sends_no_withheld_value_in_any_host_path_or_query ... ok
+test mcp_arguments_reach_an_http_server_with_no_withheld_value ... ok
+test web_search_sends_no_withheld_value_to_any_backend has been running for over 60 seconds
+test web_search_sends_no_withheld_value_to_any_backend ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 63.00s
+
+     Running tests/embedded.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/embedded-9e28232c1bbb70ab)
+embedded: all checks passed
+     Running tests/embedding.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/embedding-fdd11979037c999e)
+
+running 7 tests
+test subscribers_are_told_every_record_of_a_run_in_order_and_no_content ... ok
+test the_end_hook_is_called_once_for_a_completed_run ... ok
+test an_interrupted_run_and_its_resume_are_one_call_each ... ok
+test a_session_calls_the_end_hook_once_per_invocation ... ok
+test the_end_hook_is_called_once_for_a_failed_a_panicked_and_a_budget_stopped_run ... ok
+test in_hybrid_mode_no_hook_is_told_a_sensitive_value ... ok
+test failing_hooks_never_change_the_run ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s
+
+     Running tests/everyday.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/everyday-684593bda764626b)
+
+running 4 tests
+test a_session_and_its_sub_agents_start_from_the_same_instructions_across_resume ... ok
+test hybrid_instructions_are_scanned_framed_audited_and_change_no_policy ... ok
+test an_interactive_session_asks_before_each_commit_with_approval_off ... ok
+test diff_names_changed_sensitive_files_and_never_shows_them ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.55s
+
+     Running tests/explore.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/explore-ad3b023d713a38a6)
+
+running 11 tests
+test injected_instructions_in_a_file_change_nothing_but_the_report ... ok
+test one_explore_call_answers_with_checked_references ... ok
+test the_explorer_can_only_read ... ok
+test the_step_cap_leaves_one_request_to_report_then_ends_the_call ... ok
+test protected_source_is_never_quoted_and_sealed_files_are_marked ... ok
+test a_question_for_digits_of_a_value_is_put_as_one_about_its_format ... ok
+test the_reading_cap_cuts_results_and_ends_the_reading ... ok
+test pass_through_offers_the_explorer_as_a_cost_tool ... ok
+test a_careless_explorer_pasting_what_it_read_leaks_nothing ... ok
+test a_run_interrupted_mid_exploration_resumes_and_decides_again ... ok
+test the_time_cap_ends_a_call_whose_model_never_answers ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.59s
+
+     Running tests/git_history.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/git_history-e7892504e48bb7e9)
+
+running 2 tests
+test a_session_commits_its_own_files_and_undo_never_touches_history ... ok
+test history_reaches_the_frontier_only_through_the_boundary ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.94s
+
+     Running tests/history_cli.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/history_cli-d90cd65bb6786317)
+
+running 1 test
+test history_command_shows_old_and_current_open_sessions_without_rewriting_them ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/images.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/images-b0fc7fba85f32cd6)
+
+running 9 tests
+test duet_run_refuses_an_unusable_attachment_before_the_run_starts ... ok
+test pass_through_sends_images_only_to_a_frontier_that_takes_them ... ok
+test without_a_vision_model_images_are_refused_with_the_reason ... ok
+test attachments_are_sent_or_described_by_the_rules ... ok
+test a_session_attaches_images_to_the_next_message_and_resumes_with_them ... ok
+test a_refused_attachment_stops_the_run_before_anything_is_sent ... ok
+test a_resumed_run_sends_its_images_again_from_the_store ... ok
+test a_sensitive_image_never_reaches_the_frontier_and_its_description_is_filtered ... ok
+test a_read_sub_agent_reads_images_by_the_same_rules ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s
+
+     Running tests/live_registries.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/live_registries-2ec66e175c12d953)
+
+running 1 test
+test default_settings_install_from_the_real_registries ... ignored, live: reaches crates.io and the npm registry
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lsp_tools.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/lsp_tools-ad181c9a0fa339e2)
+
+running 2 tests
+test pass_through_shows_answers_and_a_crashing_server_never_ends_the_run ... ok
+test hybrid_language_server_answers_never_show_sensitive_or_protected_content ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s
+
+     Running tests/mcp_run.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/mcp_run-68efbf3e469eb162)
+
+running 1 test
+test mcp_tools_in_a_hybrid_run_leak_nothing_and_writes_need_approval ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+     Running tests/no_git.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/no_git-ec5cddd1cbd9d3f2)
+
+running 3 tests
+test doctor_says_what_works_without_git_and_names_the_instructions ... ok
+test a_run_without_git_lists_searches_edits_diffs_and_ignores_injected_settings ... ok
+test a_session_without_git_edits_diffs_undoes_and_resumes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.67s
+
+     Running tests/no_local.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/no_local-b383b15960df2801)
+
+running 2 tests
+test what_needs_a_local_model_is_refused_when_it_is_off ... ok
+test hybrid_without_a_local_model_shows_handles_and_sends_nothing_sensitive ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running tests/operator_values.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/operator_values-576186fd8f3835f6)
+
+running 2 tests
+test a_labelled_number_that_fails_the_checksum_never_reaches_the_frontier ... ok
+test a_typed_card_number_is_answered_through_its_placeholder_in_one_local_call ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/outbound_gate.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/outbound_gate-6b505e3d88e1576f)
+
+running 4 tests
+test a_request_withholding_cannot_clear_ends_the_run_with_the_reason ... ok
+test reading_a_file_whose_path_a_detector_flags_does_not_stop_the_run ... ok
+test a_part_the_check_refuses_after_filtering_is_withheld_and_the_run_goes_on ... ok
+test a_value_found_in_a_masking_stub_is_replaced_in_the_call_it_quotes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+     Running tests/oversight_disclosure.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/oversight_disclosure-8b04410ed40e310c)
+
+running 3 tests
+test with_approval_on_a_run_without_a_terminal_is_refused_before_it_starts ... ok
+test audit_disclosure_reports_counts_from_the_log_and_the_summary ... ok
+test a_denied_write_is_a_tool_error_and_the_report_counts_what_was_withheld ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests/privacy_scenarios.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/privacy_scenarios-728394b828afbe39)
+
+running 24 tests
+test a_careless_local_answer_encoding_a_value_is_cleaned ... ok
+test a_careless_local_answer_repeating_a_whole_line_leaves_no_field_of_it ... ok
+test a_careless_local_answer_repeating_digit_runs_is_cleaned ... ok
+test a_careless_local_answer_spelling_a_value_out_is_cleaned ... ok
+test a_careless_local_answer_repeating_a_whole_line_is_cleaned ... ok
+test a_secret_in_a_steering_message_is_replaced ... ok
+test a_file_derived_into_target_stays_sensitive_when_read ... ok
+test card_a_an_unlabelled_number_failing_the_checksum_never_reaches_the_frontier ... ok
+test card_a_a_labelled_number_failing_the_checksum_never_reaches_the_frontier ... ok
+test a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced ... ok
+test a_failing_public_test_printing_customer_data_is_condensed_without_it ... ok
+test a_value_from_an_ignored_env_file_typed_by_the_operator_is_replaced ... ok
+test card_b_the_placeholder_works_for_the_frontier_and_the_operator_sees_the_value ... ok
+test error_words_in_customer_data_do_not_publish_rows_as_diagnostics ... ok
+test image_a_screenshot_of_an_unindexed_password_is_described_without_it ... ok
+test image_the_operator_attaches_from_a_sensitive_path_is_described_never_sent ... ok
+test a_sensitive_data_command_cannot_read_the_vault ... ok
+test card_b_a_valid_card_number_stays_out_through_ask_local_and_a_run_state_read ... ok
+test narrow_questions_about_one_value_do_not_add_up_to_it ... ok
+test narrow_questions_about_one_value_repeat_no_run_of_its_digits ... ok
+test a_file_derived_by_a_sensitive_data_command_stays_sensitive_when_read ... ok
+test image_a_screenshot_of_customer_data_reaches_the_frontier_only_as_a_cleaned_description ... ok
+test grep_probes_of_the_env_file_stop_at_the_budget ... ok
+test structure_views_samples_and_masked_output_carry_no_planted_value ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.44s
+
+     Running tests/registry_network.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/registry_network-846175341f7279b3)
+
+running 1 test
+test a_hybrid_run_reaches_the_registry_and_is_told_what_was_refused ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.63s
+
+     Running tests/repository_scan.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/repository_scan-2fe1c5256f3750a6)
+
+running 2 tests
+test foreground_and_background_share_rules_and_scanners_cannot_modify_sources ... ok
+test fail_on_high_survives_a_full_advisory_report ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.44s
+
+     Running tests/run_lifecycle.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/run_lifecycle-7c36664a06876d3b)
+
+running 3 tests
+test the_dollar_budget_ends_a_run_as_budget_stopped ... ok
+test progress_goes_to_standard_error_and_standard_output_keeps_the_summary ... ok
+test ctrl_c_ends_a_run_resumably_and_resume_completes_it ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.79s
+
+     Running tests/secure_defaults.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/secure_defaults-84175d4a7832c44c)
+
+running 4 tests
+test passthrough_needs_an_explicit_acknowledgement ... ok
+test loosening_a_setting_needs_confirm_and_is_audited ... ok
+test audit_verify_checks_the_anchor_and_show_lists_events ... ok
+test a_remote_local_model_over_plain_http_is_refused ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/security_review.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/security_review-60621296f2c49b06)
+
+running 2 tests
+test a_finish_is_blocked_then_the_fixed_change_completes ... ok
+test defaults_leave_runs_unchanged_and_missing_local_does_not_veto_rules ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+
+     Running tests/security_review_regressions.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/security_review_regressions-8d97911832d7b245)
+
+running 6 tests
+test review_obeys_the_remaining_session_budget ... ok
+test later_turn_keeps_its_review_budget ... ok
+test scanner_exit_one_with_validated_findings_is_accepted ... ok
+test new_cross_file_finding_on_unchanged_sink_is_kept ... ok
+test scanner_failure_cannot_be_reported_as_complete ... ok
+test report_cap_does_not_disable_high_severity_blocking ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.79s
+
+     Running tests/sessions.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/sessions-69b5eb986c83248c)
+
+running 10 tests
+test a_one_shot_run_keeps_its_prompt_and_tools ... ok
+test a_message_that_arrives_as_the_turn_ends_is_handed_back ... ok
+test queued_steering_is_delivered_together_in_order ... ok
+test budgets_stop_turns_and_the_session_spends_its_own ... ok
+test an_interrupted_turn_leaves_the_session_open_and_it_resumes ... ok
+test operator_messages_cross_the_boundary_like_task_text ... ok
+test turns_end_on_replies_questions_and_finish_and_keep_the_context ... ok
+test undo_reverts_the_last_turns_writes_and_tells_the_frontier ... ok
+test steering_arrives_after_the_running_command_and_changes_the_next_step ... ok
+test stop_finishes_the_step_and_interrupt_does_not ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.17s
+
+     Running tests/setup_doctor.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/setup_doctor-5f96c093633beff6)
+
+running 15 tests
+test a_preset_goes_through_the_audited_loosening_path ... ok
+test frontier_presets_set_endpoint_model_key_and_dialect_through_the_audited_path ... ok
+test doctor_warns_about_a_sensitive_stdio_server_with_network ... ok
+test bootstrap_asks_when_the_choice_is_ambiguous_or_empty ... ok
+test doctor_starts_configured_mcp_servers_and_config_lists_them ... ok
+test doctor_shows_the_approval_mode_and_notes_release_keys_in_a_development_build ... ok
+test bootstrap_uses_a_single_server_for_this_run_only ... ok
+test doctor_verifies_recent_audit_logs_and_anchors ... ok
+test the_searxng_preset_sets_up_private_search_and_starts_nothing ... ok
+test doctor_fails_a_refused_local_endpoint_and_does_not_contact_it ... ok
+test online_doctor_asks_the_owners_searxng_for_json ... ok
+test offline_doctor_uses_no_network_and_never_prints_the_key ... ok
+test online_doctor_speaks_the_frontier_dialect ... ok
+test online_doctor_lists_models_context_and_cache_reuse ... ok
+test doctor_names_the_search_backend_and_who_receives_the_queries ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.70s
+
+     Running tests/subagents.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/subagents-d8afd66ca2b3bedf)
+
+running 12 tests
+test nested_entries_round_trip_through_the_transcript ... ok
+test a_sub_agent_stops_with_its_parents_turn ... ok
+test a_read_sub_agent_starts_fresh_with_its_own_tools_and_reports_back ... ok
+test sub_agents_can_be_driven_by_another_model_on_the_same_audit_chain ... ok
+test an_interrupt_stops_the_sub_agent_and_its_command_at_once ... ok
+test an_interrupted_turn_rolls_back_its_write_sub_agent_before_the_next_one ... ok
+test a_sub_agent_that_spends_its_budget_stops_and_the_parent_pays_for_it ... ok
+test a_write_sub_agent_writes_only_its_paths_and_its_commands_write_nothing ... ok
+test read_sub_agents_asked_for_together_run_in_parallel_up_to_the_limit ... ok
+test undo_reverts_what_a_write_sub_agent_wrote_in_the_turn ... ok
+test a_hybrid_sub_agent_sees_only_what_the_boundary_presents_and_leaks_nothing ... ok
+test a_crash_mid_sub_agent_rolls_its_writes_back_on_resume ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.17s
+
+     Running tests/termination.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/termination-2204c4ff34289235)
+
+running 13 tests
+test a_panic_in_the_presenter_ends_the_run_as_failed_with_its_records ... ok
+test the_audit_log_of_the_test_run_is_the_one_filled ... ok
+test a_panic_in_the_gate_ends_the_run_as_failed_before_anything_is_sent ... ok
+test the_wall_clock_stops_the_run ... ok
+test errors_a_retry_cannot_fix_fail_the_run ... ok
+test a_local_model_outage_ends_at_the_wall_clock_without_a_degraded_result ... ok
+test an_interrupted_run_resumes_to_completion_with_one_intact_audit_chain ... ok
+test attempts_that_failed_mid_stream_are_charged_once ... ok
+test the_dollar_budget_stops_the_run ... ok
+test a_disk_that_stays_full_ends_the_run_at_the_wall_clock ... ok
+test a_full_disk_pauses_the_run_and_it_completes_once_space_returns ... ok
+test a_frontier_outage_is_retried_in_place_until_the_wall_clock_ends_the_run ... ok
+test an_interrupt_kills_a_running_command_and_ends_the_run_resumably ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.62s
+
+     Running tests/top_clearance.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/top_clearance-4076139c553be1aa)
+
+running 5 tests
+test only_the_local_model_works_and_nothing_leaves ... ok
+test a_repository_can_require_top_clearance ... ok
+test frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request ... ok
+test local_token_cost_defaults_to_zero_and_uses_owner_rates_when_set ... ok
+test a_session_continues_in_top_clearance_and_cannot_leave_it ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.62s
+
+     Running tests/web_tools.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/web_tools-dcc1801f3e11807a)
+
+running 6 tests
+test pass_through_native_search_shows_each_source_framed_as_data ... ok
+test pass_through_fetches_pages_framed_and_search_needs_a_backend ... ok
+test hybrid_coding_plan_search_results_are_presented_through_the_boundary ... ok
+test hybrid_web_tools_never_carry_sensitive_values_either_way ... ok
+test hybrid_zai_and_wikipedia_searches_never_carry_sensitive_values_either_way ... ok
+test hybrid_native_search_checks_the_query_before_any_source_and_scans_every_answer ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.40s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_config-db25f674cc72e6f8)
+
+running 25 tests
+test policy::tests::no_setting_uses_the_policy_table_name ... ok
+test policy::tests::the_file_source_reads_an_unsigned_policy_and_its_meta ... ok
+test policy::tests::a_policy_that_cannot_be_used_fails_closed ... ok
+test policy::tests::rules_explain_the_bound_of_each_key ... ok
+test tests::every_default_is_valid ... ok
+test policy::tests::command_line_overrides_are_checked_against_the_policy ... ok
+test policy::tests::tighter_values_from_the_files_apply ... ok
+test policy::tests::looser_values_from_the_files_give_way_to_the_policy ... ok
+test policy::tests::template_instances_are_bounded_but_not_created ... ok
+test tests::owner_and_project_merge_with_origins ... ok
+test tests::a_project_may_turn_the_local_model_off_and_only_the_owner_back_on ... ok
+test tests::language_servers_are_template_settings_of_the_owner ... ok
+test tests::approval_is_owner_only_and_turning_it_down_needs_confirmation ... ok
+test tests::custom_patterns_must_compile_and_only_tighten_from_a_project ... ok
+test tests::reloading_config_reads_new_files_and_preserves_independent_defaults ... ok
+test tests::project_may_add_globs ... ok
+test tests::set_owner_validates_and_persists ... ok
+test tests::proposals_match_what_apply_enforces ... ok
+test tests::project_cannot_set_owner_only_keys ... ok
+test tests::unknown_keys_in_files_are_errors ... ok
+test tests::loosening_needs_confirmation_and_tightening_does_not ... ok
+test tests::project_cannot_loosen ... ok
+test tests::mcp_servers_are_template_settings_of_the_owner ... ok
+test policy::tests::changes_past_the_policy_are_refused_and_tightening_is_not ... ok
+test tests::sandbox_network_reads_old_booleans_and_loosens_only_with_confirmation ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_egress-22bf809d7c9fc49e)
+
+running 16 tests
+test head::tests::the_head_ends_at_the_blank_line ... ok
+test hosts::tests::names_wildcards_and_ports ... ok
+test hosts::tests::bad_entries_are_named ... ok
+test head::tests::connect_names_host_and_port ... ok
+test head::tests::plain_requests_are_rewritten_with_their_own_host ... ok
+test head::tests::uploads_bodies_and_other_forms_are_refused ... ok
+test tests::an_unreachable_listed_host_fails_without_counting_as_allowed ... ok
+test tls::tests::truncated_or_lying_lengths_never_panic ... ok
+test tls::tests::the_server_name_is_read_from_the_first_record ... ok
+test tests::hosts_off_the_list_are_refused_without_a_lookup ... ok
+test tests::a_tunnel_to_an_allowed_host_carries_its_tls_session ... ok
+test tests::private_and_metadata_addresses_are_refused_even_for_listed_hosts ... ok
+test tests::uploads_and_malformed_requests_are_refused ... ok
+test tests::a_route_listens_until_it_is_dropped ... ok
+test tests::plain_http_sends_one_read_request_with_its_own_host ... ok
+test tests::a_tunnel_must_carry_tls_for_its_own_host ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+
+     Running unittests src/main.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_eval-4b2845fbe67c0fab)
+
+running 115 tests
+test canary::tests::rejects_bad_placeholders ... ok
+test canary::tests::finds_raw_json_escaped_and_variant_forms ... ok
+test canary::tests::repeated_placeholder_gets_one_value ... ok
+test canary::tests::same_seed_same_values_different_seed_different_values ... ok
+test canary::tests::values_carry_no_marker_and_are_long_enough ... ok
+test cost::tests::openai_chat_stream_usage ... ok
+test cost::tests::anthropic_stream_usage ... ok
+test cost::tests::plain_json_usage_and_missing_usage ... ok
+test governor::tests::this_machine_has_limits ... ok
+test governor::tests::older_records_still_read ... ok
+test cost::tests::prices_refuse_unverified_and_compute_cost ... ok
+test grade::tests::finds_secret_outside_sinks_only ... ok
+test grade::tests::globs ... ok
+test benchmark::tests::a_run_given_twice_is_refused ... ok
+test grade::tests::parses_libtest ... ok
+test grade::tests::parses_tap_top_level_only ... ok
+test judge::tests::a_judge_may_not_be_given_twice ... ok
+test judge::tests::a_legacy_judge_file_counts_as_the_claude_judge ... ok
+test judge::tests::a_malformed_answer_is_retried_once ... ok
+test judge::tests::diffs_directories_and_drops_build_output ... ok
+test judge::tests::each_judge_is_stored_separately_and_judged_runs_are_skipped ... ok
+test judge::tests::parses_tool_use_response ... ok
+test judge::tests::scrubs_agent_names_and_canaries ... ok
+test lanes::infra_tests::classifies_infrastructure_outcomes ... ok
+test lanes::judge_cli::tests::json_answers_parse_with_or_without_a_fence ... ok
+test lanes::judge_cli::tests::judges_are_two_families_and_the_api_is_the_claude_judge ... ok
+test lanes::judge_cli::tests::models_default_per_judge_and_can_be_overridden ... ok
+test governor::tests::priority_prefixes_run_the_program_in_place ... ok
+test lanes::preflight::tests::a_copied_main_login_is_refused ... ok
+test lanes::preflight::tests::every_frontier_lane_routes_through_the_proxy ... ok
+test lanes::preflight::tests::missing_prerequisites_fail_without_revealing_values ... ok
+test lanes::preflight::tests::parses_upstream_hosts ... ok
+test lanes::preflight::tests::subscription_lanes_use_no_api_key_and_route_through_the_proxy ... ok
+test lanes::judge_cli::tests::the_judge_never_uses_the_evaluation_codex_home ... ok
+test lanes::tests::built_in_lanes_declare_their_model_family ... ok
+test lanes::tests::built_in_lanes_parse_and_have_unique_names ... ok
+test lanes::tests::duet_lanes_keep_operator_approval_off ... ok
+test lanes::tests::duet_lanes_opt_in_explicitly_to_weaker_settings ... ok
+test lanes::tests::electricity_uses_complete_request_time_and_keeps_legacy_upper_bound ... ok
+test lanes::tests::expands_placeholders ... ok
+test lanes::tests::ip_marks_become_duet_project_config ... ok
+test lanes::tests::duet_lane_configs_are_valid_duet_owner_configs ... ok
+test lanes::tests::records_without_provenance_still_load ... ok
+test lanes::tests::sandbox_limits_writes_and_network ... ok
+test lanes::tests::the_explore_lane_is_hybrid_with_the_explorer_on ... ok
+test lanes::tests::the_nolocal_lane_is_hybrid_with_the_local_model_off ... ok
+/bin/sh: /Users/maximp/.duet-eval-sandbox-probe: Operation not permitted
+test lanes::tests::version_of_a_missing_program_is_none ... ok
+test leakproxy::tests::a_frame_the_proxy_cannot_read_is_relayed_and_marked ... ok
+test leakproxy::tests::negotiated_extension_makes_the_session_unmeasured ... ok
+test lanes::tests::sandbox_blocks_outside_writes_and_direct_network ... ok
+test leakproxy::tests::refuses_request_bodies_it_cannot_scan ... ok
+test leakproxy::tests::records_forwards_streams_and_flags_canaries ... ok
+test leakproxy::tests::websocket_messages_are_scanned_relayed_and_priced ... ok
+test ledger::tests::parses_the_ledger_from_a_summary ... ok
+test ledger::tests::reads_the_newest_summary_in_a_workspace ... ok
+test leakproxy::tests::websocket_outcomes_from_captured_replies ... ok
+test ledger::tests::reads_the_terminal_state ... ok
+test ledger::tests::request_time_is_complete_only_when_every_used_local_role_marks_it ... ok
+test ledger::tests::retry_counts_are_kept_when_instrumented_and_unknown_in_old_records ... ok
+test ledger::tests::the_explorers_local_work_counts_as_local_work ... ok
+test profile::tests::a_turn_is_split_between_the_causes_of_its_calls ... ok
+test profile::tests::an_unpriced_model_leaves_dollars_unknown_but_tokens_counted ... ok
+test profile::tests::per_turn_context_is_pooled_across_runs ... ok
+test profile::tests::a_run_directory_loads_from_its_capture_and_transcript ... ok
+test profile::tests::projection_charges_recorded_tokens_at_each_price ... ok
+test profile::tests::projection_prices_match_duets_own_cited_prices ... ok
+test profile::tests::summaries_cover_each_lane_then_each_task ... ok
+test profile::tests::tables_resolve_from_names_a_file_or_the_flagships ... ok
+test profile::tests::the_profile_table_shows_all_then_each_task ... ok
+test profile::tests::token_counts_read_as_thousands_or_millions ... ok
+test profile::tests::tools_map_to_causes ... ok
+test profile::tests::projected_ratios_are_paired_by_task_and_seed ... ok
+test report::tests::a_run_missing_a_judge_is_listed_and_kept_out_of_the_judge_gate ... ok
+test report::tests::a_run_stopped_by_duets_own_gate_is_a_product_failure_not_infrastructure ... ok
+test report::tests::a_duet_run_without_a_terminal_state_is_a_failure_of_the_lane ... ok
+test report::tests::a_single_leak_fails_privacy ... ok
+test report::tests::agreement_and_self_judged_lanes_are_reported ... ok
+test report::tests::a_single_judge_batch_still_reports_and_gates ... ok
+test report::tests::completed_and_external_runs_are_unchanged_and_the_rules_are_idempotent ... ok
+test report::tests::equal_quality_cheaper_and_clean_passes_every_gate ... ok
+test report::tests::gates_use_the_mean_of_both_judges ... ok
+test report::tests::genuine_infrastructure_stays_invalid ... ok
+test report::tests::legacy_judge_files_load_as_the_claude_judge ... ok
+test report::tests::lanes_with_a_ledger_get_a_cost_breakdown ... ok
+test report::tests::superseded_attempts_are_not_reported ... ok
+test report::tests::unread_traffic_is_not_measured_never_zero ... ok
+test stats::tests::binomial_upper_matches_rule_of_three_for_zero_events ... ok
+test stats::tests::bootstrap_intervals_are_deterministic_and_bracket_the_estimate ... ok
+test stats::tests::clearly_worse_lane_fails_non_inferiority ... ok
+test stats::tests::consistently_cheaper_lane_is_strictly_lower ... ok
+test stats::tests::identical_lanes_are_non_inferior_and_not_cheaper ... ok
+test stats::tests::paired_ratio_is_the_ratio_of_totals ... ok
+test stats::tests::pearson_correlation ... ok
+test stats::tests::sample_size_grows_as_margin_shrinks ... ok
+test task::tests::hidden_tests_accept_one_or_several_commands ... ok
+test task::tests::loads_validates_and_seals ... ok
+test task::tests::one_task_loads_beside_a_package_this_binary_cannot_parse ... ok
+test task::tests::rejects_sensitive_path_that_does_not_exist ... ok
+test task::tests::rejects_unknown_fields ... ok
+test tests::judge_defaults_to_both_judge_families ... ok
+test benchmark::tests::pairs_runs_across_batches_and_applies_the_current_rules ... ok
+test wsframe::tests::lengths_fragments_and_interleaved_control_frames ... ok
+test wsframe::tests::protocol_violations ... ok
+test wsframe::tests::rfc_examples_masked_and_unmasked ... ok
+test report::tests::quality_is_decided_by_the_judge_and_the_task_majority ... ok
+test wsframe::tests::unfinished_message_and_partial_frame ... ok
+test wsframe::tests::sixty_four_bit_length ... ok
+test workspace::tests::renders_assets_over_starter_and_keeps_holdout_out ... ok
+test benchmark::tests::unread_traffic_reports_leaks_as_not_measured ... ok
+test benchmark::tests::the_benchmark_requires_both_judges_on_every_run ... ok
+test benchmark::tests::output_regenerates_byte_for_byte ... ok
+test benchmark::tests::changing_a_raw_record_changes_the_digest ... ok
+test governor::tests::timed_counts_the_cpu_of_descendants ... ok
+test grade::tests::grades_a_rust_task_end_to_end ... ok
+test grade::tests::a_hidden_binary_that_does_not_compile_fails_only_its_own_tests ... ok
+
+test result: ok. 115 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_extensions-06e2f09729847698)
+
+running 7 tests
+test skills::tests::folded_and_literal_descriptions_support_paragraphs_unicode_and_indentation ... ok
+test skills::tests::quoted_metadata_flags_and_inert_fields_preserve_original_instructions ... ok
+test skills::tests::deterministic_precedence_namespaces_and_missing_roots ... ok
+test skills::tests::changed_instructions_require_refresh_for_body_and_resources_including_clones ... ok
+test skills::tests::malformed_required_metadata_fails_with_diagnostics ... ok
+test skills::tests::symlinks_at_root_skill_file_and_resource_directories_are_rejected ... ok
+test skills::tests::bounded_utf8_text_only_and_path_traversal_rejected ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_fs-8bcc7f8a3087cad3)
+
+running 16 tests
+test host::tests::other_errors_and_no_wait_fail_at_once ... ok
+test error::tests::os_errors_keep_their_number_and_host_shortages_are_recognised ... ok
+test path::tests::normalizes_and_rejects_escapes ... ok
+test lock::tests::second_lock_fails_until_first_drops ... ok
+test path::tests::reserved_directories_at_any_depth ... ok
+test host::tests::host_shortages_are_retried_until_the_wait_gives_up ... ok
+test registry::tests::lookup_covers_nested_paths ... ok
+test ops::tests::size_cap_and_missing_files ... ok
+test private::tests::repair_refuses_symlinks_without_reading_or_truncating_the_target ... ok
+test ops::tests::refuses_symlinks_on_the_path_and_at_the_leaf ... ok
+test private::tests::complete_read_only_logs_remain_readable ... ok
+test private::tests::repair_refuses_a_fifo_without_waiting_for_a_writer ... ok
+test registry::tests::every_duet_path_in_the_sources_is_registered ... ok
+test ops::tests::writes_reads_and_checks_preconditions ... ok
+test private::tests::a_failed_append_or_write_leaves_nothing_behind ... ok
+test private::tests::private_modes_and_torn_tail_repair ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_git-1a76a32f60576663)
+
+running 14 tests
+test commit::tests::identities_parse_strictly ... ok
+test tests::lists_files_without_reserved_or_ignored ... ok
+test tests::diffs_only_requested_paths ... ok
+test walk::tests::a_workspace_named_like_a_skipped_directory_is_still_listed ... ok
+test walk::tests::honours_ignore_files_and_skips_state_and_build_output ... ok
+test commit::tests::blockers_name_ignored_filtered_and_odd_paths ... ok
+test tests::hostile_repository_config_cannot_run_hooks_or_fsmonitor ... ok
+test tests::diffs_two_files_read_only ... ok
+test commit::tests::identity_comes_from_the_repository_then_the_owner_files ... ok
+test tests::lists_files_outside_a_repository_by_walking ... ok
+test tests::snapshots_are_private_and_readable ... ok
+test commit::tests::deletions_first_commits_and_moved_heads ... ok
+test commit::tests::commits_exactly_the_given_paths_as_the_operator ... ok
+test commit::tests::snapshots_and_diffs_work_after_a_commit ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_governor-9e6335e3e284e988)
+
+running 8 tests
+test tests::hog_child ... ok
+test tests::under_critical_pressure_the_largest_process_that_matters_is_killed ... ok
+test tests::this_machine_has_limits_and_zero_means_its_default ... ok
+test tests::a_reused_process_id_is_not_a_member ... ok
+test tests::the_footprint_counts_what_is_resident_at_least ... ok
+test tests::a_grandchild_above_the_process_limit_is_killed_and_recorded ... ok
+test tests::nothing_a_tree_started_outlives_it ... ok
+test tests::above_the_tree_limit_the_largest_process_is_killed ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_lsp-65bd8a7357fd978b)
+
+running 7 tests
+test position::tests::positions_outside_the_file_are_reported ... ok
+test client::tests::configuration_requests_are_answered_by_section ... ok
+test framing::tests::messages_round_trip_with_multibyte_bodies ... ok
+test framing::tests::malformed_frames_are_errors_not_hangs ... ok
+test position::tests::columns_convert_through_utf16 ... ok
+test servers::tests::owner_entries_override_or_add_languages ... ok
+test servers::tests::programs_are_found_on_the_given_path_only ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lsp.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/lsp-97e5da152dea62ef)
+
+running 7 tests
+test a_newly_hidden_path_restarts_the_server_without_it ... ok
+test a_crashed_server_is_restarted_once_then_unavailable ... ok
+test one_server_answers_every_request_with_utf16_positions ... ok
+test a_sandboxed_server_cannot_read_hidden_files_and_one_that_keeps_crashing_is_given_up ... ok
+test a_request_that_is_not_answered_times_out_and_the_server_stays ... ok
+test edits_are_synced_and_their_diagnostics_collected ... ok
+test diagnostics_wait_for_a_check_in_progress ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_mcp-decfd12b9fe9cd89)
+
+running 4 tests
+test sse::tests::events_split_across_chunks_are_joined ... ok
+test content::tests::non_text_content_is_described_not_shown ... ok
+test content::tests::structured_content_is_used_when_there_are_no_blocks ... ok
+test http::tests::urls_need_tls_unless_loopback_and_hold_no_credentials ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/client.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/client-c7f676e9e387104a)
+
+running 6 tests
+test a_crashed_server_is_reported_as_closed ... ok
+test an_unknown_protocol_revision_is_refused ... ok
+test an_unreachable_http_server_is_closed_and_errors_are_short ... ok
+test stdio_handshake_listing_and_calls ... ok
+test http_json_and_event_stream_answers_with_a_session ... ok
+test a_timed_out_call_is_cancelled_and_the_next_call_still_works ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_net-b089ad10ce9b02ff)
+
+running 2 tests
+test tests::lookup_resolves_only_a_checked_name ... ok
+test tests::sends_the_checked_request_with_credentials_and_pins_its_host ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_provider-60b7ba8ba9fc986c)
+
+running 93 tests
+test anthropic::tests::missing_usage_is_estimated ... ok
+test anthropic::tests::max_tokens_and_window_stops_are_terminal ... ok
+test anthropic::tests::assembles_thinking_text_tool_use_and_cache_usage ... ok
+test anthropic::tests::the_prefix_is_stable_as_the_conversation_grows ... ok
+test anthropic::tests::a_signed_thinking_block_is_replayed_unchanged_in_place ... ok
+test anthropic::tests::a_missing_stop_is_truncation_and_a_stream_error_retries ... ok
+test anthropic::tests::without_a_system_prompt_the_last_tool_is_the_breakpoint ... ok
+test anthropic::tests::effort_maps_to_adaptive_thinking_and_output_config ... ok
+test anthropic::tests::body_has_sorted_tools_blocks_and_breakpoints ... ok
+test backends::tests::discovery_keeps_only_text_models_with_tool_use_when_known ... ok
+test backends::tests::frontier_presets_use_tls_known_dialects_and_distinct_names ... ok
+test backends::tests::picks_only_unambiguous_choices ... ok
+test backends::tests::presets_are_loopback_and_named_uniquely ... ok
+test catalog::tests::cache_writes_are_disjoint_in_both_openrouter_dialects ... ok
+test catalog::tests::conditional_rates_follow_context_threshold_order_and_utc_windows ... ok
+test catalog::tests::exact_and_unique_model_resolution_preserves_variants_and_rejects_bad_prices ... ok
+test chat::tests::body_is_stable_sorted_and_replays_raw_arguments ... ok
+test chat::tests::assembles_streamed_tool_calls_and_usage ... ok
+test endpoint::tests::flags_plaintext_remote ... ok
+test chat::tests::missing_finish_is_truncation_and_missing_usage_is_estimated ... ok
+test endpoint::tests::local_role_admits_loopback_and_allowlist_only ... ok
+test chat::tests::length_stop_is_reported_and_blocks_tools ... ok
+test chat::tests::stream_error_mid_way_is_retryable_stream_error ... ok
+test dialect::tests::each_dialect_authenticates_its_own_way ... ok
+test dialect::tests::names_round_trip ... ok
+test endpoint::tests::parses_hosts ... ok
+test endpoint::tests::plaintext_to_a_remote_host_needs_the_owner_opt_in ... ok
+test image::tests::chat_completions_golden ... ok
+test endpoint::tests::trust_uses_the_same_url_normalization_as_the_http_client ... ok
+test image::tests::a_prepared_image_is_taken_as_it_is ... ok
+test image::tests::formats_are_recognized_by_their_bytes ... ok
+test image::tests::anthropic_messages_golden ... ok
+test image::tests::images_not_loaded_or_masked_send_nothing_and_text_bodies_are_unchanged ... ok
+test image::tests::stored_bytes_must_match_the_digest ... ok
+test image::tests::metadata_is_dropped_by_re_encoding ... ok
+test image::tests::responses_golden ... ok
+test image::tests::redaction_replaces_every_wire_form_with_its_digest ... ok
+test image::tests::the_in_memory_reader_reads_and_seeks ... ok
+test price::tests::prices_usage ... ok
+test meter::tests::local_rates_default_to_zero_and_resume_never_reprices_old_tokens ... ok
+test live::tests::views_become_the_pieces_each_part_gained ... ok
+test probe::tests::reads_models_listing ... ok
+test catalog::tests::bundled_prices_cover_real_slugs_and_long_context ... ok
+test probe::tests::reads_native_documents ... ok
+test probe::tests::the_frontier_probe_is_cacheable_everywhere_and_sets_no_sampling ... ok
+test responses::tests::a_final_object_alone_is_enough ... ok
+test responses::tests::effort_and_schema_map_to_their_fields ... ok
+test responses::tests::assembles_text_function_calls_reasoning_and_cached_usage ... ok
+test responses::tests::body_is_stateless_sorted_and_prefix_stable ... ok
+test retry::tests::backoff_grows_and_caps ... ok
+test responses::tests::incomplete_responses_are_terminal ... ok
+test responses::tests::failures_and_cut_off_streams_retry ... ok
+test recover::tests::fails_closed_on_ambiguity ... ok
+test recover::tests::recovers_one_well_formed_call ... ok
+test retry::tests::retry_after_seconds_and_dates ... ok
+test sse::tests::multi_line_data_and_unterminated_tail ... ok
+test sse::tests::decodes_events_split_across_chunks ... ok
+test tests::a_request_that_fails_in_the_end_reports_its_failed_attempts ... ok
+test backends::tests::local_discovery_reads_models_without_a_generation_call ... ok
+test tests::a_tap_sees_anthropic_and_responses_streams ... ok
+test tests::a_tap_sees_each_attempt_as_it_streams_and_changes_nothing ... ok
+test tests::an_explicit_attempt_cap_is_honoured ... ok
+test tests::an_attempt_in_flight_is_cut_off_at_the_deadline ... ok
+test tests::auth_errors_are_not_retried ... ok
+test tests::anthropic_and_responses_client_errors_are_terminal ... ok
+test tests::anthropic_overload_and_rate_limits_retry_in_place ... ok
+test tests::cache_probe_sends_one_request_twice_and_reports_cached_tokens ... ok
+test tests::cancelling_between_local_attempts_has_no_unknown_charge ... ok
+test tests::cancelling_a_local_request_marks_its_price_incomplete ... ok
+test backends::tests::discovery_identifies_backends_by_native_endpoints ... ok
+test tests::cancellation_keeps_estimated_usage_from_an_earlier_attempt ... ok
+test tests::an_interrupt_stops_retries ... ok
+test tests::context_overflow_is_classified_and_not_retried ... ok
+test tests::live_glm_tool_round_trip_and_cache ... ignored
+test tests::live_local_tool_round_trip_and_prefix_reuse ... ignored
+test tests::length_stop_is_terminal_not_retried ... ok
+test tests::invalid_requests_are_not_retried ... ok
+test tests::excessive_retry_after_cannot_panic_or_outlive_the_run_deadline ... ok
+test tests::local_role_refuses_non_loopback_endpoints ... ok
+test tests::responses_streams_through_the_client ... ok
+test tests::retried_failures_do_not_poison_usage ... ok
+test tests::local_role_recovers_text_tool_calls ... ok
+test tests::http_transport_does_not_forward_requests_to_redirect_recipients ... ok
+test tests::stalled_stream_times_out_and_retries ... ok
+test tests::transport_error_mid_stream_retries ... ok
+test tests::streams_a_response_with_reported_usage ... ok
+test tests::retry_after_honours_ordinary_delays_and_bounds_extreme_unbudgeted_waits ... ok
+test probe::tests::probes_listing_then_native_endpoints ... ok
+test probe::tests::context_probe_ignores_redirects_and_unsuccessful_listings ... ok
+test tests::infrastructure_failures_retry_without_an_attempt_cap ... ok
+test tests::the_vision_probe_needs_every_colour_named ... ok
+test tests::a_persistent_outage_retries_until_the_deadline ... ok
+test image::tests::large_images_are_scaled_and_every_image_is_re_encoded ... ok
+
+test result: ok. 91 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 4.16s
+
+     Running tests/properties.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/properties-bb39bcb9cd8e2363)
+
+running 7 tests
+test replayed_turns_keep_their_text_and_calls ... ok
+test sse_decoder_never_panics_on_arbitrary_bytes ... ok
+test chat_assembler_never_panics_on_arbitrary_text ... ok
+test chat_assembler_never_panics_on_arbitrary_json ... ok
+test anthropic_and_responses_assemblers_never_panic ... ok
+test tool_call_recovery_never_panics ... ok
+test sse_events_do_not_depend_on_chunking ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_release-0b1990fcb0621c7d)
+
+running 3 tests
+test sbom::tests::an_unknown_root_is_an_error ... ok
+test sbom::tests::components_are_the_runtime_and_build_closure_with_licenses_and_hashes ... ok
+test sbom::tests::the_document_is_reproducible_and_the_serial_is_a_uuid ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/bin/duet-sbom.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_sbom-ec2382d8084b0d3d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/release_scripts.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/release_scripts-7f5e1c02869d92d3)
+
+running 2 tests
+test release_refuses_to_start_without_an_operator_key_or_the_right_version ... ok
+test verify_release_accepts_a_signed_release_and_rejects_tampering ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
+
+     Running tests/sbom_workspace.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/sbom_workspace-2fd32f1a296d4f7b)
+
+running 1 test
+test the_sbom_of_duet_cli_lists_its_dependencies_with_licenses ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_review-9faf2a4b90e51c8a)
+
+running 3 tests
+test context::tests::related_declarations_keep_source_order_and_helper_limit ... ok
+test context::tests::finding_contexts_include_only_their_own_helpers ... ok
+test context::tests::helper_and_route_context_stay_bounded ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/regressions.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/regressions-92359611b85d9943)
+
+running 4 tests
+test requested_function_survives_context_truncation ... ok
+test matched_receiver_is_not_the_imported_requests_module ... ok
+test comprehension_receiver_is_not_the_imported_requests_module ... ok
+test function_context_preserves_nested_scope_decorators_and_large_locations ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/rules.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/rules-37369265c97f791b)
+
+running 9 tests
+test before_after_counts_duplicates_and_changed_sources ... ok
+test value_spans_match_literals_not_comments_and_validate_byte_ranges ... ok
+test broader_patterns_are_advisory_and_guard_removal_is_a_change ... ok
+test formatted_but_static_sql_and_explicit_shell_vectors ... ok
+test tls_binding_literal_and_comment_controls ... ok
+test shell_and_sql_trace_assignments_but_remain_advisory ... ok
+test mutations_and_loop_bindings_trace_input_without_crossing_functions ... ok
+test schema_fields_reach_sinks_in_supported_languages ... ok
+test unsupported_syntax_and_caps_never_claim_complete ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/throughput.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/throughput-1634ac4a56ec2111)
+
+running 1 test
+test many_findings_with_related_context ... ignored, timing requires an optimized build; reports measurements, not a speed guarantee
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_sandbox-2942e268678ec884)
+
+running 26 tests
+test network_rule_tests::proxy_variables_point_at_loopback_and_spare_it ... ok
+test network_rule_tests::bwrap_keeps_its_network_namespace_with_the_bridge ... ok
+test tests::command_denials_match_native_and_runtime_error_casing ... ok
+test network_rule_tests::seatbelt_rules_follow_the_network_mode ... ok
+test bwrap_args_tests::bwrap_args_protect_reserved_dirs_and_deny_reads ... ok
+test tests::credential_stores_in_the_home_directory_are_unreadable ... ok
+test tests::a_denied_path_that_does_not_exist_is_not_created ... ok
+test tests::environment_is_cleared_to_the_allowlist ... ok
+test tests::a_server_process_talks_over_its_streams_under_the_same_sandbox ... ok
+test tests::denied_paths_cannot_be_read_by_any_means ... ok
+test tests::denied_paths_stay_denied_through_symlinks ... ok
+test tests::a_read_only_command_reads_the_workspace_and_writes_only_its_scratch ... ok
+test tests::sandbox_is_detected ... ok
+test tests::large_output_is_capped_and_spilled ... ok
+test tests::git_and_run_state_are_unreadable_when_denied ... ok
+test tests::network_is_denied_by_default ... ok
+test tests::run_state_is_unreadable_even_when_nothing_is_denied ... ok
+test tests::real_toolchains_run ... ok
+test tests::writes_inside_workspace_and_scratch_only ... ok
+test linker_tests::builds_produce_no_xcrun_cache_errors ... ok
+test tests::reserved_directories_are_read_only_at_any_depth ... ok
+test toolchain_tests::cargo_test_and_node_test_run_inside_the_sandbox ... ok
+test tests::unix_sockets_are_unreachable_without_network ... ok
+test tests::a_stop_kills_the_whole_tree_at_once ... ok
+test tests::a_runaway_process_is_stopped_and_the_output_says_why ... ok
+test tests::timeout_kills_detached_descendants ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.24s
+
+     Running tests/network.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/network-0ff438b3bd387e79)
+
+running 6 tests
+test a_long_lived_server_cannot_start_with_a_proxy_route ... ok
+test without_network_a_command_reaches_not_even_the_proxy ... ok
+test the_bridge_helper_hands_connections_to_the_host ... ok
+test with_the_proxy_route_a_command_reaches_the_proxy_and_nothing_else ... ok
+test unix_sockets_stay_unreachable_with_the_proxy_route ... ok
+test with_the_proxy_route_a_command_reaches_the_servers_it_starts ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_tui-bf5c77810df49e4d)
+
+running 124 tests
+test clipboard::tests::malformed_and_oversized_content_is_rejected_without_partial_success ... ok
+test clipboard::tests::mac_tiff_is_checked_before_conversion_and_must_keep_dimensions ... ok
+test clipboard::tests::mac_plain_text_preserves_unicode_newlines_and_does_not_expose_it_in_debug ... ok
+test changes::tests::parses_hunks_with_line_numbers_and_counts ... ok
+test clipboard::tests::ssh_and_remote_x11_never_touch_the_native_clipboard ... ok
+test clipboard::tests::wayland_prefers_images_and_reencodes_png_with_one_action_deadline ... ok
+test clipboard::tests::writes_pass_text_only_through_stdin_and_report_helper_failure ... ok
+test app::paste_tests::settings_paste_inserts_sanitized_text_without_submitting ... ok
+test app::paste_tests::tester_and_sample_pastes_are_bounded_and_remain_in_input_mode ... ok
+test clipboard::tests::x11_uses_clipboard_selection_and_xsel_is_text_fallback ... ok
+test app::paste_tests::paste_never_accepts_confirmation_or_triggers_normal_mode_keys ... ok
+test term::editor::tests::editing_moves_by_character_word_and_line ... ok
+test term::editor::tests::enter_sends_and_multi_line_keys_add_lines ... ok
+test term::editor::tests::history_is_browsed_and_searched ... ok
+test term::editor::tests::insertion_and_deletion_keep_cursor_at_new_grapheme_boundaries ... ok
+test term::editor::tests::mouse_selection_matches_wrapping_wide_graphemes_and_visible_window ... ok
+test term::editor::tests::paste_is_one_undoable_edit_and_never_implicitly_submits ... ok
+test term::editor::tests::selection_copy_cut_replace_and_undo_preserve_multiline_graphemes ... ok
+test term::editor::tests::selection_marks_newlines_and_search_backspace_removes_whole_graphemes ... ok
+test term::editor::tests::the_input_wraps_under_the_prompt_and_keeps_the_cursor_in_view ... ok
+test term::editor::tests::word_and_line_selection_never_split_combining_text_or_enter_history ... ok
+test term::feed::tests::a_log_counts_the_stream_without_showing_it ... ok
+test term::feed::tests::a_question_shows_its_options_after_it_streamed ... ok
+test term::feed::tests::a_retried_response_is_marked_and_shown_again ... ok
+test term::feed::tests::a_streamed_reply_is_shown_as_it_arrives_and_not_repeated ... ok
+test term::feed::tests::an_end_not_streamed_is_shown_whole_and_failures_read_as_before ... ok
+test term::feed::tests::lines_are_tinted_by_their_mark_and_made_safe ... ok
+test term::markdown::tests::code_blocks_are_not_wrapped_and_keep_their_indentation ... ok
+test term::markdown::tests::colour_styles_inline_code_bold_and_code_blocks ... ok
+test term::markdown::tests::hostile_text_is_made_safe_before_rendering ... ok
+test term::markdown::tests::lists_headings_quotes_and_rules_keep_their_shape ... ok
+test term::markdown::tests::paragraphs_wrap_under_the_label ... ok
+test runs::history_tests::legacy_open_session_is_displayed_as_open_without_rewriting_history ... ok
+test term::markdown::tests::the_row_being_written_shows_as_it_grows ... ok
+test runs::history_tests::history_reader_refuses_a_symlink_without_modifying_its_target ... ok
+test term::editor::tests::at_names_a_file_anywhere_in_a_message ... ok
+test runs::history_tests::history_browsing_keeps_a_live_partial_entry_and_finds_its_task_when_complete ... ok
+test term::stream::tests::an_opening_bracket_that_never_closes_is_not_held_forever ... ok
+test term::stream::tests::the_reply_message_is_read_as_the_arguments_arrive ... ok
+test term::stream::tests::a_placeholder_split_across_deltas_is_restored_whole ... ok
+test term::tests::clipping_counts_columns_and_keeps_styles_closed ... ok
+test term::tests::no_color_or_a_dumb_terminal_turns_colour_off ... ok
+test term::tests::escape_sequences_and_controls_never_reach_the_terminal ... ok
+test term::tests::painting_follows_the_colour_choice ... ok
+test term::tests::the_region_redraws_in_place ... ok
+test term::words::tests::progress_shows_a_sub_agents_steps_under_its_id ... ok
+test term::words::tests::progress_shows_calls_errors_and_withheld_results_locally ... ok
+test tests::a_sub_agents_steps_show_indented_under_its_id ... ok
+test tests::a_terminal_without_a_usable_size_is_refused_with_the_minimum ... ok
+test term::editor::tests::tab_completes_commands_and_image_paths ... ok
+test audit::tests::requests_of_every_dialect_show_their_messages_and_calls ... ok
+test term::markdown::tests::the_result_does_not_depend_on_how_the_text_was_cut ... ok
+test clipboard::tests::bounded_runner_handles_binary_output_failure_and_timeout_without_clipboard ... ok
+test tests::cancelling_the_endpoint_change_also_drops_the_model_change ... ok
+test tests::every_registry_key_is_on_exactly_one_screen ... ok
+test tests::data_screen_purges_after_confirmation ... ok
+test audit::tests::cached_audit_view_tracks_navigation_refresh_and_removed_runs ... ok
+test tests::loosening_shows_the_diff_and_cancel_leaves_everything_unchanged ... ok
+test tests::confirmed_loosening_applies_and_records_what_it_weakened ... ok
+test tests::edits_are_validated_and_cancellable ... ok
+test tests::a_policy_layer_bounds_what_the_settings_screens_change ... ok
+test tests::empty_workspace_screens_render ... ok
+test tests::project_scope_refuses_owner_only_keys_and_loosening ... ok
+test tests::models_screen_runs_doctor_offline_and_online_on_request ... ok
+test tests::audit_screen_lists_records_and_verifies ... ok
+test tests::sensitivity_tester_explains_matches ... ok
+test tests::models_screen_runs_the_cache_probe_only_on_request ... ok
+test tests::navigation_between_screens ... ok
+test tests::models_screen_detects_local_servers_and_uses_one_through_the_audited_path ... ok
+test workspace::ansi::tests::duets_styles_become_ratatui_styles ... ok
+test workspace::ansi::tests::other_escapes_and_controls_are_never_drawn ... ok
+test workspace::ansi::tests::wrapping_counts_columns_and_keeps_styles ... ok
+test workspace::interaction::tests::composer_mouse_selection_and_chips_render_without_terminal_controls ... ok
+test tests::sensitivity_text_tester_names_the_imported_rule ... ok
+test workspace::interaction::tests::modal_paste_cannot_change_a_draft_or_answer_approval ... ok
+test workspace::interaction::tests::paste_waits_for_image_queue_before_enter_can_send ... ok
+test workspace::interaction::tests::pasted_text_is_atomic_unsent_and_stale_paste_never_changes_a_new_draft ... ok
+test workspace::interaction::tests::find_and_palette_preserve_drafts_and_search_never_reaches_the_model ... ok
+test workspace::interaction::tests::recovering_an_unsent_message_never_overwrites_new_input ... ok
+test tests::sensitivity_text_tester_shows_replacements_including_custom_patterns ... ok
+test workspace::interaction::tests::selection_copy_never_interrupts_or_automatically_copies_on_mouse_up ... ok
+test workspace::privacy::tests::bounded_history_scrolls_to_end_and_namespaces_children ... ok
+test workspace::privacy::tests::compact_view_explains_a_web_excerpt_without_dumping_the_outbound_text ... ok
+test workspace::privacy::tests::outbound_dialects_keep_only_tool_result_text ... ok
+test workspace::privacy::tests::questions_sources_errors_and_outbound_evidence_survive_replay ... ok
+test workspace::privacy::tests::repeated_details_are_scoped_and_legacy_counts_are_never_treated_as_identity ... ok
+test workspace::terminal::copy_tests::base64_matches_the_standard ... ok
+test workspace::tests::a_reply_shows_as_it_streams ... ok
+test tests::run_screen_follows_the_transcript ... ok
+test workspace::tests::a_small_terminal_gets_a_notice ... ok
+test workspace::tests::a_sent_message_reaches_the_session_and_the_conversation ... ok
+test workspace::tests::a_turn_reads_as_cells ... ok
+test workspace::tests::an_approval_is_a_dialog_that_defaults_to_no ... ok
+test workspace::tests::an_edit_of_a_sensitive_file_is_named_never_shown ... ok
+test workspace::tests::benchmark_cached_transcript_viewport ... ignored, manual viewport microbenchmark; run with --ignored --nocapture
+test workspace::tests::at_picks_a_file_of_the_workspace ... ok
+test workspace::panel::tests::long_changes_view_keeps_scrolled_rows_and_last_line_reachable ... ok
+test workspace::tests::command_menu_fits_available_height_and_keeps_its_last_command_visible ... ok
+test workspace::panel::tests::resume_loads_privacy_events_and_session_shows_local_prices_and_live_cost ... ok
+test workspace::tests::fuzzy_prefers_the_file_name ... ok
+test workspace::tests::ctrl_o_unfolds_tool_results ... ok
+test workspace::tests::f1_shows_the_keys ... ok
+test tests::tightening_applies_directly_and_is_audited ... ok
+test workspace::tests::journal_groups_repeated_filtering_but_keeps_the_first_concrete_description ... ok
+test workspace::tests::dragging_selects_text_of_the_conversation ... ok
+test workspace::tests::journal_keeps_full_command_read_range_and_local_failure ... ok
+test workspace::tests::output_from_elsewhere_and_hostile_text_are_drawn_harmlessly ... ok
+test workspace::tests::goal_commands_complete_and_history_reaches_the_session ... ok
+test workspace::tests::journal_shows_local_questions_source_status_and_filtered_answer ... ok
+test workspace::tests::pasted_menu_filters_reset_selection_and_f4_paging_preserves_the_draft ... ok
+test workspace::tests::menu_mouse_navigation_stays_in_menu_and_never_runs_a_clicked_command ... ok
+test workspace::tests::the_layout_is_a_header_the_conversation_the_input_and_a_status_line ... ok
+test workspace::tests::tab_cycles_panel_tabs_in_both_directions_without_changing_the_message ... ok
+test tests::ip_screen_marks_paths_and_previews_the_skeleton ... ok
+test workspace::tests::transcript_ranges_preserve_cell_boundaries_and_cross_cell_selection ... ok
+test workspace::tests::the_palette_lists_commands_and_takes_the_arrows ... ok
+test workspace::tests::settings_open_over_the_conversation_and_esc_comes_back ... ok
+test workspace::tests::the_view_follows_new_output_unless_scrolled_up ... ok
+test tests::settings_screens_show_every_value_and_its_origin ... ok
+test workspace::tests::the_rail_opens_on_a_wide_screen_and_ctrl_t_cycles_it ... ok
+test workspace::tests::the_privacy_view_shows_filtering_and_selected_read_details ... ok
+test tests::run_view_lists_changed_files_and_shows_numbered_diffs ... ok
+test tests::run_view_follows_edits_as_they_happen_and_reads_finished_runs ... ok
+test term::editor::tests::oversized_pastes_and_undo_history_are_bounded ... ok
+
+test result: ok. 123 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 7.15s
+
+     Running unittests src/lib.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/duet_web-48af46ab4e7e0420)
+
+running 27 tests
+test guard::tests::private_loopback_link_local_cgnat_and_metadata_are_refused ... ok
+test guard::tests::the_allowlist_opens_private_hosts_but_never_metadata ... ok
+test html::tests::malformed_markup_degrades_to_text ... ok
+test html::tests::readable_text_keeps_structure_and_links_and_drops_scripts ... ok
+test search::native::tests::arxiv_entries_parse_from_atom ... ok
+test search::native::tests::github_repositories_and_issues_parse ... ok
+test search::native::tests::gzip_replies_are_decompressed_within_the_cap ... ok
+test search::native::tests::hacker_news_links_the_story_and_its_discussion ... ok
+test search::native::tests::merging_interleaves_by_rank_and_drops_repeated_pages ... ok
+test search::native::tests::names_round_trip_and_every_source_has_an_https_endpoint ... ok
+test search::native::tests::pacing_spaces_requests_and_counts_the_github_window ... ok
+test search::native::tests::pypi_is_asked_for_exact_names_only ... ok
+test search::native::tests::registries_parse_with_package_pages ... ok
+test search::native::tests::registry_packages_must_be_about_the_query ... ok
+test search::native::tests::requests_carry_the_query_and_count_each_source_expects ... ok
+test search::native::tests::selection_keeps_rank_order_and_refuses_unknown_sources ... ok
+test search::native::tests::stack_exchange_limits_are_read_from_the_reply ... ok
+test search::native::tests::stack_exchange_questions_show_answers_score_and_tags ... ok
+test search::tests::long_snippets_are_cut ... ok
+test search::tests::refusals_are_explained_without_the_reply ... ok
+test search::tests::searxng_and_brave_parse_title_url_and_snippet ... ok
+test search::tests::the_coding_plan_is_asked_through_its_tool_and_its_text_is_decoded ... ok
+test search::tests::wikipedia_results_link_to_their_articles ... ok
+test tests::content_types_are_classified ... ok
+test search::tests::zai_posts_the_documented_body_and_marks_site_only_links ... ok
+test tests::urls_need_http_a_host_and_no_credentials ... ok
+test tests::search_engine_result_pages_are_recognized_and_other_pages_are_not ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/fetch.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/fetch-3a8ab93b8cc37bd4)
+
+running 12 tests
+test live_fetch_of_a_public_page ... ignored, needs the internet
+test live_wikipedia_search ... ignored, needs the internet
+test live_zai_search ... ignored, needs the internet and a Z.ai key
+test loopback_and_names_resolving_to_private_addresses_are_refused_before_connecting ... ok
+test an_allowlisted_host_is_fetched_at_the_checked_address_and_html_becomes_text ... ok
+test a_redirect_to_loopback_is_refused_before_it_is_followed ... ok
+test searxng_and_brave_replies_become_results ... ok
+test the_coding_plan_search_keeps_one_mcp_session_and_decodes_its_hits ... ok
+test every_redirect_is_checked_and_their_number_is_limited ... ok
+test what_the_boundary_refuses_is_neither_resolved_nor_sent ... ok
+test zai_is_a_post_with_the_key_in_a_header_and_wikipedia_a_paced_get ... ok
+test bodies_are_capped_binary_is_refused_and_slow_servers_time_out ... ok
+
+test result: ok. 9 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 2.03s
+
+     Running tests/native.rs (/Volumes/EXT_DISK/duet_v2/target-gate/debug/deps/native-83a32b9576edd108)
+
+running 11 tests
+test live_native_search ... ignored, needs the internet
+test native_sources_are_held_to_the_address_rules ... ok
+test answers_are_kept_for_the_run ... ok
+test throttle_violations_back_off_and_errors_never_show_the_reply ... ok
+test stack_exchange_backoff_and_githubs_spent_budget_are_honoured ... ok
+test requests_to_one_service_are_spaced ... ok
+test a_sentence_that_matches_nothing_gets_a_hint ... ok
+test a_429_is_waited_out_for_that_source_only ... ok
+test the_query_fans_out_to_every_default_source_and_the_answers_merge ... ok
+test sources_restrict_the_search_and_pypi_takes_exact_names ... ok
+test a_slow_source_times_out_without_holding_up_the_others ... ok
+
+test result: ok. 10 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+   Doc-tests duet_agent
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_boundary
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_cli
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_config
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_egress
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_extensions
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_fs
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_git
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_governor
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_lsp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_mcp
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_net
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_provider
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_release
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_review
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_sandbox
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_tui
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_web
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+== dependency policy
+advisories ok, bans ok, licenses ok, sources ok
+
+== license headers
+
+== privacy by construction
+
+== egress by construction
+
+== provenance
+
+gate: all checks passed
