@@ -25,6 +25,8 @@ The single next action in the primary post is to try the fixture. The failure-an
 
 ## Before a broad launch
 
+These are substantive release tasks; this launch package does not mark them complete:
+
 - Review the inherited disclosure fixes and this branch; rerun representative quality/security gates on the exact intended release.
 - Replace the placeholder private security contact or enable and verify private reporting. Do not direct live disclosures to a public issue.
 - Verify source installation on a clean supported host. Do not advertise released binary packages, signing or certification before they exist.
@@ -71,3 +73,10 @@ Use owner analytics and aggregate GitHub data. Raw clones include automation; st
 ## The next substantial launch
 
 Earn a new story by closing a real product gap: independently reproduced security controls, reliable clean installation, secured local deployment or the [paired cost/quality target](COST_QUALITY_PLAN.md). Repeating an unsupported superlative will not create that evidence.
+
+
+## Time and ownership
+
+Planning assumption: one maintainer can reserve approximately 6–8 hours/week for documentation, recording, community participation and measurement, in addition to engineering. If that capacity is unavailable, publish one strong demonstration every two weeks. Independent audits, signed releases and support require their own engineering capacity and budgets; campaign dates move with readiness.
+
+Use [LinkedIn drafts](LINKEDIN.md), the [Reddit author brief](REDDIT.md), [research sources](RESEARCH.md) and the [fresh demo packet](FRESH_DOGFOOD.md). Social content remains draft material even when this source package is published. No social posts, outreach or campaign scheduling have been performed.

@@ -376,7 +376,9 @@ everything said and done so far.
   `/limits`, `/data`, `/audit`, `/runs`.
 - **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `duet
   --resume` continues the latest open one (with a recap of its last turns), `--resume <id>` a given
-  one, also after a crash.
+  one, also after a crash. A normal exit records `open` in the summary and audit end event.
+  History also recognizes older normal exits without rewriting their saved logs; actual failures
+  and interrupted turns retain their own status.
 - **Text attachments.** Drag a Markdown or other UTF-8 text file into the input, or enter
   `/attach /path/to/spec.md`, then send your instruction. Duet confirms the filename and size;
   quoted paths and shell-escaped spaces/parentheses work. The file is snapshotted when attached,
@@ -481,6 +483,26 @@ credential stores in your home directory (`~/.npmrc`, `~/.cargo/credentials.toml
 path). `cargo new` makes no `.git` in commands (they may not create one). An owner config from an
 earlier version with `sandbox.network = true` or `false` still works: it reads as `"all"` or
 `"off"` and Duet prints a note. Details: [SECURITY.md](../SECURITY.md) (Command network).
+
+**Command troubleshooting.** Temporary files belong in the command's private `$TMPDIR` or the
+workspace. A hard-coded `/tmp/file` or home-directory write can be denied. Use `list_files`,
+`search` and `read_file` for file discovery and reads; commands cannot inspect `.duet` or `.git`.
+Skills cannot grant access to a browser daemon, its saved profile or host sockets.
+
+Start a preview server and run its client check inside the **same command**. Duet stops all
+child processes when that command ends, including background processes started with `nohup`.
+On macOS with the default network policy, choose an unused loopback port such as 8000 or 5173;
+an arbitrary port may be blocked. Keep an occupied host service running and choose another port.
+Connection errors and permission denials now include recovery guidance without changing policy.
+Check the actual test's exit status: a trailing `cat`, `head` or `tail` can hide a pipeline failure.
+
+**Visual verification.** Screenshots and visual claims require the actual application or browser
+renderer. A canvas mock can test logic, but its output does not prove that the real interface
+renders correctly. If the configured tools cannot launch a browser or inspect an image, Duet
+should report that limit. A refused image read creates no content handle: `ask_local` cannot
+inspect a filename or an invented ID. Configure a local vision model, or explicitly attach a
+non-sensitive image with `/image --public PATH` when the frontier supports vision. Sensitive
+and protected paths keep their existing restrictions. See Images below.
 
 **Web tools** (`web.*` settings; on by default): the frontier gets `web_fetch` (a public page
 as text; HTML is converted with links kept; `start_line`/`end_line` read part of a long page) and

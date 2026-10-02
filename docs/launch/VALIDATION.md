@@ -2,7 +2,29 @@
 
 Worktree: `duet-launch`; branch: `launch/privacy-first-story`. The original working tree and index were preserved. Its pre-existing development work was snapshotted as `a36cee7`; privacy fixes and corrected top-clearance banners are in `c9e1d5a`. The live successful captures use the release binary from that revision. Later edits clarify handle/tool descriptions and audit-storage documentation; the recorded bytes have not been rewritten.
 
-## Code checks
+## Campaign merge validation — 2026-10-02
+
+Integrated `702ae7d` with current main `7fb7119` in the isolated campaign worktree. Conflicts were limited to campaign/validation prose; both the refreshed launch package and main's earlier complete-gate record were retained. The merged runtime code matches `7fb7119` exactly. The original main checkout's uncommitted `crates/duet-fs/src/lock.rs` edit was excluded and preserved.
+
+**The complete `tools/gate.sh` passed: 1,230 tests passed, 0 failed, 22 ignored.** Formatting, workspace Clippy with warnings denied, workspace and documentation tests, dependency policy, license headers, privacy/egress construction and provenance all passed. Existing ignored-test conditions remain unchanged. [Full log](../evidence/campaign-merge-gate-2026-10-02.txt), SHA-256 `67e04b51ca12f2facc5310d828940788d4c539383f36fb71c880a97234862242`.
+
+The gate used `CARGO_TARGET_DIR=/Volumes/EXT_DISK/duet-launch-gate-target`, `CARGO_INCREMENTAL=0`, `CARGO_BUILD_JOBS=4` and `CARGO_NET_OFFLINE=true`. Launch artifact hashes and local link targets were also rechecked; the fresh audit still reports five frontier requests and zero complete-value canary matches. This validation covers the committed merge content, not the separately edited lock file. No remote push or social publication was performed by this merge operation.
+
+## Earlier launch merge validation
+
+**The complete `tools/gate.sh` passed with exit 0 before publication: 1,211 tests passed, 0 failed, 22 ignored.** Workspace/fuzz formatting, workspace Clippy with warnings denied, documentation tests, dependency advisories/bans/licenses/sources, license headers, privacy/egress construction and provenance all passed. Ignored tests retain their existing live-service, fixture or manual requirements; no gate or sandbox check was disabled.
+
+Validated code revision: `c6d4375`, following merge `6a751e2`. The [complete gate log](../evidence/launch-merge-gate-2026-10-01.txt) has SHA-256 `096436490efd08de3f31bc388cf802c0973f40e0dcb6a390f73f5b9602334576`. It was run in the isolated launch worktree, preserving ongoing uncommitted edits in the original `main` checkout:
+
+```sh
+CARGO_TARGET_DIR=/Volumes/EXT_DISK/duet-launch-gate-target \
+  CARGO_INCREMENTAL=0 CARGO_BUILD_JOBS=4 CARGO_NET_OFFLINE=true \
+  bash tools/gate.sh
+```
+
+The first full run exposed a test still expecting the raw CSV error line removed by the diagnostic-preview fix. `no_local.rs` now requires the useful structural warning and asserts that the raw line never appears in any frontier request. Both no-local tests passed, followed by the complete gate. This strengthens the privacy assertion rather than restoring the disclosure path. The existing main changes were retained exactly alongside the launch changes.
+
+## Before merge: targeted code checks
 
 | Check | Result | Saved evidence |
 | --- | --- | --- |
@@ -17,7 +39,7 @@ Worktree: `duet-launch`; branch: `launch/privacy-first-story`. The original work
 | Workspace Clippy, all targets, warnings denied | Passed | [Log](../evidence/launch-2026-10-01/clippy.txt) |
 | Fast gate: formatting, license, dependency-boundary and provenance checks | Passed | [Log](../evidence/launch-2026-10-01/fast-gate.txt) |
 
-That is **360 distinct targeted tests passed and one failed**, without double-counting reruns. The full workspace test/dependency gate was **not** run to completion and this branch is not claimed to have passed it.
+That initial validation had **360 distinct targeted tests passed and one failed**, without double-counting reruns. At that point the full workspace gate had not run to completion. The completed merge validation above supersedes that status; the original logs remain unchanged.
 
 The historical failure was `frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request`. Its unknown-model assertion expected “no unique token price” instead of “no usable token price for private-alias”; the known-alias checks had passed. Main commit `45ea45c` corrected the assertion, incorporated by merge `6a751e2`. A fresh run on `launch/duet-evidence-campaign` passed **all five top-clearance tests**, including this case. [Fresh output](../evidence/launch-refresh-2026-10-01/top-clearance-tests.txt). The earlier interpretation as a pricing-resolution defect was incorrect. Historical test counts above describe the earlier capture validation, not a new full-suite run.
 
@@ -44,7 +66,7 @@ The new regression was observed failing before its fix. The live task then found
 - Repository-relative links in the new README/launch/security documents were checked. Public post links target a future reviewed public revision; they must be verified after merge.
 - The prepared evidence/media were checked for exact values of the credential environment variables used by the local/frontier endpoints. Only fictional fixture credentials are intended for publication. This is a targeted check, not an exhaustive secret-detection guarantee.
 
-No posts, outreach, GitHub push or release publication were performed. [The campaign](CAMPAIGN.md#before-a-broad-launch) identifies remaining work before a broad security-led launch.
+Source publication is separate from campaign execution. No social posts, outreach or release publication were performed. [The campaign](CAMPAIGN.md#before-a-broad-launch) identifies remaining work before a broad security-led launch.
 
 
 ## Campaign refresh

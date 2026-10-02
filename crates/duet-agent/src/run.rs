@@ -30,11 +30,47 @@ use tokio::time::Instant;
 /// failures are retried in place until a budget stops them, and a panic ends
 /// the run as `Failed` with an internal-error reason.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
+#[serde(tag = "state", rename_all = "snake_case", from = "TerminalRecord")]
 pub enum Terminal {
+    Completed {
+        summary: String,
+    },
+    /// A session invocation ended normally and may be resumed.
+    Open {
+        reason: String,
+    },
+    Failed {
+        reason: String,
+    },
+    BudgetStopped {
+        which: String,
+    },
+}
+
+/// Older releases recorded ordinary session exits as a failed terminal with
+/// one exact sentinel. Normalize on read without rewriting historical records
+/// or mistaking an actual failure that mentions that phrase for a normal exit.
+#[derive(Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+enum TerminalRecord {
     Completed { summary: String },
+    Open { reason: String },
     Failed { reason: String },
     BudgetStopped { which: String },
+}
+
+impl From<TerminalRecord> for Terminal {
+    fn from(record: TerminalRecord) -> Self {
+        match record {
+            TerminalRecord::Completed { summary } => Self::Completed { summary },
+            TerminalRecord::Open { reason } => Self::Open { reason },
+            TerminalRecord::Failed { reason } if reason == crate::session::SESSION_LEFT => {
+                Self::Open { reason }
+            }
+            TerminalRecord::Failed { reason } => Self::Failed { reason },
+            TerminalRecord::BudgetStopped { which } => Self::BudgetStopped { which },
+        }
+    }
 }
 
 /// The reason of a run stopped by an interrupt (resumable).
@@ -45,8 +81,18 @@ impl Terminal {
     pub fn state(&self) -> &'static str {
         match self {
             Terminal::Completed { .. } => "completed",
+            Terminal::Open { .. } => "open",
             Terminal::Failed { .. } => "failed",
             Terminal::BudgetStopped { .. } => "budget_stopped",
+        }
+    }
+
+    /// Process exit status: leaving a resumable session is a normal exit.
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Completed { .. } | Self::Open { .. } => 0,
+            Self::Failed { .. } => 1,
+            Self::BudgetStopped { .. } => 3,
         }
     }
 
@@ -69,6 +115,9 @@ impl Terminal {
         match self {
             Terminal::Completed { summary } => Terminal::Completed {
                 summary: presenter.detokenize(summary),
+            },
+            Terminal::Open { reason } => Terminal::Open {
+                reason: presenter.detokenize(reason),
             },
             Terminal::Failed { reason } => Terminal::Failed {
                 reason: presenter.detokenize(reason),
@@ -1553,6 +1602,51 @@ then add each further part with `edit_file` in a later response, each response w
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn open_terminal_roundtrips_and_only_the_exact_legacy_sentinel_is_normalized() {
+        let open = Terminal::Open {
+            reason: crate::session::SESSION_LEFT.into(),
+        };
+        let json = serde_json::to_value(&open).unwrap();
+        assert_eq!(json["state"], "open");
+        assert_eq!(serde_json::from_value::<Terminal>(json).unwrap(), open);
+        let legacy = serde_json::json!({
+            "state":"failed", "reason":crate::session::SESSION_LEFT,
+        });
+        assert_eq!(serde_json::from_value::<Terminal>(legacy).unwrap(), open);
+        assert_eq!(open.state(), "open");
+        assert_eq!(open.exit_code(), 0);
+
+        for reason in [
+            "actual provider failure".to_owned(),
+            INTERRUPTED.to_owned(),
+            format!("write failed: {}", crate::session::SESSION_LEFT),
+            format!("{}; unable to save", crate::session::SESSION_LEFT),
+        ] {
+            let failed: Terminal = serde_json::from_value(serde_json::json!({
+                "state":"failed", "reason":reason,
+            }))
+            .unwrap();
+            assert!(matches!(failed, Terminal::Failed { .. }));
+            assert_eq!(failed.state(), "failed");
+            assert_eq!(failed.exit_code(), 1);
+        }
+        assert_eq!(
+            Terminal::Completed {
+                summary: String::new()
+            }
+            .exit_code(),
+            0
+        );
+        assert_eq!(
+            Terminal::BudgetStopped {
+                which: "session.frontier_usd".into()
+            }
+            .exit_code(),
+            3
+        );
+    }
 
     #[test]
     fn resume_charges_review_calls_without_adding_them_to_working_context() {

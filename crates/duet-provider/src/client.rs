@@ -160,6 +160,11 @@ impl ProviderConfig {
 /// How often a retry wait looks at the cancel flag.
 const CANCEL_POLL: Duration = Duration::from_millis(200);
 
+/// A peer controls Retry-After. Bound extreme values before scaling or adding
+/// them to an Instant so a rate-limit response cannot panic the client or
+/// suspend an unbudgeted request indefinitely. Ordinary delays remain intact.
+const MAX_SERVER_RETRY_AFTER: Duration = Duration::from_secs(60 * 60);
+
 fn deadline_error(last: &str) -> ProviderError {
     ProviderError::new(
         ErrorKind::Deadline,
@@ -335,6 +340,7 @@ impl ChatProvider {
                     let jitter = f64::from(started.elapsed().subsec_nanos() % 1000) / 1000.0;
                     let delay = err
                         .retry_after
+                        .map(|delay| delay.min(MAX_SERVER_RETRY_AFTER))
                         .unwrap_or_else(|| backoff(attempts.attempts - 1, jitter))
                         .mul_f64(self.config.backoff_scale);
                     self.pause(delay, &err).await?;

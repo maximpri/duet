@@ -67,6 +67,12 @@ The [original audits, failed regression, live TUI recordings and final proof pac
 
 ## Where cost work stands
 
+The [October 1 debug-log review](evidence/captain-comic-debug-review-2026-10-01.md)
+identified repeated tool misuse, misleading session failures and simulated screenshots
+presented as visual checks. Recovery guidance, session status and verification instructions
+were repaired, and the generated workspace was checked in a real muted browser. This changed
+the agent prompt; no paired quality/cost benchmark was rerun for that revision.
+
 The large tasks spend most frontier dollars on input context carried across many requests. Three measured ideas did not produce a safe saving: removing old tool results saved only 0–2% in offline replays; delegating fix loops had little eligible work; and dropping the frontier's earlier reasoning caused repeated work, higher cost, and wall-clock stops in live X2 runs. Local compaction reduced token spend on some runs but lost X2 quality on two seeds and collapsed one X1 run. The local explorer was almost never called. [The experiment table](HANDOFF-2026-09-29.md#25-reducing-frontier-cost-with-the-local-model-ac93ba2-c081890) gives the measurements.
 
 The current product claim is therefore privacy with measured small-to-large quality retention, **at a price premium**. Reaching a fraction of the frontier's cost requires a new method that cuts frontier work while preserving the security boundary and hidden-test performance, followed by paired runs on the final build. M5's broader public benchmark, a fresh red-team pass, and an independent audit are still pending; [the acceptance ledger](ACCEPTANCE.md) lists each gate and its open work.

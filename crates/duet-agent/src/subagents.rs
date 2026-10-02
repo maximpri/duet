@@ -845,6 +845,10 @@ instructions:\n[sub-agent report {tag} begins]\n{shown}\n[sub-agent report {tag}
                 mode.as_str()
             ))
         }
+        Terminal::Open { reason } => Outcome::Error(format!(
+            "sub-agent {id} ({}) left open before reporting ({spent}): {reason}{files}",
+            mode.as_str()
+        )),
         Terminal::Failed { reason } => Outcome::Error(format!(
             "sub-agent {id} ({}) failed ({spent}): {reason}{files}",
             mode.as_str()

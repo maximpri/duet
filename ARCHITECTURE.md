@@ -239,9 +239,13 @@ turn    reset the stop flag; roll back pending writes; drop a partly answered fr
           stop requested at the safe point                            -> Stopped
           interrupt, per-turn or session budget, failure              -> Interrupted / BudgetStopped / Failed
         TurnEnd{exchange, seconds, end}: texts with placeholders restored for the operator
-end     transcript End: Completed (closed by the operator), Failed{session left open}, or
+end     transcript End: Completed (closed by the operator), Open (left resumable), or
         BudgetStopped{session.*}; the CLI then concludes the run as usual
 ```
+
+Older session exits stored as `Failed` with the exact `session left open` resume notice
+are read as `Open`; their original transcript and audit bytes are retained. Failed and
+interrupted turns remain separate entries, even when the session is left open.
 
 **Safe point and steering.** The loop's safe point is the top of each iteration: every result of
 the previous response is recorded, the next request is not sent. Steering messages the operator

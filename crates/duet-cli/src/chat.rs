@@ -979,29 +979,26 @@ reaches the frontier; leaving top clearance needs a new session.",
             start_goal = false;
             continue;
         }
-        return Ok(match &terminal {
+        match &terminal {
             Terminal::Completed { .. } => {
                 println!("session {id} closed (${:.4} in total)", stats.cost_usd);
-                0
             }
-            Terminal::Failed { reason } if reason == duet_agent::session::SESSION_LEFT => {
+            Terminal::Open { .. } => {
                 println!(
                     "session {id} left open (${:.4} so far); continue with: duet --resume {id}",
                     stats.cost_usd
                 );
-                0
             }
             Terminal::Failed { reason } => {
                 eprintln!("session {id} stopped: {reason}");
-                1
             }
             Terminal::BudgetStopped { which } => {
                 println!(
                     "session {id}: {which} is spent; raise it to continue with duet --resume {id}"
                 );
-                3
             }
-        });
+        }
+        return Ok(terminal.exit_code());
     }
 }
 
