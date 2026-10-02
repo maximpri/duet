@@ -365,7 +365,11 @@ fn frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request
             assert_eq!(body["model"], "private-alias");
         } else {
             assert!(!o.status.success());
-            assert!(text(&o).contains("no unique token price"), "{}", text(&o));
+            assert!(
+                text(&o).contains("no usable token price for private-alias"),
+                "{}",
+                text(&o)
+            );
             assert!(frontier.bodies().is_empty());
         }
     }

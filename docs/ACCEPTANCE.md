@@ -37,10 +37,13 @@ menu received targeted verification: **122 TUI tests**, **77 CLI tests** and **6
 passed in their respective runs. The menu was checked at 120×45 and 40×10, including resize,
 paging, mouse selection, filtering and draft recovery. Clipboard adapters use mock helpers;
 macOS TIFF conversion also ran on generated input. A release line-mode smoke test passed.
-Full-screen verification was blocked by this execution environment's `/dev/tty` permission,
-and no actual clipboard was read or changed. These results do not replace the historical full
-gate or quality benchmarks below. See [TUI evidence](evidence/tui-validation-2026-10-01.md) and
-[menu evidence](evidence/command-menu-validation-2026-10-01.md).
+The initial full-screen attempt was blocked by `/dev/tty` permissions. After permissions were
+updated, the existing workspace pseudo-terminal integration passed against a scripted frontier.
+No actual clipboard was read or changed; desktop clipboard checks and a fresh live screenshot
+remain pending. These checks do not rerun the quality benchmarks below. See
+[TUI evidence](evidence/tui-validation-2026-10-01.md),
+[menu evidence](evidence/command-menu-validation-2026-10-01.md), and
+[commit validation](evidence/precommit-validation-2026-10-01.md).
 
 ## 1. How to read this
 
