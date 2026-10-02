@@ -206,7 +206,8 @@ fn hybrid_without_a_local_model_shows_handles_and_sends_nothing_sensitive() {
     let bodies = frontier.bodies();
     assert_eq!(bodies.len(), 3);
     // The task says there is no local model; the file is a handle with its
-    // error line; the question about it is refused.
+    // structural warning, not a raw CSV line selected by an error keyword.
+    // The question about it is refused.
     assert!(
         bodies[0].contains("This run has no local model"),
         "{}",
@@ -217,7 +218,11 @@ fn hybrid_without_a_local_model_shows_handles_and_sends_nothing_sensitive() {
         "{}",
         bodies[1]
     );
-    assert!(bodies[1].contains("row 2 has no email"), "{}", bodies[1]);
+    assert!(
+        bodies[1].contains("1 row(s) with a number of fields other than 4"),
+        "{}",
+        bodies[1]
+    );
     assert!(
         bodies[1].contains("no local model configured"),
         "{}",
@@ -229,7 +234,13 @@ fn hybrid_without_a_local_model_shows_handles_and_sends_nothing_sensitive() {
         bodies[2]
     );
     for (i, body) in bodies.iter().enumerate() {
-        for planted in [EMAIL, PERSON, "Vantersmark", KEY] {
+        for planted in [
+            EMAIL,
+            PERSON,
+            "Vantersmark",
+            KEY,
+            "Error: row 2 has no email",
+        ] {
             assert!(!body.contains(planted), "request {i} carries {planted}");
         }
     }
