@@ -3,6 +3,7 @@
 
 use crate::error::FsError;
 use std::fs::{self, OpenOptions};
+use std::io::Read;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
@@ -78,22 +79,47 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
 }
 
 /// Reads a JSON-lines file, dropping a torn final line left by a crash.
-/// Returns the complete lines; the file is truncated to them.
+/// Returns the complete lines; the file is truncated to them. Read and repair
+/// use the same regular-file handle without following a leaf symlink. An
+/// intact log can still be read when its permissions or filesystem are read-only.
 pub fn read_lines_repairing(path: &Path) -> Result<Vec<String>, FsError> {
-    let bytes = match fs::read(path) {
-        Ok(b) => b,
+    let flags = (rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32;
+    let mut file = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(flags)
+        .open(path)
+        .or_else(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied
+                || e.raw_os_error() == Some(rustix::io::Errno::ROFS.raw_os_error())
+            {
+                OpenOptions::new().read(true).custom_flags(flags).open(path)
+            } else {
+                Err(e)
+            }
+        }) {
+        Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(FsError::io("read", path, e)),
+        Err(e) if e.raw_os_error() == Some(rustix::io::Errno::LOOP.raw_os_error()) => {
+            return Err(FsError::Symlink(path.to_path_buf()));
+        }
+        Err(e) => return Err(FsError::io("open for repair", path, e)),
     };
+    if !file
+        .metadata()
+        .map_err(|e| FsError::io("inspect", path, e))?
+        .is_file()
+    {
+        return Err(FsError::NotAFile(path.display().to_string()));
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| FsError::io("read", path, e))?;
     let complete = bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
     if complete < bytes.len() {
-        let f = OpenOptions::new()
-            .write(true)
-            .open(path)
-            .map_err(|e| FsError::io("open", path, e))?;
-        f.set_len(complete as u64)
+        file.set_len(complete as u64)
             .map_err(|e| FsError::io("truncate torn tail", path, e))?;
-        f.sync_all().map_err(|e| FsError::io("sync", path, e))?;
+        file.sync_all().map_err(|e| FsError::io("sync", path, e))?;
     }
     Ok(String::from_utf8_lossy(&bytes[..complete])
         .lines()
@@ -134,6 +160,58 @@ mod tests {
                 .mode()
                 & 0o777,
             0o600
+        );
+    }
+
+    #[test]
+    fn repair_refuses_symlinks_without_reading_or_truncating_the_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("original");
+        let log = dir.path().join("log.jsonl");
+        let content = b"complete\nkeep this incomplete tail";
+        fs::write(&target, content).unwrap();
+        std::os::unix::fs::symlink(&target, &log).unwrap();
+        assert!(matches!(
+            read_lines_repairing(&log),
+            Err(FsError::Symlink(_))
+        ));
+        assert_eq!(fs::read(&target).unwrap(), content);
+        fs::remove_file(target).unwrap();
+        assert!(
+            read_lines_repairing(&log).is_err(),
+            "a dangling link is not a missing log"
+        );
+    }
+
+    #[test]
+    fn complete_read_only_logs_remain_readable() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log.jsonl");
+        fs::write(&log, b"complete\n").unwrap();
+        fs::set_permissions(&log, fs::Permissions::from_mode(0o400)).unwrap();
+        assert_eq!(read_lines_repairing(&log).unwrap(), ["complete"]);
+        assert_eq!(fs::read(&log).unwrap(), b"complete\n");
+    }
+
+    #[test]
+    fn repair_refuses_a_fifo_without_waiting_for_a_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("log.jsonl");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&path)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(matches!(
+            read_lines_repairing(&path),
+            Err(FsError::NotAFile(_))
+        ));
+        assert!(
+            read_lines_repairing(&dir.path().join("missing"))
+                .unwrap()
+                .is_empty()
         );
     }
 

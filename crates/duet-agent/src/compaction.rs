@@ -50,7 +50,7 @@
 //! first message stays, as a run's task does; in a session, the operator's
 //! latest message, if it is condensed, is appended to the summary verbatim.
 
-use crate::context::{KEEP_RECENT_TURNS, apply_mask, estimate, mask_plan};
+use crate::context::{KEEP_RECENT_TURNS, apply_mask, estimate, mask_plan_from_estimate};
 use crate::transcript::Entry;
 use duet_boundary::audit::AuditEvent;
 use duet_boundary::local::{CHUNK_CHARS, MAX_CONDENSED};
@@ -256,7 +256,7 @@ pub fn decide(
         return None;
     }
     let target = c.target();
-    let (positions, masked) = mask_plan(items, system, target);
+    let (positions, masked) = mask_plan_from_estimate(items, before, target);
     if !positions.is_empty() && masked <= target {
         return Some(Event::Masked {
             positions,
@@ -1014,6 +1014,7 @@ mod tests {
             .map(|e| serde_json::from_str(&serde_json::to_string(e).unwrap()).unwrap())
             .collect();
         let mut conv = crate::run::Conversation {
+            scoped_instructions: Default::default(),
             system: "s".into(),
             specs: Vec::new(),
             git_tools: None,

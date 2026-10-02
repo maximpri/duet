@@ -17,11 +17,11 @@ use std::path::Path;
 /// (a test enforces it), so a new setting appears without TUI changes.
 pub fn screen_of(key: &str) -> Option<Tab> {
     match key.split('.').next()? {
-        "frontier" | "local" | "clearance" => Some(Tab::Models),
+        "frontier" | "local" | "clearance" | "pricing" => Some(Tab::Models),
         "sensitivity" | "images" => Some(Tab::Sensitivity),
         "ip" => Some(Tab::Ip),
         "limits" | "session" | "context" | "checks" | "sandbox" | "oversight" | "web" | "git"
-        | "mcp" | "lsp" | "subagents" | "explore" => Some(Tab::Limits),
+        | "mcp" | "lsp" | "subagents" | "explore" | "review" | "extensions" => Some(Tab::Limits),
         "data" => Some(Tab::Data),
         _ => None,
     }
@@ -66,6 +66,13 @@ fn scope_text(s: &Setting) -> String {
 
 pub(crate) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let tab = app.tab;
+    let key_width = keys(tab)
+        .iter()
+        .map(|setting| setting.key.len())
+        .max()
+        .unwrap_or(36)
+        .max(36)
+        .min(area.width.saturating_sub(30) as usize) as u16;
     let [table_area, bottom] =
         Layout::vertical([Constraint::Min(6), Constraint::Length(11)]).areas(area);
     let rows = keys(tab).into_iter().map(|s| {
@@ -95,7 +102,7 @@ pub(crate) fn draw(f: &mut Frame, app: &App, area: Rect) {
     let table = Table::new(
         rows,
         [
-            Constraint::Length(36),
+            Constraint::Length(key_width),
             Constraint::Fill(1),
             Constraint::Length(8),
             Constraint::Length(19),
@@ -133,7 +140,8 @@ fn help_for(tab: Tab) -> &'static str {
 the checks run at finish, context masking, commands' network (sandbox.network: off, registries through \
 the egress proxy, or all; sandbox.registries owner only), operator approval \
 (oversight.approve, owner only) and language servers (lsp.*; lsp.servers owner only). A project may only lower \
-budgets, tighten the sandbox network and turn language servers off."
+budgets, tighten the sandbox network and turn language servers off. Skills and plugins can be disabled \
+for this workspace with extensions.skills_enabled and extensions.plugins_enabled."
         }
         _ => {
             "Retention of raw run data (handles, transcripts, vault) and of audit logs. x purges the raw data \

@@ -1,6 +1,6 @@
 # Duet v2 Architecture
 
-Status: implemented through milestone M4.5, SbD-1 and the SbD-2 tests, plus M5 preparation and
+Status: implemented through milestone M4.5, M5.2, experimental M5.3, SbD-1 and the SbD-2 tests, plus M5 preparation and
 parts of M6 ([docs/PLAN.md](docs/PLAN.md) §10), except where marked *planned*. `duet-tui` (M6) is
 built. Goals and success criteria:
 [docs/TARGET_STATE.md](docs/TARGET_STATE.md).
@@ -36,19 +36,51 @@ gate** for the frontier and a single **checked client** (`duet-net`) for every o
   front ends:        duet-cli · duet-tui          evaluation: duet-evals (duet-eval)
 ```
 
+### Security review services
+
+`duet-agent::review` owns a private, revision-pinned run-start snapshot and compares it with a
+bounded finish-time snapshot. `duet-review` supplies deterministic candidates, imports and
+same-file helper context. Optional LSP references are confined to the workspace and read back
+from the pinned snapshot. `duet-cli::scan` invokes the same engine with an empty baseline for
+whole-repository review, in the foreground or a detached worker, and stores commit/dirty metadata.
+
+`review::external` runs owner-installed tools in a read-only snapshot sandbox with no network.
+It parses checked locations from bounded JSON, retaining raw evidence only in private artifacts.
+Every candidate survives model disagreement. Only narrowly rule-confirmed high findings can block.
+The boundary supplies known private-value ranges, hosts tool-free local judgment and checks
+eligibility for `SecondReviewer`. The latter has a separate gated provider, bounded diff/context,
+no tools/history, an output allowance, deadline and dollar reservation. Review responses are
+filtered as exploration of every source consulted. Count-only audit events record the result.
+
+`ReviewUsage` transcript entries restore secondary-provider tokens, failed-attempt estimates and
+cost after resume without adding reviewer prompts to the working conversation. `Ledger::review`
+is a breakdown of spend already included in the total. Local review uses the existing local
+usage counters. The defaults and measured limits are in the
+[auditor report](docs/SECURITY-AUDITOR-2026-09-30.md).
+
 ## 2. Crates and dependencies
 
+Runtime token prices come from `duet-provider::catalog`: exact OpenRouter slugs or unique
+unqualified IDs, cache rates and conditional context/UTC tiers. The CLI saves the public catalog
+for 24 hours, then refreshes it; offline/failure fallbacks identify their source and age. Unknown
+frontier prices stop before a model request. `pricing.frontier_model` explicitly maps endpoint
+aliases. The frozen `price::builtin` table remains for historical evaluation reproducibility.
+Local providers share `meter::Meter` across their roles, using owner-configured input/output
+rates (zero by default). The CLI persists cumulative local costs and price history separately
+from frontier budget accounting; the TUI reads those reports and transcript costs.
+
 ```
-duet-provider    duet-fs    duet-governor                 (leaf crates)
+duet-provider    duet-fs    duet-governor    duet-review  (leaf crates)
 duet-sandbox                 → duet-governor   (every command's and server's tree held to memory limits)
 duet-git, duet-config        → duet-fs
-duet-boundary                → duet-provider, duet-fs
+duet-extensions              → duet-fs   (bounded portable-skill catalog; no execution or network)
+duet-boundary                → duet-provider, duet-fs, duet-review
 duet-net                     → duet-boundary   (the one HTTP client and resolver for third parties; reqwest)
 duet-mcp                     → duet-boundary, duet-net   (MCP client, JSON-RPC 2.0 over stdio and streamable HTTP)
 duet-web                     → duet-boundary, duet-net, duet-mcp   (host-side HTTP for the web tools; url, ipnet)
 duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
 duet-egress                  → duet-boundary, duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
-duet-agent                   → duet-boundary, duet-config, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
+duet-agent                   → duet-boundary, duet-review, duet-config, duet-extensions, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
 duet-cli                     → all of the above (composition root)
 
 duet-evals links no duet crate but duet-governor (a leaf that watches process trees and knows
@@ -63,6 +95,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 
 | Crate | Owns | Must never |
 |---|---|---|
+| `duet-review` | Bounded syntax rules, same-file context, host/guard inventory and before/after comparison shared by the auditor and repository scanner ([scope and measurements](docs/SECURITY-AUDITOR-2026-09-30.md)) | Perform I/O, execute source, contact a model, or turn a model opinion into a blocking decision |
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-governor` | Memory limits for a process tree: follows the tree from its root (id plus start time), reads the physical footprint, stops a process above the per-process limit, the largest above the tree limit or under critical machine pressure, and every member left when the watch ends; the configured limits (`set_limits`) | Signal a process outside the tree it watches |
@@ -74,8 +107,9 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 | `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; the HTTP transport checks every message with the `Guard` it was opened with and sends through `duet-net`; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
 | `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
 | `duet-config` | Settings registry, file loading, scope and tighten-only rules, the policy layer of an embedding program (`policy`, §13) | Accept owner-only keys from a project file, or any value past a loaded policy |
+| `duet-extensions` | Portable `SKILL.md` catalog, metadata parsing, bounded no-follow resource reads and instruction digests | Execute code, contact a model/server, or grant invocation permissions |
 | `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
-| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), project instructions (`instructions`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
+| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), root/scoped instructions (`instructions`), skill authorization and filtered loading (`skills`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
 | `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress); `duet-cli` is also a library whose `main_with` is the whole command line for a program that embeds Duet (§13) | Contain policy logic (they edit the registry) |
 | `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
 | `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
@@ -139,10 +173,12 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
    paths (commands cannot read them), the outline of each file the policy makes sensitive (≤4,000
    characters) and, with `sensitivity.local_brief` (off by default; it raised cost in Gate 3), the local model's brief of those files for the
    task (≤3 local calls, values withheld, cleaned like any local output).
-   The first message is the project instructions (`instructions::block`: the owner's `DUET.md`
-   sanitized like an operator message, then the repository's `DUET.md` presented as
-   `Source::File`, each framed between digest-tagged markers, ≤16 KiB, an `instructions` audit
-   event each), then the sanitized task. It is in the transcript, so a resume replays it.
+   The first message starts with `instructions::block`: owner instruction files sanitized like
+   operator messages, then repository-root files presented as `Source::File`, each framed
+   between digest-tagged markers, ≤16 KiB per file / ≤64 KiB total, audited as `instructions`.
+   Files are AGENTS (or AGENTS.override), CLAUDE, GEMINI, root Copilot, then DUET; owner lookup
+   excludes Copilot. A short filtered skill catalog follows, then the sanitized task. The
+   opening message is in the transcript, so resume replays the original root instructions.
 1. ContextManager builds the request: fixed system prompt (`prompt::system_prompt`, from the
    workspace name, the checks and the tool set: its research advice names web tools only when
    they are offered) + fixed sorted tools + transcript
@@ -167,10 +203,13 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
    run; the frontier sees all their results in the next request; consecutive `delegate` calls start
    their sub-agents together, up to `subagents.max_parallel`):
      a. validate arguments against the tool schema (errors return as tool results)
-     b. write tools: resolve placeholders (secret-sink rule); record values the frontier wrote
-     c. execute (duet-fs / duet-sandbox with sensitive paths denied / duet-git)
-     d. Presenter.present(source, bytes) → the text the frontier sees
-     e. append call + result to Transcript (synced)
+     b. for read_file/edit_file/write_file/edit_protected/rename, discover applicable descendant
+        instruction files for the named path. New guidance defers the operation; mutations later
+        in that response also wait. The model retries after reading the tool result.
+     c. write tools: resolve placeholders (secret-sink rule); record values the frontier wrote
+     d. execute (duet-fs / duet-sandbox with sensitive paths denied / duet-git)
+     e. Presenter.present(source, bytes) → the text the frontier sees
+     f. append call + result to Transcript (synced)
 5. Loop until finish passes the checks, a budget stops, or a failure a retry cannot fix (§10).
 ```
 
@@ -245,15 +284,34 @@ before a response shows before it. One thread owns the screen and the keyboard (
 alternate screen, mouse wheel, bracketed paste); it draws with ratatui on `/dev/tty`, and while it
 runs the process's standard output and error are a pipe whose lines it shows in the conversation
 (dimmed, through `term::safe`), so no print from any crate can corrupt the screen; the terminal and
-both descriptors are restored on exit, panic and Ctrl-Z. the conversation is a list of cells
+both descriptors are restored on exit, panic and Ctrl-Alt-Z (Ctrl-Z undoes input edits). The conversation is a list of cells
 (`workspace::cells`: the operator's messages, replies rendered as Markdown, tool calls with their
 results as the frontier saw them, edits with their diffs, the boundary's interventions, turn ends),
 each rendered at the view's width and cached by version; duet's styled text is translated from its
 own SGR codes into ratatui spans (`workspace::ansi`; any other escape is dropped) and wrapped at
 spaces. The palette, the `@` picker (the workspace's files from `duet_git`), the approval dialog,
-help and mouse selection with copy (`pbcopy`, else OSC 52) are the workspace's own. The editor (`term::editor`) sends lines to
-the same inbox the reader thread fills without a terminal, and Ctrl-C keys go through the same
-`Interrupts::press` as the signal. The side panel's Changes view follows the session's write journal
+help, conversation search and mouse selection are the workspace's own. The command palette sizes
+its visible range from the available height, keeps the selected command visible after resizing,
+and validates its last-drawn query before using a mouse row. Paging, first/last navigation and
+wheel input stay in the menu; a click selects and Enter executes through the normal command path.
+
+The editor (`term::editor`) moves and selects by Unicode grapheme, with bounded input and undo/redo
+history. Copy acts on an input or conversation selection before Ctrl-C can interrupt a turn.
+Bracketed paste inserts text without submitting; settings paste cannot answer an approval.
+The editor sends lines to the same inbox the reader thread fills without a terminal; Ctrl-C with
+no selection goes through the same `Interrupts::press` as the signal.
+
+Explicit clipboard actions run on workers (`clipboard`, `workspace::interaction`). macOS uses
+fixed AppKit/JXA helpers; Linux uses trusted system Wayland/X11 helpers. Native operations have
+bounded pipes and a shared three-second deadline. Reads are disabled over SSH; copy can fall back
+to a write-only OSC 52 request, whose receipt the TUI does not assume. A changed draft cancels a
+pending paste result. Enter waits for an image preparation job to enqueue its attachment.
+The CLI owns private external image snapshots and attachment IDs, with `/attachments` and
+`/detach` controls. Images keep their existing routing policy. Background attachment commands
+cannot answer approvals; queued image/message groups preserve order, and a failed group recovers
+its unsent request instead of attaching its images to a later request.
+
+The side panel's Changes view follows the session's write journal
 (`changes::update`) with the engine's own policy, which the CLI hands over when the session opens,
 so the panel holds back exactly what the engine holds back. The settings screens (`app`, `ui`: the
 registry screens, IP levels, data, audit, the runs view) open as an overlay; their edits go through
@@ -544,7 +602,9 @@ to workspace paths. No git tools are offered; a `git` command that fails gets a 
 ### 5.8 MCP servers
 
 `crates/duet-agent/src/mcp.rs` (`Hub`) over `duet-mcp`. The CLI reads `[mcp.servers.<name>]`
-(template settings `mcp.servers.*.<field>` in the registry, owner-only) into `ServerConfig`s and
+(template settings `mcp.servers.*.<field>` in the registry, owner-only) and enabled native-package
+server declarations into `ServerConfig`s. Package fields pass organization-policy checks before
+merging; a server-name collision is an error. The CLI
 starts a `Hub` in `prepare` (runs and sessions alike; `RunConfig.mcp`, `None` without servers):
 each enabled server in parallel, a stdio server through `duet_sandbox::spawn` (the command profile:
 `Presenter::hidden_from_commands` as deny-read, writes to the workspace and a per-server scratch
@@ -618,9 +678,11 @@ start    transcript SubagentStart{child, call_id, mode, task, paths, journal_nex
 context  RunConfig: the parent's, no checks, no sub-agents (depth 1), the sub-agent model's price;
          Conversation: system = prompt::subagent_prompt(workspace, writes) (fixed per mode), tools =
          the parent's allowed for the mode (read: files, listings, search, diff, read-only git tools,
-         code_nav, ask_local, read_raw, web, read-only MCP; write adds edit_file, write_file,
-         rename) with its own run_command and finish, sorted; items = [task + paths line +
-         Presenter::task_notes()]; child = Child{id, mode, scope, tools, the parent's stop request}
+         code_nav, ask_local, read_raw, list_skills, load_skill, web, read-only MCP; write adds
+         edit_file, write_file, rename) with its own run_command and finish, sorted; items =
+         [root instructions + skill metadata + task + paths line + Presenter::task_notes()];
+         child = Child{id, mode, scope, tools, the parent's stop request}. Skill authorization
+         is shared with the parent through Arc<Skills>; scoped instruction state is per conversation.
 loop     run::work(child cfg, driver, the same presenter, git, interrupt flag, host policy), boxed:
          transcript entries nested as Subagent{child, entry}; journal confined to the paths
          (WriteScope; read: none); calls outside its tools, sensitive_data and a finish without a
@@ -788,6 +850,46 @@ explorer's own conversation is not kept (it held raw content). **Resume**: `Expl
 rebuild `ledger.explore` in `run::replay`; a call whose result was not recorded is dropped with its
 turn and decided again, like any tool call (nothing to roll back: it never writes).
 
+### 5.14 Instructions, skills and native packages
+
+`duet-agent::instructions` loads standing owner files and repository-root conventions in a
+deterministic order. `Conversation.scoped_instructions` tracks descendant instruction identities
+and digests by target directory. It walks outward-to-inward scopes, skips root files already in
+the opening message, caps each rendered block at 32 KiB, and supplies changed rules before a
+named file operation. Replay and context discard clear this cache. The guard covers the initial
+path of a rename; shell paths and other affected files are not enumerated. The system prompt
+asks the model to read files before shell edits. These are guidance rules below host/operator
+authority, not changes to file permissions or execution policy.
+
+`duet-cli::extensions` discovers owner/project skill roots and enabled package contributions.
+The `duet-extensions::Catalog` reads bounded `SKILL.md` files to retain metadata and digests;
+full bodies stay out of startup model context. `RunConfig.skills` holds `Arc<skills::Skills>`,
+which wraps the catalog and explicit host authorizations. `/skill` validates `user-invocable`
+and authorizes the exact ID; a model cannot grant that authorization. `list_skills` pages a
+filtered catalog, and `load_skill` enforces `disable-model-invocation`, path visibility, document
+caps and the current instruction digest. Project content uses `Source::File`; owner/plugin
+content uses `sanitize_message`. Each loaded document produces an `instructions` audit event
+with `skill:<id>` and its digest. Authorization is recreated after resume; recorded content is
+replayed normally. Skill metadata such as `allowed-tools` never modifies the tool set.
+
+`duet-cli::plugins` owns native package inspection, installation, enabled records and command/MCP
+adaptation. Installation reads a local bounded tree through pinned no-follow handles, validates
+`duet-plugin.toml` schema 1, and writes a private content-addressed snapshot and record. It runs
+no install scripts or dependency manager. Limits include 512 files, 8 MiB per file and 32 MiB
+per package; paths cannot escape the package. Activation checks the content SHA-256 and skips
+disabled snapshots. Plugin skills use `<plugin>:<skill>` IDs. `/command plugin:name` rechecks
+package content, reads bounded Markdown and appends operator arguments as a sanitized user
+message; it does no shell or template substitution.
+
+Enabled package MCP declarations pass `Config::allows` for every contributed setting before
+joining the regular MCP startup path (§5.8). They inherit sandbox, data filtering, approvals and
+top-clearance exclusions. Default package trust is `sensitive`, stdio network is off and approval
+is `always` under the configured oversight mode. Package hashes detect content changes, not
+publisher identity; installed programs remain part of the owner's trust decision. Foreign plugin
+ABIs/hooks, marketplaces, signatures and automatic dependency resolution are not implemented.
+See [extension formats and supported compatibility](docs/EXTENSIONS.md) and
+[extension threats and limits](SECURITY.md#portable-skills-and-native-plugins).
+
 ## 6. Context management
 
 - Transcript is append-only and is the source of every request, so the provider prefix stays
@@ -878,6 +980,12 @@ git; reset behaviour defined per entry).
   lock, tmp/                  workspace lock; sandbox scratch space
 ~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
 ~/.config/duet/DUET.md        the owner's standing instructions (optional; next to config.toml)
+~/.config/duet/AGENTS.md      optional owner rules; AGENTS.override.md replaces this file
+~/.config/duet/CLAUDE.md      optional owner rules (GEMINI.md also supported)
+~/.config/duet/skills/        owner <name>/SKILL.md workflows (plus compatible discovery roots)
+~/.config/duet/plugins/      private native package store (beside the configured owner file)
+  <name>.json                installed digest and enabled state
+  <name>/<sha256>/           package snapshot; retained after unregistering
 ~/.local/state/duet/          owner state ($DUET_CONFIG_HOME/state when set), mode 0700
   audit-anchors/runs/<run>/<first>.json   chain head of each run's audit log
   config-audit.jsonl          hash-chained log of `duet config set` changes

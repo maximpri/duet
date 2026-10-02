@@ -78,11 +78,56 @@ they stand for. Reply with JSON only.";
 /// What the local model did since the last `take_stats` (for measurement).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct CallStats {
+    /// Logical requests started, including ones that failed or were canceled.
     pub calls: u32,
     pub input_tokens: u64,
     pub cached_tokens: u64,
     pub output_tokens: u64,
+    /// Elapsed time inside local requests, including failures and cancellation.
+    /// This is a request-time estimate, not measured GPU power draw.
     pub seconds: f64,
+    /// New summaries mark when `seconds` includes dropped and failed calls.
+    /// Older summaries lack this field and cannot safely use it for costing.
+    #[serde(default)]
+    pub request_time_complete: bool,
+    /// Questions attempted on a second chunk after an unanswerable first one.
+    #[serde(default)]
+    pub answer_retries: u32,
+    /// Wall time in those second-chunk attempts, including malformed replies.
+    #[serde(default)]
+    pub answer_retry_seconds: f64,
+    /// Additional requests after a reply failed JSON/required-field validation.
+    #[serde(default)]
+    pub malformed_retries: u32,
+}
+
+/// Counts local request time even when a surrounding timeout or interrupt
+/// drops the provider future before it can return usage.
+struct LocalAttempt<'a> {
+    stats: &'a std::sync::Mutex<CallStats>,
+    started: std::time::Instant,
+}
+
+impl<'a> LocalAttempt<'a> {
+    fn start(stats: &'a std::sync::Mutex<CallStats>) -> Self {
+        stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .calls += 1;
+        Self {
+            stats,
+            started: std::time::Instant::now(),
+        }
+    }
+}
+
+impl Drop for LocalAttempt<'_> {
+    fn drop(&mut self) {
+        self.stats
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .seconds += self.started.elapsed().as_secs_f64();
+    }
 }
 
 pub struct LocalReader {
@@ -92,6 +137,37 @@ pub struct LocalReader {
 }
 
 impl LocalReader {
+    /// A bounded, tool-free security opinion. The role is checked here even
+    /// though normal engine construction already uses the local endpoint.
+    pub async fn review_candidate(
+        &self,
+        candidate: &duet_review::Candidate,
+    ) -> Result<duet_review::Judgment, String> {
+        if !matches!(
+            self.provider.config().role,
+            duet_provider::Role::Local { .. }
+        ) {
+            return Err("security reviewer requires a local provider".into());
+        }
+        if candidate.context.len() > duet_review::MAX_CONTEXT {
+            return Err("security review context exceeds its limit".into());
+        }
+        let prompt = crate::review::prompt(candidate, None);
+        let value = tokio::time::timeout(
+            std::time::Duration::from_secs(120),
+            self.ask_with(
+                crate::review::SYSTEM,
+                crate::review::schema(),
+                vec![Item::User { text: prompt }],
+                &["verdict", "reason", "severity", "explanation", "fix"],
+                1200,
+            ),
+        )
+        .await
+        .map_err(|_| "local security review timed out".to_owned())?
+        .map_err(|_| "local security review failed".to_owned())?;
+        crate::review::judgment(value, candidate)
+    }
     pub fn new(provider: ChatProvider) -> Self {
         let mut extra = Map::new();
         // Qwen-family chat templates: skip visible thinking for these short extraction tasks.
@@ -102,7 +178,10 @@ impl LocalReader {
         Self {
             provider,
             extra,
-            stats: Default::default(),
+            stats: std::sync::Mutex::new(CallStats {
+                request_time_complete: true,
+                ..CallStats::default()
+            }),
         }
     }
 
@@ -142,47 +221,49 @@ impl LocalReader {
             extra: self.extra.clone(),
             ..Request::default()
         };
-        let mut last_err = None;
         // One retry on unparseable output, then give up rather than invent an answer.
-        for _ in 0..2 {
-            let started = std::time::Instant::now();
-            let r = self.provider.create(&req).await?;
+        for attempt in 0..2 {
+            if attempt > 0 {
+                self.stats
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .malformed_retries += 1;
+            }
+            let attempt = LocalAttempt::start(&self.stats);
+            let response = self.provider.create(&req).await;
+            drop(attempt);
+            let r = response?;
             {
                 let mut s = self
                     .stats
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                s.calls += 1;
                 s.input_tokens += r.usage.input + r.usage.cache_read;
                 s.cached_tokens += r.usage.cache_read;
                 s.output_tokens += r.usage.output;
-                s.seconds += started.elapsed().as_secs_f64();
             }
             match extract_json(&r.text) {
                 Some(v) if required.iter().all(|k| v.get(k).is_some()) => return Ok(v),
-                _ => last_err = Some(r.text),
+                _ => {}
             }
         }
         Err(ProviderError::new(
             duet_provider::ErrorKind::Malformed,
-            format!(
-                "local model returned no JSON: {}",
-                last_err
-                    .unwrap_or_default()
-                    .chars()
-                    .take(200)
-                    .collect::<String>()
-            ),
+            "local model returned no valid JSON after retry".to_owned(),
         ))
     }
 
     /// Returns and resets the call statistics.
     pub fn take_stats(&self) -> CallStats {
-        std::mem::take(
+        std::mem::replace(
             &mut *self
                 .stats
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
+            CallStats {
+                request_time_complete: true,
+                ..CallStats::default()
+            },
         )
     }
 
@@ -413,14 +494,24 @@ out.\n\n<question>{question}</question>",
             evidence_lines: vec![],
             unanswerable: true,
         };
-        for i in ranked(&chunks, question).into_iter().take(2) {
+        for (attempt, i) in ranked(&chunks, question).into_iter().take(2).enumerate() {
             let prompt = format!(
                 "{}Answer this question about the content. Be precise about formats and structure; cite line \
 numbers in evidence_lines. If the content does not contain the answer, set unanswerable to true. Return \
 only {{\"answer\": ..., \"evidence_lines\": [...], \"unanswerable\": ...}}; leave every other field out.\n\n<question>{question}</question>",
                 framed(source, i, chunks.len(), &chunks[i])
             );
-            let v = self.ask(prompt, &["answer", "unanswerable"], 1500).await?;
+            let started = std::time::Instant::now();
+            let result = self.ask(prompt, &["answer", "unanswerable"], 1500).await;
+            if attempt > 0 {
+                let mut stats = self
+                    .stats
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                stats.answer_retries += 1;
+                stats.answer_retry_seconds += started.elapsed().as_secs_f64();
+            }
+            let v = result?;
             a = serde_json::from_value(v).unwrap_or(Answer {
                 answer: String::new(),
                 evidence_lines: vec![],
@@ -874,5 +965,111 @@ mod tests {
             .unwrap();
         assert!(!a.unanswerable && a.answer.contains("50000"), "{a:?}");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let stats = local.take_stats();
+        assert_eq!(stats.calls, 2);
+        assert_eq!(stats.answer_retries, 1);
+        assert!(stats.answer_retry_seconds > 0.0);
+        assert_eq!(stats.malformed_retries, 0);
+        assert_eq!(
+            local.take_stats(),
+            CallStats {
+                request_time_complete: true,
+                ..CallStats::default()
+            }
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_reply_retries_are_distinct_from_second_chunk_attempts() {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        let (local, _) = crate::testing::responsive_local(move |_| {
+            if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                "not JSON".into()
+            } else {
+                json!({"answer": "one row", "evidence_lines": [1], "unanswerable": false})
+                    .to_string()
+            }
+        });
+        local
+            .answer("data.txt", "one row", "How many rows?")
+            .await
+            .unwrap();
+        let stats = local.take_stats();
+        assert_eq!(stats.calls, 2);
+        assert_eq!(stats.malformed_retries, 1);
+        assert_eq!(stats.answer_retries, 0);
+        assert_eq!(stats.answer_retry_seconds, 0.0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_local_reply_is_never_reflected_in_an_error() {
+        let (local, _) = crate::testing::responsive_local(|_| {
+            "not JSON; private fixture value: orchid-67-canary".to_owned()
+        });
+        let error = local
+            .answer("data.txt", "a private fixture", "Describe its shape")
+            .await
+            .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("no valid JSON"), "{message}");
+        assert!(!message.contains("orchid-67-canary"), "{message}");
+        let stats = local.take_stats();
+        assert_eq!(stats.calls, 2);
+        assert_eq!(stats.malformed_retries, 1);
+    }
+
+    #[test]
+    fn old_call_stats_remain_readable() {
+        let stats: CallStats = serde_json::from_value(json!({
+            "calls": 2, "input_tokens": 10, "cached_tokens": 0,
+            "output_tokens": 5, "seconds": 1.0
+        }))
+        .unwrap();
+        assert_eq!(stats.answer_retries, 0);
+        assert_eq!(stats.answer_retry_seconds, 0.0);
+        assert_eq!(stats.malformed_retries, 0);
+        assert!(!stats.request_time_complete);
+    }
+
+    #[tokio::test]
+    async fn canceled_request_keeps_its_elapsed_local_time() {
+        use duet_provider::client::{HttpReply, Transport};
+        use duet_provider::{ProviderConfig, Role};
+        use futures_util::future::BoxFuture;
+
+        struct NeverReplies;
+        impl Transport for NeverReplies {
+            fn post(
+                &self,
+                _url: String,
+                _headers: Vec<(String, String)>,
+                _body: Vec<u8>,
+            ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
+                Box::pin(std::future::pending())
+            }
+        }
+
+        let mut cfg = ProviderConfig::new(
+            "http://127.0.0.1:9/v1",
+            "test",
+            Role::Local {
+                allowlist: Vec::new(),
+                allow_plaintext: false,
+            },
+        );
+        cfg.max_attempts = Some(1);
+        let local = LocalReader::new(ChatProvider::new(cfg, Box::new(NeverReplies)).unwrap());
+        let timed = tokio::time::timeout(
+            std::time::Duration::from_millis(30),
+            local.answer("data.txt", "one row", "How many rows?"),
+        )
+        .await;
+        assert!(timed.is_err());
+        let stats = local.take_stats();
+        assert_eq!(stats.calls, 1);
+        assert!(stats.seconds >= 0.02, "{stats:?}");
+        assert!(stats.request_time_complete);
+        assert_eq!(stats.input_tokens, 0);
+        assert_eq!(stats.output_tokens, 0);
     }
 }

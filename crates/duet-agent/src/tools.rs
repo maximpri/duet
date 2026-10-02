@@ -1041,6 +1041,50 @@ mod tests {
         let dup = apply_edits("x\nx\n", &[json!({"old": "x", "new": "y"})]);
         assert!(dup.unwrap_err().contains("2 times"));
     }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn finish_requires_the_acceptance_command_to_pass_after_a_repair() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().canonicalize().unwrap();
+        let run = ws.join(".duet/runs/check");
+        std::fs::create_dir_all(&run).unwrap();
+        let git = Git::locate().unwrap();
+        let presenter = duet_boundary::view::PassThrough { max_bytes: 4096 };
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let checks = vec!["test -f accepted.txt".to_owned()];
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            git: &git,
+            presenter: &presenter,
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(5),
+            network: &crate::egress::Network::Off,
+            checks: &checks,
+            audit: None,
+            interrupted: None,
+            web: None,
+            git_tools: None,
+            lsp: None,
+        };
+        let args = json!({"summary": "ready"});
+        let Value::Object(args) = args else {
+            unreachable!()
+        };
+        assert!(matches!(
+            dispatch(&mut ctx, "finish", &args).await,
+            Outcome::ChecksFailed(_)
+        ));
+        std::fs::write(ws.join("accepted.txt"), "fixed\n").unwrap();
+        assert_eq!(
+            dispatch(&mut ctx, "finish", &args).await,
+            Outcome::Finished {
+                summary: "ready".into()
+            }
+        );
+    }
 }
 
 #[cfg(all(test, any(target_os = "macos", target_os = "linux")))]

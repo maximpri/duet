@@ -49,6 +49,7 @@
 use crate::driver::Driver;
 use crate::git_tools::GitTools;
 use crate::tools::{self, Ctx, Outcome};
+use duet_boundary::GateError;
 use duet_boundary::audit::AuditEvent;
 use duet_boundary::ip::LINE_WITHHELD;
 use duet_boundary::model::{Item, Request, StopReason, ToolSpec};
@@ -561,8 +562,15 @@ fn parse_report(args: &Map<String, Value>) -> Result<Report, String> {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Stats {
     pub depth: String,
-    /// Local model requests.
+    /// Local model responses received (the explorer's step limit).
     pub steps: u32,
+    /// Every local model request started, including failed and interrupted ones.
+    #[serde(default)]
+    pub request_attempts: u32,
+    /// True when `local_seconds` includes failed and interrupted requests.
+    /// Older transcript entries lack this marker and retain conservative cost.
+    #[serde(default)]
+    pub request_time_complete: bool,
     /// Files whose content the explorer was shown.
     pub files: u32,
     /// Bytes of tool results it was shown.
@@ -627,6 +635,7 @@ pub(crate) async fn explore(
     });
     let mut stats = Stats {
         depth: asked.depth.as_str().into(),
+        request_time_complete: true,
         ..Stats::default()
     };
     let end = {
@@ -783,15 +792,26 @@ async fn run_loop(
             temperature: Some(0.2),
             ..Request::default()
         };
+        stats.request_attempts += 1;
         let asked_at = Instant::now();
         let sent = tokio::select! {
-            r = tokio::time::timeout_at(until, model.create(&request)) => r,
-            () = crate::run::raised(interrupted) => return End::Interrupted,
+            r = tokio::time::timeout_at(until, model.create(&request)) => Some(r),
+            () = crate::run::raised(interrupted) => None,
         };
         stats.local_seconds += asked_at.elapsed().as_secs_f64();
+        let Some(sent) = sent else {
+            return End::Interrupted;
+        };
         let response = match sent {
             Err(_) => return End::Partial("time"),
-            Ok(Err(e)) => return End::Failed(format!("local model: {e}")),
+            Ok(Err(e)) => {
+                let reason = match e {
+                    GateError::Provider(e) => format!("local model: {:?}", e.kind),
+                    GateError::Audit(_) => "local model audit unavailable".into(),
+                    GateError::Blocked { .. } => "local model request blocked".into(),
+                };
+                return End::Failed(reason);
+            }
             Ok(Ok((r, _))) => r,
         };
         stats.steps += 1;

@@ -308,6 +308,69 @@ fn a_repository_can_require_top_clearance() {
     assert!(frontier.seen().is_empty());
 }
 
+#[test]
+fn local_token_cost_defaults_to_zero_and_uses_owner_rates_when_set() {
+    for (rates, expected) in [(false, 0.0), (true, 0.0019)] {
+        let local = Model::start(vec![Step::Call("finish", json!({"summary":"Done."}))]);
+        let frontier = MockServer::start(&[]);
+        let e = env(&local, &frontier, None);
+        if rates {
+            let path = e.home.join("config.toml");
+            let cfg = std::fs::read_to_string(&path).unwrap().replace(
+                "[local]",
+                "[local]\ninput_usd_per_million=2.0\noutput_usd_per_million=5.0",
+            );
+            std::fs::write(path, cfg).unwrap();
+        }
+        let o = command(&e, &["run", "--mode", "top-clearance", "Finish."])
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", text(&o));
+        let summary: Value = serde_json::from_slice(&o.stdout).unwrap();
+        assert_eq!(summary["stats"]["cost_usd"].as_f64().unwrap(), 0.0);
+        assert!((summary["stats"]["local_cost_usd"].as_f64().unwrap() - expected).abs() < 1e-12);
+        let path =
+            e.ws.join(".duet/runs")
+                .join(summary["run_id"].as_str().unwrap())
+                .join("economics.json");
+        let report: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(report["local"]["input_tokens"], 900);
+        assert_eq!(report["local"]["output_tokens"], 20);
+        assert!((report["local"]["cost_usd"].as_f64().unwrap() - expected).abs() < 1e-12);
+        assert!(frontier.seen().is_empty());
+    }
+}
+
+#[test]
+fn frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request() {
+    for known in [true, false] {
+        let frontier = Model::start(vec![Step::Call("finish", json!({"summary":"Done."}))]);
+        let trap = MockServer::start(&[]);
+        let e = env(&frontier, &trap, None);
+        std::fs::write(e.home.join("config.toml"), format!(
+            "[frontier]\nbase_url={:?}\nmodel=\"private-alias\"\n[local]\nenabled=false\n[pricing]\noffline=true\nfrontier_model={:?}\n",
+            frontier.url(), if known { "openai/gpt-5.5" } else { "" }
+        )).unwrap();
+        let o = command(
+            &e,
+            &["run", "--mode", "passthrough", "--no-privacy", "Finish."],
+        )
+        .output()
+        .unwrap();
+        if known {
+            assert!(o.status.success(), "{}", text(&o));
+            let summary: Value = serde_json::from_slice(&o.stdout).unwrap();
+            assert!((summary["stats"]["cost_usd"].as_f64().unwrap() - 0.0051).abs() < 1e-12);
+            let body: Value = serde_json::from_str(&frontier.bodies()[0]).unwrap();
+            assert_eq!(body["model"], "private-alias");
+        } else {
+            assert!(!o.status.success());
+            assert!(text(&o).contains("no unique token price"), "{}", text(&o));
+            assert!(frontier.bodies().is_empty());
+        }
+    }
+}
+
 /// A running session: what it printed so far, and its standard input.
 struct Chat {
     child: Child,

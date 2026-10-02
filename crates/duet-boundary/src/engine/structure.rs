@@ -80,12 +80,29 @@ pub(super) struct StructureState {
     data_matcher: std::sync::OnceLock<Option<AhoCorasick>>,
     /// Words of the schema names shown (keys, columns).
     schema_words: HashSet<String>,
+    /// Names indexed for the auditor. Kept separate from the words already
+    /// shown as schema, so enabling review cannot loosen output filtering.
+    review_names: HashSet<String>,
     /// The seed of this run's samples (persisted in `sample-seed`).
     seed: u64,
     /// Hashes of every line of every sample shown.
     sample_lines: HashSet<u64>,
     /// Outline of each sensitive file, by path, for the task note.
     outline: BTreeMap<String, String>,
+}
+
+impl StructureState {
+    pub(super) fn review_fields(&self) -> Vec<String> {
+        let mut fields: Vec<_> = self
+            .schema_words
+            .iter()
+            .chain(&self.review_names)
+            .cloned()
+            .collect();
+        fields.sort();
+        fields.dedup();
+        fields
+    }
 }
 
 /// Files written with sample lines only: path → SHA-256 of that content
@@ -188,11 +205,18 @@ impl StructureState {
     }
 }
 
-impl Knowledge for Known<'_> {
-    /// Known values (the vault), and values of structured sensitive data
-    /// wherever they occur (as `data`).
-    fn values(&self, text: &str) -> Vec<(usize, usize, Kind)> {
-        let mut out = self.0.vault.spans(text);
+impl Known<'_> {
+    /// Review treats code and private data as different sources. Filter code
+    /// before merging structured values, so a code match cannot mask a date.
+    pub(super) fn review_values(&self, text: &str) -> Vec<(usize, usize, Kind)> {
+        self.with_structured_values(text, self.0.vault.review_spans(text))
+    }
+
+    fn with_structured_values(
+        &self,
+        text: &str,
+        mut out: Vec<(usize, usize, Kind)>,
+    ) -> Vec<(usize, usize, Kind)> {
         if let Some(ac) = self.0.structure.data_matcher() {
             let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
             for m in ac.find_iter(text) {
@@ -209,6 +233,14 @@ impl Knowledge for Known<'_> {
             out.sort_unstable_by_key(|x| x.0);
         }
         out
+    }
+}
+
+impl Knowledge for Known<'_> {
+    /// Known values (the vault), and values of structured sensitive data
+    /// wherever they occur (as `data`).
+    fn values(&self, text: &str) -> Vec<(usize, usize, Kind)> {
+        self.with_structured_values(text, self.0.vault.spans(text))
     }
     fn public_word(&self, word: &str) -> bool {
         self.0.public_words.contains(word) || self.0.structure.schema_words.contains(word)
@@ -344,10 +376,13 @@ impl Engine {
             st.structure.outline.remove(&path.display().to_string());
             return;
         }
-        let outline =
-            profile::profile(text, Some(path), &Known(st)).map(|p| p.outline(OUTLINE_FILE_CHARS));
-        if let Some(o) = outline {
-            st.structure.outline.insert(path.display().to_string(), o);
+        if let Some(p) = profile::profile(text, Some(path), &Known(st)) {
+            st.structure
+                .review_names
+                .extend(p.schema.iter().map(|s| s.to_lowercase()));
+            st.structure
+                .outline
+                .insert(path.display().to_string(), p.outline(OUTLINE_FILE_CHARS));
         }
     }
 

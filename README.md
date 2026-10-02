@@ -1,33 +1,38 @@
 # Duet Core
 
-**Frontier-level coding, with your sensitive information read only by a model on your own hardware.**
+**A frontier-led coding agent that keeps sensitive repository data behind a local model and an auditable outbound gate.**
 
 > Status: **in development, not released.** Everything described here is built and tested, some
 > parts only against simulated servers; the measurements below are from Duet's own benchmark.
 > There is no independent audit or certification yet. Progress: [docs/PLAN.md](docs/PLAN.md) §10. What is verified and what is not:
 > [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md).
 
+**The measured value:** in 18 paired development runs, Duet sent **0 planted canaries** to the frontier versus **3,720** in the same agent's passthrough mode. Hidden tests passed **98.3% vs 97.5%**. The tradeoff is real: modeled total cost was **1.36×** and wall time **2.08×** the passthrough baseline. The first larger-task batch failed its quality goal; later X2 runs recovered after an evidence-view fix, but the full release benchmark is still pending. [See the method, chart, report snapshot, and limits](docs/VALUE_EVIDENCE.md).
+
+![Development benchmark chart: Duet hybrid versus Duet passthrough on privacy, hidden tests, cost, and time](docs/assets/duet-value-2026-09-30.svg)
+
+[Install from source](#getting-started) · [See real dogfood captures](docs/CAPTAIN_COMIC_REVIEW.md) · [Inspect the evidence](docs/VALUE_EVIDENCE.md) · [Security model](SECURITY.md)
+
 ## The problem
 
-AI coding agents read everything in a repository to do their work: source code, `.env` files,
-configuration, test fixtures, logs, database dumps, customer exports. Whatever they read, they send
-to the cloud model in plain text. For many companies that rules them out:
+An agent fixing a billing export may need a customer CSV, a failing log and a connection setting.
+A conventional cloud agent can send those tool results to its model provider. Even when the
+provider's terms are acceptable, a team may need to keep the actual values within its own
+environment:
 
-- **Security**: credentials, keys and connection strings leave the building every time an agent
-  opens a config file or prints the environment.
-- **Privacy and regulation**: customer records, card numbers, national IDs and account numbers in
-  fixtures and logs become personal data processed by a third party, possibly in another
-  country, which brings banking secrecy, PCI DSS and GDPR transfer questions.
-- **Intellectual property**: the pricing engine, the trading model or the algorithm that is the
-  company's edge ends up on someone else's servers.
+- **Credentials** in `.env` files and command output can cross the provider boundary.
+- **Personal records** in fixtures, logs and exports may need a different handling path.
+- **Protected source code** may reveal a proprietary algorithm even when its interface can be
+  shared.
 
-The usual answers each give something up:
+Each common setup makes a different tradeoff:
 
 | Approach | Where you end up |
 |---|---|
-| A frontier agent under an enterprise contract | The provider still receives everything in plain text. "No training" and "no retention" are promises you cannot verify, and abuse monitoring, legal holds and the retention some top models require keep data anyway |
-| A redaction proxy in front of a cloud agent | Detectors miss what they don't recognize, the agent's own tools (terminal, file reads, plugins) route around exclusion lists, and masking everything degrades the answers |
-| A local or air-gapped model only | Nothing leaves, but you lose frontier-level quality exactly where agents need it: planning, multi-step changes, debugging |
+| Cloud agent with an enterprise contract | The provider still receives content the agent sends; contractual handling may be sufficient for some teams. |
+| Redaction proxy | Known patterns can be removed, but every tool output and plugin response needs the same boundary. |
+| Local model only | The content stays local when the whole stack is local; the result depends on the local model's coding ability. |
+| **Duet hybrid** | A frontier model handles public context and coding decisions; sensitive content is processed locally and checked at the outbound boundary. This adds latency and, in current measurements, cost. |
 
 ## The premise
 
@@ -44,8 +49,8 @@ Most of the work in a coding task needs the *structure* of sensitive content, no
 
 Duet splits the work along that line:
 
-- A **frontier model** in the cloud plans, decides every step and writes the code. You get
-  frontier-level results.
+- A **frontier model** in the cloud plans, decides every step and writes the code. This keeps the
+  stronger model in the decision loop; quality still has to be measured on each task class.
 - A **local model** on your hardware is the only model that ever reads sensitive content. It
   summarizes it, answers questions about it and implements changes to protected code. It has no
   tools and never decides what happens next.
@@ -160,7 +165,7 @@ are sandboxed, every use is audited, and side effects need approval.
 | MCP servers (plugins) | Sandboxed. A server you mark sensitive (your database) returns results that stay local behind handles; public servers never receive protected values |
 | Language servers | Answers are shown the same way as the file they come from; sensitive files are never opened for them |
 | Git history and commits | A file that is sensitive today stays protected in every past revision, and old commits are scanned for secrets. Commits include only files Duet wrote, never sensitive ones, and in a conversation each one waits for your yes |
-| Project instructions (`DUET.md`) | Scanned like any repository file before the frontier reads them; they guide how Duet works in a repository but can never change its settings, policy or sandbox |
+| Project instructions and skills | Repository instructions (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `DUET.md`) and project `SKILL.md` content use the file privacy boundary; their guidance never grants settings, policy or sandbox changes |
 | Sub-agents | They share the same engine, vault and audit chain, and get no more than their parent |
 | Test and build output | Shown condensed (failures, errors with locations, summaries; passing tests and progress left out, the whole output a `read_raw` away), and only when it may be shown at all: it is sanitized whole first, and output held as sensitive stays held |
 | Package installs | Commands reach only the registries in `sandbox.registries` (crates.io, npm, PyPI, Go, Maven Central, RubyGems, GitHub downloads) through an audited proxy; `sandbox.network = "off"` takes even that away, `"all"` opens everything (with `--confirm`) |
@@ -185,10 +190,10 @@ well as Duet's own audit log, records everything sent to the provider.
 
 | Question | Result so far (frontier `glm-5.3-flash`, local Qwen 3.8 27B) |
 |---|---|
-| Does sensitive data leave? | **0 canaries** in the 18 Duet runs of the latest small-to-large batch and in the 12 of the large-repository batch. The same frontier model alone sent **3,720** and **26,838** canaries on the same tasks, in every run |
+| Does sensitive data leave? | **0 known canaries** in 18 Duet small-to-large runs; the same agent with the boundary off sent **3,720** canary occurrences in 18 runs. The first XL batch also observed 0 in 12 Duet runs versus 26,838 in four passthrough runs. This measures planted values, not all possible leaks. |
 | Does protected code leave? | **0** protected-source canaries in the IP gate, against 102 hits for the frontier alone |
-| Is the work as good? | On small-to-large tasks, yes, within the pre-set margin: two blind judges from different model families scored 20.1 vs 19.9 out of 30, and hidden tests passed 98.3% vs 97.5%. On two real open-source repositories (about 30K and 57K lines), not yet reliably: hidden tests passed 85.0% vs 94.2% with the default settings, because on some seeds Duet misses cases whose evidence is in sensitive samples and logs; 94.7% with the local explorer on, in a small sample |
-| What does it cost? | Frontier spend about **1.2×** the frontier alone on small-to-large tasks and about **1.4×** on the large repositories (1.1–1.7× depending on settings), before the local model's electricity; priced at flagship models the same tokens give 1.2–1.6×. It is slower: about 2× the wall time, up to 3× on the large repositories. Privacy costs extra frontier turns, because the frontier has to ask about data it cannot read |
+| Is the work as good? | On small-to-large tasks, the preset non-inferiority gate passed: two blind judges scored 20.1 vs 19.9 out of 30, and hidden tests passed 98.3% vs 97.5%. The first XL batch fell behind at 85.0% vs 94.2%. After Duet's missing-evidence fix, the X2 hybrid passed 53/55 hidden tests on three new seeds, matching the older passthrough result on two seeds; X1 artifacts were regraded after a grader correction. Those later comparisons are descriptive, not a new paired quality gate. |
+| What does it cost? | The 18-run small-to-large batch averaged **$0.02565 vs $0.01892** modeled total cost (**1.36×**) and **539 vs 259 seconds** (**2.08×**). On X2 after the evidence fix, mean total cost was about **1.12×** an earlier passthrough batch. Electricity is estimated, and these dollars are not invoices. The goal of a fraction of the frontier's cost is **not met**. |
 
 How Duet looks for its own weaknesses:
 
@@ -202,8 +207,9 @@ How Duet looks for its own weaknesses:
   root cause and a regression test.
 
 Several of those leaks were found by exactly this process, including one in a quality-gate batch
-that led to a fix and a full re-run. Full results with method and raw data will be published in
-`docs/BENCHMARK.md`.
+that led to a fix and a full re-run. The [development evidence](docs/VALUE_EVIDENCE.md) includes a
+chart, report snapshot, later fixes and caveats. The full release benchmark with raw data is
+still pending.
 
 ## What this can mean for compliance
 
@@ -247,24 +253,60 @@ Being precise about limits is part of the design. In short (the full list is in
 
 ## Getting started
 
-You need a frontier API key (Z.ai by default; Anthropic and OpenAI presets exist but haven't
-been used live yet) and a local
-model served by any OpenAI-compatible server on your machine or a host you allowlist: oMLX, LM
-Studio, llama.cpp, vLLM or Ollama. Without a local model, `duet config set local.enabled false`
-keeps privacy mode on: the frontier then sees sensitive content only as handles and cannot ask
-about it.
+You need a frontier API key and a local model for hybrid mode. Export the key for the provider you
+want, start your local model server, then let Duet find both:
 
 ```sh
-cargo build --release             # the binary is target/release/duet
-duet doctor                       # checks models, sandbox, git and audit setup, with a fix for each
-duet                              # the workspace: code in a conversation (privacy on by default)
-duet run "fix the failing billing export"   # one task, run to completion
-duet audit show <run>             # exactly what was sent to the frontier
+export OPENAI_API_KEY=...        # or ANTHROPIC_API_KEY, GEMINI_API_KEY, etc.
+duet setup                       # finds keys and served models; shows changes before saving
+duet doctor --online             # checks the configured model listings and capabilities
 ```
 
-Duet works in any folder, a git repository or not. Put how to work in a repository (conventions,
-build and test commands) in `DUET.md` at its root, and it is given to Duet at the start of every
-run and session.
+If several cloud keys are set, setup asks which provider may receive frontier requests. In a
+script, use `duet setup --provider openai --yes`. It never prints or saves the key value. Discovery
+reads model listings only; it makes no generation request. Local discovery probes loopback ports;
+for a custom endpoint use `duet setup --local-url http://127.0.0.1:9000/v1`. See
+[model setup](docs/USAGE.md#models) for the provider list and exact behavior.
+
+Without a local model, `duet config set local.enabled false`
+keeps privacy mode on: the frontier then sees sensitive content only as handles and cannot ask
+about it. If the local server is on another machine, use TLS or an SSH tunnel to loopback so
+sensitive content is encrypted in transit; [the trust assumptions](SECURITY.md#trust-assumptions)
+explain Duet's endpoint checks.
+
+To build Duet from this unreleased source checkout, install Rust 1.90 or newer and Cargo first.
+
+```sh
+git clone https://github.com/maximpri/duet.git
+cd duet
+./tools/install.sh              # locked source build; installs in ~/.local/bin without sudo
+export PATH="$HOME/.local/bin:$PATH"
+~/.local/bin/duet setup         # detects providers and models
+~/.local/bin/duet doctor        # checks sandbox, git, config and audit setup
+```
+
+Duet has no published release binary yet. The installer builds this checkout with Rust 1.90+ and
+`Cargo.lock`, then replaces the destination binary atomically. Set `DUET_INSTALL_DIR` to an
+absolute path to choose another location, or `CARGO_TARGET_DIR` to put build output on a larger
+disk. After setup, try:
+
+```sh
+duet                              # the workspace: code in a conversation (privacy on by default)
+duet run "fix the failing billing export"   # one task, run to completion
+duet run --check 'cargo test --offline' "fix the export"  # passing acceptance check required
+duet audit show <run>             # exactly what was sent to the frontier
+duet scan --rules-only            # bounded security candidates in existing code; no model calls
+```
+
+Duet works in any folder, a git repository or not. It reads repository conventions and build
+commands from `AGENTS.md`, `CLAUDE.md`, `GEMINI.md` and `DUET.md`, with more specific directory
+rules on file access. [Instruction order and supported formats](docs/EXTENSIONS.md#repository-instructions).
+
+For tasks with concrete success criteria, pass repeatable `--check` commands to a run or session.
+The host runs them at `finish` and gives failures back for repair; the commands stay pinned across
+resume. This adds local test time without a separate model review call. The
+[Captain Comic artifact review](docs/CAPTAIN_COMIC_REVIEW.md) shows why a syntax check alone is
+insufficient: that game parsed but missed a pickup and a victory requirement.
 
 On a terminal `duet` is a full-screen workspace: the conversation with duet's replies streamed as
 they are written, a side panel with the files it changed and their diffs, what it withheld from the
@@ -274,11 +316,73 @@ shows its progress on standard error (`--quiet` for none).
 
 Every command, the tools and all settings: [docs/USAGE.md](docs/USAGE.md).
 
+Security review is experimental: `duet scan` reviews existing code, and `review.enabled` adds
+review of a run's changes at finish. Both use bounded rules and optional advisory opinions;
+they do not certify code as secure. See the [measured scope and limits](docs/SECURITY-AUDITOR-2026-09-30.md).
+
+## Work in the terminal
+
+Duet includes a multiline message editor with Unicode selection, mouse selection, copy/cut/paste,
+undo/redo and message history. **Ctrl-V** pastes text or an image; **Ctrl-F** searches the conversation;
+**Ctrl-P** picks a workspace file; **F4** opens commands; **F1** lists shortcuts. Queued images and
+text attachments are visible above the draft and removable with `/detach`. Clipboard images follow
+Duet's normal privacy rules. [Platform support, limits and shortcuts](docs/USAGE.md#coding-with-duet-the-workspace).
+
+Open **`/` or F4** to browse the command menu. It shows all **29 commands** when the terminal is
+tall enough, with a scrollbar and counts above/below on smaller windows. Use **↑/↓**, the mouse
+wheel, **Page Up/Down**, or **Home/End** to browse; type to filter. Clicking selects a command;
+**Enter** runs it and **Tab** inserts it. **Esc** restores the draft when opened with F4.
+Help, goals, history, status, models and settings appear first.
+
+Verification: [editor, clipboard and attachment checks](docs/evidence/tui-validation-2026-10-01.md)
+and [command-menu checks](docs/evidence/command-menu-validation-2026-10-01.md). Automated coverage
+includes small-terminal rendering and a real pseudo-terminal with a scripted frontier; actual
+desktop clipboard checks and a fresh live screenshot remain pending. See the latest
+[commit validation](docs/evidence/precommit-validation-2026-10-01.md).
+
+## Goals and saved work
+
+Give Duet an objective and let it continue within a fixed allowance:
+
+```sh
+duet --goal "Fix the export and verify the result" --check 'cargo test'
+duet history                     # saved work, costs and resume commands
+duet history --search export      # find an earlier conversation
+duet --resume <session-id>        # reopen it; /goal resume continues the goal
+```
+
+Goals default to **20 turns**, plus cumulative session dollar and working-time limits.
+Use `/goal` for progress, `/goal pause` to pause and `/goal cancel` to abandon work.
+Questions wait for your answer. Completion requires Duet's `finish` step and passing configured
+checks. Goals and history survive restarts; reopening a session waits for your instruction.
+[Controls, budgets and retention](docs/USAGE.md#goals-and-history).
+
+## Reuse your workflows
+
+Duet discovers portable `SKILL.md` workflows in familiar project and owner directories. The
+model sees short descriptions first and loads relevant instructions on demand. Native plugin
+packages can bundle skills, prompt commands and optional MCP servers.
+
+Try the text-only review example from this checkout:
+
+```sh
+duet plugins inspect examples/plugins/quality-kit
+duet plugins install examples/plugins/quality-kit
+duet
+```
+
+Then enter `/skill quality-kit:code-review Review the uncommitted changes`.
+Installation runs no code; an enabled plugin's declared MCP servers can start with the next
+session under Duet's existing controls. [Guide, package format and compatibility](docs/EXTENSIONS.md).
+
 ## Documentation
 
 | Document | Contents |
 |---|---|
 | [docs/USAGE.md](docs/USAGE.md) | Commands, sessions, tools, models and configuration |
+| [docs/EXTENSIONS.md](docs/EXTENSIONS.md) | Repository instructions, portable skills, native plugins and compatibility limits |
+| [docs/VALUE_EVIDENCE.md](docs/VALUE_EVIDENCE.md) | Measured security, quality, cost, dogfood captures and limitations |
+| [docs/CAPTAIN_COMIC_REVIEW.md](docs/CAPTAIN_COMIC_REVIEW.md) | Codex review of seven actual Captain Comic artifacts, prompt differences and browser captures |
 | [SECURITY.md](SECURITY.md) | Threat model, enforcement, detection, known limits, advisories, reporting a vulnerability |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Crates, types, turn lifecycle, boundary internals, state on disk, invariants |
 | [docs/TARGET_STATE.md](docs/TARGET_STATE.md) | What Duet is when finished: north star, security engine, IP levels, configuration |

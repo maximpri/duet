@@ -82,6 +82,8 @@ const READ_TOOLS: &[&str] = &[
     "git_show",
     "git_status",
     "list_files",
+    crate::skills::LIST,
+    crate::skills::LOAD,
     "read_file",
     "read_raw",
     "run_command",
@@ -455,6 +457,8 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
         objective: task.to_owned(),
         mode: cfg.mode.clone(),
         checks: Vec::new(),
+        // The parent auditor includes every child's workspace changes.
+        review: crate::review::Settings::default(),
         sandbox: cfg.sandbox,
         network: cfg.network.clone(),
         command_timeout: cfg.command_timeout,
@@ -487,6 +491,7 @@ fn child_config(cfg: &RunConfig, subagents: &Subagents, task: &str) -> RunConfig
             attached: Vec::new(),
         },
         owner_instructions: cfg.owner_instructions.clone(),
+        skills: cfg.skills.clone(),
     }
 }
 
@@ -697,8 +702,9 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
     // about the boundary (which paths are sensitive or protected).
     let first = Item::User {
         text: format!(
-            "{}{}{}",
+            "{}{}{}{}",
             crate::instructions::block(cfg, parent.presenter, None).unwrap_or_default(),
+            crate::skills::block(cfg, parent.presenter).unwrap_or_default(),
             task_message(&p.request),
             parent.presenter.task_notes()
         ),
@@ -717,6 +723,7 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
         exchange: 0,
         child: Some(Arc::new(child)),
         context: Default::default(),
+        scoped_instructions: Default::default(),
     };
     let mut stats = RunStats::default();
     let terminal = match nested.append(&Entry::Item { item: first }) {
@@ -1000,6 +1007,7 @@ pub(crate) fn replay(entries: &[Entry], cfg: &RunConfig, stats: &mut RunStats) {
             exchange: 0,
             child: None,
             context: Default::default(),
+            scoped_instructions: Default::default(),
         };
         let mut child = RunStats::default();
         crate::run::replay_priced(list, price, &mut conv, &mut child);
@@ -1226,6 +1234,8 @@ mod tests {
             "git_commit",
             "git_log",
             "list_files",
+            "list_skills",
+            "load_skill",
             "read_file",
             "reply",
             "run_command",
@@ -1246,6 +1256,8 @@ mod tests {
                 "finish",
                 "git_log",
                 "list_files",
+                "list_skills",
+                "load_skill",
                 "read_file",
                 "run_command",
                 "search",
@@ -1265,6 +1277,8 @@ mod tests {
                 "finish",
                 "git_log",
                 "list_files",
+                "list_skills",
+                "load_skill",
                 "read_file",
                 "run_command",
                 "search",

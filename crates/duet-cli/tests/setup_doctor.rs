@@ -381,7 +381,7 @@ fn frontier_presets_set_endpoint_model_key_and_dialect_through_the_audited_path(
     );
     for (key, want) in [
         ("frontier.base_url", "\"https://api.anthropic.com/v1\""),
-        ("frontier.model", "\"claude-opus-5-5\""),
+        ("frontier.model", "\"claude-sonnet-5-5\""),
         ("frontier.api_key_env", "\"ANTHROPIC_API_KEY\""),
         ("frontier.dialect", "\"anthropic\""),
         ("frontier.vision", "true"),
@@ -457,7 +457,24 @@ fn a_preset_goes_through_the_audited_loosening_path() {
     let owner = std::fs::read_to_string(e.home.join("config.toml")).unwrap();
     assert!(owner.contains("http://127.0.0.1:11434/v1") && owner.contains("qwen3:8b"));
     let log = e.home.join("state/config-audit.jsonl");
-    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 2 });
+    assert_eq!(verify(&log).unwrap(), Verification::Intact { records: 3 });
+    // Local presets also set the backend's key variable (empty for Ollama),
+    // so each of the three configuration writes must be confirmed and audited.
+    let records: Vec<Value> = std::fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    for (record, (key, new)) in records.iter().zip([
+        ("local.base_url", "\"http://127.0.0.1:11434/v1\""),
+        ("local.api_key_env", "\"\""),
+        ("local.model", "\"qwen3:8b\""),
+    ]) {
+        assert_eq!(record["event"]["key"], key);
+        assert_eq!(record["event"]["new"], new);
+        assert_eq!(record["event"]["file"], "owner");
+        assert_eq!(record["event"]["confirmed"], true);
+    }
 
     let ported = duet(
         &e,

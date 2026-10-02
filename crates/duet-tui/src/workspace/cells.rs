@@ -7,8 +7,8 @@
 //!
 //! What is shown: the operator's own text; duet's replies with placeholders
 //! restored (as the feed restores them); a tool call's arguments restored; a
-//! tool's result as the frontier saw it (placeholders kept: this is what left
-//! the machine); an edit of a sensitive file named only, never its content.
+//! tool's prepared result (placeholders kept; Privacy shows outbound records);
+//! an edit of a sensitive file named only, never its content.
 //! Everything from outside duet passes `term::safe` before it is stored.
 
 use crate::term::markdown::Markdown;
@@ -29,6 +29,7 @@ use crate::term::feed::Streamed;
 
 /// Result lines shown while folded, and for a failure.
 const FOLDED: usize = 2;
+const FOLDED_ANSWER: usize = 6;
 /// Lines of output printed elsewhere shown while folded.
 const FOLDED_OUTPUT: usize = 3;
 const FOLDED_FAILURE: usize = 8;
@@ -99,8 +100,10 @@ pub(super) struct Cell {
     /// Marks after the title: what the boundary did with the result.
     pub tags: Vec<String>,
     pub body: Body,
-    /// A tool's result, as the frontier saw it.
+    /// A tool's prepared result, before final outbound checks.
     pub result: Vec<String>,
+    /// What the result represents; it is prepared content, not proof of a send.
+    result_label: String,
     /// Bumped on every change (for the row cache).
     version: u64,
 }
@@ -115,6 +118,7 @@ impl Cell {
             tags: Vec::new(),
             body: Body::None,
             result: Vec::new(),
+            result_label: String::new(),
             version: 0,
         }
     }
@@ -150,12 +154,16 @@ pub(super) struct Cells {
     pub list: Vec<Cell>,
     /// Row cache: (width, details, version) → rows, per cell.
     cache: Vec<Option<Cached>>,
+    /// Shared empty row between cells that do not form a continuous group.
+    separator: Line<'static>,
     by_call: HashMap<String, usize>,
     by_child: HashMap<String, usize>,
     restore: Restore,
     colour: bool,
     /// Whether a workspace path is held locally (sensitive by policy).
     held: Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    run_dir: Option<std::path::PathBuf>,
+    filtering: super::privacy::FilterHistory,
     calls: HashMap<usize, (String, Option<FieldReader>)>,
     live: Option<Live>,
     /// The response's text was shown as it streamed.
@@ -169,11 +177,14 @@ impl Cells {
         Cells {
             list: Vec::new(),
             cache: Vec::new(),
+            separator: Line::default(),
             by_call: HashMap::new(),
             by_child: HashMap::new(),
             restore: Arc::new(|t: &str| t.to_owned()),
             colour,
             held: Arc::new(|_| false),
+            run_dir: None,
+            filtering: Default::default(),
             calls: HashMap::new(),
             live: None,
             response_text: false,
@@ -187,6 +198,10 @@ impl Cells {
 
     pub(super) fn set_held(&mut self, held: Arc<dyn Fn(&str) -> bool + Send + Sync>) {
         self.held = held;
+    }
+
+    pub(super) fn set_run_dir(&mut self, run_dir: std::path::PathBuf) {
+        self.run_dir = Some(run_dir);
     }
 
     fn push(&mut self, cell: Cell) -> usize {
@@ -438,6 +453,13 @@ impl Cells {
                             .and_then(|l| l.strip_prefix("exit code "))
                             .is_some_and(|code| code.trim() != "0");
                     c.state = if failed { State::Failed } else { State::Ok };
+                    if failed {
+                        c.result_label = "Error".into();
+                    }
+                    let redactions = content.matches("⟨redacted:").count();
+                    if redactions > 0 {
+                        c.tags.push(format!("{redactions} redaction(s) in result"));
+                    }
                     c.result = content
                         .lines()
                         .take(KEEP_RESULT)
@@ -455,10 +477,12 @@ impl Cells {
                 let tag = match class {
                     ViewClass::Raw => return,
                     ViewClass::Tokenized => "values replaced by placeholders",
-                    ViewClass::HandleSummary => "held locally, a summary was sent",
-                    ViewClass::LocalAnswer => "answered by the local model",
-                    ViewClass::BulkyHandle => "large, an outline was sent",
-                    ViewClass::Protected => "protected, only its interface was sent",
+                    ViewClass::HandleSummary => {
+                        "sensitive: raw content held; filtered view prepared"
+                    }
+                    ViewClass::LocalAnswer => "local answer prepared",
+                    ViewClass::BulkyHandle => "large: outline prepared; raw ranges available",
+                    ViewClass::Protected => "protected: restricted view prepared",
                 };
                 if let Some(&i) = self.by_call.get(call_id)
                     && let Some(c) = self.get(i)
@@ -466,9 +490,23 @@ impl Cells {
                     c.tags.push(tag.into());
                 }
             }
-            Entry::Usage { interventions, .. } if !interventions.is_empty() => {
-                let mut cell = Cell::new(Kind::Held, "withheld from the frontier");
-                cell.body = Body::Lines(interventions.iter().map(|i| safe(i)).collect());
+            Entry::Usage {
+                turn,
+                interventions,
+                ..
+            } if !interventions.is_empty() => {
+                let (new, repeated) = self.filtering.split("", interventions);
+                let mut cell = Cell::new(Kind::Held, "privacy filtering");
+                cell.detail = format!(
+                    "request {turn} · {} new details, {} repeated",
+                    new.len(),
+                    repeated.len()
+                );
+                let mut lines = new;
+                if !repeated.is_empty() {
+                    lines.push(format!("{} filtering descriptions match earlier records; history is checked on every request. Privacy shows the details.", repeated.len()));
+                }
+                cell.body = Body::Lines(lines);
                 self.push(cell);
             }
             Entry::Masked { items, .. } => {
@@ -496,7 +534,6 @@ impl Cells {
                 Some(i) => {
                     if let Some(c) = self.get(i) {
                         c.state = State::Stopped;
-                        c.tags.push("stopped".into());
                     }
                 }
                 None => {
@@ -604,7 +641,7 @@ impl Cells {
                     arg("command"),
                 )
             }
-            "ask_local" => ("ask the local model", arg("question")),
+            "ask_local" => ("ask local", arg("handle")),
             "explore" => ("explore", arg("question")),
             "web_fetch" => ("fetch", arg("url")),
             "web_search" => ("search the web", arg("query")),
@@ -626,8 +663,72 @@ impl Cells {
         let mut cell = Cell::new(Kind::Tool, title);
         cell.state = State::Live;
         cell.detail = detail;
+        // The title is a short locator. Preserve complete paths and commands
+        // in the body when they would otherwise be clipped or lose newlines.
+        let full_argument = match c.name.as_str() {
+            "run_command" => Some(("command", "Command")),
+            "read_file" => Some(("path", "Source")),
+            _ => None,
+        };
+        if let Some((key, label)) = full_argument
+            && let Some(value) = c.arguments.get(key).and_then(|v| v.as_str())
+            && (value.lines().count() > 1 || value.chars().count() > 100)
+        {
+            cell.body = Body::Lines(
+                format!("{label}: {}", super::privacy::bounded(value))
+                    .lines()
+                    .map(str::to_owned)
+                    .collect(),
+            );
+        }
         if c.name == "ask_local" {
-            cell.tags.push("on this machine".into());
+            let mut lines = Vec::new();
+            if let Some(handle) = c.arguments.get("handle").and_then(|v| v.as_str())
+                && let Some(source) = self
+                    .run_dir
+                    .as_deref()
+                    .and_then(|dir| super::privacy::handle_source(dir, handle))
+            {
+                lines.push(format!("Source: {source}"));
+            }
+            if let Some(questions) = c.arguments.get("questions").and_then(|v| v.as_array()) {
+                for (i, question) in questions.iter().enumerate() {
+                    if let Some(question) = question.as_str() {
+                        lines.extend(
+                            format!("Q{}: {}", i + 1, super::privacy::bounded(question))
+                                .lines()
+                                .map(str::to_owned),
+                        );
+                    }
+                }
+            } else if let Some(question) = c.arguments.get("question").and_then(|v| v.as_str()) {
+                lines.extend(
+                    format!("Question: {}", super::privacy::bounded(question))
+                        .lines()
+                        .map(str::to_owned),
+                );
+            }
+            cell.body = Body::Lines(lines);
+            cell.result_label = "Prepared answer (filtered for the frontier)".into();
+        } else if matches!(c.name.as_str(), "read_file" | "read_raw") {
+            let range =
+                ["start_line", "end_line"].map(|key| c.arguments.get(key).and_then(|v| v.as_u64()));
+            if range.iter().any(Option::is_some) {
+                cell.tags.push(format!(
+                    "lines {}–{}",
+                    range[0].map_or("start".into(), |n| n.to_string()),
+                    range[1].map_or("end".into(), |n| n.to_string())
+                ));
+            }
+            if c.name == "read_raw"
+                && let Some(source) = self
+                    .run_dir
+                    .as_deref()
+                    .and_then(|dir| super::privacy::handle_source(dir, &arg("handle")))
+            {
+                cell.body = Body::Lines(vec![format!("Source: {source}")]);
+            }
+            cell.result_label = "Prepared view".into();
         }
         cell
     }
@@ -741,9 +842,8 @@ impl Cells {
         }
     }
 
-    /// Every row of the conversation at `width` (cached per cell).
-    pub(super) fn rows(&mut self, width: usize, details: bool) -> Vec<Line<'static>> {
-        let mut out = Vec::new();
+    /// Refresh changed cells and count their rows without copying the history.
+    pub(super) fn prepare_rows(&mut self, width: usize, details: bool) -> usize {
         for i in 0..self.list.len() {
             let key = (width, details, self.list[i].version);
             let fresh = !matches!(&self.cache[i], Some((k, _)) if *k == key);
@@ -751,15 +851,22 @@ impl Cells {
                 let rows = self.render(&self.list[i], width, details);
                 self.cache[i] = Some((key, rows));
             }
-            let joined = i > 0 && joins(&self.list[i - 1], &self.list[i]);
-            if i > 0 && !joined {
-                out.push(Line::default());
-            }
-            if let Some((_, rows)) = &self.cache[i] {
-                out.extend(rows.iter().cloned());
-            }
         }
-        out
+        self.row_chunks().map(<[Line]>::len).sum()
+    }
+
+    /// Cached rows in display order. Keeping them in chunks lets the viewport
+    /// skip off-screen cells without visiting or cloning each of their rows.
+    pub(super) fn row_chunks(&self) -> impl Iterator<Item = &[Line<'static>]> {
+        self.cache.iter().enumerate().flat_map(|(i, cached)| {
+            let separator = if i > 0 && !joins(&self.list[i - 1], &self.list[i]) {
+                std::slice::from_ref(&self.separator)
+            } else {
+                &[]
+            };
+            let rows = cached.as_ref().map_or(&[][..], |(_, rows)| rows.as_slice());
+            [separator, rows]
+        })
     }
 
     fn render(&self, c: &Cell, width: usize, details: bool) -> Vec<Line<'static>> {
@@ -803,7 +910,9 @@ impl Cells {
                 };
                 let first_rows = c.kind == Kind::Note && c.title.is_empty();
                 // Output printed elsewhere folds like a tool's result.
-                let limit = if c.kind == Kind::Output && !details {
+                let limit = if c.kind == Kind::Held && !details {
+                    FOLDED_ANSWER
+                } else if c.kind == Kind::Output && !details {
                     FOLDED_OUTPUT
                 } else {
                     usize::MAX
@@ -866,16 +975,23 @@ impl Cells {
             }
         }
         if !c.result.is_empty() {
+            if !c.result_label.is_empty() {
+                rows.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(c.result_label.clone(), palette::muted()),
+                ]));
+            }
             let limit = match (details, c.state) {
                 (true, _) => usize::MAX,
                 (false, State::Failed) => FOLDED_FAILURE,
+                _ if c.title == "ask local" => FOLDED_ANSWER,
                 _ if c.kind == Kind::Edit => 1,
                 _ => FOLDED,
             };
             let style = if c.state == State::Failed {
                 Style::new().fg(BAD)
             } else {
-                palette::muted()
+                Style::default()
             };
             for l in c.result.iter().take(limit) {
                 // Every row of a result sits on the same rule.
@@ -948,6 +1064,20 @@ fn title_line(c: &Cell) -> Option<Line<'static>> {
     if !c.detail.is_empty() {
         spans.push(Span::raw("  "));
         spans.push(Span::raw(c.detail.clone()));
+    }
+    if matches!(c.kind, Kind::Tool | Kind::Edit) {
+        spans.push(Span::styled(
+            format!(
+                " · {}",
+                match c.state {
+                    State::Live => "running",
+                    State::Ok => "done",
+                    State::Failed => "failed",
+                    State::Stopped => "stopped",
+                }
+            ),
+            palette::muted(),
+        ));
     }
     for t in &c.tags {
         let style = if t.starts_with('+') {

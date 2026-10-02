@@ -4,6 +4,7 @@
 
 pub mod anthropic;
 pub mod backends;
+pub mod catalog;
 pub mod chat;
 pub mod client;
 pub mod dialect;
@@ -11,6 +12,7 @@ pub mod endpoint;
 pub mod error;
 pub mod image;
 pub mod live;
+pub mod meter;
 #[cfg(any(test, feature = "test-support"))]
 pub mod mock_http;
 pub mod price;

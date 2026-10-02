@@ -2,9 +2,9 @@
 //! List prices, so a run can enforce a dollar budget and report its cost.
 
 use crate::types::Usage;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Price {
     pub model: String,
     /// USD per million tokens.

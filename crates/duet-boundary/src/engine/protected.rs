@@ -12,7 +12,7 @@
 //! - Withheld text is indexed three ways: copied spans (overlap filter), whole
 //!   distinctive lines, and distinctive literals (placeholder vault).
 
-use super::{COMMAND_SCAN_SKIP, Engine, PRIME_MAX_BYTES, State};
+use super::{COMMAND_SCAN_SKIP, Engine, PRIME_MAX_BYTES, State, safe_local_error};
 use crate::detect::Kind;
 use crate::ip::{ProtectedLines, distinctive_literals, result_lines};
 use crate::model::ToolSpec;
@@ -501,7 +501,7 @@ fail, the local model gets their output and one more attempt; the last version i
         let label = path.display().to_string();
         let code =
             Self::block_on(local.implement(&label, current, &spec, tests.as_deref(), req.feedback))
-                .map_err(|e| format!("local model: {}", e.message))?;
+                .map_err(|e| format!("local model: {}", safe_local_error(&e)))?;
         let before = match level {
             IpLevel::InterfaceOnly => spans_of(path, current).ok(),
             IpLevel::Sealed => None,

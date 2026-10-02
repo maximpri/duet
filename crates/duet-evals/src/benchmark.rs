@@ -949,6 +949,7 @@ pub fn render_markdown(r: &FinalReport, command: &str) -> String {
         "- **Pricing** (USD per million tokens, list prices; electricity ${:.3}/kWh):\n",
         m.electricity_usd_per_kwh
     );
+    s.push_str("  Local electricity uses recorded local-request elapsed time, including failed and canceled calls, when the run marks that timing complete. It is capped at run wall time. Older or incomplete runs use wall time as an upper bound. Wattage is assumed, not metered.\n\n");
     s.push_str("| Model | Input | Cache read | Cache write | Output | Source | Observed | Verified |\n|---|---|---|---|---|---|---|---|\n");
     for p in &m.prices {
         let _ = writeln!(
@@ -1091,6 +1092,7 @@ mod tests {
             .into(),
             unreported_requests: 0,
             frontier_cost_usd: Some(cost),
+            electricity_seconds: None,
             electricity_usd: 0.0,
             total_cost_usd: Some(cost),
             error: None,

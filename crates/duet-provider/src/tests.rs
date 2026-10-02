@@ -19,6 +19,7 @@ enum Scripted {
         chunks: Vec<Result<&'static str, &'static str>>,
     },
     ConnectError,
+    Hang,
 }
 
 #[derive(Clone)]
@@ -55,6 +56,7 @@ impl Transport for Script {
             .expect("unscripted request");
         Box::pin(async move {
             match next {
+                Scripted::Hang => std::future::pending().await,
                 Scripted::ConnectError => Err(ProviderError::new(
                     ErrorKind::Transport,
                     "connection refused",
@@ -78,6 +80,126 @@ impl Transport for Script {
             }
         })
     }
+}
+
+#[tokio::test]
+async fn http_transport_does_not_forward_requests_to_redirect_recipients() {
+    use crate::client::ReqwestTransport;
+    use crate::mock_http::MockServer;
+
+    let destination = MockServer::start(&[("POST /v1/leaked", 200, "{}")]);
+    let location = format!("{}/leaked", destination.base_url());
+    let source = MockServer::start_with_headers(
+        &[("POST /v1/chat/completions", 307, "{}")],
+        &[("location", &location)],
+    );
+    let transport = ReqwestTransport::new(Duration::from_secs(2));
+    let reply = transport
+        .post(
+            format!("{}/chat/completions", source.base_url()),
+            vec![("authorization".into(), "Bearer test-only-key".into())],
+            b"private model prompt".to_vec(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply.status, 307);
+    assert_eq!(source.seen().len(), 1);
+    assert!(destination.seen().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_a_local_request_marks_its_price_incomplete() {
+    use crate::meter::{Meter, Rates};
+
+    let meter = Arc::new(Meter::new(Rates {
+        input_per_million: 2.0,
+        output_per_million: 5.0,
+    }));
+    let mut cfg = ProviderConfig::new(
+        "http://127.0.0.1:8080/v1",
+        "local",
+        Role::Local {
+            allowlist: vec![],
+            allow_plaintext: false,
+        },
+    );
+    cfg.local_meter = Some(meter.clone());
+    let p = ChatProvider::new(cfg, Box::new(Script::new(vec![Scripted::Hang]))).unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), p.create(&request()))
+            .await
+            .is_err()
+    );
+    let snapshot = meter.snapshot();
+    assert_eq!(snapshot.requests, 1);
+    assert_eq!(snapshot.unpriced_cancelled_requests, 1);
+    assert_eq!(snapshot.cost_usd, 0.0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_between_local_attempts_has_no_unknown_charge() {
+    use crate::meter::{Meter, Rates};
+
+    let meter = Arc::new(Meter::new(Rates::default()));
+    let mut cfg = ProviderConfig::new(
+        "http://127.0.0.1:8080/v1",
+        "local",
+        Role::Local {
+            allowlist: vec![],
+            allow_plaintext: false,
+        },
+    );
+    cfg.local_meter = Some(meter.clone());
+    let p = ChatProvider::new(cfg, Box::new(Script::new(vec![Scripted::ConnectError]))).unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(5), p.create(&request()))
+            .await
+            .is_err()
+    );
+    let snapshot = meter.snapshot();
+    assert_eq!(snapshot.requests, 1);
+    assert_eq!(snapshot.unpriced_cancelled_requests, 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancellation_keeps_estimated_usage_from_an_earlier_attempt() {
+    use crate::meter::{Meter, Rates};
+
+    let meter = Arc::new(Meter::new(Rates {
+        input_per_million: 2.0,
+        output_per_million: 5.0,
+    }));
+    let mut cfg = ProviderConfig::new(
+        "http://127.0.0.1:8080/v1",
+        "local",
+        Role::Local {
+            allowlist: vec![],
+            allow_plaintext: false,
+        },
+    );
+    cfg.backoff_scale = 0.0;
+    cfg.local_meter = Some(meter.clone());
+    let partial = Scripted::Reply {
+        status: 200,
+        headers: vec![],
+        chunks: vec![
+            Ok("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n"),
+            Err("connection dropped"),
+        ],
+    };
+    let p = ChatProvider::new(cfg, Box::new(Script::new(vec![partial, Scripted::Hang]))).unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), p.create(&request()))
+            .await
+            .is_err()
+    );
+    let snapshot = meter.snapshot();
+    assert_eq!(snapshot.requests, 1);
+    assert_eq!(snapshot.unpriced_cancelled_requests, 1);
+    assert_eq!(snapshot.estimated_requests, 1);
+    assert!(snapshot.input_tokens > 0);
+    assert!(snapshot.output_tokens > 0);
+    assert!(snapshot.cost_usd > 0.0);
 }
 
 const OK_STREAM: &[&str] = &[

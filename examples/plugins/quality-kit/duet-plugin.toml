@@ -1,0 +1,8 @@
+# A text-only example: installation runs no code and starts no tool servers.
+schema_version = 1
+name = "quality-kit"
+version = "0.1.0"
+description = "Review code changes with reproducible findings and focused checks."
+skills = ["skills"]
+commands = "commands"
+mcp = []

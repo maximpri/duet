@@ -12,6 +12,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Entry {
+    ReviewUsage {
+        usage: duet_boundary::review::UsageStats,
+    },
     Start {
         objective: String,
         mode: String,
@@ -194,10 +197,19 @@ impl Transcript {
 
     /// Appends one entry, whole or not at all.
     pub fn append(&self, entry: &Entry) -> Result<(), FsError> {
+        // Match Entry::Subagent on disk without cloning the entire tool result
+        // (or image payload) merely to wrap it in its child's envelope.
+        #[derive(Serialize)]
+        struct Nested<'a> {
+            kind: &'static str,
+            child: &'a str,
+            entry: &'a Entry,
+        }
         let line = match &self.child {
-            Some(child) => serde_json::to_string(&Entry::Subagent {
-                child: child.clone(),
-                entry: Box::new(entry.clone()),
+            Some(child) => serde_json::to_string(&Nested {
+                kind: "subagent",
+                child,
+                entry,
             }),
             None => serde_json::to_string(entry),
         }
@@ -214,5 +226,37 @@ impl Transcript {
                 .filter_map(|l| serde_json::from_str(l).ok())
                 .collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_entries_keep_the_replay_format() {
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = Transcript::open(dir.path())
+            .unwrap()
+            .nested(Some("a\"1".into()));
+        let entry = Entry::Item {
+            item: Item::ToolResult {
+                call_id: "read-1".into(),
+                content: "result\n\"quoted\" 日本語".repeat(1_024),
+            },
+        };
+        transcript.append(&entry).unwrap();
+        let expected = Entry::Subagent {
+            child: "a\"1".into(),
+            entry: Box::new(entry),
+        };
+        let line = serde_json::to_string(&expected).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("transcript.jsonl")).unwrap(),
+            format!("{line}\n")
+        );
+        let restored = Transcript::read(dir.path()).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(serde_json::to_string(&restored[0]).unwrap(), line);
     }
 }

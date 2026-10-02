@@ -15,6 +15,7 @@ workspace = true
 duet-provider.workspace = true
 duet-fs.workspace = true
 duet-config.workspace = true
+duet-review.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

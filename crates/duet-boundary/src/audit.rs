@@ -50,6 +50,32 @@ pub struct AuditRecord {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AuditEvent {
+    /// Finish-time security review: counts and fixed rule ids, never code,
+    /// file paths, hashes of private content, or the local model's prose.
+    SecurityReview {
+        changed_files: usize,
+        candidates: usize,
+        high: usize,
+        medium: usize,
+        local_reviewed: usize,
+        local_unavailable: usize,
+        #[serde(default)]
+        frontier_reviewed: usize,
+        #[serde(default)]
+        frontier_unavailable: usize,
+        #[serde(default)]
+        external_candidates: usize,
+        #[serde(default)]
+        external_unavailable: usize,
+        #[serde(default)]
+        referenced_files: usize,
+        incomplete: bool,
+        blocked: bool,
+        rule_ids: Vec<String>,
+    },
+    /// A review could not finish. The caller supplies only a fixed host
+    /// reason, never a provider error or source content.
+    SecurityReviewAborted { reason: String },
     /// The run started; `boundary` is false in passthrough mode.
     RunStart { mode: String, boundary: bool },
     /// The run reached a terminal state.
@@ -244,9 +270,10 @@ pub enum AuditEvent {
         records: u32,
         outcome: String,
     },
-    /// Project instructions were given to the frontier at the start of a
-    /// run or session: `origin` is `project` (the repository's `DUET.md`,
-    /// presented like any public file) or `owner` (the owner's own file).
+    /// Root, owner, or scoped instructions were given to the frontier.
+    /// `origin` is `project` or `owner` for their legacy `DUET.md` files;
+    /// other files append their relative name, e.g. `project:src/AGENTS.md`.
+    /// Project content is presented through the same boundary as public files.
     /// Holds its size and digest, never its text.
     Instructions {
         origin: String,
@@ -316,6 +343,8 @@ pub enum AuditEvent {
 impl AuditEvent {
     pub fn kind(&self) -> &'static str {
         match self {
+            AuditEvent::SecurityReview { .. } => "security_review",
+            AuditEvent::SecurityReviewAborted { .. } => "security_review_aborted",
             AuditEvent::RunStart { .. } => "run_start",
             AuditEvent::RunEnd { .. } => "run_end",
             AuditEvent::EndpointTrust { .. } => "endpoint_trust",

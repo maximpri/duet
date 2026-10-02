@@ -20,7 +20,7 @@ use crate::detect::{CustomPatterns, Detectors, Kind, scan_each_in, scan_with};
 use crate::gate::{OutboundCheck, OutboundFilter};
 use crate::handles::HandleStore;
 use crate::images::{ImageRequest, Route};
-use crate::local::LocalReader;
+use crate::local::{Digest as LocalDigest, LocalReader};
 use crate::model::{Image, ToolSpec, sniff};
 use crate::overlap::OverlapIndex;
 use crate::policy::{Policy, is_secret_bearing};
@@ -29,6 +29,7 @@ use crate::reencoded::{self, ENCODED};
 use crate::vault::Vault;
 use crate::view::{Presenter, ServerTrust, Source, ViewClass};
 use duet_fs::FsError;
+use duet_provider::ProviderError;
 use regex::Regex;
 use serde_json::{Map, Value, json};
 use std::path::Path;
@@ -43,6 +44,12 @@ mod pii_pass;
 mod protected;
 mod structure;
 mod third_party;
+
+/// A local endpoint may echo private request content in an error body. Only
+/// the error category may enter a view or a tool result sent to the frontier.
+fn safe_local_error(error: &ProviderError) -> String {
+    format!("{:?}", error.kind)
+}
 
 pub use outbound::PART_WITHHELD;
 
@@ -318,6 +325,11 @@ pub struct Engine {
     /// `sensitivity.custom_patterns`, compiled.
     custom: CustomPatterns,
     local: Option<LocalReader>,
+    /// Repeated reads of unchanged sensitive content use the same local digest.
+    /// Raw local output stays in memory and is cleaned for each view.
+    digest_cache: Mutex<std::collections::HashMap<String, LocalDigest>>,
+    /// Weak: the gated reviewer owns filters pointing back to this engine.
+    review_second: std::sync::OnceLock<std::sync::Weak<crate::review::SecondReviewer>>,
     state: Mutex<State>,
     /// Files created or changed by commands that could read sensitive data.
     derived: Mutex<std::collections::HashSet<std::path::PathBuf>>,
@@ -345,6 +357,13 @@ const PATTERN_MIN_LINES: usize = 40;
 /// Line shapes listed, and characters shown of each.
 const MAX_PATTERNS: usize = 20;
 const PATTERN_CHARS: usize = 160;
+/// A small file should not hold a tool call for the run's entire deadline.
+const SMALL_DIGEST_BYTES: usize = 4_096;
+const MEDIUM_DIGEST_BYTES: usize = 60_000;
+const SMALL_DIGEST_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+const MEDIUM_DIGEST_WAIT: std::time::Duration = std::time::Duration::from_secs(180);
+const LARGE_DIGEST_WAIT: std::time::Duration = std::time::Duration::from_secs(600);
+const MAX_DIGEST_CACHE: usize = 64;
 static PLACEHOLDER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"⟨[^⟩]*⟩").expect("static regex"));
 static DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\d+").expect("static regex"));
@@ -425,6 +444,8 @@ impl Engine {
             detectors,
             custom,
             local,
+            digest_cache: Default::default(),
+            review_second: Default::default(),
             derived: Mutex::new(
                 std::fs::read(run_dir.join("derived.json"))
                     .ok()
@@ -566,7 +587,7 @@ impl Engine {
                 }
                 Err(e) => notes.push(format!(
                     "[local brief unavailable: {}]",
-                    e.message.chars().take(160).collect::<String>()
+                    safe_local_error(&e)
                 )),
             }
         }
@@ -924,6 +945,51 @@ impl Engine {
         tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(f))
     }
 
+    fn digest_wait(bytes: usize) -> std::time::Duration {
+        if bytes <= SMALL_DIGEST_BYTES {
+            SMALL_DIGEST_WAIT
+        } else if bytes <= MEDIUM_DIGEST_BYTES {
+            MEDIUM_DIGEST_WAIT
+        } else {
+            LARGE_DIGEST_WAIT
+        }
+    }
+
+    /// A summary is optional evidence beside the deterministic structure view.
+    /// Timeouts cancel the in-flight local request and preserve the handle for
+    /// a later, explicit `ask_local`. Only a successful digest is cached.
+    fn bounded_digest(
+        &self,
+        local: &LocalReader,
+        source: &str,
+        text: &str,
+        wait: std::time::Duration,
+    ) -> Result<LocalDigest, String> {
+        let key = format!("{source}\0{}", duet_fs::sha256_hex(text.as_bytes()));
+        if let Some(digest) = self
+            .digest_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+        {
+            return Ok(digest.clone());
+        }
+        let digest = match Self::block_on(tokio::time::timeout(wait, local.digest(source, text))) {
+            Ok(Ok(digest)) => digest,
+            Ok(Err(error)) => return Err(safe_local_error(&error)),
+            Err(_) => return Err("Timeout; use ask_local for details".into()),
+        };
+        let mut cache = self
+            .digest_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if cache.len() >= MAX_DIGEST_CACHE {
+            cache.clear();
+        }
+        cache.insert(key, digest.clone());
+        Ok(digest)
+    }
+
     /// A map of a long sensitive text: its lines grouped by shape (sanitized,
     /// digits as `#`, placeholders as `⟨…⟩`), most frequent first. Only shapes
     /// that repeat are shown — repeated lines are structure (log templates,
@@ -982,6 +1048,16 @@ impl Engine {
         text: &str,
         origin: structure::Origin<'_>,
     ) -> String {
+        self.handle_view_as_with_budget(source_label, text, origin, Self::digest_wait(text.len()))
+    }
+
+    fn handle_view_as_with_budget(
+        &self,
+        source_label: &str,
+        text: &str,
+        origin: structure::Origin<'_>,
+        wait: std::time::Duration,
+    ) -> String {
         self.set_class(ViewClass::HandleSummary);
         // A file is shown numbered (`read_file`); its structure is its content's.
         let plain = match origin {
@@ -1011,7 +1087,7 @@ impl Engine {
         let digest = self
             .local
             .as_ref()
-            .map(|l| Self::block_on(l.digest(source_label, text)));
+            .map(|l| self.bounded_digest(l, source_label, text, wait));
         let mut st = self.lock();
         let mut out = format!(
             "{} ({}): {} lines, {} bytes, {} line(s) mention errors. Raw content stays on this machine; \
@@ -1099,10 +1175,7 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
                     ));
                 }
             }
-            Some(Err(e)) => out.push_str(&format!(
-                "[local summary unavailable: {}]\n",
-                e.message.chars().take(160).collect::<String>()
-            )),
+            Some(Err(e)) => out.push_str(&format!("[local summary unavailable: {}]\n", e)),
             None => {
                 out.push_str("[no local model configured; only the lines above are available]\n")
             }
@@ -1382,7 +1455,9 @@ ask questions with ask_local(handle=\"{}\", question=...).\n",
         // code costs minutes of local prefill and tells the frontier less than
         // reading the range it needs.
         let digest = match (shape, &self.local) {
-            (Shape::Output, Some(l)) => Some(Self::block_on(l.digest(label, &body))),
+            (Shape::Output, Some(l)) => {
+                Some(self.bounded_digest(l, label, &body, Self::digest_wait(body.len())))
+            }
             _ => None,
         };
         let id = &handle.id;
@@ -1409,10 +1484,7 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
                     out.push_str(&format!("- {}\n", self.clean_public(&mut st, f, label)));
                 }
             }
-            Some(Err(e)) => out.push_str(&format!(
-                "[local summary unavailable: {}]\n",
-                e.message.chars().take(160).collect::<String>()
-            )),
+            Some(Err(e)) => out.push_str(&format!("[local summary unavailable: {}]\n", e)),
             None => {}
         }
         out
@@ -1488,7 +1560,7 @@ Read any range with read_raw(handle=\"{id}\", start_line=..., end_line=...){also
                 Some(img) => Self::block_on(local.answer_image(&info.source, img, &asked)),
                 None => Self::block_on(local.answer(&info.source, &text, &asked)),
             }
-            .map_err(|e| format!("local model: {}", e.message))?;
+            .map_err(|e| format!("local model: {}", safe_local_error(&e)))?;
             let mut st = self.lock();
             let (answer, withheld) = match &image {
                 // An answer about public content (a bulky page, file or
@@ -1768,6 +1840,14 @@ in {} read it at runtime instead (for example from the environment variable {key
     pub fn take_local_stats(&self) -> Option<crate::local::CallStats> {
         self.local.as_ref().map(LocalReader::take_stats)
     }
+    pub fn set_review_second(
+        &self,
+        reviewer: &Arc<crate::review::SecondReviewer>,
+    ) -> Result<(), String> {
+        self.review_second
+            .set(Arc::downgrade(reviewer))
+            .map_err(|_| "security second reviewer already configured".into())
+    }
 
     /// The task notes, and when there is no local model (`local.enabled =
     /// false`) the note that nothing can answer questions about a handle, so
@@ -1825,6 +1905,116 @@ ask_local for details):\n{brief}"
 }
 
 impl Presenter for Engine {
+    fn review_second(
+        &self,
+        candidate: &duet_review::Candidate,
+        paths: &[std::path::PathBuf],
+        diff: &str,
+        remaining_usd: f64,
+    ) -> Option<Result<duet_review::Judgment, String>> {
+        // Eligibility is enforced here, independently of the orchestrator.
+        // No fallback can send a private/protected flow to the frontier.
+        if paths.is_empty()
+            || candidate.context.len() > duet_review::MAX_CONTEXT
+            || diff.len() > duet_review::MAX_CONTEXT
+            || candidate.known_private_value
+            || matches!(
+                candidate.rule,
+                "sensitive-sink" | "credential-literal" | "external-scanner"
+            )
+            || paths
+                .iter()
+                .any(|p| self.is_sensitive(p) || self.protection(p).is_some())
+            || !self.review_value_spans(&candidate.context).is_empty()
+            || !self.review_value_spans(diff).is_empty()
+        {
+            return None;
+        }
+        let fields = self.review_fields();
+        if fields
+            .iter()
+            .any(|f| !f.is_empty() && (candidate.context.contains(f) || diff.contains(f)))
+        {
+            return None;
+        }
+        let Ok(change) = serde_json::from_str::<serde_json::Value>(diff) else {
+            return None;
+        };
+        if !change.as_object().is_some_and(|v| {
+            v.len() == 2
+                && v.get("before").is_some_and(serde_json::Value::is_string)
+                && v.get("after").is_some_and(serde_json::Value::is_string)
+        }) {
+            return None;
+        }
+        for path in paths {
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            if [
+                &candidate.context,
+                change["before"].as_str().unwrap_or(""),
+                change["after"].as_str().unwrap_or(""),
+            ]
+            .iter()
+            .any(|source| {
+                duet_review::scan(ext, source, &fields)
+                    .candidates
+                    .iter()
+                    .any(|c| matches!(c.rule, "sensitive-sink" | "credential-literal"))
+            }) {
+                return None;
+            }
+        }
+        let reviewer = self.review_second.get()?.upgrade()?;
+        Some(Self::block_on(reviewer.review(
+            candidate,
+            diff,
+            remaining_usd,
+        )))
+    }
+    fn take_review_usage(&self) -> crate::review::UsageStats {
+        self.review_second
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .map_or_else(Default::default, |r| r.take_stats())
+    }
+    fn review_candidate(
+        &self,
+        candidate: &duet_review::Candidate,
+    ) -> Option<Result<duet_review::Judgment, String>> {
+        self.local
+            .as_ref()
+            .map(|local| Self::block_on(local.review_candidate(candidate)))
+    }
+
+    fn review_fields(&self) -> Vec<String> {
+        self.lock().structure.review_fields()
+    }
+    fn review_value_spans(&self, source: &str) -> Vec<(usize, usize)> {
+        let mut spans: Vec<_> = structure::Known(&self.lock())
+            .review_values(source)
+            .into_iter()
+            .filter(|(_, _, kind)| *kind != Kind::Code)
+            .map(|(s, e, _)| (s, e))
+            .collect();
+        spans.extend(
+            scan_with(source, self.detectors, &self.custom)
+                .into_iter()
+                .filter(|f| {
+                    f.kind != Kind::Code
+                        && !matches!(
+                            source[f.start..f.end]
+                                .trim_matches(['[', ']', '\'', '"'])
+                                .to_ascii_lowercase()
+                                .as_str(),
+                            "redacted" | "withheld"
+                        )
+                })
+                .map(|f| (f.start, f.end)),
+        );
+        spans.sort_unstable();
+        spans.dedup();
+        spans
+    }
     fn present(&self, source: &Source, bytes: &[u8]) -> String {
         let text = String::from_utf8_lossy(bytes);
         self.set_class(ViewClass::Raw);
@@ -2251,7 +2441,7 @@ is written or as a test fixture. At most {rows} records."
         let seconds = started.elapsed().as_secs_f64();
         let summary = match written {
             Ok(text) => Ok(self.clean_condensed(&mut self.lock(), &text)),
-            Err(e) => Err(e.message.chars().take(200).collect()),
+            Err(e) => Err(safe_local_error(&e)),
         };
         Some(crate::view::Condensed { summary, seconds })
     }
@@ -2339,6 +2529,109 @@ mod tests {
     const KEY: &str = "sk_live_Qm8vT2xW9pL4nR7kZ3cY6bH1";
     const PASSWORD: &str = "Ab3Xy9Qw!p42Lm";
     const EMAIL: &str = "amelia.velanwick42@mailbox-311.net";
+
+    #[test]
+    fn local_endpoint_error_body_never_enters_a_view() {
+        let error = ProviderError::new(
+            duet_provider::ErrorKind::Status(500),
+            "upstream echoed private-canary-79",
+        );
+        let shown = safe_local_error(&error);
+        assert_eq!(shown, "Status(500)");
+        assert!(!shown.contains("private-canary-79"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn malformed_local_response_does_not_enter_sensitive_file_view() {
+        let (local, _) = crate::testing::scripted_local(vec![
+            "malformed private-canary-79".into(),
+            "still malformed private-canary-79".into(),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let e = Engine::open(&d.path().join("run"), policy(), Some(local)).unwrap();
+        let shown = e.present(
+            &file("data/customers.csv"),
+            b"id,email\n1,private-canary-79\n",
+        );
+        assert!(
+            shown.contains("local summary unavailable: Malformed"),
+            "{shown}"
+        );
+        assert!(!shown.contains("private-canary-79"), "{shown}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_stalled_local_summary_returns_the_file_structure_and_handle() {
+        struct Stalled;
+        impl duet_provider::client::Transport for Stalled {
+            fn post(
+                &self,
+                _url: String,
+                _headers: Vec<(String, String)>,
+                _body: Vec<u8>,
+            ) -> futures_util::future::BoxFuture<
+                'static,
+                Result<duet_provider::client::HttpReply, ProviderError>,
+            > {
+                Box::pin(std::future::pending())
+            }
+        }
+        let cfg = duet_provider::ProviderConfig::new(
+            "http://127.0.0.1:9/v1",
+            "stalled",
+            duet_provider::Role::Local {
+                allowlist: vec![],
+                allow_plaintext: false,
+            },
+        );
+        let provider = duet_provider::ChatProvider::new(cfg, Box::new(Stalled)).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().join("ws");
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::write(
+            ws.join("data/customers.csv"),
+            "id,email,status\n1,customer@example.test,active\n",
+        )
+        .unwrap();
+        let mut p = policy();
+        p.structure.views = true;
+        let e = Engine::open(&d.path().join("run"), p, Some(LocalReader::new(provider))).unwrap();
+        e.prime(&ws, &["data/customers.csv".into()], "");
+        let shown = e.handle_view_as_with_budget(
+            "data/customers.csv",
+            "id,email,status\n1,customer@example.test,active\n",
+            structure::Origin::File(Path::new("data/customers.csv")),
+            std::time::Duration::from_millis(5),
+        );
+        assert!(shown.contains("ask_local(handle="), "{shown}");
+        assert!(
+            shown.contains("local summary unavailable: Timeout"),
+            "{shown}"
+        );
+        assert!(
+            shown.contains("email") && shown.contains("status"),
+            "{shown}"
+        );
+        assert!(!shown.contains("customer@example.test"), "{shown}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unchanged_sensitive_content_reuses_its_local_digest() {
+        let (local, received) = crate::testing::scripted_local(vec![
+            json!({"summary": "A customer table.", "facts": []}).to_string(),
+            json!({"summary": "A changed customer table.", "facts": []}).to_string(),
+        ]);
+        let d = tempfile::tempdir().unwrap();
+        let e = Engine::open(&d.path().join("run"), policy(), Some(local)).unwrap();
+        let path = Path::new("data/customers.csv");
+        let first = "id,status\n1,active\n";
+        let changed = "id,status\n1,inactive\n";
+        e.handle_view_as("data/customers.csv", first, structure::Origin::File(path));
+        e.handle_view_as("data/customers.csv", first, structure::Origin::File(path));
+        e.handle_view_as("data/customers.csv", changed, structure::Origin::File(path));
+        assert_eq!(received.bodies().len(), 2);
+        assert_eq!(e.take_local_stats().unwrap().calls, 2);
+    }
 
     pub(super) fn policy() -> Policy {
         Policy {

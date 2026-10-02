@@ -13,7 +13,7 @@
 //! of all requests including the system prompt, the task and the model's own
 //! messages; the rest of the input is not attributed to any class.
 
-use crate::context::estimate;
+use crate::context::{estimate, tokens_of};
 use duet_boundary::local::CallStats;
 use duet_boundary::model::{Item, ToolCall, Usage};
 use duet_boundary::view::ViewClass;
@@ -57,6 +57,12 @@ pub struct Ledger {
     /// What the local model did (hybrid runs), including its busy seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<CallStats>,
+    /// Fresh-context security opinions; already included in total frontier spend.
+    #[serde(
+        default,
+        skip_serializing_if = "duet_boundary::review::UsageStats::is_empty"
+    )]
+    pub review: duet_boundary::review::UsageStats,
     /// Images: where they went, and what the ones the frontier saw cost.
     #[serde(default, skip_serializing_if = "Images::is_empty")]
     pub images: Images,
@@ -115,16 +121,22 @@ fn is_zero(v: &f64) -> bool {
 }
 
 fn add_local(a: &mut CallStats, b: &CallStats) {
+    // An empty destination has no timing history; afterward one incomplete
+    // source keeps the aggregate on the conservative wall-time estimate.
+    let has_history = a.calls > 0 || a.seconds > 0.0 || a.request_time_complete;
+    a.request_time_complete = if has_history {
+        a.request_time_complete && b.request_time_complete
+    } else {
+        b.request_time_complete
+    };
     a.calls += b.calls;
     a.input_tokens += b.input_tokens;
     a.cached_tokens += b.cached_tokens;
     a.output_tokens += b.output_tokens;
     a.seconds += b.seconds;
-}
-
-fn tokens_of(text: &str) -> u64 {
-    let bytes = serde_json::to_string(text).map_or(text.len(), |s| s.len());
-    (bytes as u64).div_ceil(7) * 2
+    a.answer_retries += b.answer_retries;
+    a.answer_retry_seconds += b.answer_retry_seconds;
+    a.malformed_retries += b.malformed_retries;
 }
 
 impl Ledger {
@@ -235,7 +247,9 @@ impl Ledger {
         self.explore.reported += other.explore.reported;
         self.explore.steps += other.explore.steps;
         self.explore.bytes_read += other.explore.bytes_read;
-        add_local(&mut self.explore.local, &other.explore.local);
+        if other.explore.calls > 0 {
+            add_local(&mut self.explore.local, &other.explore.local);
+        }
         self.input_usd += other.input_usd;
         self.output_usd += other.output_usd;
         self.failed_attempts_usd += other.failed_attempts_usd;
@@ -251,11 +265,17 @@ impl Ledger {
         add_local(
             &mut e.local,
             &CallStats {
-                calls: s.steps,
+                calls: if s.request_time_complete {
+                    s.request_attempts
+                } else {
+                    s.steps
+                },
                 input_tokens: s.input_tokens,
                 cached_tokens: s.cached_tokens,
                 output_tokens: s.output_tokens,
                 seconds: s.local_seconds,
+                request_time_complete: s.request_time_complete,
+                ..CallStats::default()
             },
         );
     }
@@ -426,5 +446,36 @@ mod tests {
         assert!(v["by_class"]["bulky_handle"].is_object(), "{v}");
         let back: Ledger = serde_json::from_value(v).unwrap();
         assert_eq!(back, l);
+    }
+
+    #[test]
+    fn explorer_timing_keeps_interrupted_attempts_and_legacy_uncertainty() {
+        let interrupted = crate::explore::Stats {
+            steps: 0,
+            request_attempts: 1,
+            request_time_complete: true,
+            local_seconds: 2.5,
+            outcome: "interrupted".into(),
+            ..crate::explore::Stats::default()
+        };
+        let mut ledger = Ledger::default();
+        ledger.on_explore(&interrupted);
+        assert_eq!(ledger.explore.local.calls, 1);
+        assert_eq!(ledger.explore.local.seconds, 2.5);
+        assert!(ledger.explore.local.request_time_complete);
+
+        ledger.absorb(&Ledger::default());
+        assert!(ledger.explore.local.request_time_complete);
+
+        let legacy: crate::explore::Stats = serde_json::from_value(json!({
+            "depth": "quick", "steps": 1, "files": 0, "bytes_read": 0,
+            "local_seconds": 1.0, "seconds": 1.0, "input_tokens": 0,
+            "cached_tokens": 0, "output_tokens": 0, "references": 0,
+            "outcome": "reported"
+        }))
+        .unwrap();
+        ledger.on_explore(&legacy);
+        assert_eq!(ledger.explore.local.calls, 2);
+        assert!(!ledger.explore.local.request_time_complete);
     }
 }

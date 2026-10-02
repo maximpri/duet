@@ -34,6 +34,17 @@ pub struct DuetLedger {
     pub sandbox_denials: u64,
     pub local_calls: u64,
     pub local_busy_seconds: f64,
+    /// True only when every local role reports failed and canceled request
+    /// time. Older summaries remain on the wall-clock electricity upper bound.
+    #[serde(default)]
+    pub local_request_time_complete: bool,
+    /// Absent in older runs: zero would incorrectly imply no retries occurred.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_answer_retries: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_answer_retry_seconds: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_malformed_retries: Option<u64>,
     /// Local model tokens (older records lack them).
     #[serde(default)]
     pub local_input_tokens: u64,
@@ -124,6 +135,24 @@ pub fn parse(summary: &Value) -> Option<DuetLedger> {
     };
     // The engine's local roles, then the explorer's local model.
     let explore = l.get("explore");
+    let engine_timed = l
+        .get("local")
+        .and_then(|v| v.get("request_time_complete"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let explorer_timed = explore.is_none_or(|e| {
+        u(e, "calls") == 0
+            || e.get("local")
+                .and_then(|v| v.get("request_time_complete"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+    });
+    out.local_request_time_complete = engine_timed && explorer_timed;
+    if let Some(local) = l.get("local") {
+        out.local_answer_retries = local.get("answer_retries").and_then(Value::as_u64);
+        out.local_answer_retry_seconds = local.get("answer_retry_seconds").and_then(Value::as_f64);
+        out.local_malformed_retries = local.get("malformed_retries").and_then(Value::as_u64);
+    }
     for local in [l.get("local"), explore.and_then(|e| e.get("local"))]
         .into_iter()
         .flatten()
@@ -175,10 +204,33 @@ mod tests {
         assert_eq!((l.ask_local_calls, l.ask_local_questions), (2, 5));
         assert_eq!((l.sensitive_data_commands, l.sandbox_denials), (1, 3));
         assert_eq!(l.local_calls, 4);
+        assert!(!l.local_request_time_complete);
         assert_eq!((l.local_input_tokens, l.local_output_tokens), (1200, 80));
         assert!((l.local_busy_seconds - 42.5).abs() < 1e-9);
+        assert_eq!(l.local_answer_retries, None);
+        assert_eq!(l.local_answer_retry_seconds, None);
+        assert_eq!(l.local_malformed_retries, None);
         // Older summaries without a ledger give none.
         assert!(parse(&json!({"stats": {"turns": 3}})).is_none());
+    }
+
+    #[test]
+    fn retry_counts_are_kept_when_instrumented_and_unknown_in_old_records() {
+        let mut s = summary();
+        let local = &mut s["stats"]["ledger"]["local"];
+        local["answer_retries"] = json!(2);
+        local["answer_retry_seconds"] = json!(12.5);
+        local["malformed_retries"] = json!(1);
+        let l = parse(&s).unwrap();
+        assert_eq!(l.local_answer_retries, Some(2));
+        assert_eq!(l.local_answer_retry_seconds, Some(12.5));
+        assert_eq!(l.local_malformed_retries, Some(1));
+        let encoded = serde_json::to_value(parse(&summary()).unwrap()).unwrap();
+        assert!(encoded.get("local_answer_retries").is_none());
+        assert!(encoded.get("local_answer_retry_seconds").is_none());
+        assert!(encoded.get("local_malformed_retries").is_none());
+        let old: DuetLedger = serde_json::from_value(encoded).unwrap();
+        assert_eq!(old.local_answer_retries, None);
     }
 
     #[test]
@@ -192,6 +244,19 @@ mod tests {
         assert_eq!(l.local_calls, 13);
         assert_eq!((l.local_input_tokens, l.local_output_tokens), (31200, 980));
         assert!((l.local_busy_seconds - 100.0).abs() < 1e-9);
+        assert!(!l.local_request_time_complete);
+    }
+
+    #[test]
+    fn request_time_is_complete_only_when_every_used_local_role_marks_it() {
+        let mut s = summary();
+        s["stats"]["ledger"]["local"]["request_time_complete"] = json!(true);
+        assert!(parse(&s).unwrap().local_request_time_complete);
+        s["stats"]["ledger"]["explore"] = json!({"calls": 1,
+            "local": {"seconds": 2.0}});
+        assert!(!parse(&s).unwrap().local_request_time_complete);
+        s["stats"]["ledger"]["explore"]["local"]["request_time_complete"] = json!(true);
+        assert!(parse(&s).unwrap().local_request_time_complete);
     }
 
     #[test]

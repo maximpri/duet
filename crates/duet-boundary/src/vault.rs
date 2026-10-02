@@ -411,6 +411,27 @@ impl Vault {
             .collect()
     }
 
+    /// Private-data sources for review. A longer protected-code token must
+    /// not hide a private value inside it. Code-only matches are not sources;
+    /// placeholders already in the text are skipped as in `spans`.
+    pub(crate) fn review_spans(&self, text: &str) -> Vec<(usize, usize, Kind)> {
+        let m = self.matcher();
+        let Some(ac) = &m.overlapping else {
+            return Vec::new();
+        };
+        let tokens = Self::token_spans(text);
+        ac.find_overlapping_iter(text)
+            .filter_map(|hit| {
+                let entry = self.by_value.get(&m.values[hit.pattern().as_usize()])?;
+                (entry.kind != Kind::Code
+                    && !tokens
+                        .iter()
+                        .any(|(s, e)| *s < hit.end() && *e > hit.start()))
+                .then_some((hit.start(), hit.end(), entry.kind))
+            })
+            .collect()
+    }
+
     /// Every distinct value (4+ bytes) that occurs in `text` as written, with
     /// its entry. Overlapping occurrences count, so a surname inside a full
     /// name is found too.

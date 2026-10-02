@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-01",
+  "environment": {"os": "macOS 27.0.1", "architecture": "arm64", "rust": "1.97.1"},
+  "git_head": "b853842",
+  "baseline": "Working tree before this review, including pre-existing uncommitted work",
+  "scope": "Synthetic component measurements; no whole-task or API cost claim",
+  "measurements": [
+    {
+      "name": "review_related_context", "profile": "release", "unit": "ms",
+      "bytes": 40020, "findings": 24, "scans_per_sample": 10,
+      "before_samples": [676.639, 699.096, 748.069],
+      "after_samples": [45.624, 43.310, 51.427],
+      "before_source_retained": false
+    },
+    {
+      "name": "copied_content_index", "profile": "rustc -O", "unit": "ms", "bytes": 268890,
+      "before_samples": [8.745, 8.117, 7.819], "after_samples": [3.080, 2.809, 4.785]
+    },
+    {
+      "name": "copied_content_redaction", "profile": "rustc -O", "unit": "ms", "bytes": 268890,
+      "normal_calls_per_sample": 30, "strict_calls_per_sample": 30,
+      "before_samples": [245.340, 241.801, 274.842], "after_samples": [151.745, 153.115, 123.317]
+    },
+    {
+      "name": "warm_config_reload", "profile": "release", "unit": "us_per_load", "loads": 2000,
+      "before": 457.8, "after": 380.2, "after_repeat": 374.2
+    },
+    {
+      "name": "request_context_check_small", "profile": "release", "unit": "ms",
+      "turns": 32, "results_per_turn": 2, "result_bytes": 4096, "checks_per_sample": 300,
+      "samples": 5, "aggregation": "median", "alternating_order": true,
+      "before": 55.01, "after": 27.43
+    },
+    {
+      "name": "request_context_check_large", "profile": "release", "unit": "ms",
+      "turns": 128, "results_per_turn": 2, "result_bytes": 16384, "checks_per_sample": 300,
+      "samples": 5, "aggregation": "median", "alternating_order": true,
+      "before": 787.95, "after": 385.49
+    },
+    {
+      "name": "cached_transcript_viewport", "profile": "debug", "unit": "ms",
+      "total_rows": 7999, "visible_rows": 30, "preparations": 100,
+      "before": 179.533750, "after": 45.449084
+    }
+  ]
+}

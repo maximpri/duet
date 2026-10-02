@@ -32,6 +32,16 @@ Update (2026-09-27): rows Q1, Q6, C2 and LR1 and blocker 9 were restated from th
 own commands and servers held to memory limits) and EV11 (evaluation runs). The counts in §4.1
 changed with them; nothing else was re-audited.
 
+Update (2026-10-01, terminal interactions): the editor, clipboard, attachment queue and command
+menu received targeted verification: **122 TUI tests**, **77 CLI tests** and **6 image-policy tests**
+passed in their respective runs. The menu was checked at 120×45 and 40×10, including resize,
+paging, mouse selection, filtering and draft recovery. Clipboard adapters use mock helpers;
+macOS TIFF conversion also ran on generated input. A release line-mode smoke test passed.
+Full-screen verification was blocked by this execution environment's `/dev/tty` permission,
+and no actual clipboard was read or changed. These results do not replace the historical full
+gate or quality benchmarks below. See [TUI evidence](evidence/tui-validation-2026-10-01.md) and
+[menu evidence](evidence/command-menu-validation-2026-10-01.md).
+
 ## 1. How to read this
 
 | Verdict | Meaning |
@@ -121,7 +131,7 @@ Checks this audit added on the stored results (read-only scripts, in
 | A5 | Masking at `context.mask_at` (70%) in whole turns, last turns kept, stubs name the call and handle; a tool call is never separated from its result | TARGET §5; ARCH §12 inv. 6 | **Verified** | `masks_oldest_turns_first_keeps_recent_and_drops_below_half`, `a_turn_is_masked_whole_and_every_call_keeps_its_result`, `stubs_name_the_call_and_the_handle`, `nothing_masked_below_threshold`; masking happened in 6 of 141 live runs | — |
 | A6 | `ask_local` takes ≤ 6 questions and answers in a fixed schema; invalid output is retried once, then reported unavailable, never invented | TARGET §6.3 | **Partial** | `every_role_shares_one_schema`, `extracts_json_from_fenced_or_prose_output`; used live (5.8–12 calls per run, reports) | The retry-once-then-unavailable path (`local.rs:91`) has no test |
 | A7 | `read_raw` returns ranges of public bulky handles only (≤ 500 lines); bulky results show head + outline | TARGET §4, §6.2 | **Verified** | `bulky.rs` (13 tests, e.g. `a_bulky_file_becomes_a_handle_with_head_and_outline`, `bulky_search_keeps_sensitive_matches_masked`, `the_task_is_never_offloaded`) | — |
-| A8 | `finish` runs `checks.commands` sandboxed; the frontier may continue up to `limits.max_finish_attempts` | TARGET §4 | **Partial** | Used in every live run; checks output shaping: `runs_that_can_read_protected_code_show_result_lines_only` | No test of the finish-attempt limit or of failed-check continuation |
+| A8 | `finish` runs `checks.commands` sandboxed; the frontier may continue up to `limits.max_finish_attempts` | TARGET §4 | **Partial** | Used in live runs; `finish_requires_the_acceptance_command_to_pass_after_a_repair` proves failure then success through the sandboxed tool; checks output shaping: `runs_that_can_read_protected_code_show_result_lines_only` | No test of the run loop's finish-attempt limit or of continuation after a failed check |
 
 ### 3.3 Privacy (sensitivity)
 
@@ -159,9 +169,9 @@ Checks this audit added on the stored results (read-only scripts, in
 
 | ID | Requirement | Source | Verdict | Evidence | Gap / next action |
 |---|---|---|---|---|---|
-| C1 | Strictly cheaper than the frontier alone (original Gate 3) | PLAN §3 2026-09-23 | **Not met** | Attempts A–C failed (`gate3a`–`gate3c`); superseded by the 2026-09-24 decision | Recorded for completeness; see C2 |
+| C1 | Strictly cheaper than the frontier alone (original Gate 3; operator renewed the fraction-of-cost goal on 2026-09-30) | PLAN §3 2026-09-23; current operator goal | **Not met** | Attempts A–C failed (`gate3a`–`gate3c`); the 18-run M5.2 small-to-large batch is 1.36× passthrough at its frozen price method, or 1.25× in the incomplete historical request-time sensitivity calculation | A paired, quality-gated result below the frontier baseline on a final build is still required. |
 | C2 | Report a measured privacy premium: the paired cost ratio vs passthrough (same model) with its 95% interval | PLAN §3 2026-09-24; TARGET §1 | **Partial** | `paired_ratio_is_the_ratio_of_totals` (used by `--final`). Ratios of lane means in this audit: `gate2` 2.4×, `cost1-hybrid` 1.9×, `gate3a` 1.7×, `gate3b` 1.5×, `gate3c` 2.2×, `l2l4` 2.1×. Since `be69e0d` batch reports give the paired ratio with a 95% bootstrap interval, at recorded and flagship prices: `m52-sl` 1.18× [0.89, 1.58]; `m52-xl` hybrid 1.38× [1.28, 1.48], with compaction 1.07× [0.75, 1.36], with the explorer 1.71× [1.07, 2.30] | No ratio with an interval has been published. Publish the ratio with its interval from M5. (After the audit, README, TARGET and PLAN §5 report the measured 1.5–2.4× instead of "~1.4×"; the PLAN §3 decision row keeps its original text) |
-| C3 | Cost = list price including cache reads and writes + local electricity | TARGET §1 | **Partial** | Prices verified with source and date (`selftest`; `prices_refuse_unverified_and_compute_cost`, `prices_usage`); cache-aware usage (`openai_chat_stream_usage`, `anthropic_stream_usage`) | Electricity is **estimated** as `local.watts` × the run's wall seconds (`lanes/mod.rs`), not measured and not busy seconds (PLAN M0.2 says busy seconds). No price row for the `codex` lane's model |
+| C3 | Cost = list price including cache reads and writes + local electricity | TARGET §1 | **Partial** | Prices verified with source and date (`selftest`; `prices_refuse_unverified_and_compute_cost`, `prices_usage`); cache-aware usage (`openai_chat_stream_usage`, `anthropic_stream_usage`); new code counts failed/canceled local request time and uses it for electricity when complete (`canceled_request_keeps_its_elapsed_local_time`, `electricity_uses_complete_request_time_and_keeps_legacy_upper_bound`) | Frozen batches still use the whole-run wall-time upper bound. Request elapsed time is not measured power draw; a new live batch is needed. No price row for the `codex` lane's model |
 | C4 | Per-run cost ledger by content class in `summary.json`, shown per lane | PLAN M4 | **Verified** | `bulky_files_reach_the_frontier_as_a_preview_and_are_charged_as_such`, `passthrough_shows_the_whole_file_and_charges_it_as_raw`, `results_are_charged_to_their_class_for_every_request_that_carries_them`, `lanes_with_a_ledger_get_a_cost_breakdown`; ledgers in `gate3a`–`l2l4` reports | — |
 | C5 | Usage is never poisoned by retries; missing usage is estimated | PLAN M1 fixes 1, 6 | **Verified** | `retried_failures_do_not_poison_usage`, `missing_finish_is_truncation_and_missing_usage_is_estimated` | — |
 | C6 | Provider prompt caching works on the frontier | PLAN §3 (resolved 2026-09-23) | **Verified** | `cached_tokens` 0 → 28,544 (PLAN §3); live cache-read share 90–96% (§2) | — |
@@ -356,8 +366,8 @@ release:
 
 ### 4.3 Known limits (documented; acceptable for a first release if stated)
 
-- Cost is a privacy premium, not a saving (C1 superseded by decision). Report the ratio with its
-  interval.
+- Current cost is a privacy premium, not a saving. The requested fraction-of-frontier-cost goal
+  remains open; report the measured ratio with its interval.
 - Residual leakage by design (TARGET §6.6, SECURITY "What is not protected"): existence and shape,
   paraphrase in local answers, the task text, skeletons, Open source code.
 - Protected code can be extracted a few bytes per run by a deliberately adversarial frontier
@@ -378,7 +388,7 @@ release:
 | D2 | A product failure is excluded as infrastructure | `gate3c/S2-duet-hybrid-s2/-s3`: Duet's gate blocked the first send (a false-positive name), and the harness marked the runs invalid ("no frontier request") | Classify by the agent's terminal state before the proxy statuses. **Fixed** after the audit (branch `term`): see EV10 |
 | D3 | The audit anchor is keyed by the workspace path, so moving the workspace makes `duet audit verify` fail with "no anchor" (exit 2) | `l2l4/L2-duet-hybrid-s1` after the move to EXT_DISK; the anchor sits under a different path hash | Key anchors by run id plus the chain's genesis, or search the anchors by run id. **Fixed** after the audit (branch `nits`): keyed by run id and first-record hash, earlier layout still read; see P16 |
 | D4 | `duet resume <run_id>` does not validate the id (the `audit` commands use `checked_run_id`) and does not refuse a run that already ended | `duet-cli/src/main.rs` `Cmd::Resume`; `run.rs` ignores `Entry::End` on resume | Validate the id; refuse or confirm when the transcript has an `End` entry. **Fixed** after the audit (branch `term`): the id is checked and a completed run is refused; see T4 |
-| D5 | Electricity is computed from wall seconds, not local busy seconds | `duet-evals/src/lanes/mod.rs` (`electricity(cfg.local_watts, record.wall_seconds)`) versus PLAN M0.2 | Use the ledger's local busy seconds |
+| D5 | Electricity was computed from whole-run wall seconds rather than local request time | Frozen runs used `electricity(cfg.local_watts, record.wall_seconds)` versus PLAN M0.2 | **Fixed in code 2026-10-01:** new runs use complete local request timing, capped at wall time; incomplete and old summaries retain the conservative upper bound. The frozen reports are unchanged and a live batch is still needed. |
 | D6 | Documentation claims ahead of the evidence | README "Goals" still lists **Cheaper**. README says the local model briefs the frontier at run start (default off). README, TARGET and PLAN state a "~1.4×" premium (batches: 1.5–2.4×). ARCH §12 says every invariant is test-backed (inv. 7 is not). TARGET §8 promises a registry-read test that does not exist. The PLAN header ("Gate 3 of M4; SbD-2 next") and TARGET header ("implemented through M4.5 and SbD-1") are stale | A docs-only pass. **Fixed** after the audit (branch `nits`): all listed items corrected, except the PLAN §3 decision row, which keeps its original text |
 
 Fixed on branch `term` (2026-09-24): D1 and D2 (the harness records Duet's terminal state and

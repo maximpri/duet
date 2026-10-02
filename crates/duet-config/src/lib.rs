@@ -18,7 +18,7 @@ pub mod policy;
 pub use policy::{Policy, PolicyError, PolicyFile, PolicyMeta, PolicySource};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use toml::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,6 +114,24 @@ const REGISTRY_HOSTS: &str = r#"[
 /// Defaults are TOML literals.
 pub const REGISTRY: &[Setting] = &[
     s!(
+        "extensions.skills_enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        false,
+        "Discover portable SKILL.md workflows. Repositories may disable skills, never grant extra tool permissions."
+    ),
+    s!(
+        "extensions.plugins_enabled",
+        Bool,
+        "true",
+        Project,
+        OnlyFalse,
+        false,
+        "Load owner-installed plugin packages. Repositories may disable them; they cannot install or enable packages."
+    ),
+    s!(
         "frontier.base_url",
         Str,
         r#""https://api.z.ai/api/coding/paas/v4""#,
@@ -193,6 +211,114 @@ pub const REGISTRY: &[Setting] = &[
         OnlyLaterChoice,
         true,
         "`top`: every run and session here is in top clearance: only the local model works, and nothing leaves this machine but its requests to the local model (no frontier, no web tools, no network for commands, no MCP server with network). `duet` and `duet run` start in it without --mode; other modes are refused, and resuming a session of another mode too. A project may require it for its repository; lifting it is the owner's, confirmed. `standard`: every mode is available (top clearance with --mode top-clearance or /mode in a session)."
+    ),
+    s!(
+        "pricing.offline",
+        Bool,
+        "false",
+        Owner,
+        Any,
+        false,
+        "Use cached/bundled OpenRouter token prices without refreshing the public catalog. Top clearance and loopback frontier endpoints never refresh it."
+    ),
+    s!(
+        "pricing.frontier_model",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        false,
+        "Optional exact OpenRouter pricing slug for an aliased frontier model. Empty resolves frontier.model (exact slug or unique unqualified model id)."
+    ),
+    s!(
+        "pricing.manual_model",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        false,
+        "Exact frontier model id to which the owner-supplied rates below apply. Set pricing.manual_base_url too; rates are bound to both."
+    ),
+    s!(
+        "pricing.manual_base_url",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        false,
+        "Exact frontier base URL to which the owner-supplied rates apply. Empty disables manual rates; this prevents a rate from silently carrying to another provider."
+    ),
+    s!(
+        "pricing.manual_input_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Owner-supplied input USD per million tokens for pricing.manual_model (paired with output). Use the direct provider's current rate."
+    ),
+    s!(
+        "pricing.manual_output_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Owner-supplied output USD per million tokens for pricing.manual_model. Required with the input rate."
+    ),
+    s!(
+        "pricing.manual_cache_read_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Optional cached-input rate for pricing.manual_model; zero uses the input rate conservatively."
+    ),
+    s!(
+        "pricing.manual_cache_write_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Optional cache-write rate for pricing.manual_model; zero uses the input rate."
+    ),
+    s!(
+        "local.input_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Estimated local operating cost in USD per million input tokens, including cached input. Defaults to zero. Applied to future runs; does not change frontier spend limits."
+    ),
+    s!(
+        "local.output_usd_per_million",
+        Float {
+            min: 0.0,
+            max: 1_000_000.0
+        },
+        "0.0",
+        Owner,
+        Any,
+        false,
+        "Estimated local operating cost in USD per million output tokens. Defaults to zero. Input and output costs are added and shown separately from frontier estimates."
     ),
     s!(
         "local.enabled",
@@ -661,6 +787,117 @@ pub const REGISTRY: &[Setting] = &[
         Any,
         false,
         "Commands the host runs (sandboxed) when the frontier calls finish; all must pass."
+    ),
+    s!(
+        "review.enabled",
+        Bool,
+        "false",
+        Project,
+        OnlyTrue,
+        false,
+        "Experimental security auditor at finish. Reviews changes from a private run-start snapshot with bounded syntax rules and available local-model opinions; off until measured."
+    ),
+    s!(
+        "review.block_high",
+        Bool,
+        "false",
+        Project,
+        OnlyTrue,
+        false,
+        "Block finish for new rule-confirmed high-severity security findings. Local opinions cannot create or dismiss a blocker; requires review.enabled."
+    ),
+    s!(
+        "review.max_candidates",
+        Int { min: 1, max: 64 },
+        "16",
+        Owner,
+        Any,
+        false,
+        "Maximum local security opinions per finish attempt. Remaining candidates still receive rule findings."
+    ),
+    s!(
+        "review.local_open",
+        Bool,
+        "false",
+        Owner,
+        Any,
+        false,
+        "Request local opinions on open, non-privacy code too. Off: development measurements found no gain there; protected code and privacy candidates remain local."
+    ),
+    s!(
+        "review.references",
+        Bool,
+        "true",
+        Owner,
+        Any,
+        false,
+        "Gather bounded definition/reference context from installed sandboxed language servers for security candidates."
+    ),
+    s!(
+        "review.frontier",
+        Bool,
+        "false",
+        Owner,
+        Any,
+        true,
+        "Optional fresh-context frontier security opinions on eligible open code. Never sends protected code, privacy flows or the working conversation. Advisory only."
+    ),
+    s!(
+        "review.frontier_usd",
+        Float {
+            min: 0.001,
+            max: 100.0
+        },
+        "0.5",
+        Owner,
+        Any,
+        false,
+        "Maximum frontier spend on security second opinions per invocation, also bounded by the run budget."
+    ),
+    s!(
+        "review.max_frontier_candidates",
+        Int { min: 1, max: 64 },
+        "4",
+        Owner,
+        Any,
+        false,
+        "Maximum eligible frontier opinions per finish or repository scan."
+    ),
+    s!(
+        "review.scanners.*.command",
+        Str,
+        r#""""#,
+        Owner,
+        Any,
+        true,
+        "Optional installed scanner: absolute executable outside the workspace. Runs on a private read-only snapshot, without network."
+    ),
+    s!(
+        "review.scanners.*.args",
+        List,
+        "[]",
+        Owner,
+        Any,
+        true,
+        "Scanner arguments; {workspace} names its private snapshot. Supply JSON/SARIF and offline flags appropriate to the installed scanner."
+    ),
+    s!(
+        "review.scanners.*.format",
+        Str,
+        r#""sarif""#,
+        Owner,
+        Any,
+        false,
+        "Scanner output format: sarif, bandit, gosec, cargo-audit, npm-audit or pip-audit. Output is advisory and untrusted."
+    ),
+    s!(
+        "review.scanners.*.timeout_seconds",
+        Int { min: 1, max: 300 },
+        "60",
+        Owner,
+        Any,
+        false,
+        "Maximum seconds per scanner snapshot; interrupted processes are killed."
     ),
     s!(
         "context.window_tokens",
@@ -1191,8 +1428,21 @@ pub fn migrate(key: &str, value: Value) -> (Value, Option<String>) {
     }
 }
 
+// Only immutable registry literals are cached. Owner, project and policy
+// sources are still read on every load, and each config owns its values.
+static DEFAULT_VALUES: LazyLock<BTreeMap<&'static str, Value>> = LazyLock::new(|| {
+    REGISTRY
+        .iter()
+        .map(|s| {
+            let mut table = toml::from_str::<toml::Table>(&format!("v = {}", s.default))
+                .expect("registry default parses");
+            (s.key, table.remove("v").expect("registry default value"))
+        })
+        .collect()
+});
+
 fn default_value(s: &Setting) -> Value {
-    toml::from_str::<toml::Table>(&format!("v = {}", s.default)).expect("registry default parses")["v"].clone()
+    DEFAULT_VALUES[s.key].clone()
 }
 
 fn validate(s: &Setting, v: &Value) -> Result<(), ConfigError> {
@@ -1859,6 +2109,34 @@ mod tests {
         std::fs::write(&o, owner).unwrap();
         std::fs::write(&p, project).unwrap();
         (d, o, p)
+    }
+
+    #[test]
+    fn reloading_config_reads_new_files_and_preserves_independent_defaults() {
+        let (_dir, owner, project) = files("[local]\nmodel='first'\n", "");
+        let first = Config::load(&owner, Some(&project)).unwrap();
+        std::fs::write(
+            &owner,
+            "[local]\nmodel='second'\n[mcp.servers.files]\ncommand='files'\n",
+        )
+        .unwrap();
+        let second = Config::load(&owner, Some(&project)).unwrap();
+        assert_eq!(first.str("local.model").unwrap(), "first");
+        assert_eq!(second.str("local.model").unwrap(), "second");
+        assert_eq!(second.int("mcp.servers.files.timeout_seconds").unwrap(), 60);
+        assert_eq!(
+            second.origin("mcp.servers.files.timeout_seconds"),
+            Some(Origin::Default)
+        );
+
+        std::fs::remove_file(&owner).unwrap();
+        let defaults = Config::load(&owner, Some(&project)).unwrap();
+        assert_eq!(defaults.origin("local.model"), Some(Origin::Default));
+        assert_eq!(
+            defaults.value("local.model").unwrap(),
+            &default_value(setting("local.model").unwrap())
+        );
+        assert!(defaults.instances("mcp.servers.*.command").is_empty());
     }
 
     #[test]

@@ -874,6 +874,7 @@ mod tests {
             unreported_requests: 0,
             lane_kind: crate::lanes::LaneKind::Duet,
             frontier_cost_usd: Some(cost),
+            electricity_seconds: None,
             electricity_usd: 0.0,
             total_cost_usd: Some(cost),
             error: None,

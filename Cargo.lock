@@ -511,10 +511,12 @@ dependencies = [
  "duet-boundary",
  "duet-config",
  "duet-egress",
+ "duet-extensions",
  "duet-fs",
  "duet-git",
  "duet-lsp",
  "duet-mcp",
+ "duet-review",
  "duet-sandbox",
  "duet-web",
  "futures-util",
@@ -537,6 +539,7 @@ dependencies = [
  "duet-config",
  "duet-fs",
  "duet-provider",
+ "duet-review",
  "futures-util",
  "hex",
  "proptest",
@@ -569,6 +572,7 @@ dependencies = [
  "duet-boundary",
  "duet-config",
  "duet-egress",
+ "duet-extensions",
  "duet-fs",
  "duet-git",
  "duet-lsp",
@@ -642,6 +646,20 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "toml",
+]
+
+[[package]]
+name = "duet-extensions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "duet-fs",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
  "toml",
 ]
 
@@ -750,6 +768,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "duet-review"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "tree-sitter",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "duet-sandbox"
 version = "0.1.0"
 dependencies = [
@@ -770,6 +799,7 @@ dependencies = [
  "duet-config",
  "duet-fs",
  "duet-git",
+ "image",
  "ratatui",
  "regex",
  "rustix 0.38.44",

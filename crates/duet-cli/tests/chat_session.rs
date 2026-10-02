@@ -288,6 +288,229 @@ fn only_run_id(e: &Env) -> String {
     ids[0].clone()
 }
 
+fn saved_goals(e: &Env) -> Value {
+    serde_json::from_slice(
+        &std::fs::read(
+            e.ws.join(".duet/runs")
+                .join(only_run_id(e))
+                .join("goals.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn goal_continues_without_go_messages_and_history_reads_it() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![
+        Step::Call("reply", json!({"message": "Plan prepared."})),
+        Step::Call("reply", json!({"message": "Review complete."})),
+        Step::Call(
+            "finish",
+            json!({"summary": "Goal delivered with evidence."}),
+        ),
+    ]);
+    let out = chat_command(&e, &f, &["--goal", "Review the greeting module."])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out));
+    assert_eq!(f.requests(), 3);
+    let goals = saved_goals(&e).to_string();
+    assert!(goals.contains("completed"), "{goals}");
+    assert!(goals.contains("Goal delivered with evidence."), "{goals}");
+    let id = only_run_id(&e);
+    let history = command(&e, &["history", &id, "--json"]).output().unwrap();
+    assert!(history.status.success(), "{}", text(&history));
+    let record: Value = serde_json::from_slice(&history.stdout).unwrap();
+    assert_eq!(record["turns"], 3);
+    assert_eq!(record["kind"], "Session");
+    assert!(record.to_string().contains("Goal delivered with evidence."));
+    assert_eq!(f.requests(), 3, "history must not call a provider");
+}
+
+#[test]
+fn goal_turn_limit_survives_resume_and_never_claims_completion() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![
+        Step::Call("reply", json!({"message": "Still investigating."})),
+        Step::Call("reply", json!({"message": "More work needed."})),
+    ]);
+    let out = chat_command(
+        &e,
+        &f,
+        &["--goal", "Investigate the module.", "--goal-turns", "2"],
+    )
+    .output()
+    .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out));
+    assert_eq!(f.requests(), 2);
+    assert!(saved_goals(&e).to_string().contains("exhausted"));
+    let id = only_run_id(&e);
+    let mut resumed = Chat::start(command(&e, &["--resume", &id]));
+    resumed.wait_for("resumed:", 1);
+    resumed.send("/goal resume");
+    resumed.send("/quit");
+    assert_eq!(resumed.finish().0, 0);
+    assert_eq!(
+        f.requests(),
+        2,
+        "resume cannot reset the goal turn allowance"
+    );
+    assert!(saved_goals(&e).to_string().contains("exhausted"));
+}
+
+#[test]
+fn goal_waits_for_an_actual_answer_then_continues() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![Step::Call(
+        "ask_operator",
+        json!({"question": "Which greeting should I use?"}),
+    )]);
+    let mut chat = Chat::start(chat_command(&e, &f, &["--goal", "Choose a greeting."]));
+    chat.wait_for("Which greeting should I use?", 1);
+    chat.send("/goal status");
+    chat.send("/status");
+    chat.wait_for("session ", 2);
+    assert_eq!(f.requests(), 1, "status commands do not answer a question");
+    f.script(vec![Step::Call(
+        "finish",
+        json!({"summary": "Selected hello."}),
+    )]);
+    chat.send("Use hello.");
+    chat.wait_for("duet finished: Selected hello.", 1);
+    chat.send("/quit");
+    assert_eq!(chat.finish().0, 0);
+    assert_eq!(f.requests(), 2);
+    assert!(f.body(1).contains("Use hello."));
+    assert!(saved_goals(&e).to_string().contains("completed"));
+}
+
+#[test]
+fn goal_pause_during_work_and_session_resume_require_explicit_continuation() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![Step::Slow(
+        1000,
+        Box::new(Step::Call("list_files", json!({}))),
+    )]);
+    let mut chat = Chat::start(chat_command(&e, &f, &["--goal", "Inspect greeting files."]));
+    let started = Instant::now();
+    while f.requests() == 0 {
+        assert!(started.elapsed() < Duration::from_secs(30));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    chat.send("/goal pause");
+    chat.wait_for("Paused by you", 1);
+    chat.send("/quit");
+    assert_eq!(chat.finish().0, 0);
+    assert_eq!(f.requests(), 1);
+    let id = only_run_id(&e);
+    let mut resumed = Chat::start(command(&e, &["--resume", &id]));
+    resumed.wait_for("resumed:", 1);
+    assert_eq!(
+        f.requests(),
+        1,
+        "opening a session must not auto-resume a goal"
+    );
+    f.script(vec![Step::Call(
+        "finish",
+        json!({"summary": "Inspection verified."}),
+    )]);
+    resumed.send("/goal resume");
+    resumed.wait_for("duet finished: Inspection verified.", 1);
+    resumed.send("/quit");
+    assert_eq!(resumed.finish().0, 0);
+    assert!(saved_goals(&e).to_string().contains("completed"));
+}
+
+#[test]
+fn dragged_text_attachments_reach_first_idle_and_steered_messages_and_resume() {
+    let e = env();
+    let f = Frontier::start();
+    std::fs::write(e.home.join("config.toml"), "[local]\nenabled = false\n").unwrap();
+    let spec = e.home.join("recreation prompt (1).md");
+    std::fs::write(
+        &spec,
+        "FIRST_SPEC: draw the planet in sixteen colours. Card: 5293761582049377",
+    )
+    .unwrap();
+    let escaped = spec
+        .to_str()
+        .unwrap()
+        .replace(' ', "\\ ")
+        .replace('(', "\\(")
+        .replace(')', "\\)");
+    f.script(vec![Step::Call(
+        "reply",
+        json!({"message":"first attachment received"}),
+    )]);
+    let hybrid = |extra: &[&str]| {
+        let url = f.url();
+        let mut args = vec![
+            "--mode",
+            "hybrid",
+            "--frontier-url",
+            &url,
+            "--frontier-model",
+            "glm-5.3-flash",
+        ];
+        args.extend_from_slice(extra);
+        command(&e, &args)
+    };
+    let mut chat = Chat::start(hybrid(&[]));
+    chat.send("/unknown-command");
+    chat.wait_for("unknown command", 1);
+    chat.send(&escaped);
+    chat.wait_for("attached text file", 1);
+    assert_eq!(f.requests(), 0);
+    std::fs::write(&spec, "IDLE_SPEC: include the castle.").unwrap();
+    chat.send("implement based on attached file");
+    chat.wait_for("duet: first attachment received", 1);
+    assert!(f.body(0).contains("FIRST_SPEC"));
+    assert!(!f.body(0).contains("5293761582049377"));
+    assert!(!f.body(0).contains("IDLE_SPEC"));
+    f.script(vec![
+        Step::Slow(1500, Box::new(Step::Call("list_files", json!({})))),
+        Step::Call("reply", json!({"message":"steered attachment received"})),
+    ]);
+    chat.send(&format!("/attach '{}'", spec.display()));
+    chat.wait_for("attached text file", 2);
+    chat.send("also use this attachment");
+    let start = Instant::now();
+    while f.requests() < 2 {
+        assert!(start.elapsed() < Duration::from_secs(30));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::fs::write(&spec, "STEER_SPEC: include a lantern.").unwrap();
+    chat.send(&escaped);
+    chat.wait_for("attached text file", 3);
+    chat.send("use the lantern requirement too");
+    chat.wait_for("duet: steered attachment received", 1);
+    assert!(f.body(1).contains("IDLE_SPEC"));
+    assert!(f.body(2).contains("STEER_SPEC"));
+    chat.send("/quit");
+    assert_eq!(chat.finish().0, 0);
+    std::fs::remove_file(&spec).unwrap();
+    f.script(vec![Step::Call(
+        "reply",
+        json!({"message":"resumed with attachments"}),
+    )]);
+    let id = only_run_id(&e);
+    let mut resumed = Chat::start(hybrid(&["--resume", &id]));
+    resumed.send("recall the requirements");
+    resumed.wait_for("duet: resumed with attachments", 1);
+    for marker in ["FIRST_SPEC", "IDLE_SPEC", "STEER_SPEC"] {
+        assert!(f.body(3).contains(marker));
+    }
+    assert!(!f.body(3).contains("5293761582049377"));
+    resumed.send("/close");
+    assert_eq!(resumed.finish().0, 0);
+}
+
 #[test]
 fn a_session_with_a_question_two_tasks_undo_interrupt_and_resume() {
     let e = env();

@@ -21,6 +21,16 @@ what it does not, and how the claim is verified. Design details: [ARCHITECTURE.m
 
 ## What is not protected
 
+The experimental auditor (`review.enabled`, off by default) checks new code patterns at finish;
+`duet scan` applies the same bounded rules to existing code. Local opinions are advisory. An
+optional fresh-context frontier opinion is restricted to eligible open code, with all source
+checked for privacy before sending through the outbound gate. Protected code and privacy flows
+stay local. Neither reviewer can suppress findings or create blockers. Installed offline scanners
+run against read-only snapshots with no network; their raw JSON stays in private run artifacts,
+and only checked locations and advisory severity enter the filtered report. This does not
+establish that code is secure after deployment. Coverage, caps and measurements are documented
+in [the auditor report](docs/SECURITY-AUDITOR-2026-09-30.md).
+
 - **Source code left Open** (the default for code). It is sent to the frontier so it can do
   frontier-quality work. Mark paths Interface-only or Sealed to withhold them.
 - **The task description** you give Duet, and the architecture visible in skeletons.
@@ -119,6 +129,8 @@ honest-but-curious regardless, and the boundary assumes every byte sent may be k
    masked output** are made here without a model and show shapes and counts, never values; short
    output of a `sensitive_data` command is a probe, counted and withheld past a budget (see
    [Structure views](#structure-views-synthetic-samples-and-masked-output)).
+   A local server may echo request content in an error body. Frontier-visible tool results show
+   only its error category, and malformed local replies are not quoted back to the frontier.
 3. **One outbound gate**, the only code path to the frontier: every message is sanitized again,
    including the frontier's own text and tool-call arguments (known values and their other
    spellings re-tokenized, detectors re-run), copied spans of sensitive content (≈24+ tokens) are
@@ -322,28 +334,72 @@ the operator's own screen, what duet already has.
 line, so it is not stripped of escape sequences; a program that shows it on a terminal should. On
 the terminal, look-alike characters are shown as they are.
 
-## Project instructions (`DUET.md`)
+## Project instructions
 
-`DUET.md` at the repository root, and the owner's own `DUET.md` next to the owner config
-(`~/.config/duet/DUET.md`, `$DUET_CONFIG_HOME/DUET.md`), are given to the frontier at the start of
-every run, session and sub-agent, ahead of the task in the first message. The repository's file is
-a channel in for text anyone who can commit to the repository wrote.
+At startup, Duet reads owner instructions beside the owner config, then repository-root
+instructions: `AGENTS.md` (replaced by `AGENTS.override.md` when present), `CLAUDE.md`,
+`GEMINI.md`, root `.github/copilot-instructions.md`, then `DUET.md`. Owner instructions use the
+same order without Copilot. Within host rules, the current user request takes precedence over
+owner instructions, which take precedence over repository guidance. More specific repository
+directories take precedence over ancestors, with `DUET.md` last within a directory.
+
+Root instructions enter the first message of each run, session and sub-agent. Relevant descendant
+rules are checked for the path named by `read_file`, `edit_file`, `write_file`, `edit_protected`
+or `rename`. A new block defers that operation until the model has seen the guidance. Repository
+files remain a channel for content supplied by anyone who can edit the repository.
 
 | Threat | What stops it |
 |---|---|
-| A sensitive value in the repository's file reaches the frontier | It is presented like any workspace file (`Source::File`): detectors, custom patterns and vault values become placeholders; a path the policy makes sensitive gets a handle and a local summary, a protected one its skeleton; the outbound gate checks the whole request again. It is read through the guarded file access: a link is not followed out of the workspace |
-| The file tells the frontier to loosen settings, turn the network on, disable detection or send data somewhere (prompt injection) | Nothing reads settings, policy or sandbox rules from it: they come only from the owner config and `.duet/config.toml` (which only tightens). It is framed as repository text that cannot change duet's rules, between markers tagged with the start of its SHA-256 (the file cannot contain its own digest, so it cannot fake the end marker), and it gets no authority tools do not already give: the sandbox, the outbound gate, approval and the checks apply to every step as before |
-| A huge file inflates every request's cost, or a binary one garbles it | At most 16 KiB of each file is given (cut at a line, with a note); a file over 2 MiB is not read, a binary one (NUL bytes) is not given; an empty one gives nothing |
+| A sensitive value in the repository's file reaches the frontier | It is presented like any workspace file (`Source::File`): detectors, custom patterns and vault values become placeholders; sensitive and protected paths receive the boundary's handles, summaries, interfaces or sealed notices. Hidden paths are omitted. The outbound gate checks the whole request again. Reads use no-follow file access |
+| The file tells the frontier to loosen settings, turn the network on, disable detection or send data somewhere (prompt injection) | Instruction text does not set policy or sandbox rules. Configured policy, owner settings and the project's tighten-only settings remain authoritative. Content is framed as guidance between digest-tagged markers; the sandbox, outbound gate, approvals and checks still apply to every step |
+| A huge file inflates every request's cost, or a binary one garbles it | At most 16 KiB of each file is given, 64 KiB for combined root instructions and 32 KiB per scoped block, with omission notes. Files over 2 MiB, NUL-containing files and nonregular files are refused; empty files contribute nothing |
 | The owner's file carries a sensitive value | It is the owner's own text, trusted like their messages, and sanitized like them (`sanitize_message`: detectors, vault values, every 12–19 digit number); each placeholder is an `ask_local` handle |
-| Instructions changing mid-conversation (cache and consistency) | They are read once, at the start, into the first message; a resumed run or session replays that message from its transcript, so an edit to `DUET.md` takes effect in the next run or session |
+| Instructions change mid-conversation | Root instructions are replayed from the opening message; changed root files require a new session. Descendant scopes track file identities and content digests, refresh when their files change and reset on resume or context discard |
+| A refused override silently activates other rules | A present `AGENTS.override.md` replaces `AGENTS.md` before visibility checks; refusing the override does not load the replaced file |
 
-Audit: each file given is an `instructions` event (`project` or `owner`, its size, SHA-256 and
-whether it was cut; never its text); the request that carries it is in the log as sent.
+Audit: each file given is an `instructions` event (owner/project origin, its size, SHA-256 and
+whether it was cut; never its text). Origins include the source filename, with legacy `owner`
+and `project` retained for root `DUET.md`. The outbound request is recorded as sent.
 
-**Known limits.** The frontier is asked to follow the repository's instructions where they fit the
-task, so a hostile `DUET.md` can steer the work as a hostile README or comment can (see Prompt
-injection: residual risk), with the difference that it is read at every start. In pass-through mode
-it is sent as it is, like every file.
+**Known limits.** Instruction framing is not a prompt-injection proof: hostile guidance can steer
+model decisions within the tools available to it. Duet tells the model to read files before shell
+changes, but the scope guard does not enumerate shell paths or every file affected by a rename.
+References such as `@file` are not expanded automatically. In pass-through mode file content is
+shown as read. [Exact ordering, scope and compatibility](docs/EXTENSIONS.md#repository-instructions).
+
+## Portable skills and native plugins
+
+Skills and packaged prompt commands are task guidance below host rules and the operator.
+`duet-extensions` discovers `SKILL.md` metadata without running code or contacting the network;
+the runtime supplies a bounded catalog and loads full documents through `load_skill` only when
+needed. The owner can install a native local package containing skills, Markdown commands and
+optional MCP servers. See [formats and lifecycle](docs/EXTENSIONS.md).
+
+| Threat | What stops it |
+|---|---|
+| A skill grants itself tools, permissions or network access | Frontmatter such as `allowed-tools`, `model` or hooks is inert metadata. Skill text cannot change host settings, approvals, budgets or the sandbox. Loading a script as text never executes it; subsequent actions use existing tools |
+| A skill reveals private project content | Project metadata and loaded resources use path visibility checks and `Source::File`. Hidden paths are omitted; visible sealed or sensitive files receive filtered views or handles, withholding raw bodies. Owner and plugin text is sanitized like operator messages, and all frontier requests remain gated |
+| A model invokes an explicit-only workflow | `disable-model-invocation: true` excludes it from model discovery and rejects `load_skill` until the host authorizes the exact ID through `/skill`. `user-invocable: false` rejects that explicit invocation. Authorization is shared with delegates but must be renewed after resume for further loads |
+| A resource escapes its skill directory, or skill instructions change after discovery | Relative resource paths reject traversal; document reads reject symlinks and nonregular files and are capped at 128 KiB. Every load rechecks the discovered `SKILL.md` digest; the loaded document's actual digest is recorded |
+| Installing a package executes code or follows a hostile filesystem path | Only the native versioned manifest is accepted, with unknown fields rejected. Inspection and installation execute no scripts or dependency installers. Package/store I/O uses pinned no-follow directory handles; symlinks, special files and traversal are refused. Limits include 512 files, 8 MiB per file and 32 MiB per package |
+| Installed package content changes unnoticed | Installation creates a private snapshot addressed by its content SHA-256, with a private enabled/disabled record. Loading the package verifies the content digest; packaged commands recheck it before reading their body. Changed content requires reinstalling it. Disabled snapshots are not loaded at startup |
+| A repository adds a tool server or relaxes extension policy | Packages are installed by the owner. `extensions.skills_enabled` and `extensions.plugins_enabled` obey project tighten-only rules. Every package MCP field is checked against organization policy before entering the existing MCP client |
+| A packaged MCP server exposes data or changes files | The same [MCP controls](#mcp-servers) apply. Package defaults are sensitive results, no stdio network, and `approve = "always"` under the session's oversight mode. Top clearance excludes HTTP and network-enabled stdio servers. Enabled servers can start at the next run/session start, after installation |
+
+Successful skill loads record `instructions` events with `skill:<id>`, byte count and document
+SHA-256. MCP starts and calls use the existing MCP audit events. Local `skills show` is an
+operator inspection command and may display raw local text; it is not a frontier-view preview.
+
+The owner-selected configuration directory is resolved once, then store descendants use
+no-follow access. This supports owner configuration aliases without following package links.
+
+**Known limits.** A package digest detects changed bytes, not a trustworthy publisher. There is
+no package signature verification, marketplace, dependency resolver or automatic update. The
+owner's machine and installed executables remain trusted; content checks do not make an MCP
+server safe. Disabling a package does not revoke already loaded instructions or stop its live
+servers; close the active session. Standard `SKILL.md` support does not implement foreign
+Claude/DeepSeek plugin ABIs, hooks or runtime APIs. The new guidance paths have not yet been
+measured in the quality/cost release benchmark.
 
 ## Disclosure report
 
@@ -641,6 +697,7 @@ names what was by convention until the egress audit of 2026-09-26 (DUET-2026-025
 | `duet doctor --online`, `duet setup` discovery, context-window and cache probes | the configured frontier and local endpoints; the owner's SearXNG | fixed test prompts and images, model names, the owner's keys to their own endpoints; SearXNG gets the fixed query `duet` | no run content exists there; the owner starts them | fixed content (by construction of the probes) |
 | Hooks of a program that embeds Duet (ARCHITECTURE §13; Duet's own command line has none) | that program, in process | audit records as names, counts, digests and chain positions (a request as its endpoint, model, digest and size, never its body); a run's end state and counts | the types: no content is in what they are given | structural; what that program does with it is its own egress |
 | `duet-eval` (the evaluation harness, outside the product) | model providers through its own leak proxy; the lanes' agents | benchmark tasks | its leak proxy records every byte | outside the product; allowlisted in the gate |
+| Public price catalog (`duet-provider::catalog`) | fixed `https://openrouter.ai/api/v1/models` | a GET with no prompt, model selection or API credentials | fixed URL, no redirects, eight-second timeout, eight-MiB response limit | skipped for top clearance, loopback frontier endpoints and `pricing.offline`; fallback is labeled |
 
 ### One way out for third parties
 
@@ -660,7 +717,7 @@ Third-party HTTP is built like the frontier path, so a tool cannot forget the ch
   build `Outgoing` requests and have no other way to send; the egress proxy checks what it
   forwards with the same guard.
 - `tools/gate.sh` ("egress by construction") fails when any product code outside `duet-net`,
-  `duet-provider` (the frontier and local-model client) and the proxy's upstream connection in
+  `duet-provider` (the model clients and fixed public price-catalog lookup) and the proxy's upstream connection in
   `duet-egress` uses an HTTP client, opens a TCP connection, a UDP socket or resolves a name; the
   evaluation harness and test code are allowlisted.
 
@@ -918,20 +975,21 @@ Changes made only by commands do not appear in `diff` or `/diff`. Commands canno
 
 ## MCP servers
 
-MCP servers (`[mcp.servers.<name>]`, owner config only; nothing is configured by default) are
+MCP servers (owner `[mcp.servers.<name>]` settings or owner-installed native packages;
+nothing is configured by default) are
 third-party programs and endpoints the frontier can call. Each is a channel out (tool arguments), a
 channel in (tool descriptions, schemas, results, error text) and, for a stdio server, a process
 on this machine.
 
 | Threat | What stops it |
 |---|---|
-| A repository configures a server (runs a program, reaches an endpoint) | Every `mcp.*` setting is owner-only: a project file that names one is refused; owner changes that start programs or reach servers need `--confirm` and are in the config audit log |
+| A repository configures a server (runs a program, reaches an endpoint) | Every `mcp.*` setting is owner-only: a project file that names one is refused; owner config changes that start programs or reach servers need `--confirm` and are in the config audit log. Native packages require owner installation, and each contributed server field is checked against organization policy |
 | A stdio server reads sensitive files, `.git` or Duet's run state | It runs in the command sandbox with the same deny-read list as ordinary commands (sensitive and derived files, protected source, every `.git` and `.duet`, the `sensitive_data` commands' `TMPDIR`; `.duet` is denied by the sandbox itself to every process), writes limited to the workspace and a per-server scratch directory, `.git`/`.duet` read-only |
 | A stdio server exfiltrates over the network or reads credentials from the environment | No network unless `network = true` for that server; the environment is cleared to the sandbox's base set plus the variables named in `env` (values never stored) |
 | Arguments carry a sensitive value to a server | Public servers and every HTTP server: the arguments are checked as one JSON value (every string and key, JSON inside strings, a value cut across strings) by the run's guard; a placeholder, a withheld value in any spelling the check reads (see Egress), digits of a withheld number or a copied sensitive span refuses the call (fail closed, `outbound_refused`). An HTTP server's transport checks every message again (protocol messages, answers to the server's requests, the closing `DELETE`) and sends only through `duet-net`. Placeholders are resolved only for a `trust = "sensitive"` stdio server, whose results stay local |
 | Descriptions or schemas carry instructions or sensitive-looking text | Untrusted: every string is scanned by the presenter (detected values and vault values replaced), descriptions capped at 1,024 characters, schemas at 8 KiB (then documentation dropped, then a bare object schema); each description is prefixed with its server, trust and whether it is declared read-only |
 | Results carry instructions or data | Presented as `Source::Mcp` by the server's trust: `public` is scanned and tokenized like public command output (bulky results offloaded), `sensitive` is held locally as a handle with a local summary; framed as untrusted data between markers with a per-call random tag. Non-text content (images, audio, binary resources) is described, never passed on |
-| A tool changes things the operator did not intend | `approve` (default `writes`) under `oversight.approve = "risky"`: tools not declared read-only need approval (`always`: every tool); with `all` every call is asked; denials are tool errors and `approval` audit events (tool and risk class, never arguments). A server's read-only annotation is its own claim: set `approve = "always"` for servers you do not trust to label tools |
+| A tool changes things the operator did not intend | `approve` (owner config default `writes`; native package default `always`) under `oversight.approve = "risky"`: tools not declared read-only need approval (`always`: every tool); with `all` every call is asked and with `off` none is asked. Denials are tool errors and `approval` audit events (tool and risk class, never arguments). A server's read-only annotation is its own claim: set `approve = "always"` for servers you do not trust to label tools |
 | A hung, crashing or flooding server | Each start and call has the server's timeout (cancellation sent); a closed transport marks the server stopped and kills its process tree; messages over 8 MiB and results over 1 MiB are cut; a failing server is a tool error, never the end of the run |
 | Tokens for HTTP servers leaking | Read from the variables named in `headers_env` at start, marked sensitive in the HTTP client, never written to config, logs, errors or the audit log; the URL may not hold credentials; redirects are not followed (they would carry the headers elsewhere); no proxy from the environment is used; plain `http` only to loopback |
 
@@ -1135,6 +1193,27 @@ same rules; when `subagents.model` names another model, sub-agents are treated a
 are recognized for `read_file`
 by extension (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`); another binary file is read as text, as
 before. The ledger's image tokens are estimates (no provider reports them apart from other input).
+
+### Clipboard and selected image paths
+
+Clipboard reads occur only on an explicit TUI paste action. Native helpers run outside the model's
+command tools with fixed arguments, stdin payloads, bounded pipes and a three-second deadline.
+Clipboard read is disabled under SSH; the TUI never issues an OSC 52 clipboard query. Explicit
+copy may issue an OSC 52 write request when a native copy fails. Selection alone does not copy.
+Terminal controls are removed from pasted text; bracketed paste cannot submit an approval.
+Background image enqueueing is excluded from the approval-answer queue.
+
+Clipboard images are validated (16 MiB encoded, 40 MP, 16,384 pixels/side), re-encoded without
+metadata and stored outside the workspace with private permissions. They are external attachments
+with no automatic public mark, including when `images.to_frontier = "public"` permits ordinary
+workspace images. The chat-owned temporary store is bounded and removed on normal shutdown;
+crash cleanup is not guaranteed. Images that enter a run continue to use its private image store.
+
+Selected image paths retain their workspace classification before reading. Image attachments and
+resumed image bytes use bounded reads from pinned regular-file handles; symlink traversal,
+reserved workspace paths and malformed cache digest names are refused. This prevents an image
+symlink from turning a sensitive workspace path into a public external attachment. These path
+checks do not classify the pixels themselves; the image routing limits above still apply.
 
 ## Context compaction
 

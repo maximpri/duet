@@ -89,7 +89,7 @@ pub(super) fn give_back() {
     let _ = ratatui::crossterm::terminal::disable_raw_mode();
 }
 
-/// Ctrl-Z: the terminal is given back and the job stops, as the shell
+/// Ctrl-Alt-Z: the terminal is given back and the job stops, as the shell
 /// expects; it is taken again when the job continues.
 pub(super) fn suspend(out: &mut File) {
     give_back();
@@ -97,26 +97,16 @@ pub(super) fn suspend(out: &mut File) {
     let _ = enter(out);
 }
 
-/// Puts `text` on the clipboard: `pbcopy` on macOS (Terminal.app does not
-/// take OSC 52), else OSC 52 to the terminal (which most terminals and tmux
-/// honour).
-pub(super) fn copy(text: &str, tty: &mut File) {
-    if cfg!(target_os = "macos")
-        && let Ok(mut child) = std::process::Command::new("pbcopy")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-    {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(text.as_bytes());
-        }
-        if child.wait().is_ok_and(|s| s.success()) {
-            return;
-        }
+/// Sends an explicit copy request to the client terminal (including over SSH).
+/// This is write-only OSC 52; the terminal may require clipboard permission.
+pub(super) fn copy_to_terminal(text: &str, tty: &mut File) -> std::io::Result<()> {
+    if text.len() > 1024 * 1024 {
+        return Err(std::io::Error::other(
+            "selection exceeds the 1 MiB copy limit",
+        ));
     }
-    let _ = write!(tty, "\x1b]52;c;{}\x07", base64(text.as_bytes()));
-    let _ = tty.flush();
+    write!(tty, "\x1b]52;c;{}\x07", base64(text.as_bytes()))?;
+    tty.flush()
 }
 
 /// Standard base64 (RFC 4648), for OSC 52.

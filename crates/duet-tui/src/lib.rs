@@ -19,6 +19,7 @@
 mod app;
 mod audit;
 mod changes;
+pub mod clipboard;
 mod data;
 mod ip;
 mod models;

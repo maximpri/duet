@@ -96,6 +96,7 @@ pub fn for_run(cfg: &Config) -> Result<Vec<ServerConfig>> {
 /// `None` when none are configured. `presenter` is the engine in hybrid mode.
 /// In top clearance only servers that cannot reach the network start: stdio
 /// programs whose sandbox has no network (see [`reaches_network`]).
+#[allow(clippy::too_many_arguments)]
 pub async fn start(
     cfg: &Config,
     ws: &std::path::Path,
@@ -104,8 +105,18 @@ pub async fn start(
     presenter: Option<&dyn duet_boundary::view::Presenter>,
     audit: &duet_boundary::audit::AuditHandle,
     top_clearance: bool,
+    plugin_servers: Vec<ServerConfig>,
 ) -> Result<Option<std::sync::Arc<duet_agent::mcp::Hub>>> {
     let mut servers = for_run(cfg)?;
+    for server in plugin_servers {
+        if servers.iter().any(|s| s.name == server.name) {
+            bail!(
+                "plugin MCP server {} collides with a configured server",
+                server.name
+            );
+        }
+        servers.push(server);
+    }
     if top_clearance {
         servers.retain(|s| {
             let reaches = reaches_network(s);
