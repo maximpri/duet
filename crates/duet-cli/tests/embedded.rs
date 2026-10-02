@@ -394,7 +394,7 @@ fn runs_and_sessions_reach_the_hooks_once() {
             r["state"].as_str(),
             r["resumable"].as_bool()
         ),
-        (Some("session"), Some("failed"), Some(true)),
+        (Some("session"), Some("open"), Some(true)),
         "{r}"
     );
     head_matches(&e, r);

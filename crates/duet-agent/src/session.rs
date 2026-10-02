@@ -622,6 +622,7 @@ impl<'a> Session<'a> {
                 Terminal::Completed { summary } => TurnEnd::Completed {
                     summary: self.local(&summary),
                 },
+                Terminal::Open { .. } => TurnEnd::Stopped,
                 Terminal::Failed { reason } if reason == INTERRUPTED => TurnEnd::Interrupted,
                 Terminal::Failed { reason } => TurnEnd::Failed { reason },
                 Terminal::BudgetStopped { which } => TurnEnd::BudgetStopped {
@@ -795,7 +796,7 @@ impl<'a> Session<'a> {
     }
 
     /// Ends this invocation: `closed` ends the session for good
-    /// (`Completed`); otherwise it is left open to resume (`Failed` with
+    /// (`Completed`); otherwise it is left open to resume (`Open` with
     /// [`SESSION_LEFT`], or `BudgetStopped` when a session budget is spent).
     /// The transcript's end entry is written; the caller concludes the run.
     pub fn end(mut self, closed: bool) -> (Terminal, RunStats) {
@@ -811,7 +812,7 @@ impl<'a> Session<'a> {
                 which: which.into(),
             }
         } else {
-            Terminal::Failed {
+            Terminal::Open {
                 reason: SESSION_LEFT.into(),
             }
         };

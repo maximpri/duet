@@ -142,9 +142,10 @@ pub struct EndReport {
     pub kind: RunKind,
     pub mode: String,
     pub resumed: bool,
-    /// `completed`, `failed` or `budget_stopped`, as in the audit log's
+    /// `completed`, `open`, `failed` or `budget_stopped`, as in the audit log's
     /// `run_end` event. A session is `completed` when the operator closed it
-    /// and `failed` when they left it open to resume.
+    /// and `open` when they left it open to resume. Individual interrupted or
+    /// failed turns remain recorded separately in the session transcript.
     pub state: String,
     /// The budget that stopped it (`budget_stopped`): `wall_clock`,
     /// `frontier_usd` or a session budget's setting name.

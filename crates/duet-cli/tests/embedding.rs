@@ -720,7 +720,7 @@ async fn a_session_calls_the_end_hook_once_per_invocation() {
         let message = if resume { "Still there?" } else { "Hello." };
         assert_eq!(session.turn(message).await.state(), "replied");
         let (terminal, stats) = session.end(closed);
-        duet_agent::conclude_with(
+        let summary = duet_agent::conclude_with(
             &cfg.run_dir,
             RUN_ID,
             Some(gated.audit()),
@@ -747,11 +747,17 @@ async fn a_session_calls_the_end_hook_once_per_invocation() {
         } else {
             assert_eq!(
                 terminal,
-                Terminal::Failed {
+                Terminal::Open {
                     reason: SESSION_LEFT.into()
                 }
             );
-            assert_eq!(r.state, "failed");
+            assert_eq!(r.state, "open");
+            assert_eq!(summary["terminal"]["state"], "open");
+            assert!(log_lines(&root).iter().any(|line| {
+                let record = duet_boundary::audit::parse_line(line).unwrap();
+                matches!(record, Line::Event(event)
+                    if matches!(&event.event, AuditEvent::RunEnd { terminal } if terminal == "open"))
+            }));
             assert!(r.resumable && !r.interrupted);
         }
         head_is_the_logs(r, &log_lines(&root));

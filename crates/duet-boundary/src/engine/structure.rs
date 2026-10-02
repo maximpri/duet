@@ -676,11 +676,12 @@ not sensitive; {more}):\n{}\n",
             .and_then(Value::as_u64)
             .map_or(DEFAULT_ROWS, |r| r as usize)
             .clamp(1, max.max(1));
-        let (info, bytes) = self
-            .lock()
-            .handles
-            .get(id)
-            .ok_or_else(|| format!("unknown handle {id}"))?;
+        let (info, bytes) = {
+            let st = self.lock();
+            st.handles
+                .get(id)
+                .ok_or_else(|| Self::unknown_handle(&st, id))?
+        };
         if info.public {
             return Err(format!("{id} holds public content: read it with read_raw"));
         }

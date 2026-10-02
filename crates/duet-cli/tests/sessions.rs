@@ -558,10 +558,25 @@ async fn an_interrupted_turn_leaves_the_session_open_and_it_resumes() {
     let (terminal, stats) = s.end(false);
     assert_eq!(
         terminal,
-        Terminal::Failed {
+        Terminal::Open {
             reason: SESSION_LEFT.into()
         }
     );
+    assert_eq!(terminal.exit_code(), 0);
+    let entries = Transcript::read(&f.run_dir).unwrap();
+    assert!(matches!(
+        entries.last(),
+        Some(Entry::End {
+            terminal: Terminal::Open { .. }
+        })
+    ));
+    assert!(entries.iter().any(|e| matches!(
+        e,
+        Entry::TurnEnd {
+            end: TurnEnd::Interrupted,
+            ..
+        }
+    )));
     assert!(duet_agent::resumable(&f.run_dir).is_ok());
     assert!(duet_agent::session::is_session(&f.run_dir));
 

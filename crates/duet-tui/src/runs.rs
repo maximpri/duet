@@ -471,10 +471,15 @@ fn feeds_from(
                 "operator undid turn {exchange} and later: {} file(s) restored",
                 paths.len()
             )),
-            Entry::End { terminal } => feed.push(format!(
-                "end: {}",
-                serde_json::to_string(terminal).unwrap_or_default()
-            )),
+            Entry::End { terminal } => match terminal {
+                duet_agent::Terminal::Open { .. } => {
+                    feed.push("Session left open · resume with duet --resume".into())
+                }
+                _ => feed.push(format!(
+                    "end: {}",
+                    serde_json::to_string(terminal).unwrap_or_default()
+                )),
+            },
             Entry::SubagentStart {
                 child,
                 mode,
@@ -697,6 +702,27 @@ mod history_tests {
     use super::*;
     use duet_agent::transcript::Transcript;
     use std::io::Write;
+
+    #[test]
+    fn legacy_open_session_is_displayed_as_open_without_rewriting_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("transcript.jsonl");
+        let bytes = format!(
+            "{}\n{}\n{}\n",
+            serde_json::json!({"kind":"turn_start","exchange":1,"message":"Test task","journal_next":1}),
+            serde_json::json!({"kind":"turn_end","exchange":1,"seconds":0.1,"end":{"state":"interrupted"}}),
+            serde_json::json!({"kind":"end","terminal":{"state":"failed","reason":duet_agent::session::SESSION_LEFT}}),
+        );
+        std::fs::write(&path, &bytes).unwrap();
+        let entries = read_transcript(dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), bytes);
+        let state = SessionState::of(&entries).unwrap();
+        assert!(!state.closed && !state.working);
+        let text = feeds(&entries, &[]).0.join("\n");
+        assert!(text.contains("Session left open"));
+        assert!(text.contains("turn interrupted"));
+        assert!(!text.contains("failed"));
+    }
 
     #[test]
     fn history_browsing_keeps_a_live_partial_entry_and_finds_its_task_when_complete() {
