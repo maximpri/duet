@@ -133,29 +133,152 @@ fn replay_holds_value(vault: &Vault, parts: &[Part]) -> bool {
     })
 }
 
+/// Describes only locations and replacement tokens, never the matched values.
+/// Field-local line numbers let the operator find the edit without logging
+/// source snippets or detokenizing any protected data.
+fn change_note(vault: &Vault, location: &str, before: &str, after: &str) -> String {
+    let mut prior = std::collections::HashMap::<String, usize>::new();
+    for token in Vault::tokens_in(before) {
+        *prior.entry(token).or_default() += 1;
+    }
+    let mut tokens = Vec::new();
+    for token in Vault::tokens_in(after) {
+        let count = prior.entry(token.clone()).or_default();
+        if *count > 0 {
+            *count -= 1;
+            continue;
+        }
+        if tokens.contains(&token) {
+            continue;
+        }
+        tokens.push(token);
+    }
+    let replacements = tokens
+        .iter()
+        .take(8)
+        .map(|token| match vault.value_of(token) {
+            Some((_, entry)) => {
+                let mut origin = entry.origin.clone();
+                scrub(vault, &mut origin, 0);
+                format!(
+                    "{token} ({}; first seen {})",
+                    entry.kind.tag(),
+                    origin.chars().take(120).collect::<String>()
+                )
+            }
+            None => token.clone(),
+        })
+        .collect::<Vec<_>>();
+    let original: Vec<_> = before.lines().collect();
+    let changed = after
+        .lines()
+        .enumerate()
+        .filter(|(i, line)| original.get(*i).copied() != Some(*line))
+        .map(|(i, _)| (i + 1).to_string())
+        .collect::<Vec<_>>();
+    let mut location = location.to_owned();
+    scrub(vault, &mut location, 0);
+    let location = location.chars().take(512).collect::<String>();
+    let mut note = format!(
+        "{location}: filtered line(s) {}",
+        changed
+            .iter()
+            .take(8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    if changed.len() > 8 {
+        note.push_str(&format!(" (+{} more lines)", changed.len() - 8));
+    }
+    if !replacements.is_empty() {
+        note.push_str(&format!("; replaced with {}", replacements.join(", ")));
+    }
+    if tokens.len() > 8 {
+        note.push_str(&format!("; {} more replacement types", tokens.len() - 8));
+    }
+    scrub(vault, &mut note, 0);
+    note
+}
+
+fn changed_fields(vault: &Vault, before: &Value, after: &Value, path: &str, out: &mut Vec<String>) {
+    if before == after || out.len() >= 32 {
+        return;
+    }
+    match (before, after) {
+        (Value::Object(a), Value::Object(b)) => {
+            for (key, value) in b {
+                changed_fields(
+                    vault,
+                    a.get(key).unwrap_or(&Value::Null),
+                    value,
+                    &format!("{path}.{key}"),
+                    out,
+                );
+            }
+        }
+        (Value::Array(a), Value::Array(b)) => {
+            for (i, value) in b.iter().enumerate() {
+                changed_fields(
+                    vault,
+                    a.get(i).unwrap_or(&Value::Null),
+                    value,
+                    &format!("{path}[{i}]"),
+                    out,
+                );
+            }
+        }
+        (Value::String(a), Value::String(b)) => out.push(change_note(vault, path, a, b)),
+        _ => out.push(change_note(
+            vault,
+            path,
+            &before.to_string(),
+            &after.to_string(),
+        )),
+    }
+}
+
 /// The second pass: every value the vault holds is replaced in every text of
 /// the request. Tool names and parameter schemas are the request's framing
 /// (fixed for a run) and a call to a declared tool keeps its name.
 fn replace_known(vault: &Vault, request: &mut Request) -> Vec<String> {
     let mut notes = Vec::new();
+    let before = request.system.clone();
     let n = scrub(vault, &mut request.system, 0);
     if n > 0 {
-        notes.push(format!("replaced {n} known value(s) in the system prompt"));
+        notes.push(change_note(
+            vault,
+            "system prompt",
+            &before,
+            &request.system,
+        ));
     }
-    let n: usize = request
-        .tools
-        .iter_mut()
-        .map(|t| scrub(vault, &mut t.description, 0))
-        .sum();
-    if n > 0 {
-        notes.push(format!("replaced {n} known value(s) in tool descriptions"));
+    for tool in &mut request.tools {
+        let before = tool.description.clone();
+        if scrub(vault, &mut tool.description, 0) > 0 {
+            notes.push(change_note(
+                vault,
+                &format!("tool {} description", tool.name),
+                &before,
+                &tool.description,
+            ));
+        }
     }
     let declared: HashSet<String> = request.tools.iter().map(|t| t.name.clone()).collect();
-    let mut elsewhere = 0;
-    for item in &mut request.items {
+    for (index, item) in request.items.iter_mut().enumerate() {
+        let locator = match &*item {
+            Item::ToolResult { call_id, .. } => {
+                format!("history item {} · result for call {call_id}", index + 1)
+            }
+            Item::User { .. } => format!("history item {} · user message", index + 1),
+            _ => format!("history item {} · assistant", index + 1),
+        };
         match item {
             Item::User { text } | Item::ToolResult { content: text, .. } => {
-                elsewhere += scrub(vault, text, 0);
+                let before = text.clone();
+                if scrub(vault, text, 0) > 0 {
+                    notes.push(change_note(vault, &locator, &before, text));
+                }
             }
             Item::Images { .. } => {}
             Item::Assistant {
@@ -164,14 +287,46 @@ fn replace_known(vault: &Vault, request: &mut Request) -> Vec<String> {
                 tool_calls,
                 replay,
             } => {
+                let before = text.clone();
                 let mut replaced = scrub(vault, text, 0);
+                if replaced > 0 {
+                    notes.push(change_note(
+                        vault,
+                        &format!("{locator}.text"),
+                        &before,
+                        text,
+                    ));
+                }
                 if let Some(r) = reasoning {
-                    replaced += scrub(vault, r, 0);
+                    let before = r.clone();
+                    let n = scrub(vault, r, 0);
+                    replaced += n;
+                    if n > 0 {
+                        notes.push(change_note(
+                            vault,
+                            &format!("{locator}.reasoning"),
+                            &before,
+                            r,
+                        ));
+                    }
                 }
                 for call in tool_calls.iter_mut() {
+                    let before = Value::Object(call.arguments.clone());
+                    let before_raw = call.raw_arguments.clone();
                     if !declared.contains(&call.name) {
-                        replaced += scrub(vault, &mut call.name, 0);
+                        let before_name = call.name.clone();
+                        let n = scrub(vault, &mut call.name, 0);
+                        replaced += n;
+                        if n > 0 {
+                            notes.push(change_note(
+                                vault,
+                                &format!("{locator} · call {} · name", call.id),
+                                &before_name,
+                                &call.name,
+                            ));
+                        }
                     }
+                    let previous = replaced;
                     // Arguments are JSON: a value holding `"` or `\` is
                     // escaped in the raw text and found once it is parsed.
                     replaced += scrub(vault, &mut call.raw_arguments, 0);
@@ -187,28 +342,56 @@ fn replace_known(vault: &Vault, request: &mut Request) -> Vec<String> {
                             }
                         }
                     }
+                    if replaced > previous {
+                        let source = call
+                            .arguments
+                            .get("path")
+                            .and_then(Value::as_str)
+                            .map(|p| format!(" · {p}"))
+                            .unwrap_or_default();
+                        let location = format!(
+                            "{locator} · call {} · {}{source} · arguments",
+                            call.id, call.name
+                        );
+                        let mut fields = Vec::new();
+                        changed_fields(
+                            vault,
+                            &before,
+                            &Value::Object(call.arguments.clone()),
+                            &location,
+                            &mut fields,
+                        );
+                        if fields.is_empty() {
+                            fields.push(change_note(
+                                vault,
+                                &location,
+                                &before_raw,
+                                &call.raw_arguments,
+                            ));
+                        }
+                        if fields.len() == 32 {
+                            fields.push(format!("{locator}: field preview limited to 32; inspect recorded outbound text"));
+                        }
+                        notes.extend(fields);
+                    }
                 }
                 if replaced > 0 {
                     // Signed or encrypted reasoning cannot be edited; it is
                     // dropped with the edited turn rather than replayed.
-                    *replay = None;
-                    notes.push(format!(
-                        "replaced {replaced} known value(s) in the model's own message"
-                    ));
+                    if replay.take().is_some() {
+                        notes.push(format!(
+                            "{locator}: dropped signed replay because its message changed"
+                        ));
+                    }
                 } else if replay
                     .as_ref()
                     .is_some_and(|r| replay_holds_value(vault, &r.parts))
                 {
                     *replay = None;
-                    notes.push("dropped replayed reasoning that held a known value".into());
+                    notes.push(format!("{locator}.replay: dropped replayed reasoning containing a known sensitive value"));
                 }
             }
         }
-    }
-    if elsewhere > 0 {
-        notes.push(format!(
-            "replaced {elsewhere} known value(s) in messages and tool results"
-        ));
     }
     notes
 }
@@ -227,7 +410,13 @@ impl OutboundFilter for Sanitize {
     fn apply(&self, request: &mut Request) -> Vec<String> {
         let mut notes = Vec::new();
         let mut st = self.0.lock();
-        for item in &mut request.items {
+        for (index, item) in request.items.iter_mut().enumerate() {
+            let locator = match &*item {
+                Item::ToolResult { call_id, .. } => {
+                    format!("history item {} · result for call {call_id}", index + 1)
+                }
+                _ => format!("history item {} · user content", index + 1),
+            };
             match item {
                 Item::User { text } | Item::ToolResult { content: text, .. } => {
                     let cleaned = self.0.sanitize(&mut st, text, "outbound", false);
@@ -235,7 +424,8 @@ impl OutboundFilter for Sanitize {
                     let (cleaned, _) = Engine::ip_redact(&mut st, &cleaned);
                     if cleaned != *text {
                         notes.push(format!(
-                            "replaced sensitive content ({spans} copied span(s))"
+                            "{}; detector/copy/protected-content check ({spans} copied span(s))",
+                            change_note(&st.vault, &locator, text, &cleaned)
                         ));
                         *text = cleaned;
                     }
@@ -259,6 +449,9 @@ impl OutboundFilter for Sanitize {
             }
         }
         notes.extend(replace_known(&st.vault, request));
+        for note in &mut notes {
+            scrub(&st.vault, note, 0);
+        }
         notes
     }
 
@@ -566,8 +759,62 @@ mod tests {
         );
         assert!(replay.is_none(), "an edited turn is not replayed signed");
         assert!(
-            notes.iter().any(|n| n.contains("model's own message")),
+            notes
+                .iter()
+                .any(|n| n.contains("call c1") && n.contains("arguments.command")),
             "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn filtering_details_locate_the_field_line_and_origin_without_copying_values() {
+        let (_d, e) = engine();
+        env(&e, &format!("PAYMENTS_API_KEY={KEY}\n"));
+        let (filter, check) = e.outbound();
+        let mut req = Request {
+            tools: tools(),
+            items: vec![assistant(
+                "",
+                None,
+                vec![call(
+                    "edit42",
+                    "edit_file",
+                    json!({
+                        "path": "src/client.rs",
+                        "edits": [{"old": "old", "new": format!("first line\nkey={KEY}\nlast line")}]
+                    }),
+                )],
+            )],
+            ..Request::default()
+        };
+        let original = req.clone();
+        let notes = filter.apply(&mut req);
+        let detail = notes.join("\n");
+        for expected in [
+            "history item 1",
+            "call edit42",
+            "edit_file",
+            "src/client.rs",
+            "arguments.edits[0].new",
+            "line(s) 2",
+            "⟨secret:PAYMENTS_API_KEY#1⟩",
+            "first seen .env",
+        ] {
+            assert!(detail.contains(expected), "missing {expected}: {detail}");
+        }
+        assert!(!detail.contains(KEY));
+        assert!(
+            !detail.contains("first line"),
+            "no source snippets are logged"
+        );
+        gate_check(check.as_ref(), &req).unwrap();
+        assert!(!bodies(&req).contains(KEY));
+        assert!(filter.apply(&mut req).is_empty());
+        let mut next_request = original;
+        assert_eq!(
+            filter.apply(&mut next_request),
+            notes,
+            "history rechecks have stable descriptions"
         );
     }
 

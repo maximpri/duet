@@ -285,6 +285,33 @@ impl App {
             .copied()
     }
 
+    /// Bracketed paste inserts text only in an open input. It cannot submit a
+    /// setting, accept a confirmation, navigate, or trigger an action.
+    pub fn paste(&mut self, text: &str) {
+        const MAX_FIELD_BYTES: usize = 64 * 1024;
+        let (buffer, multiline) = match &mut self.mode {
+            Mode::Edit { buffer, .. } => (buffer, false),
+            Mode::Tester => (&mut self.tester, false),
+            Mode::Sample => (&mut self.sample, true),
+            _ => return,
+        };
+        if text.len() > MAX_FIELD_BYTES {
+            self.status =
+                "Paste is too large for this input (64 KiB limit); nothing inserted.".into();
+            return;
+        }
+        let clean = crate::term::safe(text.trim_end_matches(['\r', '\n']));
+        if !multiline && clean.contains('\n') {
+            self.status = "Paste one line into this field; nothing inserted.".into();
+            return;
+        }
+        if clean.len() > MAX_FIELD_BYTES.saturating_sub(buffer.len()) {
+            self.status = "Paste would exceed this input's 64 KiB limit; nothing inserted.".into();
+            return;
+        }
+        buffer.push_str(&clean);
+    }
+
     pub fn key(&mut self, code: KeyCode, mods: KeyModifiers) {
         if code == KeyCode::Char('c') && mods.contains(KeyModifiers::CONTROL) {
             self.quit = true;
@@ -685,5 +712,85 @@ impl App {
         self.status = format!(
             "{entry} has no entry of its own in ip.sealed or ip.interface_only (a broader pattern may still cover it)"
         );
+    }
+}
+
+#[cfg(test)]
+mod paste_tests {
+    use super::*;
+
+    fn app() -> (tempfile::TempDir, App) {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            workspace: dir.path().to_owned(),
+            owner: dir.path().join("owner.toml"),
+            project: dir.path().join("project.toml"),
+            state: dir.path().join("state"),
+            policy: None,
+        };
+        let app = App::new(paths, crate::tests::services()).unwrap();
+        (dir, app)
+    }
+
+    #[test]
+    fn settings_paste_inserts_sanitized_text_without_submitting() {
+        let (_dir, mut app) = app();
+        let previous = app.cfg.str("local.base_url").unwrap();
+        app.mode = Mode::Edit {
+            key: "local.base_url",
+            buffer: "https://".into(),
+            append: false,
+        };
+        app.paste("\x1b[31mexample.test/v1\x1b[0m\r\n");
+        assert!(
+            matches!(&app.mode, Mode::Edit { buffer, .. } if buffer == "https://example.test/v1")
+        );
+        assert_eq!(app.cfg.str("local.base_url").unwrap(), previous);
+        assert!(!app.paths.owner.exists());
+        assert!(!app.paths.config_audit().exists());
+        app.paste("\nnew value");
+        assert!(
+            matches!(&app.mode, Mode::Edit { buffer, .. } if buffer == "https://example.test/v1")
+        );
+        assert!(app.status.contains("one line"));
+    }
+
+    #[test]
+    fn paste_never_accepts_confirmation_or_triggers_normal_mode_keys() {
+        let (_dir, mut app) = app();
+        app.paste("q\ny");
+        assert!(!app.quit);
+        assert!(matches!(app.mode, Mode::Normal));
+        let proposal = app
+            .cfg
+            .propose(Target::Owner, "limits.frontier_usd", Value::Float(9.0))
+            .unwrap();
+        app.mode = Mode::Confirm(proposal);
+        app.paste("y\n");
+        assert!(matches!(app.mode, Mode::Confirm(_)));
+        assert!(!app.paths.owner.exists());
+        assert!(!app.paths.config_audit().exists());
+    }
+
+    #[test]
+    fn tester_and_sample_pastes_are_bounded_and_remain_in_input_mode() {
+        let (_dir, mut app) = app();
+        app.mode = Mode::Tester;
+        app.paste("\x1b]52;c;ignored\x07résumé.txt\n");
+        assert_eq!(app.tester, "résumé.txt");
+        assert!(matches!(app.mode, Mode::Tester));
+        app.mode = Mode::Sample;
+        app.paste("first\nsecond");
+        assert_eq!(app.sample, "first\nsecond");
+        assert!(matches!(app.mode, Mode::Sample));
+        app.paste(&"x".repeat(64 * 1024));
+        assert_eq!(app.sample, "first\nsecond", "oversize paste must be atomic");
+        app.mode = Mode::Edit {
+            key: "local.model",
+            buffer: "é".repeat(32 * 1024),
+            append: false,
+        };
+        app.paste("next");
+        assert!(matches!(&app.mode, Mode::Edit { buffer, .. } if buffer.len() == 64 * 1024));
     }
 }

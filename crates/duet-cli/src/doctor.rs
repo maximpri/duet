@@ -688,18 +688,19 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
             "export {key_env}=<your key> (Duet stores only the variable's name)"
         ))
     });
-    out.push(match duet_provider::price::builtin(&model) {
-        Some(_) => check(
+    let (catalog, source) = crate::pricing::catalog(c, &url, !online).await;
+    out.push(match crate::pricing::quote(&catalog, c, &model, &url) {
+        Some(price) => check(
             "frontier price",
             Status::Pass,
-            format!("list price known for {model}"),
+            format!("{}; {source}; token estimate, not an invoice", price.description()),
         ),
         None => check(
             "frontier price",
             Status::Warn,
-            format!("no price known for {model}: limits.frontier_usd cannot be enforced"),
+            format!("no usable token price for {model}: frontier cost unknown; limits.frontier_usd cannot be enforced"),
         )
-        .fix("use a priced model, or rely on limits.wall_clock_minutes"),
+        .fix("set pricing.frontier_model to an exact OpenRouter slug, or pricing.manual_model, pricing.manual_base_url and direct-provider input/output rates"),
     });
     if !online {
         out.push(check(
@@ -781,7 +782,13 @@ async fn frontier(c: &Config, online: bool) -> Vec<Check> {
         match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(120))) {
             Ok(p) => {
                 let probe = duet_provider::probe::frontier_cache_probe_request();
-                cache_check("frontier cache", &p, &probe, &model).await
+                cache_check(
+                    "frontier cache",
+                    &p,
+                    &probe,
+                    crate::pricing::quote(&catalog, c, &model, &url),
+                )
+                .await
             }
             Err(e) => check("frontier cache", Status::Warn, e.message),
         }
@@ -906,7 +913,7 @@ async fn cache_check(
     name: &'static str,
     provider: &ChatProvider,
     probe: &Request,
-    model: &str,
+    price: Option<duet_provider::catalog::Quote>,
 ) -> Check {
     let r = match duet_provider::probe::cache_reuse_with(provider, probe).await {
         Ok(r) => r,
@@ -919,7 +926,7 @@ async fn cache_check(
             .fix("check the model id and the key; `duet doctor --online` lists the models");
         }
     };
-    let cost = duet_provider::price::builtin(model)
+    let cost = price
         .map(|p| {
             let second = duet_provider::Usage {
                 input: r.prompt_tokens - r.second_cached.min(r.prompt_tokens),
@@ -931,7 +938,7 @@ async fn cache_check(
                 ..Default::default()
             };
             format!(
-                "; about ${:.4} at list price",
+                "; about ${:.4} at OpenRouter token rates",
                 p.cost(&first) + p.cost(&second)
             )
         })
@@ -1189,7 +1196,7 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
     match ChatProvider::with_reqwest(online_limits(pc, Duration::from_secs(300))) {
         Ok(p) => {
             let probe = duet_provider::probe::cache_probe_request();
-            out.push(cache_check("local cache", &p, &probe, "").await);
+            out.push(cache_check("local cache", &p, &probe, None).await);
             // As the local roles call it: no visible thinking.
             let mut extra = serde_json::Map::new();
             extra.insert(
@@ -1375,50 +1382,63 @@ fn git(ws: &Path) -> Vec<Check> {
     }
 }
 
-/// Project instructions given at the start of every run and session: the
-/// repository's `DUET.md` and the owner's own.
+/// Instruction discovery diagnostics use the same names and override rule as the runtime.
 fn instructions(ws: &Path) -> Check {
-    use duet_agent::instructions::{self, FILE, MAX_BYTES};
+    use duet_agent::instructions::{self, FILES, MAX_BYTES, OVERRIDE, ROOT_FILES};
     let owner = duet_config::owner_instructions_path();
     let mut given = Vec::new();
     let mut problems = Vec::new();
-    for (whose, path, read) in [
-        ("repository", ws.join(FILE), instructions::project(ws)),
-        ("owner", owner.clone(), instructions::owner(&owner)),
+    let mut sources = Vec::new();
+    for (whose, directory, names) in [
+        ("repository", ws, ROOT_FILES),
+        ("owner", owner.parent().unwrap_or(ws), FILES),
     ] {
+        let read = |name: &str| {
+            if whose == "owner" {
+                instructions::owner(&directory.join(name))
+            } else {
+                instructions::project_file(directory, Path::new(name))
+            }
+        };
+        let mut overridden = read(OVERRIDE);
+        for &name in names {
+            let (name, result) = if name == "AGENTS.md" && overridden.is_some() {
+                (OVERRIDE, overridden.take())
+            } else {
+                (name, read(name))
+            };
+            sources.push((whose, directory.join(name), result));
+        }
+    }
+    for (whose, path, read) in sources {
         match read {
             None => {}
+            Some(Ok(f)) if f.text.trim().is_empty() => {}
             Some(Ok(f)) => {
                 given.push(format!("{whose} {} ({} bytes)", path.display(), f.bytes));
                 if f.truncated {
                     problems.push(format!(
-                        "the {whose} file is cut to its first {} KiB",
+                        "{} is cut to its first {} KiB",
+                        path.display(),
                         MAX_BYTES / 1024
                     ));
                 }
             }
-            Some(Err(e)) => problems.push(format!(
-                "the {whose} file {} is not given: {e}",
-                path.display()
-            )),
+            Some(Err(e)) => problems.push(format!("{} cannot be loaded: {e}", path.display())),
         }
     }
     if given.is_empty() && problems.is_empty() {
         return check(
             "instructions",
             Status::Skip,
-            format!(
-                "no {FILE}: one at the repository root (repository text, scanned like any file) or at \
-                 {} (yours) gives duet standing instructions",
-                owner.display()
-            ),
+            "No instruction files found. Add AGENTS.md or DUET.md at the repository root. CLAUDE.md, GEMINI.md and .github/copilot-instructions.md are also recognized.",
         );
     }
     let mut detail = if given.is_empty() {
-        "none given".to_owned()
+        "No instruction files loaded".to_owned()
     } else {
         format!(
-            "given at the start of each run and session: {}",
+            "Discovered for startup (privacy filters and context limits apply): {}. Nested directory rules are loaded before file access.",
             given.join("; ")
         )
     };
@@ -1427,7 +1447,7 @@ fn instructions(ws: &Path) -> Check {
     }
     detail.push_str(&format!("; {}", problems.join("; ")));
     check("instructions", Status::Warn, detail).fix(format!(
-        "keep each {FILE} a text file under {} KiB",
+        "Use regular text files; keep each under {} KiB to avoid truncation",
         MAX_BYTES / 1024
     ))
 }
@@ -1547,6 +1567,38 @@ fn retention(ws: &Path, c: &Config) -> Check {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn instruction_diagnostics_recognize_standard_files_and_overrides() {
+        let directory = tempfile::tempdir().unwrap();
+        let ws = directory.path().canonicalize().unwrap();
+        assert!(
+            duet_agent::instructions::project_file(
+                &ws,
+                Path::new(".github/copilot-instructions.md")
+            )
+            .is_none()
+        );
+        std::fs::write(ws.join("AGENTS.md"), "generic conventions").unwrap();
+        std::fs::write(ws.join("GEMINI.md"), "test conventions").unwrap();
+        let plain = instructions(&ws);
+        assert!(
+            plain.detail.contains("AGENTS.md") && plain.detail.contains("GEMINI.md"),
+            "{plain:?}"
+        );
+        std::fs::write(ws.join("AGENTS.override.md"), "override conventions").unwrap();
+        let replaced = instructions(&ws);
+        assert!(
+            replaced.detail.contains("AGENTS.override.md"),
+            "{replaced:?}"
+        );
+        assert!(
+            !replaced
+                .detail
+                .contains(&format!("{} (", ws.join("AGENTS.md").display())),
+            "{replaced:?}"
+        );
+    }
 
     #[test]
     fn a_policy_layer_explains_itself() {

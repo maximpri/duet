@@ -80,6 +80,7 @@ pub async fn probe_context_window(
 ) -> Option<u64> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()?;
     let auth = |rb: reqwest::RequestBuilder| match bearer {
@@ -89,6 +90,7 @@ pub async fn probe_context_window(
     let base = base_url.trim_end_matches('/');
     let root = base.strip_suffix("/v1").unwrap_or(base);
     if let Ok(resp) = auth(client.get(format!("{base}/models"))).send().await
+        && resp.status().is_success()
         && let Ok(v) = resp.json::<Value>().await
         && let Some(n) = context_from_models_listing(&v, model)
     {
@@ -325,6 +327,29 @@ mod tests {
                 "model_info":{"qwen3.context_length":40960}
             })),
             Some(16384)
+        );
+    }
+
+    #[tokio::test]
+    async fn context_probe_ignores_redirects_and_unsuccessful_listings() {
+        use crate::mock_http::MockServer;
+        let body = r#"{"data":[{"id":"q","max_model_len":65536}]}"#;
+        let destination = MockServer::start(&[("GET /v1/models", 200, body)]);
+        let location = format!("{}/models", destination.base_url());
+        let source = MockServer::start_with_headers(
+            &[("GET /v1/models", 307, body)],
+            &[("location", &location)],
+        );
+        assert_eq!(
+            probe_context_window(&source.base_url(), "q", Some("k")).await,
+            None
+        );
+        assert!(destination.seen().is_empty());
+        assert_eq!(source.seen().len(), 4);
+        let denied = MockServer::start(&[("GET /v1/models", 403, body)]);
+        assert_eq!(
+            probe_context_window(&denied.base_url(), "q", None).await,
+            None
         );
     }
 

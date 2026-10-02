@@ -27,6 +27,7 @@ const INPUT_ROWS: usize = 6;
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
+    s.palette_popup = None;
     let area = f.area();
     if area.width < MIN.0 || area.height < MIN.1 {
         let note = Paragraph::new(format!(
@@ -38,7 +39,8 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     }
     let inner_width = area.width.saturating_sub(4) as usize;
     let (input_rows, cursor) = input(s, inner_width);
-    let input_height = input_rows.len().clamp(1, INPUT_ROWS) as u16 + 2;
+    let chip_height = u16::from(!s.attachments.is_empty());
+    let input_height = input_rows.len().clamp(1, INPUT_ROWS) as u16 + 2 + chip_height;
     let header_height = if area.height >= 16 { 2 } else { 1 };
     let [top, body, input_area, status] = Layout::vertical([
         Constraint::Length(header_height),
@@ -64,7 +66,11 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     }
     composer(f, s, input_area, input_rows, cursor);
     status_line(f, s, status, now);
-    popups(f, s, input_area);
+    if s.find.open {
+        find_bar(f, s, input_area);
+    } else {
+        popups(f, s, input_area);
+    }
     if s.answering {
         approval(f, s, area);
     }
@@ -93,7 +99,7 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "workspace".into());
     let hint = if area.width >= 96 {
-        "F1 help · Ctrl-O details · Ctrl-T panel · F2 settings"
+        "Ctrl-V paste · Ctrl-F find · F1 help · F2 settings"
     } else {
         "F1 help · / commands"
     };
@@ -164,7 +170,7 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
             }
             spans.push(dot());
             spans.push(Span::styled(
-                "sensitive values stay on this machine",
+                "privacy boundary active",
                 Style::new().fg(HELD),
             ));
         }
@@ -196,7 +202,7 @@ pub(super) fn welcome(s: &State) -> Vec<Line<'static>> {
     ];
     if s.status.mode != "passthrough" {
         lines.push(Line::styled(
-            "Secrets and personal data in this workspace are read on this machine; the frontier sees placeholders.",
+            "The privacy boundary filters what the frontier sees. The Privacy panel shows sources, local questions and outbound records.",
             Style::new().fg(HELD),
         ));
     }
@@ -204,6 +210,8 @@ pub(super) fn welcome(s: &State) -> Vec<Line<'static>> {
         Line::default(),
         key("@", "name a file of the workspace"),
         key("/", "commands (/models checks the connections, /settings)"),
+        key("Ctrl-V", "paste text or an image from your clipboard"),
+        key("Ctrl-F", "find in conversation · F4 command palette"),
         key("F1", "keys and commands"),
         Line::default(),
     ]);
@@ -218,19 +226,19 @@ fn conversation(f: &mut Frame<'_>, s: &mut State, area: Rect, now: Instant) {
     // One column is kept for the scrollbar.
     let width = view.width.saturating_sub(1) as usize;
     s.set_width(width);
-    let rows = s.transcript(width, now);
+    let transcript = s.transcript(width, now);
     let height = view.height as usize;
     // While scrolled up, the view holds on what is being read.
-    if s.scroll > 0 && rows.len() > s.total {
-        s.scroll += rows.len() - s.total;
+    if s.scroll > 0 && transcript.total > s.total {
+        s.scroll += transcript.total - s.total;
     }
-    s.total = rows.len();
+    s.total = transcript.total;
     s.page = height.max(1);
     let max = s.total.saturating_sub(height);
     s.scroll = s.scroll.min(max);
     let top = max - s.scroll;
-    let end = (top + height).min(rows.len());
-    let mut shown: Vec<Line<'static>> = rows[top..end].to_vec();
+    let end = (top + height).min(transcript.total);
+    let mut shown = transcript.rows(&s.cells, top..end);
     s.view = Rect {
         width: width as u16,
         ..view
@@ -298,14 +306,15 @@ pub(super) fn working_row(s: &State, text: &str, width: usize, now: Instant) -> 
 
 /// Columns `from`..`to` of `line` shown selected.
 fn highlight(line: &mut Line<'static>, from: usize, to: usize) {
-    use unicode_width::UnicodeWidthChar;
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
     let mut out: Vec<Span<'static>> = Vec::new();
     let mut col = 0;
     for span in std::mem::take(&mut line.spans) {
         let mut part = String::new();
         let mut inside = None;
-        for c in span.content.chars() {
-            let now_inside = col >= from && col < to;
+        for c in span.content.graphemes(true) {
+            let now_inside = col < to && col + c.width() > from;
             if inside.is_some_and(|i| i != now_inside) && !part.is_empty() {
                 let style = if inside == Some(true) {
                     span.style.add_modifier(Modifier::REVERSED)
@@ -315,8 +324,8 @@ fn highlight(line: &mut Line<'static>, from: usize, to: usize) {
                 out.push(Span::styled(std::mem::take(&mut part), style));
             }
             inside = Some(now_inside);
-            part.push(c);
-            col += c.width().unwrap_or(0);
+            part.push_str(c);
+            col += c.width();
         }
         if !part.is_empty() {
             let style = if inside == Some(true) {
@@ -338,9 +347,44 @@ fn input(s: &State, width: usize) -> (Vec<Line<'static>>, (usize, usize)) {
     (rows.iter().map(|r| ansi::line(r)).collect(), cursor)
 }
 
+fn find_bar(f: &mut Frame<'_>, s: &State, input_area: Rect) {
+    let area = Rect {
+        x: input_area.x,
+        y: input_area.y.saturating_sub(3),
+        width: input_area.width,
+        height: 3,
+    };
+    let count = s.find.matches.len();
+    let tally = if count == 0 {
+        "no matches".to_owned()
+    } else {
+        format!("{} / {count}", s.find.current + 1)
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(ACCENT))
+        .title(format!(" Find · {tally} "))
+        .title_bottom(" Enter next · Shift-Enter previous · Esc close ");
+    let inner = block.inner(area).inner(Margin::new(1, 0));
+    let (rows, (row, col)) = s
+        .find
+        .query
+        .display(&[], s.colour, inner.width.max(1) as usize, 1);
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(rows.iter().map(|r| ansi::line(r)).collect::<Vec<_>>()),
+        inner,
+    );
+    f.set_cursor_position(Position {
+        x: inner.x + (col as u16).min(inner.width.saturating_sub(1)),
+        y: inner.y + row as u16,
+    });
+}
+
 fn composer(
     f: &mut Frame<'_>,
-    s: &State,
+    s: &mut State,
     area: Rect,
     rows: Vec<Line<'static>>,
     (row, col): (usize, usize),
@@ -354,7 +398,7 @@ fn composer(
         Mode::Hidden => (" duet is setting up ", " you can type your message ", MUTED),
         Mode::Prompt => (
             " Message duet ",
-            " Enter send · Alt-Enter new line · @ file · / commands ",
+            " Enter send · Alt-Enter line · Ctrl-V paste · F4 commands ",
             ACCENT,
         ),
     };
@@ -366,9 +410,34 @@ fn composer(
             Style::new().fg(colour).add_modifier(Modifier::BOLD),
         ))
         .title_bottom(Span::styled(hints, palette::muted()));
-    let inner = block.inner(area).inner(Margin::new(1, 0));
+    let mut inner = block.inner(area).inner(Margin::new(1, 0));
     f.render_widget(Clear, area);
     f.render_widget(block, area);
+    if !s.attachments.is_empty() {
+        let labels = s
+            .attachments
+            .iter()
+            .map(|a| {
+                format!(
+                    "{} {}",
+                    crate::term::safe(&a.id),
+                    crate::term::safe(&a.label)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" · ");
+        f.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled("Attached  ", palette::accent()),
+                Span::raw(labels),
+                Span::styled("  · /detach ID removes", palette::muted()),
+            ])),
+            Rect { height: 1, ..inner },
+        );
+        inner.y += 1;
+        inner.height = inner.height.saturating_sub(1);
+    }
+    s.composer = inner;
     if s.editor.buffer().is_empty() {
         let placeholder = match s.mode {
             Mode::Working => "Add guidance for duet (it arrives after the current step)…",
@@ -378,10 +447,10 @@ fn composer(
             Paragraph::new(Span::styled(placeholder, palette::muted())),
             inner,
         );
-        return;
+    } else {
+        f.render_widget(Paragraph::new(rows), inner);
     }
-    f.render_widget(Paragraph::new(rows), inner);
-    if s.overlay || s.help || s.answering {
+    if s.overlay || s.help || s.answering || s.find.open {
         return;
     }
     f.set_cursor_position(Position {
@@ -424,20 +493,16 @@ fn status_line(f: &mut Frame<'_>, s: &State, area: Rect, now: Instant) {
             ));
         }
     }
-    let copied = s
-        .copied
-        .filter(|(at, _)| now.duration_since(*at).as_secs() < 3)
-        .map(|(_, n)| format!("copied {n} characters · "));
-    let right = format!(
-        "{}{}",
-        copied.unwrap_or_default(),
-        if s.details {
-            "details on · F1 help "
-        } else {
-            "F1 help "
-        }
-    );
-    let left = format!(" │ {}", facts.join(" · "));
+    let right = match &s.toast {
+        Some((_, text)) => format!("{text} "),
+        None if s.details => "details on · F1 help ".to_owned(),
+        None => "F1 help ".to_owned(),
+    };
+    let left = if s.toast.is_some() {
+        " │ ".to_owned()
+    } else {
+        format!(" │ {}", facts.join(" · "))
+    };
     let used = badge.chars().count() + left.chars().count() + right.chars().count();
     let gap = (area.width as usize).saturating_sub(used);
     f.render_widget(
@@ -471,47 +536,28 @@ fn popups(f: &mut Frame<'_>, s: &mut State, input: Rect) {
         return;
     }
     let palette_items = s.palette_items();
-    let (title, lines, selected): (String, Vec<Line<'static>>, Option<usize>) =
-        if !palette_items.is_empty() {
-            let sel = s.palette.min(palette_items.len() - 1);
-            let width = palette_items
-                .iter()
-                .map(|(c, _)| c.len())
-                .max()
-                .unwrap_or(8)
-                + 3;
-            (
-                format!(" commands · {}/{} ", sel + 1, palette_items.len()),
-                palette_items
-                    .iter()
-                    .map(|(c, d)| {
-                        Line::from(vec![
-                            Span::styled(format!("{c:<width$}"), palette::accent()),
-                            Span::styled((*d).to_owned(), Style::new()),
-                        ])
-                    })
-                    .collect(),
-                Some(sel),
-            )
-        } else {
-            let picks = s.picks();
-            if !picks.is_empty() {
-                let sel = s.pick.min(picks.len() - 1);
-                (
-                    " files · Tab or Enter picks ".to_owned(),
-                    picks.into_iter().map(Line::from).collect(),
-                    Some(sel),
-                )
-            } else if !s.choices.is_empty() {
-                (
-                    " Tab completes ".to_owned(),
-                    s.choices.iter().take(10).cloned().map(Line::from).collect(),
-                    None,
-                )
-            } else {
-                return;
-            }
-        };
+    if !palette_items.is_empty() {
+        command_palette(f, s, input, &palette_items);
+        return;
+    }
+    let picks = s.picks();
+    let (title, lines, selected): (String, Vec<Line<'static>>, Option<usize>) = if !picks.is_empty()
+    {
+        let sel = s.pick.min(picks.len() - 1);
+        (
+            " files · Tab or Enter picks ".to_owned(),
+            picks.into_iter().map(Line::from).collect(),
+            Some(sel),
+        )
+    } else if !s.choices.is_empty() {
+        (
+            " Tab completes ".to_owned(),
+            s.choices.iter().take(10).cloned().map(Line::from).collect(),
+            None,
+        )
+    } else {
+        return;
+    };
     let shown = 10usize.min(lines.len());
     let start = selected.map_or(0, |sel| sel.saturating_sub(shown - 1));
     let mut lines: Vec<Line<'static>> = lines.into_iter().skip(start).take(shown).collect();
@@ -549,6 +595,123 @@ fn popups(f: &mut Frame<'_>, s: &mut State, input: Rect) {
         ),
         area,
     );
+}
+
+/// All commands fit on tall terminals; smaller windows keep the selected row
+/// visible and explicitly state how much is hidden above and below.
+fn command_palette(f: &mut Frame<'_>, s: &mut State, input: Rect, items: &[(&str, &str)]) {
+    let top = f.area().y + if f.area().height >= 16 { 2 } else { 1 };
+    let available = input.y.saturating_sub(top);
+    let visible = usize::from(available.saturating_sub(3)).min(items.len());
+    if visible == 0 {
+        return;
+    }
+    s.palette = s.palette.min(items.len() - 1);
+    s.palette_start = s.palette_start.min(items.len() - visible);
+    if s.palette < s.palette_start {
+        s.palette_start = s.palette;
+    } else if s.palette >= s.palette_start + visible {
+        s.palette_start = s.palette + 1 - visible;
+    }
+    let first = s.palette_start;
+    let end = first + visible;
+    let title = format!(" Commands · {} total ", items.len());
+    let keys = if input.width >= 90 {
+        " ↑↓ / wheel browse · PgUp/PgDn page · Enter run · Tab insert · Esc close "
+    } else if input.width >= 60 {
+        " ↑↓ / wheel · PgUp/PgDn · Enter run · Esc close "
+    } else {
+        " ↑↓ browse · Enter run · Esc close "
+    };
+    let label_width = items.iter().map(|(name, _)| name.len()).max().unwrap_or(0) + 2;
+    let desired = items
+        .iter()
+        .map(|(_, description)| label_width + description.chars().count() + 5)
+        .max()
+        .unwrap_or(0)
+        .max(keys.chars().count() + 2)
+        .max(54);
+    let width = (desired.min(u16::MAX as usize) as u16).min(input.width.saturating_sub(2));
+    let height = visible as u16 + 3;
+    let area = Rect {
+        x: input.x + 1,
+        y: input.y - height,
+        width,
+        height,
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(ACCENT))
+        .title(Span::styled(title, palette::accent()))
+        .title_bottom(Span::styled(keys, palette::muted()));
+    let inner = block.inner(area);
+    let rows = Rect {
+        height: visible as u16,
+        width: inner.width.saturating_sub(1),
+        ..inner
+    };
+    let lines: Vec<_> = items[first..end]
+        .iter()
+        .enumerate()
+        .map(|(offset, (command, description))| {
+            let selected = first + offset == s.palette;
+            let style = if selected {
+                Style::new().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::new()
+            };
+            Line::from(vec![
+                Span::styled(if selected { "› " } else { "  " }, palette::accent()),
+                Span::styled(format!("{command:<label_width$}"), style.fg(ACCENT)),
+                Span::styled((*description).to_owned(), style),
+            ])
+        })
+        .collect();
+    let mut parts = vec![format!("{}–{end} of {}", first + 1, items.len())];
+    if first > 0 {
+        parts.push(format!("↑ {first} above"));
+    }
+    if end < items.len() {
+        parts.push(format!("↓ {} more", items.len() - end));
+    }
+    let mut range = parts.join(" · ");
+    if range.chars().count() + 18 <= inner.width as usize {
+        range.push_str(" · type to filter");
+    }
+    f.render_widget(Clear, area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(lines), rows);
+    f.render_widget(
+        Paragraph::new(Span::styled(range, palette::accent())),
+        Rect {
+            y: inner.y + visible as u16,
+            height: 1,
+            ..inner
+        },
+    );
+    if visible < items.len() {
+        let mut scrollbar = ScrollbarState::new(items.len() - visible + 1)
+            .position(first)
+            .viewport_content_length(visible);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .thumb_style(palette::accent())
+                .track_symbol(Some("│"))
+                .begin_symbol(Some("↑"))
+                .end_symbol(Some("↓")),
+            Rect {
+                height: visible as u16,
+                ..inner
+            },
+            &mut scrollbar,
+        );
+    }
+    s.palette_popup = Some(super::PalettePopup {
+        area,
+        rows,
+        first,
+        query: s.editor.buffer().to_owned(),
+    });
 }
 
 fn centered(width: u16, height: u16, area: Rect) -> Rect {
@@ -623,12 +786,12 @@ fn approval(f: &mut Frame<'_>, s: &State, area: Rect) {
 }
 
 /// F1: the keys and commands.
-fn help(f: &mut Frame<'_>, s: &State, area: Rect) {
+fn help(f: &mut Frame<'_>, s: &mut State, area: Rect) {
     let head = |t: &str| Line::styled(t.to_owned(), palette::accent());
     let row = |k: &str, what: &str| {
         Line::from(vec![
             Span::styled(
-                format!("  {k:<28}"),
+                format!("  {k:<30}  "),
                 Style::new().add_modifier(Modifier::BOLD),
             ),
             Span::raw(what.to_owned()),
@@ -648,26 +811,112 @@ fn help(f: &mut Frame<'_>, s: &State, area: Rect) {
         row("/", "commands (↑↓ pick, Tab or Enter)"),
         row("↑ ↓ · Ctrl-R", "earlier messages; search them"),
         row(
+            "Shift + arrows · drag",
+            "select message text (Ctrl/Alt + Shift: words)",
+        ),
+        row(
+            "Ctrl-A · Ctrl-C · Ctrl-X",
+            "select all input · copy selection · cut selection",
+        ),
+        row(
+            "Ctrl-V · Shift-Insert",
+            "paste text or an image; Enter sends afterward",
+        ),
+        row(
+            "Ctrl-Z · Ctrl-Y",
+            "undo / redo message edits (Ctrl-Shift-Z also redoes)",
+        ),
+        row(
+            "Home / End · Ctrl-Home / End",
+            "line / message start and end",
+        ),
+        row("Ctrl-P", "choose a workspace file"),
+        row(
+            "F4 · Ctrl-Shift-P",
+            "command palette; Esc restores your draft",
+        ),
+        Line::default(),
+        head("COPY, FIND AND IMAGES"),
+        row(
+            "Drag in conversation",
+            "select text; Ctrl-C copies without interrupting",
+        ),
+        row(
+            "Ctrl-Shift-C · /copy",
+            "copy the latest reply when nothing is selected",
+        ),
+        row("Ctrl-F · /find", "find in the visible conversation text"),
+        row(
+            "Enter / Shift-Enter in Find",
+            "next / previous match; Esc returns to your draft",
+        ),
+        row("F3 / Shift-F3", "next / previous match after closing Find"),
+        row(
+            "/paste · Ctrl-V",
+            "read your local clipboard on this action only",
+        ),
+        row(
+            "/image PATH · drop path",
+            "attach an image for the next message",
+        ),
+        row(
+            "/attachments · /detach ID",
+            "list queued attachments · remove one (or all)",
+        ),
+        row(
+            "SSH / unavailable clipboard",
+            "use terminal text paste, or /image PATH on the host",
+        ),
+        row(
             "Ctrl-W · Ctrl-U · Ctrl-K",
             "cut a word, to the start, to the end",
         ),
         Line::default(),
         head("SESSION"),
-        row("Ctrl-C", "stop duet's turn now (twice while idle: leave)"),
+        row(
+            "Ctrl-C (no selection)",
+            "stop duet's turn now (twice while idle: leave)",
+        ),
         row("/stop", "stop after the current step"),
+        row(
+            "/goal start TEXT",
+            "work toward a goal; 20 turns by default",
+        ),
+        row("/goal TEXT", "also starts a goal"),
+        row(
+            "/goal pause · /goal resume",
+            "pause or continue automatic work",
+        ),
+        row(
+            "/goal status · /goal cancel",
+            "show progress or end the goal",
+        ),
+        row(
+            "Goal limits",
+            "session dollar and working-time caps still apply",
+        ),
         row("Ctrl-O", "show or fold tool results"),
         row("PgUp · PgDn · wheel", "scroll the conversation"),
-        row("Ctrl-End", "back to the latest"),
+        row("Ctrl-End (empty input)", "back to the latest"),
+        row("Ctrl-Alt-Z", "suspend the TUI; fg in the shell resumes"),
         row("Ctrl-D", "leave (the session stays open: duet --resume)"),
         Line::default(),
         head("PANEL AND SETTINGS"),
+        row(
+            "Tab · Shift-Tab",
+            "next / previous panel tab (outside input completions)",
+        ),
         row(
             "Ctrl-T",
             "the side panel: Changes, Privacy, Session, closed",
         ),
         row(
+            "Ctrl-O in Privacy",
+            "summary / exact audit record for the selected action",
+        ),
+        row(
             "Ctrl-↑ ↓ · Ctrl-PgUp PgDn",
-            "pick a changed file; scroll its diff",
+            "pick a file or privacy event; scroll its details",
         ),
         row(
             "F2 · /settings",
@@ -680,15 +929,30 @@ fn help(f: &mut Frame<'_>, s: &State, area: Rect) {
             "the budgets; what changed; revert the last turn",
         ),
         row("/image PATH", "attach an image to your next message"),
+        row(
+            "/history [ID]",
+            "find earlier sessions and how to resume them",
+        ),
+        row(
+            "/attach PATH",
+            "attach a text file (dragged paths also work)",
+        ),
         row("/quit · /close", "leave (resumable) · end the session"),
         Line::default(),
         Line::styled(
-            "  To select text with the mouse, hold Option (macOS) or Shift while dragging.",
+            "  Terminal shortcuts vary. Native Cmd-V pastes text; use Ctrl-V or /paste for images.",
             palette::muted(),
         ),
     ];
-    let width = area.width.saturating_sub(6).min(96);
+    let width = area.width.saturating_sub(6).min(100);
+    let lines: Vec<_> = lines
+        .iter()
+        .flat_map(|line| ansi::wrap(line, width.saturating_sub(2) as usize))
+        .collect();
     let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
+    s.help_scroll = s
+        .help_scroll
+        .min((lines.len() as u16).saturating_sub(height.saturating_sub(2)));
     let popup = centered(width, height, area);
     f.render_widget(Clear, popup);
     f.render_widget(

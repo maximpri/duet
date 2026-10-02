@@ -328,10 +328,15 @@ pub fn usage_from_chat(u: &Value) -> Usage {
         .map(|d| get(d, "cached_tokens"))
         .unwrap_or(0)
         .min(prompt);
+    let written = u
+        .get("prompt_tokens_details")
+        .map(|d| get(d, "cache_write_tokens"))
+        .unwrap_or(0)
+        .min(prompt - cached);
     Usage {
-        input: prompt - cached,
+        input: prompt - cached - written,
         cache_read: cached,
-        cache_write: 0,
+        cache_write: written,
         output: get(u, "completion_tokens"),
         reasoning: u
             .get("completion_tokens_details")

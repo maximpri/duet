@@ -5,25 +5,25 @@ use crate::error::{ErrorKind, ProviderError};
 
 /// Host and port of an `http(s)://host[:port]/...` URL.
 pub fn host_port(base_url: &str) -> Option<(String, u16)> {
-    let (scheme, rest) = base_url.split_once("://")?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let authority = authority.rsplit('@').next()?;
-    let default = if scheme.eq_ignore_ascii_case("https") {
-        443
-    } else {
-        80
-    };
-    if let Some(v6) = authority.strip_prefix('[') {
-        let (host, rest) = v6.split_once(']')?;
-        let port = rest
-            .strip_prefix(':')
-            .map_or(Some(default), |p| p.parse().ok())?;
-        return Some((host.to_ascii_lowercase(), port));
+    parsed_endpoint(base_url).map(|(host, port, _)| (host, port))
+}
+
+/// Use the HTTP client's parser for trust decisions, including URL
+/// normalization (backslashes, userinfo, IPv4 spelling and whitespace).
+fn parsed_endpoint(base_url: &str) -> Option<(String, u16, bool)> {
+    let url = reqwest::Url::parse(base_url).ok()?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return None;
     }
-    match authority.rsplit_once(':') {
-        Some((host, port)) => Some((host.to_ascii_lowercase(), port.parse().ok()?)),
-        None => Some((authority.to_ascii_lowercase(), default)),
-    }
+    let host = url
+        .host_str()?
+        .trim_start_matches('[')
+        .trim_end_matches(']');
+    Some((
+        host.to_owned(),
+        url.port_or_known_default()?,
+        url.scheme() == "https",
+    ))
 }
 
 pub fn is_loopback_host(host: &str) -> bool {
@@ -64,19 +64,17 @@ pub fn check_local_endpoint(
     allowlist: &[String],
     allow_plaintext: bool,
 ) -> Result<Trust, ProviderError> {
-    let (host, port) = host_port(base_url).ok_or_else(|| {
+    let (host, port, tls) = parsed_endpoint(base_url).ok_or_else(|| {
         ProviderError::new(
             ErrorKind::Forbidden,
-            format!("cannot parse local endpoint {base_url}"),
+            "local endpoint must be a valid HTTP(S) URL",
         )
     })?;
     if is_loopback_host(&host) {
         return Ok(Trust::Loopback);
     }
-    if !allowlist
-        .iter()
-        .any(|a| a.eq_ignore_ascii_case(&format!("{host}:{port}")))
-    {
+    let authority = format!("{host}:{port}");
+    if !allowlist.iter().any(|a| a.eq_ignore_ascii_case(&authority)) {
         return Err(ProviderError::new(
             ErrorKind::Forbidden,
             format!(
@@ -84,7 +82,7 @@ pub fn check_local_endpoint(
             ),
         ));
     }
-    if !is_plaintext_remote(base_url) {
+    if tls {
         return Ok(Trust::AllowlistedTls);
     }
     if allow_plaintext {
@@ -113,8 +111,7 @@ config (duet config set local.allow_plaintext true --confirm). A project config 
 
 /// Whether sensitive content to this endpoint would cross the network unencrypted.
 pub fn is_plaintext_remote(base_url: &str) -> bool {
-    base_url.to_ascii_lowercase().starts_with("http://")
-        && host_port(base_url).is_some_and(|(h, _)| !is_loopback_host(&h))
+    parsed_endpoint(base_url).is_some_and(|(host, _, tls)| !tls && !is_loopback_host(&host))
 }
 
 #[cfg(test)]
@@ -185,5 +182,47 @@ mod tests {
         assert!(is_plaintext_remote("http://192.168.50.132:8080/v1"));
         assert!(!is_plaintext_remote("http://127.0.0.1:8080/v1"));
         assert!(!is_plaintext_remote("https://10.0.0.2/v1"));
+    }
+
+    #[test]
+    fn trust_uses_the_same_url_normalization_as_the_http_client() {
+        // A backslash ends the authority in an HTTP URL. Splitting at '@'
+        // instead would incorrectly trust this remote destination as local.
+        let deceptive = "http://remote.example\\@localhost/v1";
+        assert_eq!(host_port(deceptive), Some(("remote.example".into(), 80)));
+        assert!(check_local_endpoint(deceptive, &[], false).is_err());
+
+        let lan = vec!["10.0.0.2:80".into()];
+        for url in [
+            " http://10.0.0.2/v1",
+            "\nHTTP://10.0.0.2/v1",
+            "ht\ttp://10.0.0.2/v1",
+        ] {
+            assert!(is_plaintext_remote(url), "{url:?}");
+            assert!(check_local_endpoint(url, &lan, false).is_err(), "{url:?}");
+            assert_eq!(
+                check_local_endpoint(url, &lan, true).unwrap(),
+                Trust::AllowlistedPlaintext
+            );
+        }
+        for url in [
+            "ftp://localhost/v1",
+            "file://localhost/v1",
+            "http://[::1]suffix/v1",
+        ] {
+            assert!(host_port(url).is_none(), "{url}");
+            assert!(check_local_endpoint(url, &[], true).is_err(), "{url}");
+        }
+        for url in [
+            "http://127.1/v1",
+            "http://2130706433/v1",
+            "http://0x7f000001/v1",
+        ] {
+            assert_eq!(host_port(url), Some(("127.0.0.1".into(), 80)));
+            assert_eq!(
+                check_local_endpoint(url, &[], false).unwrap(),
+                Trust::Loopback
+            );
+        }
     }
 }

@@ -17,13 +17,22 @@ const SHOWN_MESSAGES: usize = 6;
 /// Characters shown per message.
 const MESSAGE_CHARS: usize = 400;
 
+/// Keep display summaries alongside their source, so repainting the list does
+/// not parse every full request body again.
+struct AuditLine {
+    raw: String,
+    summary: String,
+}
+
 #[derive(Default)]
 pub struct AuditView {
     pub(crate) runs: Vec<String>,
     pub(crate) run: usize,
-    /// Raw lines of the selected run's log.
-    lines: Vec<String>,
+    /// Records of the selected run's log, with cached list summaries.
+    lines: Vec<AuditLine>,
     loaded: Option<String>,
+    /// Only the selected record needs its expanded detail prepared.
+    detail: Option<(usize, Vec<String>)>,
     pub(crate) record: usize,
     pub(crate) focus_records: bool,
     /// Run id, exit code and report of the last verification.
@@ -66,6 +75,9 @@ impl AuditView {
     fn load(&mut self, ws: &Path) {
         let Some(id) = self.runs.get(self.run).cloned() else {
             self.lines.clear();
+            self.loaded = None;
+            self.detail = None;
+            self.record = 0;
             return;
         };
         if self.loaded.as_ref() == Some(&id) {
@@ -76,10 +88,27 @@ impl AuditView {
         self.lines = text
             .lines()
             .filter(|l| !l.is_empty())
-            .map(str::to_owned)
+            .map(|line| AuditLine {
+                raw: line.to_owned(),
+                summary: describe_line(line),
+            })
             .collect();
         self.record = 0;
         self.loaded = Some(id);
+        self.detail = None;
+    }
+
+    fn selected_detail(&mut self) -> &[String] {
+        if self.detail.as_ref().map(|(record, _)| *record) != Some(self.record) {
+            self.detail = Some((
+                self.record,
+                self.lines
+                    .get(self.record)
+                    .map(|line| detail(&line.raw))
+                    .unwrap_or_default(),
+            ));
+        }
+        &self.detail.as_ref().unwrap().1
     }
 
     pub fn move_by(&mut self, d: isize, ws: &Path) {
@@ -135,7 +164,7 @@ pub(crate) fn detail(line: &str) -> Vec<String> {
                 .get("messages")
                 .or_else(|| r.request.get("input"))
                 .and_then(|m| m.as_array())
-                .cloned()
+                .map(Vec::as_slice)
                 .unwrap_or_default();
             out.push(format!(
                 "{} message(s), {} tool(s); latest as sent:",
@@ -247,7 +276,7 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
     let items: Vec<ListItem> = view
         .lines
         .iter()
-        .map(|l| ListItem::new(describe_line(l)))
+        .map(|line| ListItem::new(line.summary.as_str()))
         .collect();
     let mut rstate = ListState::default().with_selected(Some(view.record));
     f.render_stateful_widget(
@@ -262,12 +291,9 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
         &mut rstate,
     );
     let text: Vec<Line> = view
-        .lines
-        .get(view.record)
-        .map(|l| detail(l))
-        .unwrap_or_default()
-        .into_iter()
-        .map(Line::from)
+        .selected_detail()
+        .iter()
+        .map(|line| Line::from(line.as_str()))
         .collect();
     f.render_widget(
         Paragraph::new(text)
@@ -302,7 +328,80 @@ pub(crate) fn draw(f: &mut Frame, view: &mut AuditView, area: Rect) {
 mod tests {
     use super::*;
     use duet_boundary::audit::AuditLog;
+    use ratatui::{Terminal, backend::TestBackend};
     use serde_json::json;
+
+    fn screen(view: &mut AuditView) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(120, 30)).unwrap();
+        terminal
+            .draw(|frame| draw(frame, view, frame.area()))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(120)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn cached_audit_view_tracks_navigation_refresh_and_removed_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path();
+        std::fs::create_dir_all(audit_dir(ws)).unwrap();
+        let first = audit_dir(ws).join("001.jsonl");
+        let second = audit_dir(ws).join("002.jsonl");
+        let mut log = AuditLog::open(&first).unwrap();
+        for text in ["first message", "second message"] {
+            log.append(
+                "https://f.example/v1",
+                "model",
+                json!({"messages": [{"role": "user", "content": text}]}),
+                vec![],
+            )
+            .unwrap();
+        }
+        let mut view = AuditView::default();
+        view.refresh(ws);
+        assert!(screen(&mut view).contains("first message"));
+        // Repaints reuse both the prepared list and selected record detail.
+        assert!(screen(&mut view).contains("first message"));
+        view.focus_records = true;
+        view.move_by(1, ws);
+        assert!(screen(&mut view).contains("second message"));
+        view.move_by(-1, ws);
+        assert!(screen(&mut view).contains("first message"));
+
+        AuditLog::open(&second)
+            .unwrap()
+            .append(
+                "https://f.example/v1",
+                "model",
+                json!({"messages": [{"role": "user", "content": "new run"}]}),
+                vec![],
+            )
+            .unwrap();
+        view.refresh(ws);
+        assert!(screen(&mut view).contains("new run"));
+        view.focus_records = false;
+        view.move_by(1, ws);
+        assert!(screen(&mut view).contains("first message"));
+
+        // A malformed record stays visible and can be selected after refresh.
+        std::fs::write(&first, "invalid json\n").unwrap();
+        view.refresh(ws);
+        assert!(screen(&mut view).contains("unparseable record"));
+        std::fs::remove_file(first).unwrap();
+        std::fs::remove_file(second).unwrap();
+        view.refresh(ws);
+        let empty = screen(&mut view);
+        assert!(empty.contains("runs: none yet"));
+        assert!(!empty.contains("first message"));
+        assert!(!empty.contains("unparseable record"));
+        assert!(view.lines.is_empty());
+    }
 
     fn shown(body: serde_json::Value) -> Vec<String> {
         let d = tempfile::tempdir().unwrap();

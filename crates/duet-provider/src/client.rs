@@ -43,6 +43,9 @@ impl ReqwestTransport {
         Self {
             client: reqwest::Client::builder()
                 .connect_timeout(connect_timeout)
+                // The configured endpoint is the approved data recipient.
+                // A redirect must not move prompts or credentials elsewhere.
+                .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("reqwest client"),
         }
@@ -129,6 +132,8 @@ pub struct ProviderConfig {
     pub backoff_scale: f64,
     /// Recover a tool call written as text (useful for some local models).
     pub recover_text_tool_calls: bool,
+    /// Optional local accounting shared by all local roles in a run.
+    pub local_meter: Option<Arc<crate::meter::Meter>>,
 }
 
 impl ProviderConfig {
@@ -147,6 +152,7 @@ impl ProviderConfig {
             deadline: None,
             cancel: None,
             backoff_scale: 1.0,
+            local_meter: None,
         }
     }
 }
@@ -166,6 +172,27 @@ fn deadline_error(last: &str) -> ProviderError {
 pub struct ChatProvider {
     config: ProviderConfig,
     transport: Box<dyn Transport>,
+}
+
+/// A caller may drop a request on a tool deadline. Keep usage already known
+/// from earlier attempts and flag the in-flight attempt as unpriced.
+struct LocalMeterGuard<'a> {
+    meter: Option<&'a crate::meter::Meter>,
+    attempts: AttemptUsage,
+    in_flight: bool,
+    completed: bool,
+}
+
+impl Drop for LocalMeterGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(meter) = self.meter {
+            if self.completed || !self.in_flight {
+                meter.record(self.attempts.billed, self.attempts.estimated_failed);
+            } else {
+                meter.record_cancelled(self.attempts.billed, self.attempts.estimated_failed);
+            }
+        }
+    }
 }
 
 impl ChatProvider {
@@ -237,19 +264,28 @@ impl ChatProvider {
         req: &Request,
         tap: Option<&dyn StreamTap>,
     ) -> Result<Response, ProviderError> {
-        let mut attempts = AttemptUsage::default();
-        self.retrying(req, &mut attempts, tap)
+        let mut charge = LocalMeterGuard {
+            meter: self.config.local_meter.as_deref(),
+            attempts: AttemptUsage::default(),
+            in_flight: false,
+            completed: false,
+        };
+        let result = self
+            .retrying(req, &mut charge.attempts, &mut charge.in_flight, tap)
             .await
             .map_err(|mut e| {
-                e.failed_usage = attempts.estimated_failed;
+                e.failed_usage = charge.attempts.estimated_failed;
                 e
-            })
+            });
+        charge.completed = true;
+        result
     }
 
     async fn retrying(
         &self,
         req: &Request,
         attempts: &mut AttemptUsage,
+        in_flight: &mut bool,
         tap: Option<&dyn StreamTap>,
     ) -> Result<Response, ProviderError> {
         let body = serde_json::to_vec(&self.body(req))
@@ -266,6 +302,7 @@ impl ChatProvider {
                 tap.event(StreamEvent::Attempt(attempts.attempts));
             }
             let attempt = self.attempt(&url, &headers, &body, req, tap);
+            *in_flight = true;
             let result = match self.config.deadline {
                 Some(at) => match tokio::time::timeout_at(at, attempt).await {
                     Ok(r) => r,
@@ -273,6 +310,7 @@ impl ChatProvider {
                 },
                 None => attempt.await,
             };
+            *in_flight = false;
             match result {
                 Ok(mut response) => {
                     attempts.billed = response.usage;

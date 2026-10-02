@@ -139,12 +139,14 @@ mod tests {
             run_id: "r".into(),
             mode,
             objective: "task".into(),
+            checks: Some(Vec::new()),
             frontier_url: cfg.str("frontier.base_url").unwrap(),
             frontier_model: cfg.str("frontier.model").unwrap(),
             frontier_dialect: Some(cfg.str("frontier.dialect").unwrap()),
             local: None,
             session: false,
             images: Vec::new(),
+            files: Vec::new(),
         }
     }
 
@@ -198,6 +200,7 @@ mod tests {
                 local: Some(LocalOverride {
                     base_url: "http://127.0.0.1:11434/v1".into(),
                     model: "qwen".into(),
+                    api_key_env: None,
                 }),
                 ..manifest(&cfg, Mode::Hybrid)
             },

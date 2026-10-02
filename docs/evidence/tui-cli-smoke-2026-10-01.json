@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-01",
+  "platform": "macOS arm64",
+  "version": "duet 0.1.0",
+  "binary_sha256": "27310f5db31d8fbd18c83cf831f0f79e53248dd2bcf008949871114718e4fc0d",
+  "mode": "line-mode release smoke test; full-screen PTY blocked by /dev/tty EPERM",
+  "checks": {
+    "clean_exit": true,
+    "relative_file_resolves_in_selected_workspace": true,
+    "queued_attachment_has_id": true,
+    "detach_removes_attachment": true,
+    "queue_empty_after_detach": true,
+    "no_session_or_model_request": true
+  },
+  "stdout": "attached text file <temporary-workspace>/README.md (80 bytes); included with your next message\nAttachments for your next message:\n  t1  README.md \u00b7 text \u00b7 80 bytes\nRemove with /detach ID or /detach all. IDs update after removal.\nRemoved 1 pending attachment(s).\nNo attachments waiting. Drop a file path, use /attach PATH, or paste an image with Ctrl-V.\n",
+  "stderr": ""
+}

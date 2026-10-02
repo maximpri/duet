@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! The frontier loop: one continuous conversation until a terminal state.
 
-use crate::context::{apply_mask, estimate, mask_if_needed};
+use crate::context::{apply_mask, estimate, mask_from_estimate};
 use crate::driver::Driver;
 use crate::host::HostPolicy;
 use crate::journal::WriteJournal;
@@ -98,6 +98,7 @@ pub struct RunConfig {
     pub objective: String,
     pub mode: String,
     pub checks: Vec<String>,
+    pub review: crate::review::Settings,
     pub sandbox: SandboxKind,
     /// Commands' network (`sandbox.network`; see [`crate::egress`]).
     pub network: crate::egress::Network,
@@ -145,6 +146,8 @@ pub struct RunConfig {
     /// config), read at the start if the file exists; `None`: not read. The
     /// repository's `DUET.md` is read in any case (see [`crate::instructions`]).
     pub owner_instructions: Option<PathBuf>,
+    /// Discovered skill references and explicit operator activations.
+    pub skills: Arc<crate::skills::Skills>,
 }
 
 impl RunConfig {
@@ -175,6 +178,7 @@ impl RunConfig {
             // A label (the transcript's start entry): never claim a boundary.
             mode: "passthrough".into(),
             checks: Vec::new(),
+            review: crate::review::Settings::default(),
             // Either kind confines every command; one that is not installed
             // fails closed (`duet_sandbox::detect` finds the working one).
             sandbox: if cfg!(target_os = "linux") {
@@ -203,6 +207,7 @@ impl RunConfig {
             explore: None,
             images: crate::images::ImageConfig::default(),
             owner_instructions: None,
+            skills: Arc::new(crate::skills::Skills::default()),
         }
     }
 }
@@ -217,6 +222,12 @@ pub struct RunStats {
     #[serde(default, skip_serializing_if = "is_unused")]
     pub failed_attempt_usage: Usage,
     pub cost_usd: f64,
+    /// User-priced local input/output tokens, separate from the frontier budget.
+    #[serde(default)]
+    pub local_cost_usd: f64,
+    /// Canceled local requests whose final token usage was not reported.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub local_usage_unknown_requests: u64,
     pub tool_calls: u64,
     pub masked_results: u64,
     /// Times the local model condensed the conversation (see `compaction`).
@@ -539,6 +550,7 @@ pub(crate) fn drop_unfinished_turn(items: &mut Vec<Item>) {
 
 /// What the frontier has seen so far, and how the loop ends a turn.
 pub(crate) struct Conversation {
+    pub(crate) scoped_instructions: crate::instructions::ScopedInstructions,
     pub(crate) system: String,
     pub(crate) specs: Vec<ToolSpec>,
     /// The git tools (`None`: the workspace is not a git repository).
@@ -651,6 +663,14 @@ pub(crate) fn replay_priced(
             }
             Entry::CompactionFailed { retry_at, .. } => conv.context.retry_at = Some(retry_at),
             Entry::Steered { .. } => operator_next = true,
+            Entry::ReviewUsage { usage } => {
+                stats.cost_usd += usage.cost_usd;
+                add(&mut stats.usage, &usage.usage);
+                add(&mut stats.failed_attempt_usage, &usage.failed_usage);
+                stats.ledger.on_usage(&usage.usage, price);
+                stats.ledger.on_failed_usage(&usage.failed_usage, price);
+                stats.ledger.review.merge(&usage);
+            }
             Entry::Usage {
                 usage, cost_usd, ..
             } => {
@@ -717,6 +737,7 @@ async fn drive(
         exchange: 0,
         child: None,
         context: Default::default(),
+        scoped_instructions: Default::default(),
     };
     if resume {
         let restored = stored!(
@@ -751,6 +772,9 @@ async fn drive(
             })
         );
         let mut text = presenter.sanitize_objective(&cfg.objective);
+        if let Some(block) = crate::skills::block(cfg, presenter) {
+            text.insert_str(0, &block);
+        }
         // Project instructions come first, framed; the whole message is
         // replayed from the transcript on resume, so it never changes.
         if let Some(block) = crate::instructions::block(cfg, presenter, Some(frontier.audit())) {
@@ -816,6 +840,7 @@ pub(crate) fn tool_specs(
     git_tools: Option<&crate::git_tools::GitTools>,
 ) -> Vec<ToolSpec> {
     let mut extra = presenter.extra_tools();
+    extra.extend(crate::skills::specs(&cfg.skills));
     extra.extend(
         cfg.web
             .as_deref()
@@ -839,6 +864,11 @@ pub(crate) fn tool_specs(
         extra.push(crate::explore::spec());
     }
     let mut specs = tools::specs_with(extra);
+    if cfg.review.enabled
+        && let Some(finish) = specs.iter_mut().find(|s| s.name == "finish")
+    {
+        finish.description.push_str(" The host also runs a bounded security review of this run's changes; local opinions are advisory. Configured rule-confirmed high-severity findings must be fixed before completion.");
+    }
     // The command tool says what network its commands have.
     if let Some(run) = specs.iter_mut().find(|s| s.name == "run_command") {
         run.description = tools::run_command_description(&cfg.network);
@@ -882,6 +912,23 @@ pub(crate) async fn work(
     if let Some(child) = &conv.child {
         journal.confine(child.scope());
     }
+    let review = if cfg.review.enabled && conv.child.is_none() {
+        let baseline = crate::review::Baseline::open(
+            &cfg.workspace,
+            &cfg.run_dir,
+            stats.turns > 0,
+            Some(host.as_ref()),
+        );
+        if interrupted.load(Ordering::SeqCst) {
+            return Ok(Terminal::interrupted().into());
+        }
+        if Instant::now() >= deadline {
+            return Ok(Terminal::out_of_time().into());
+        }
+        Some(baseline?)
+    } else {
+        None
+    };
     // Read-mode `delegate` calls run together; the results of those after
     // the first wait here, by call id, until their turn to be recorded.
     let mut delegated: HashMap<String, Outcome> = HashMap::new();
@@ -972,8 +1019,12 @@ pub(crate) async fn work(
                         match &event {
                             crate::compaction::Event::Masked { positions, .. } => {
                                 stats.masked_results += positions.len() as u64;
+                                conv.scoped_instructions.clear();
                             }
-                            crate::compaction::Event::Compacted { .. } => stats.compactions += 1,
+                            crate::compaction::Event::Compacted { .. } => {
+                                stats.compactions += 1;
+                                conv.scoped_instructions.clear();
+                            }
                             crate::compaction::Event::Failed { .. } => {}
                         }
                         if let Some(a) = event.audit(conv.child.as_ref().map(|c| c.id.clone())) {
@@ -986,8 +1037,9 @@ pub(crate) async fn work(
             }
         }
         let before = estimate(items, system);
-        let positions = mask_if_needed(items, system, cfg.context_window, cfg.mask_at);
+        let positions = mask_from_estimate(items, before, cfg.context_window, cfg.mask_at);
         if !positions.is_empty() {
+            conv.scoped_instructions.clear();
             stats.masked_results += positions.len() as u64;
             noted!(
                 host,
@@ -1132,6 +1184,7 @@ pub(crate) async fn work(
 
         let mut finished = None;
         let mut replied: Option<(String, bool)> = None;
+        let mut scoped_given = false;
         delegated.clear();
         for (i, call) in response.tool_calls.iter().enumerate() {
             stats.tool_calls += 1;
@@ -1168,6 +1221,43 @@ pub(crate) async fn work(
                 )
             } else if let Some(refusal) = conv.child.as_ref().and_then(|c| c.refuse(call)) {
                 format!("error: {refusal}")
+            } else if matches!(
+                call.name.as_str(),
+                "read_file" | "edit_file" | "write_file" | "edit_protected" | "rename"
+            ) && let Some(path) = call
+                .arguments
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                && let Some(notes) = conv.scoped_instructions.for_path(
+                    cfg,
+                    presenter,
+                    Some(frontier.audit()),
+                    Path::new(path),
+                )
+            {
+                scoped_given = true;
+                format!(
+                    "{notes}\n[duet] Read these scoped instructions before continuing. This file operation was not performed; repeat it after applying the guidance."
+                )
+            } else if scoped_given
+                && !matches!(
+                    call.name.as_str(),
+                    "read_file"
+                        | "list_files"
+                        | "search"
+                        | "diff"
+                        | "list_skills"
+                        | "load_skill"
+                        | "code_nav"
+                        | "git_status"
+                        | "git_log"
+                        | "git_show"
+                        | "git_blame"
+                        | "web_search"
+                        | "web_fetch"
+                )
+            {
+                "not run: new scoped instructions were provided in this response; read them before retrying actions".to_owned()
             } else if conv.interactive
                 && let Some(to_operator) = crate::session::to_operator(&call.name, &call.arguments)
             {
@@ -1194,7 +1284,18 @@ pub(crate) async fn work(
             } {
                 format!("error: {e}")
             } else {
-                let outcome = if let Some(hub) = cfg.mcp.as_deref().filter(|h| h.owns(&call.name)) {
+                let outcome = if crate::skills::owns(&call.name) {
+                    match crate::skills::call(
+                        cfg,
+                        presenter,
+                        Some(frontier.audit()),
+                        &call.name,
+                        &call.arguments,
+                    ) {
+                        Ok(text) => Outcome::Result(text),
+                        Err(error) => Outcome::Error(error),
+                    }
+                } else if let Some(hub) = cfg.mcp.as_deref().filter(|h| h.owns(&call.name)) {
                     match hub
                         .call(
                             &call.name,
@@ -1289,6 +1390,57 @@ pub(crate) async fn work(
                 } else {
                     tools::dispatch(&mut ctx, &call.name, &call.arguments).await
                 };
+                let outcome = match (outcome, review.as_ref()) {
+                    (Outcome::Finished { summary }, Some(base)) => {
+                        let mut review_settings = cfg.review.clone();
+                        review_settings.remaining_usd =
+                            (limits.frontier_usd - stats.cost_usd).max(0.0);
+                        if let Some(second) = &review_settings.second {
+                            second.restore_spent(stats.ledger.review.cost_usd).await;
+                        }
+                        let reviewed = crate::review::finish(
+                            base,
+                            &cfg.run_dir,
+                            review_settings,
+                            presenter,
+                            frontier.audit(),
+                            || interrupted.load(Ordering::SeqCst) || Instant::now() >= deadline,
+                            Some(host.as_ref()),
+                        )
+                        .await;
+                        let usage = presenter.take_review_usage();
+                        add(&mut stats.usage, &usage.usage);
+                        add(&mut stats.failed_attempt_usage, &usage.failed_usage);
+                        stats.cost_usd += usage.cost_usd;
+                        stats.ledger.on_usage(&usage.usage, cfg.price.as_ref());
+                        stats
+                            .ledger
+                            .on_failed_usage(&usage.failed_usage, cfg.price.as_ref());
+                        stats.ledger.review.merge(&usage);
+                        if usage.calls > 0 {
+                            noted!(host, transcript.append(&Entry::ReviewUsage { usage }));
+                        }
+                        if let Err(reason) = &reviewed {
+                            frontier.audit().record(AuditEvent::SecurityReviewAborted {
+                                reason: reason.clone(),
+                            });
+                        }
+                        if interrupted.load(Ordering::SeqCst) {
+                            return Ok(Terminal::interrupted().into());
+                        }
+                        if Instant::now() >= deadline {
+                            return Ok(Terminal::out_of_time().into());
+                        }
+                        match reviewed {
+                            Ok(r) if r.blocked => Outcome::ChecksFailed(r.text),
+                            Ok(r) => Outcome::Finished {
+                                summary: format!("{summary}\n\n{}", r.text),
+                            },
+                            Err(e) => Outcome::ChecksFailed(e),
+                        }
+                    }
+                    (outcome, _) => outcome,
+                };
                 // An interrupt stops a running command at once (its process
                 // tree is killed); the call is recorded, its result is not.
                 if interrupted.load(Ordering::SeqCst)
@@ -1308,7 +1460,11 @@ pub(crate) async fn work(
                     Outcome::Error(e) => format!("error: {e}"),
                     Outcome::Finished { summary } => {
                         finished = Some(summary);
-                        "finished; checks passed".to_owned()
+                        if cfg.checks.is_empty() {
+                            "finished; no acceptance checks configured".to_owned()
+                        } else {
+                            "finished; checks passed".to_owned()
+                        }
                     }
                     Outcome::ChecksFailed(report) => {
                         finish_attempts += 1;
@@ -1397,6 +1553,68 @@ then add each further part with `edit_file` in a later response, each response w
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resume_charges_review_calls_without_adding_them_to_working_context() {
+        let review = duet_boundary::review::UsageStats {
+            calls: 2,
+            usage: Usage {
+                input: 100,
+                output: 20,
+                ..Default::default()
+            },
+            failed_usage: Usage {
+                output: 5,
+                ..Default::default()
+            },
+            seconds: 3.0,
+            cost_usd: 0.125,
+        };
+        let entries = vec![
+            Entry::Item {
+                item: Item::User {
+                    text: "task".into(),
+                },
+            },
+            Entry::ReviewUsage {
+                usage: review.clone(),
+            },
+        ];
+        let entries = serde_json::from_slice(&serde_json::to_vec(&entries).unwrap()).unwrap();
+        let mut conv = Conversation {
+            system: "system".into(),
+            specs: vec![],
+            git_tools: None,
+            items: vec![],
+            classes: HashMap::new(),
+            interactive: false,
+            steering: None,
+            exchange: 0,
+            child: None,
+            context: Default::default(),
+            scoped_instructions: Default::default(),
+        };
+        let mut stats = RunStats::default();
+        replay_priced(
+            entries,
+            &|u| (u.input + u.output) as f64 / 1000.0,
+            &mut conv,
+            &mut stats,
+        );
+        assert_eq!(
+            conv.items,
+            vec![Item::User {
+                text: "task".into()
+            }]
+        );
+        assert_eq!(stats.turns, 0);
+        assert_eq!(stats.ledger.request_tokens, 0);
+        assert_eq!(stats.usage, review.usage);
+        assert_eq!(stats.failed_attempt_usage, review.failed_usage);
+        assert_eq!(stats.ledger.review, review);
+        assert_eq!(stats.cost_usd, 0.125);
+        assert!((stats.ledger.input_usd + stats.ledger.output_usd - 0.125).abs() < 1e-12);
+    }
 
     #[test]
     fn a_new_run_configuration_turns_every_capability_off() {

@@ -21,7 +21,9 @@
 
 mod ansi;
 mod cells;
+mod interaction;
 mod panel;
+mod privacy;
 mod terminal;
 mod view;
 
@@ -39,6 +41,7 @@ use ratatui::crossterm::event::{
 use ratatui::layout::Rect;
 use ratatui::text::Line;
 use std::fs::File;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
@@ -59,6 +62,8 @@ pub enum Mode {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Status {
     pub session: String,
+    /// A short goal status supplied by the session (state, turns and task).
+    pub goal: Option<String>,
     /// `hybrid`, `top clearance` or `passthrough`.
     pub mode: String,
     pub frontier: String,
@@ -90,6 +95,9 @@ pub struct Settings {
 
 /// Commands the workspace answers itself (never sent to the session).
 pub const COMMANDS: &[&str] = &[
+    "/copy",
+    "/find",
+    "/paste",
     "/audit",
     "/data",
     "/ip",
@@ -102,6 +110,8 @@ pub const COMMANDS: &[&str] = &[
 
 /// What the workspace reports to the session.
 pub struct Hooks {
+    /// An explicitly pasted image, queued for the next message after validation.
+    pub paste_image: Arc<dyn Fn(Vec<u8>) -> Result<String, String> + Send + Sync>,
     /// A line the operator sent (continuation lines joined).
     pub line: Box<dyn Fn(String) + Send>,
     /// Ctrl-D on an empty input.
@@ -112,7 +122,16 @@ pub struct Hooks {
     pub answering: Box<dyn Fn() -> bool + Send>,
 }
 
+/// An attachment waiting for the next message. IDs are understood by `/detach`.
+#[derive(Debug, Clone)]
+pub struct AttachmentChip {
+    pub id: String,
+    pub label: String,
+}
+
 enum Msg {
+    Attachments(Vec<AttachmentChip>),
+    RecoverDraft(String),
     Lines(Vec<String>),
     Text(String),
     Diff(String),
@@ -129,6 +148,7 @@ enum Msg {
         run_dir: PathBuf,
         audit: PathBuf,
         policy: Box<duet_boundary::policy::Policy>,
+        history: Vec<Entry>,
     },
     /// A line another part of the process printed.
     Output(String),
@@ -146,6 +166,14 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    /// Restore an unsent message after an attachment failed, preserving new input.
+    pub fn recover_draft(&self, text: String) {
+        self.send(Msg::RecoverDraft(text));
+    }
+
+    pub fn attachments(&self, attachments: Vec<AttachmentChip>) {
+        self.send(Msg::Attachments(attachments));
+    }
     /// Takes over the terminal. `commands` are completed after `/`.
     pub fn start(
         hooks: Hooks,
@@ -154,7 +182,7 @@ impl Workspace {
     ) -> std::io::Result<Arc<Self>> {
         let mut tty = terminal::tty()?;
         let draw_to = tty.try_clone()?;
-        terminal::enter(&mut tty)?;
+        terminal::enter(&mut tty).inspect_err(|_| terminal::give_back())?;
         let mut screen = match Terminal::new(CrosstermBackend::new(draw_to)) {
             Ok(t) => t,
             Err(e) => {
@@ -256,11 +284,16 @@ impl Workspace {
         audit: PathBuf,
         policy: duet_boundary::policy::Policy,
     ) {
+        // Snapshot while the session is idle, before it starts publishing live
+        // entries. Reading on the UI thread can race with queued live messages
+        // and count the same usage/event twice.
+        let history = crate::runs::read_transcript(&run_dir).unwrap_or_default();
         self.send(Msg::Attach {
             ws,
             run_dir,
             audit,
             policy: Box::new(policy),
+            history,
         });
     }
 
@@ -323,35 +356,107 @@ const TICK: Duration = Duration::from_millis(120);
 /// workspace's own).
 const DESCRIBED: &[(&str, &str)] = &[
     ("/help", "keys and commands"),
+    ("/goal", "goal status; Tab chooses start, pause or resume"),
+    ("/history", "find earlier sessions and how to resume them"),
     (
         "/status",
         "turns, tokens, cost and time against the budgets",
     ),
+    ("/models", "frontier and local models; the doctor"),
+    ("/settings", "the settings screens"),
+    ("/copy", "copy the latest reply"),
+    ("/paste", "paste text or an image from the clipboard"),
+    ("/find", "search this conversation"),
+    ("/attachments", "show files queued for your next message"),
+    ("/detach", "remove a queued attachment: ID or all"),
+    ("/skills", "discover reusable workflows"),
+    ("/skill", "use a skill by name"),
+    ("/plugins", "installed extension packages"),
+    ("/command", "use a plugin command"),
     ("/diff", "what changed, against the last commit"),
     ("/undo", "revert the file writes of the last turn"),
     ("/stop", "end duet's turn after its current step"),
     ("/image", "attach an image to your next message"),
+    ("/attach", "attach a text file to your next message"),
     (
         "/mode",
         "this session's mode; top-clearance continues with the local model only",
     ),
-    ("/settings", "the settings screens"),
-    ("/models", "frontier and local models; the doctor"),
     ("/sensitivity", "what is sensitive; test a path or text"),
     ("/ip", "interface-only and sealed code"),
     ("/limits", "budgets and time limits"),
     ("/data", "retention; purge old runs"),
     ("/audit", "what was sent; verify the chain"),
-    ("/runs", "earlier runs and sessions"),
+    ("/runs", "browse recorded activity and changed files"),
     ("/quit", "leave; the session stays open"),
     ("/close", "end the session for good"),
 ];
 
 /// Commands that take an argument: the palette puts them in the input.
-const WITH_ARGUMENT: &[&str] = &["/image", "/mode"];
+const WITH_ARGUMENT: &[&str] = &[
+    "/detach",
+    "/image",
+    "/attach",
+    "/mode",
+    "/goal start",
+    "/skill",
+    "/command",
+];
+
+const GOAL_COMMANDS: &[(&str, &str)] = &[
+    (
+        "/goal start",
+        "describe a goal; Duet continues up to 20 turns by default",
+    ),
+    ("/goal pause", "pause automatic work on the goal"),
+    (
+        "/goal resume",
+        "continue the paused goal within its remaining limits",
+    ),
+    ("/goal cancel", "end the goal"),
+    ("/goal status", "show progress and remaining goal turns"),
+];
 
 /// The `@` picker's matches shown at most.
 const PICKS: usize = 8;
+
+/// Last drawn palette geometry. A query change invalidates mouse hit testing.
+struct PalettePopup {
+    area: Rect,
+    rows: Rect,
+    first: usize,
+    query: String,
+}
+
+/// The few rows outside the cached cells, plus the full conversation's height.
+/// The viewport and clipboard request only the range they need.
+struct TranscriptLayout {
+    leading: Vec<Line<'static>>,
+    trailing: Vec<Line<'static>>,
+    total: usize,
+}
+
+impl TranscriptLayout {
+    fn rows(&self, cells: &cells::Cells, range: Range<usize>) -> Vec<Line<'static>> {
+        let chunks = std::iter::once(self.leading.as_slice())
+            .chain(cells.row_chunks())
+            .chain(std::iter::once(self.trailing.as_slice()));
+        let mut offset = 0;
+        let mut rows = Vec::new();
+        for chunk in chunks {
+            if offset >= range.end {
+                break;
+            }
+            let start = range.start.saturating_sub(offset).min(chunk.len());
+            let end = range.end.saturating_sub(offset).min(chunk.len());
+            if start < end {
+                rows.extend_from_slice(&chunk[start..end]);
+            }
+            offset += chunk.len();
+        }
+        rows
+    }
+}
 
 /// The workspace thread's state.
 pub(crate) struct State {
@@ -389,6 +494,8 @@ pub(crate) struct State {
     choices: Vec<String>,
     /// The palette's selected command; hidden after Esc until the input changes.
     palette: usize,
+    palette_start: usize,
+    palette_popup: Option<PalettePopup>,
     palette_off: Option<String>,
     /// The `@` picker: the workspace's files (read once), the selection.
     files: Option<Vec<String>>,
@@ -400,8 +507,15 @@ pub(crate) struct State {
     /// Where the conversation's text was drawn, and its first row there.
     view: Rect,
     view_top: usize,
-    /// When something was copied, and how many characters.
-    copied: Option<(Instant, usize)>,
+    /// Temporary feedback for explicit clipboard actions.
+    toast: Option<(Instant, String)>,
+    clipboard: Option<interaction::ClipboardJob>,
+    input_epoch: u64,
+    composer: Rect,
+    editor_selecting: bool,
+    attachments: Vec<AttachmentChip>,
+    find: interaction::Find,
+    palette_draft: Option<Editor>,
     /// The settings overlay: its sources until first opened, then the app.
     settings: Option<Settings>,
     app: Option<crate::app::App>,
@@ -409,7 +523,7 @@ pub(crate) struct State {
     ticked: Instant,
     started: Instant,
     dirty: bool,
-    /// The screen must be drawn whole (after Ctrl-Z).
+    /// The screen must be drawn whole (after Ctrl-Alt-Z).
     redraw: bool,
     drawn_at: Instant,
 }
@@ -440,6 +554,8 @@ impl State {
             panel: panel::Panel::default(),
             choices: Vec::new(),
             palette: 0,
+            palette_start: 0,
+            palette_popup: None,
             palette_off: None,
             files: None,
             pick: 0,
@@ -447,7 +563,14 @@ impl State {
             selecting: false,
             view: Rect::default(),
             view_top: 0,
-            copied: None,
+            toast: None,
+            clipboard: None,
+            input_epoch: 0,
+            composer: Rect::default(),
+            editor_selecting: false,
+            attachments: Vec::new(),
+            find: interaction::Find::default(),
+            palette_draft: None,
             settings: None,
             app: None,
             overlay: false,
@@ -476,6 +599,16 @@ impl State {
             self.scroll.saturating_sub(up.unsigned_abs())
         };
         self.dirty = true;
+    }
+
+    fn refresh_answering(&mut self) {
+        let answering = (self.hooks.answering)();
+        if answering != self.answering {
+            self.answering = answering;
+            self.approve = false;
+            self.input_epoch = self.input_epoch.wrapping_add(1);
+            self.dirty = true;
+        }
     }
 
     fn warn(&mut self, text: &str) {
@@ -527,6 +660,18 @@ impl State {
     fn local_command(&mut self, text: &str) -> bool {
         use crate::app::Tab;
         let tab = match text.trim() {
+            "/copy" => {
+                self.copy_reply();
+                return true;
+            }
+            "/paste" => {
+                self.paste();
+                return true;
+            }
+            "/find" => {
+                self.open_find();
+                return true;
+            }
             "/settings" => None,
             "/models" => Some(Tab::Models),
             "/sensitivity" => Some(Tab::Sensitivity),
@@ -549,11 +694,17 @@ impl State {
     /// The palette's commands for the input, when it is a command being typed.
     pub(crate) fn palette_items(&self) -> Vec<(&'static str, &'static str)> {
         let typed = self.editor.buffer();
-        if self.answering
-            || !typed.starts_with('/')
-            || typed.contains(char::is_whitespace)
-            || self.palette_off.as_deref() == Some(typed)
-        {
+        if self.answering || !typed.starts_with('/') || self.palette_off.as_deref() == Some(typed) {
+            return Vec::new();
+        }
+        if typed.starts_with("/goal ") {
+            return GOAL_COMMANDS
+                .iter()
+                .copied()
+                .filter(|(command, _)| command.starts_with(typed))
+                .collect();
+        }
+        if typed.contains(char::is_whitespace) {
             return Vec::new();
         }
         let mut items: Vec<(&'static str, &'static str)> = DESCRIBED
@@ -571,6 +722,9 @@ impl State {
 
     /// The `@` word being typed at the end of the input, if any.
     fn at_word(&self) -> Option<&str> {
+        if self.editor.cursor() != self.editor.buffer().len() {
+            return None;
+        }
         let typed = self.editor.buffer();
         let word = typed.rsplit(char::is_whitespace).next()?;
         (word.starts_with('@') && !typed.ends_with(char::is_whitespace)).then(|| &word[1..])
@@ -610,21 +764,26 @@ impl State {
             .collect()
     }
 
-    /// The conversation's rows at `width`: the welcome on an empty
-    /// session, the cells, and what runs now while duet works.
-    pub(crate) fn transcript(&mut self, width: usize, now: Instant) -> Vec<Line<'static>> {
-        let mut rows = Vec::new();
+    /// Lay out the conversation at `width`; row text stays in the cell cache
+    /// until the viewport or a clipboard selection asks for a range.
+    fn transcript(&mut self, width: usize, now: Instant) -> TranscriptLayout {
+        let mut leading = Vec::new();
         if self.cells.is_empty() && self.mode != Mode::Working {
-            rows.extend(view::welcome(self));
+            leading = view::welcome(self);
         }
-        rows.extend(self.cells.rows(width, self.details));
+        let cell_rows = self.cells.prepare_rows(width, self.details);
+        let mut trailing = Vec::new();
         if self.mode == Mode::Working
             && let Some(text) = self.feed.status_text(now)
         {
-            rows.push(Line::default());
-            rows.extend(view::working_row(self, &text, width, now));
+            trailing.push(Line::default());
+            trailing.extend(view::working_row(self, &text, width, now));
         }
-        rows
+        TranscriptLayout {
+            total: leading.len() + cell_rows + trailing.len(),
+            leading,
+            trailing,
+        }
     }
 
     /// The conversation's (row, column) under the mouse, if it is over it;
@@ -644,9 +803,11 @@ impl State {
     fn selected_text(&mut self) -> Option<String> {
         let (a, b) = self.sel?;
         let (a, b) = if a <= b { (a, b) } else { (b, a) };
-        let rows = self.transcript(self.width, Instant::now());
+        let layout = self.transcript(self.width, Instant::now());
+        let rows = layout.rows(&self.cells, a.0..b.0.saturating_add(1));
         let mut out = Vec::new();
-        for (r, row) in rows.iter().enumerate().take(b.0 + 1).skip(a.0) {
+        for (i, row) in rows.iter().enumerate() {
+            let r = a.0 + i;
             let text: String = row.spans.iter().map(|s| s.content.as_ref()).collect();
             let from = if r == a.0 { a.1 } else { 0 };
             let to = if r == b.0 { b.1 } else { usize::MAX };
@@ -658,6 +819,18 @@ impl State {
 
     fn message(&mut self, m: Msg) {
         match m {
+            Msg::Attachments(chips) => self.attachments = chips,
+            Msg::RecoverDraft(text) => {
+                if self.editor.buffer().is_empty() {
+                    self.editor.insert(&text);
+                    self.input_epoch = self.input_epoch.wrapping_add(1);
+                    self.notice("Message restored · fix the attachment before sending");
+                } else {
+                    self.cells
+                        .text(&format!("Unsent message (attachment failed):\n{text}"));
+                    self.notice("Unsent message saved in conversation · current draft preserved");
+                }
+            }
             Msg::Lines(lines) => self.cells.lines(&lines.join("\n")),
             Msg::Text(text) => {
                 self.question = Some(safe(text.trim_end()));
@@ -693,13 +866,15 @@ impl State {
                 run_dir,
                 audit,
                 policy,
+                history,
             } => {
                 let held_policy = (*policy).clone();
                 self.cells.set_held(Arc::new(move |p: &str| {
                     held_policy.is_sensitive_path(std::path::Path::new(p))
                 }));
                 self.ws = Some(ws.clone());
-                self.panel.attach(ws, run_dir, audit, *policy);
+                self.cells.set_run_dir(run_dir.clone());
+                self.panel.attach(ws, run_dir, audit, *policy, &history);
             }
             Msg::Output(line) => self.cells.output(&line),
             Msg::Remember(entries) => self.editor.remember(entries),
@@ -715,48 +890,37 @@ impl State {
     fn event(&mut self, ev: Event, tty: &mut File) {
         self.dirty = true;
         if self.overlay {
-            if let Event::Key(k) = ev
-                && k.kind != KeyEventKind::Release
-            {
-                self.overlay_key(k);
+            self.input_epoch = self.input_epoch.wrapping_add(1);
+            match ev {
+                Event::Key(k) if k.kind != KeyEventKind::Release => self.overlay_key(k),
+                Event::Paste(text) => {
+                    if let Some(app) = self.app.as_mut() {
+                        app.paste(&text);
+                    }
+                }
+                _ => {}
             }
             return;
         }
         let Event::Key(k) = ev else {
             match ev {
-                Event::Mouse(m) => match m.kind {
-                    MouseEventKind::ScrollUp => self.scroll_by(3),
-                    MouseEventKind::ScrollDown => self.scroll_by(-3),
-                    MouseEventKind::Down(MouseButton::Left) => {
-                        self.sel = self.at(m.column, m.row, false).map(|p| (p, p));
-                        self.selecting = self.sel.is_some();
+                Event::Mouse(m) => {
+                    if matches!(m.kind, MouseEventKind::Down(_) | MouseEventKind::Drag(_)) {
+                        self.input_epoch = self.input_epoch.wrapping_add(1);
                     }
-                    MouseEventKind::Drag(MouseButton::Left) if self.selecting => {
-                        // Past the edge the conversation scrolls on.
-                        if m.row < self.view.y {
-                            self.scroll_by(1);
-                        } else if m.row >= self.view.bottom() {
-                            self.scroll_by(-1);
-                        }
-                        if let (Some((a, _)), Some(p)) = (self.sel, self.at(m.column, m.row, true))
-                        {
-                            self.sel = Some((a, p));
-                        }
+                    if !self.palette_mouse(m) {
+                        self.mouse(m);
                     }
-                    MouseEventKind::Up(MouseButton::Left) if self.selecting => {
-                        self.selecting = false;
-                        match self.selected_text() {
-                            Some(text) if self.sel.is_some_and(|(a, b)| a != b) => {
-                                let n = text.chars().count();
-                                terminal::copy(&text, tty);
-                                self.copied = Some((Instant::now(), n));
-                            }
-                            _ => self.sel = None,
-                        }
+                }
+                Event::Resize(..) => self.palette_popup = None,
+                Event::Paste(text) if !self.help && !self.answering => {
+                    self.input_epoch = self.input_epoch.wrapping_add(1);
+                    if self.find.open {
+                        self.find_paste(&text);
+                    } else {
+                        self.insert_paste(&text);
                     }
-                    _ => {}
-                },
-                Event::Paste(text) => self.editor.insert(&text),
+                }
                 _ => {}
             }
             return;
@@ -764,9 +928,22 @@ impl State {
         if k.kind == KeyEventKind::Release {
             return;
         }
-        // A key ends a selection (it stays copied).
-        self.sel = None;
+        // Sending must wait for an explicitly pasted image to enter the queue.
+        if !self.answering
+            && !self.help
+            && k.code == KeyCode::Enter
+            && self.clipboard.as_ref().is_some_and(|j| j.receiving)
+        {
+            self.notice("Finishing paste… press Enter when the attachment is ready");
+            return;
+        }
+        self.input_epoch = self.input_epoch.wrapping_add(1);
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+        if self.find.open {
+            self.find_key(k);
+            return;
+        }
         if self.help {
             match k.code {
                 KeyCode::Esc | KeyCode::F(1) | KeyCode::Char('q') => self.help = false,
@@ -803,6 +980,62 @@ impl State {
             }
             return;
         }
+        if ctrl && matches!(k.code, KeyCode::Char('c' | 'C')) {
+            if let Some(text) = self.selected_text() {
+                self.copy_text(text);
+                return;
+            }
+            if shift && self.editor.selected_text().is_none() {
+                self.copy_reply();
+                return;
+            }
+        }
+        if ctrl && matches!(k.code, KeyCode::Char('f' | 'F')) {
+            self.open_find();
+            return;
+        }
+        if self.clipboard.is_some()
+            && (ctrl && matches!(k.code, KeyCode::Char('x' | 'X'))
+                || shift && k.code == KeyCode::Delete)
+        {
+            self.notice("Clipboard busy; selection kept, try cutting again in a moment");
+            return;
+        }
+        if k.code == KeyCode::F(3) {
+            self.next_find(shift);
+            return;
+        }
+        if k.code == KeyCode::Esc
+            && let Some(draft) = self.palette_draft.take()
+        {
+            self.editor = draft;
+            self.palette_off = Some(self.editor.buffer().to_owned());
+            return;
+        }
+        if k.code == KeyCode::F(4) || ctrl && shift && matches!(k.code, KeyCode::Char('p' | 'P')) {
+            if self.palette_draft.is_none() {
+                self.palette_draft = Some(std::mem::take(&mut self.editor));
+            }
+            self.editor.clear();
+            self.editor.insert("/");
+            self.palette_off = None;
+            self.palette = 0;
+            return;
+        }
+        if ctrl && matches!(k.code, KeyCode::Char('p' | 'P')) {
+            self.editor
+                .key(event::KeyEvent::new(KeyCode::End, KeyModifiers::CONTROL));
+            if !self.editor.buffer().is_empty()
+                && !self.editor.buffer().ends_with(char::is_whitespace)
+            {
+                self.editor.insert(" ");
+            }
+            self.editor.insert("@");
+            self.files = None;
+            self.pick = 0;
+            return;
+        }
+        self.sel = None;
         if k.code != KeyCode::Tab {
             self.choices.clear();
         }
@@ -810,13 +1043,32 @@ impl State {
         let palette = self.palette_items();
         if !palette.is_empty() {
             let n = palette.len();
+            self.palette = self.palette.min(n - 1);
+            let plain = k.modifiers.is_empty();
             match k.code {
-                KeyCode::Up => {
+                KeyCode::Up if plain => {
                     self.palette = (self.palette + n - 1) % n;
                     return;
                 }
-                KeyCode::Down => {
+                KeyCode::Down if plain => {
                     self.palette = (self.palette + 1) % n;
+                    return;
+                }
+                KeyCode::PageUp | KeyCode::PageDown if plain => {
+                    let step = self
+                        .palette_popup
+                        .as_ref()
+                        .map_or(1, |p| p.rows.height as usize)
+                        .max(1);
+                    self.palette = if k.code == KeyCode::PageUp {
+                        self.palette.saturating_sub(step)
+                    } else {
+                        (self.palette + step).min(n - 1)
+                    };
+                    return;
+                }
+                KeyCode::Home | KeyCode::End if plain => {
+                    self.palette = if k.code == KeyCode::Home { 0 } else { n - 1 };
                     return;
                 }
                 KeyCode::Esc => {
@@ -853,7 +1105,8 @@ impl State {
                 }
                 KeyCode::Tab | KeyCode::Enter => {
                     let chosen = picks[self.pick.min(n - 1)].clone();
-                    let typed = self.at_word().map_or(0, |w| w.chars().count());
+                    use unicode_segmentation::UnicodeSegmentation;
+                    let typed = self.at_word().map_or(0, |w| w.graphemes(true).count());
                     for _ in 0..typed {
                         self.editor.key(ratatui::crossterm::event::KeyEvent::from(
                             KeyCode::Backspace,
@@ -867,16 +1120,31 @@ impl State {
             }
         }
         match k.code {
+            KeyCode::BackTab => self.panel.switch_tab(true),
+            KeyCode::Tab if k.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.panel.switch_tab(true)
+            }
+            KeyCode::Tab
+                if !["/image ", "/attach "]
+                    .iter()
+                    .any(|p| self.editor.buffer().starts_with(p)) =>
+            {
+                self.panel.switch_tab(false)
+            }
             KeyCode::F(1) => {
                 self.help = true;
                 self.help_scroll = 0;
             }
             KeyCode::F(2) => self.open_settings(None),
-            KeyCode::Char('o' | 'O') if ctrl => self.details = !self.details,
+            KeyCode::Char('o' | 'O') if ctrl => {
+                if !self.panel.toggle_privacy_details() {
+                    self.details = !self.details;
+                }
+            }
             KeyCode::Char('t' | 'T') if ctrl => self.panel.cycle(),
-            KeyCode::Up if ctrl => self.panel.select(-1),
-            KeyCode::Down if ctrl => self.panel.select(1),
-            KeyCode::End if ctrl => self.scroll = 0,
+            KeyCode::Up if ctrl && !shift => self.panel.select(-1),
+            KeyCode::Down if ctrl && !shift => self.panel.select(1),
+            KeyCode::End if ctrl && !shift && self.editor.buffer().is_empty() => self.scroll = 0,
             KeyCode::PageUp if ctrl => self.panel.scroll_diff(-(self.page as isize)),
             KeyCode::PageDown if ctrl => self.panel.scroll_diff(self.page as isize),
             KeyCode::PageUp => self.scroll_by(self.page.saturating_sub(2).max(1) as isize),
@@ -896,7 +1164,12 @@ impl State {
     fn outcome(&mut self, outcome: Outcome, tty: &mut File) {
         match outcome {
             Outcome::Edited => {}
+            Outcome::Copy(text) => self.copy_text(text),
+            Outcome::Paste => self.paste(),
             Outcome::Submit(text) => {
+                if let Some(draft) = self.palette_draft.take() {
+                    self.editor = draft;
+                }
                 if self.local_command(&text) {
                     return;
                 }
@@ -969,14 +1242,16 @@ fn fuzzy(query: &str, path: &str) -> Option<i64> {
 
 /// The part of `text` between display columns `from` and `to`.
 fn columns(text: &str, from: usize, to: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
+    use unicode_segmentation::UnicodeSegmentation;
+    use unicode_width::UnicodeWidthStr;
     let mut col = 0;
     let mut out = String::new();
-    for c in text.chars() {
-        if col >= from && col < to {
-            out.push(c);
+    for grapheme in text.graphemes(true) {
+        let width = grapheme.width();
+        if col < to && col + width > from {
+            out.push_str(grapheme);
         }
-        col += c.width().unwrap_or(0);
+        col += width;
     }
     out
 }
@@ -1007,9 +1282,10 @@ fn run(
         match event::poll(Duration::from_millis(30)) {
             Ok(true) => {
                 while let Ok(ev) = event::read() {
+                    s.refresh_answering();
                     s.event(ev, tty);
                     if std::mem::take(&mut s.redraw) {
-                        // Back from Ctrl-Z (or Ctrl-L): the screen is drawn whole.
+                        // Back from Ctrl-Alt-Z (or Ctrl-L): the screen is drawn whole.
                         let _ = screen.clear();
                     }
                     if !matches!(event::poll(Duration::ZERO), Ok(true)) {
@@ -1024,12 +1300,8 @@ fn run(
                 std::thread::sleep(Duration::from_millis(50));
             }
         }
-        let answering = (s.hooks.answering)();
-        if answering != s.answering {
-            s.answering = answering;
-            s.approve = false;
-            s.dirty = true;
-        }
+        s.refresh_answering();
+        s.poll_clipboard(tty);
         if s.mode == Mode::Working {
             // The files duet writes show as it writes them.
             s.panel.refresh(false);
@@ -1044,7 +1316,14 @@ fn run(
             s.dirty = true;
         }
         let now = Instant::now();
-        let ticking = s.mode == Mode::Working || s.mode == Mode::Hidden;
+        if s.toast
+            .as_ref()
+            .is_some_and(|(at, _)| at.elapsed() >= Duration::from_secs(6))
+        {
+            s.toast = None;
+            s.dirty = true;
+        }
+        let ticking = s.mode == Mode::Working || s.mode == Mode::Hidden || s.clipboard.is_some();
         if s.dirty || (ticking && now.duration_since(s.drawn_at) >= TICK) {
             let _ = screen.draw(|f| view::draw(f, s, now));
             s.dirty = false;
@@ -1063,6 +1342,7 @@ mod tests {
 
     fn hooks(answering: Arc<AtomicBool>, sent: Arc<Mutex<Vec<String>>>) -> Hooks {
         Hooks {
+            paste_image: Arc::new(|_| Err("clipboard unavailable in tests".into())),
             line: Box::new(move |l| sent.lock().unwrap().push(l)),
             eof: Box::new(|| {}),
             interrupt: Box::new(|| Some("interrupt: stopping this turn".into())),
@@ -1192,10 +1472,7 @@ mod tests {
             rows[1].contains("hybrid · frontier glm-5.3-flash · local omlx-coding"),
             "{out}"
         );
-        assert!(
-            rows[1].contains("sensitive values stay on this machine"),
-            "{out}"
-        );
+        assert!(rows[1].contains("privacy boundary active"), "{out}");
         assert!(
             out.contains("What are we working on?"),
             "the welcome: {out}"
@@ -1221,7 +1498,7 @@ mod tests {
             "no welcome once work began"
         );
         assert!(
-            out.contains("● read  src/lib.rs  ◦ values replaced by placeholders"),
+            out.contains("● read  src/lib.rs · done  ◦ values replaced by placeholders"),
             "{out}"
         );
         assert!(
@@ -1229,7 +1506,7 @@ mod tests {
             "what the frontier saw: {out}"
         );
         assert!(out.contains("more lines · Ctrl-O"), "folded: {out}");
-        assert!(out.contains("edit  src/lib.rs  ◦ +2 −1"), "{out}");
+        assert!(out.contains("edit  src/lib.rs · done  ◦ +2 −1"), "{out}");
         assert!(
             out.contains("+ pub mod b;") && out.contains("- pub fn a() {}"),
             "the diff: {out}"
@@ -1263,6 +1540,98 @@ mod tests {
     }
 
     #[test]
+    fn journal_shows_local_questions_source_status_and_filtered_answer() {
+        let (mut s, _, _) = state();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("handles")).unwrap();
+        std::fs::write(dir.path().join("handles/h1.source"), "specs/game.md").unwrap();
+        std::fs::write(dir.path().join("handles/h1"), "RAW_HANDLE_CANARY").unwrap();
+        s.cells.set_run_dir(dir.path().to_owned());
+        s.cells
+            .set_restore(Arc::new(|t| t.replace("⟨secret#1⟩", "RESTORED_CANARY")));
+        s.message(Msg::Entry(Box::new(Entry::Item {
+            item: Item::Assistant {
+                text: String::new(), reasoning: None, replay: None,
+                tool_calls: vec![call("local1", "ask_local", serde_json::json!({
+                    "handle":"h1", "questions":["What are the jump controls?", "Explain ⟨secret#1⟩\nand the treasure rules."]
+                }))],
+            },
+        })));
+        let pending = screen(&mut s, 100, 30);
+        assert!(pending.contains("ask local  h1 · running"), "{pending}");
+        assert!(pending.contains("Source: specs/game.md"), "{pending}");
+        assert!(
+            pending.contains("Q1: What are the jump controls?"),
+            "{pending}"
+        );
+        assert!(pending.contains("Q2: Explain ⟨secret#1⟩"), "{pending}");
+        assert!(pending.contains("and the treasure rules."), "{pending}");
+        assert!(!pending.contains("Prepared answer"));
+        assert!(!pending.contains("CANARY"));
+        assert!(!pending.contains("on this machine"));
+        s.message(Msg::Entry(Box::new(Entry::Item {
+            item: Item::ToolResult {
+                call_id: "local1".into(),
+                content: "Space jumps.\n⟨redacted:copied-sensitive-text⟩".into(),
+            },
+        })));
+        s.message(Msg::Entry(Box::new(Entry::Shown {
+            call_id: "local1".into(),
+            class: duet_boundary::view::ViewClass::LocalAnswer,
+        })));
+        let answered = screen(&mut s, 100, 30);
+        assert!(answered.contains("ask local  h1 · done"), "{answered}");
+        assert!(answered.contains("1 redaction(s) in result"), "{answered}");
+        assert!(
+            answered.contains("Prepared answer (filtered for the frontier)"),
+            "{answered}"
+        );
+        assert!(
+            answered.contains("⟨redacted:copied-sensitive-text⟩"),
+            "{answered}"
+        );
+        assert!(!answered.contains("CANARY"));
+        if let Ok(path) = std::env::var("DUET_JOURNAL_PREVIEW") {
+            std::fs::write(path, answered).unwrap();
+        }
+    }
+
+    #[test]
+    fn journal_keeps_full_command_read_range_and_local_failure() {
+        let (mut s, _, _) = state();
+        let command = format!(
+            "cat /{}\nprintf 'LAST_COMMAND_LINE'",
+            "long_path/".repeat(12)
+        );
+        s.message(Msg::Entry(Box::new(Entry::Item {
+            item: Item::Assistant {
+                text: String::new(), reasoning: None, replay: None,
+                tool_calls: vec![
+                    call("cmd", "run_command", serde_json::json!({"command":command})),
+                    call("read", "read_raw", serde_json::json!({"handle":"h1", "start_line":40, "end_line":90})),
+                    call("ask", "ask_local", serde_json::json!({"handle":"h1", "question":"What controls are specified?"})),
+                ],
+            },
+        })));
+        s.message(Msg::Entry(Box::new(Entry::Item {
+            item: Item::ToolResult {
+                call_id: "ask".into(),
+                content: "error: local model unavailable".into(),
+            },
+        })));
+        let shown = screen(&mut s, 100, 40);
+        assert!(shown.contains("LAST_COMMAND_LINE"), "{shown}");
+        assert!(shown.contains("lines 40–90"), "{shown}");
+        assert!(shown.contains("ask local  h1 · failed"), "{shown}");
+        assert!(
+            shown.contains("Question: What controls are specified?"),
+            "{shown}"
+        );
+        assert!(shown.contains("error: local model unavailable"), "{shown}");
+        assert!(!shown.contains("Prepared answer"));
+    }
+
+    #[test]
     fn an_edit_of_a_sensitive_file_is_named_never_shown() {
         let (mut s, _, _) = state();
         s.cells.set_held(Arc::new(|p: &str| p == ".env"));
@@ -1280,7 +1649,7 @@ mod tests {
         })));
         let out = screen(&mut s, 100, 30);
         assert!(
-            out.contains("write  .env  ◦ sensitive: content not shown"),
+            out.contains("write  .env · running  ◦ sensitive: content not shown"),
             "{out}"
         );
         assert!(!out.contains("sk_live"), "{out}");
@@ -1348,19 +1717,213 @@ mod tests {
         let mut tty = tempfile::tempfile().unwrap();
         type_text(&mut s, "/s", &mut tty);
         let out = screen(&mut s, 100, 30);
-        assert!(out.contains("commands · 1/"), "{out}");
+        assert!(out.contains("Commands ·"), "{out}");
         assert!(
             out.contains("/status") && out.contains("turns, tokens, cost"),
             "{out}"
         );
         assert!(out.contains("/settings"), "{out}");
-        // Enter runs the selected command.
+        // Enter runs the selected command, independent of catalog ordering.
+        s.palette = s
+            .palette_items()
+            .iter()
+            .position(|(name, _)| *name == "/status")
+            .unwrap();
         s.event(key(KeyCode::Enter), &mut tty);
         assert_eq!(*sent.lock().unwrap(), ["/status"]);
         // Tab puts a command that takes an argument into the input.
         type_text(&mut s, "/ima", &mut tty);
         s.event(key(KeyCode::Tab), &mut tty);
         assert_eq!(s.editor.buffer(), "/image ");
+    }
+
+    #[test]
+    fn goal_commands_complete_and_history_reaches_the_session() {
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        type_text(&mut s, "/goal", &mut tty);
+        s.event(key(KeyCode::Tab), &mut tty);
+        assert_eq!(s.editor.buffer(), "/goal ");
+        assert_eq!(s.palette_items().len(), 5);
+        s.event(key(KeyCode::Enter), &mut tty);
+        assert_eq!(s.editor.buffer(), "/goal start ");
+        assert!(sent.lock().unwrap().is_empty());
+        type_text(&mut s, "fix the tests", &mut tty);
+        s.event(key(KeyCode::Enter), &mut tty);
+        for command in [
+            "/goal",
+            "/goal pause",
+            "/goal resume",
+            "/goal cancel",
+            "/goal status",
+            "/goal improve the docs",
+            "/history",
+            "/history 20261001-test",
+        ] {
+            type_text(&mut s, command, &mut tty);
+            s.event(key(KeyCode::Enter), &mut tty);
+        }
+        assert_eq!(
+            *sent.lock().unwrap(),
+            [
+                "/goal start fix the tests",
+                "/goal",
+                "/goal pause",
+                "/goal resume",
+                "/goal cancel",
+                "/goal status",
+                "/goal improve the docs",
+                "/history",
+                "/history 20261001-test",
+            ]
+        );
+        assert!(!s.overlay, "history is handled by the session");
+
+        s.status = status();
+        s.status.goal = Some("Active · 3/20 turns · Fix the tests".into());
+        s.panel.tab = Some(panel::Tab::Session);
+        assert!(screen(&mut s, 160, 40).contains("Active · 3/20 turns"));
+    }
+
+    #[test]
+    fn tab_cycles_panel_tabs_in_both_directions_without_changing_the_message() {
+        use panel::Tab;
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        screen(&mut s, 130, 30);
+        type_text(&mut s, "continue building", &mut tty);
+        for tab in [Tab::Privacy, Tab::Session, Tab::Changes] {
+            s.event(key(KeyCode::Tab), &mut tty);
+            assert_eq!(s.panel.tab, Some(tab));
+        }
+        for tab in [Tab::Session, Tab::Privacy, Tab::Changes] {
+            s.event(key(KeyCode::BackTab), &mut tty);
+            assert_eq!(s.panel.tab, Some(tab));
+        }
+        assert_eq!(s.editor.buffer(), "continue building");
+        assert!(sent.lock().unwrap().is_empty());
+        let (mut narrow, _, _) = state();
+        screen(&mut narrow, 100, 30);
+        assert_eq!(narrow.panel.tab, None);
+        narrow.event(key(KeyCode::Tab), &mut tty);
+        assert_eq!(narrow.panel.tab, Some(Tab::Changes));
+    }
+
+    #[test]
+    fn command_menu_fits_available_height_and_keeps_its_last_command_visible() {
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        type_text(&mut s, "/", &mut tty);
+        let count = s.palette_items().len();
+        let tall = screen(&mut s, 120, 45);
+        assert!(
+            tall.contains(&format!("Commands · {count} total")),
+            "{tall}"
+        );
+        assert!(tall.contains("/goal") && tall.contains("/close"), "{tall}");
+        assert_eq!(
+            s.palette_popup.as_ref().unwrap().rows.height as usize,
+            count
+        );
+        let short = screen(&mut s, 40, 10);
+        let visible = s.palette_popup.as_ref().unwrap().rows.height as usize;
+        assert!(visible > 0 && visible < count);
+        assert!(short.contains("more") && short.contains("↓"), "{short}");
+        s.event(key(KeyCode::PageDown), &mut tty);
+        assert_eq!(s.palette, visible);
+        s.event(key(KeyCode::End), &mut tty);
+        let end = screen(&mut s, 40, 10);
+        assert_eq!(s.palette, count - 1);
+        assert!(end.contains("/close") && end.contains("above"), "{end}");
+        let popup = s.palette_popup.as_ref().unwrap();
+        assert!(s.palette >= popup.first && s.palette < popup.first + popup.rows.height as usize);
+        s.event(key(KeyCode::Home), &mut tty);
+        assert_eq!(s.palette, 0);
+        assert!(sent.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn menu_mouse_navigation_stays_in_menu_and_never_runs_a_clicked_command() {
+        use ratatui::crossterm::event::MouseEvent;
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        s.editor.insert("/");
+        screen(&mut s, 100, 18);
+        let area = s.palette_popup.as_ref().unwrap().rows;
+        let mouse = |kind, column, row| {
+            Event::Mouse(MouseEvent {
+                kind,
+                column,
+                row,
+                modifiers: KeyModifiers::NONE,
+            })
+        };
+        s.event(
+            mouse(MouseEventKind::ScrollDown, area.x + 2, area.y),
+            &mut tty,
+        );
+        assert_eq!(s.palette, 3);
+        assert_eq!(s.scroll, 0);
+        screen(&mut s, 100, 18);
+        let popup = s.palette_popup.as_ref().unwrap();
+        let target = popup.first + popup.rows.height as usize - 1;
+        let x = popup.rows.x + 2;
+        let y = popup.rows.bottom() - 1;
+        s.event(
+            mouse(MouseEventKind::Down(MouseButton::Left), x, y),
+            &mut tty,
+        );
+        assert_eq!(s.palette, target);
+        assert_eq!(s.editor.buffer(), "/");
+        assert!(sent.lock().unwrap().is_empty());
+        assert!(s.sel.is_none());
+        // Summary/footer is not a command row and cannot change the selection.
+        s.event(
+            mouse(MouseEventKind::Down(MouseButton::Left), x, y + 1),
+            &mut tty,
+        );
+        assert_eq!(s.palette, target);
+        // A query can change before the next draw; old row geometry must not select it.
+        s.editor.insert("zzzz");
+        s.event(
+            mouse(MouseEventKind::Down(MouseButton::Left), x, y),
+            &mut tty,
+        );
+        assert_eq!(s.palette, target);
+        screen(&mut s, 100, 18);
+        assert!(s.palette_popup.is_none());
+    }
+
+    #[test]
+    fn pasted_menu_filters_reset_selection_and_f4_paging_preserves_the_draft() {
+        let (mut s, _, sent) = state();
+        let mut tty = tempfile::tempfile().unwrap();
+        s.editor.insert("draft\nsecond line");
+        s.editor
+            .key(event::KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT));
+        let cursor = s.editor.cursor();
+        let selection = s.editor.selection_range();
+        s.event(key(KeyCode::F(4)), &mut tty);
+        screen(&mut s, 80, 18);
+        s.event(key(KeyCode::End), &mut tty);
+        s.event(Event::Paste("stat".into()), &mut tty);
+        assert_eq!(s.palette, 0);
+        assert_eq!(
+            s.palette_items(),
+            vec![(
+                "/status",
+                "turns, tokens, cost and time against the budgets"
+            )]
+        );
+        s.event(key(KeyCode::PageDown), &mut tty);
+        assert_eq!(s.palette, 0);
+        let shown = screen(&mut s, 40, 10);
+        assert!(shown.contains("/status"), "{shown}");
+        s.event(key(KeyCode::Esc), &mut tty);
+        assert_eq!(s.editor.buffer(), "draft\nsecond line");
+        assert_eq!(s.editor.cursor(), cursor);
+        assert_eq!(s.editor.selection_range(), selection);
+        assert!(sent.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1414,6 +1977,86 @@ mod tests {
     }
 
     #[test]
+    fn transcript_ranges_preserve_cell_boundaries_and_cross_cell_selection() {
+        let (mut s, _, _) = state();
+        let now = Instant::now();
+        let welcome = s.transcript(80, now);
+        let all = welcome.rows(&s.cells, 0..welcome.total);
+        assert!(
+            all.iter()
+                .any(|line| line.to_string().contains("What are we working on?"))
+        );
+        assert_eq!(welcome.rows(&s.cells, 1..3), all[1..3]);
+
+        for text in ["first user message", "第二个 message", "last user message"] {
+            s.cells.you(text);
+        }
+        let layout = s.transcript(20, now);
+        let all = layout.rows(&s.cells, 0..layout.total);
+        assert_eq!(all.len(), layout.total);
+        // Range boundaries can land in a title, wrapped body, or separator.
+        for start in 0..=all.len() {
+            let end = (start + 4).min(all.len());
+            assert_eq!(layout.rows(&s.cells, start..end), all[start..end]);
+        }
+        let first = all
+            .iter()
+            .position(|line| line.to_string().contains("first user message"))
+            .unwrap();
+        let last = all
+            .iter()
+            .position(|line| line.to_string().contains("last user message"))
+            .unwrap();
+        s.width = 20;
+        s.sel = Some(((first, 2), (last, usize::MAX)));
+        let copied = s.selected_text().unwrap();
+        assert!(copied.starts_with("first user message"), "{copied}");
+        assert!(copied.contains("第二个 message"), "{copied}");
+        assert!(copied.ends_with("last user message"), "{copied}");
+
+        // Resizing refreshes the per-cell cache and the global row offsets.
+        let narrow = s.transcript(10, now);
+        assert!(narrow.total > layout.total);
+        let widened = s.transcript(20, now);
+        assert_eq!(widened.rows(&s.cells, 0..widened.total), all);
+    }
+
+    #[test]
+    #[ignore = "manual viewport microbenchmark; run with --ignored --nocapture"]
+    fn benchmark_cached_transcript_viewport() {
+        use std::hint::black_box;
+        let (mut s, _, _) = state();
+        for i in 0..2_000 {
+            s.cells.you(&format!(
+                "Message {i}: {}",
+                "cached conversation content ".repeat(4)
+            ));
+        }
+        let total = s.transcript(80, Instant::now()).total;
+        let viewport = total.saturating_sub(30)..total;
+        let iterations = 100;
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let layout = s.transcript(80, Instant::now());
+            // Previous draw path materialized the entire conversation, then
+            // cloned the visible slice once more for selection highlighting.
+            let all = layout.rows(&s.cells, 0..layout.total);
+            black_box(all[viewport.clone()].to_vec());
+        }
+        let full = start.elapsed();
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let layout = s.transcript(80, Instant::now());
+            black_box(layout.rows(&s.cells, viewport.clone()));
+        }
+        let visible = start.elapsed();
+        eprintln!(
+            "{iterations} cached draws; {total} total rows, 30 visible: whole transcript {full:?}; viewport {visible:?} ({:.1}x)",
+            full.as_secs_f64() / visible.as_secs_f64()
+        );
+    }
+
+    #[test]
     fn a_sent_message_reaches_the_session_and_the_conversation() {
         let (mut s, _, sent) = state();
         let mut tty = tempfile::tempfile().unwrap();
@@ -1434,7 +2077,7 @@ mod tests {
             "{out}"
         );
         s.event(ctrl('t'), &mut tty);
-        assert!(screen(&mut s, 130, 24).contains("nothing withheld so far"));
+        assert!(screen(&mut s, 130, 24).contains("Privacy activity"));
         s.event(ctrl('t'), &mut tty);
         assert!(screen(&mut s, 130, 24).contains("starts with your first message"));
         s.event(ctrl('t'), &mut tty);
@@ -1449,7 +2092,30 @@ mod tests {
     }
 
     #[test]
-    fn the_privacy_view_counts_what_the_boundary_withheld() {
+    fn journal_groups_repeated_filtering_but_keeps_the_first_concrete_description() {
+        let (mut s, _, _) = state();
+        let note = "sanitize: history item 2 · call c7 · edit_file · src/client.rs · arguments.new: filtered line(s) 2; replaced with ⟨secret:KEY#1⟩ (secret; first seen .env)";
+        for turn in [3, 4] {
+            s.message(Msg::Entry(Box::new(Entry::Usage {
+                turn,
+                usage: Default::default(),
+                cost_usd: 0.0,
+                interventions: vec![note.into()],
+            })));
+        }
+        let out = screen(&mut s, 100, 40);
+        assert_eq!(out.matches("call c7").count(), 1, "{out}");
+        assert!(out.contains("src/client.rs"), "{out}");
+        assert!(out.contains("first seen .env"), "{out}");
+        assert!(out.contains("0 new details, 1 repeated"), "{out}");
+        assert!(out.contains("history is checked on every request"), "{out}");
+        if let Ok(path) = std::env::var("DUET_FILTER_PREVIEW") {
+            std::fs::write(path, out).unwrap();
+        }
+    }
+
+    #[test]
+    fn the_privacy_view_shows_filtering_and_selected_read_details() {
         let (mut s, _, _) = state();
         let mut tty = tempfile::tempfile().unwrap();
         a_turn(&mut s);
@@ -1463,12 +2129,34 @@ mod tests {
         screen(&mut s, 130, 40);
         s.event(ctrl('t'), &mut tty);
         let out = screen(&mut s, 130, 40);
-        assert!(out.contains("1 result(s): values replaced by"), "{out}");
-        assert!(out.contains("turn 3: 2 values replaced"), "{out}");
+        assert!(out.contains("Privacy · action"), "{out}");
+        assert!(out.contains("Checked model request"), "{out}");
+        assert!(out.contains("◦ privacy filtering"), "the cell too: {out}");
+        s.event(ctrl('o'), &mut tty);
+        let expanded = screen(&mut s, 130, 40);
         assert!(
-            out.contains("◦ withheld from the frontier"),
-            "the cell too: {out}"
+            expanded.contains("2 values replaced (EMAIL, CARD)"),
+            "{expanded}"
         );
+        s.event(ctrl('o'), &mut tty);
+        s.event(
+            ratatui::crossterm::event::Event::Key(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::CONTROL,
+            )),
+            &mut tty,
+        );
+        let selected = screen(&mut s, 130, 40);
+        assert!(selected.contains("Ran command"), "{selected}");
+        s.event(
+            ratatui::crossterm::event::Event::Key(KeyEvent::new(
+                KeyCode::Down,
+                KeyModifiers::CONTROL,
+            )),
+            &mut tty,
+        );
+        let selected = screen(&mut s, 130, 40);
+        assert!(selected.contains("src/lib.rs"), "{selected}");
     }
 
     #[test]
@@ -1514,7 +2202,7 @@ mod tests {
         s.event(key(KeyCode::F(1)), &mut tty);
         let out = screen(&mut s, 110, 40);
         assert!(
-            out.contains("keys and commands") && out.contains("Ctrl-T"),
+            out.contains("keys and commands") && out.contains("Ctrl-V"),
             "{out}"
         );
         s.event(key(KeyCode::Esc), &mut tty);

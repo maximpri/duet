@@ -93,6 +93,51 @@ pub const PRESETS: &[Preset] = &[
         context: "not reported over HTTP",
         example_model: "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
     },
+    Preset {
+        name: "jan",
+        label: "Jan local API",
+        port: 1337,
+        base_path: "/v1",
+        models: "GET /v1/models (requires Jan's local API key)",
+        context: "check the model's loaded context in Jan",
+        example_model: "the model id shown by Jan",
+    },
+    Preset {
+        name: "gpt4all",
+        label: "GPT4All",
+        port: 4891,
+        base_path: "/v1",
+        models: "GET /v1/models",
+        context: "check the model's context in GPT4All",
+        example_model: "the model name shown by GPT4All",
+    },
+    Preset {
+        name: "koboldcpp",
+        label: "KoboldCpp",
+        port: 5001,
+        base_path: "/v1",
+        models: "GET /v1/models",
+        context: "GET /api/extra/true_max_context_length",
+        example_model: "the loaded model id",
+    },
+    Preset {
+        name: "localai",
+        label: "LocalAI",
+        port: 8080,
+        base_path: "/v1",
+        models: "GET /v1/models",
+        context: "check the served model's context in LocalAI",
+        example_model: "the served model id",
+    },
+    Preset {
+        name: "litellm",
+        label: "LiteLLM proxy",
+        port: 4000,
+        base_path: "/v1",
+        models: "GET /v1/models (may require a proxy key)",
+        context: "depends on the model behind the proxy",
+        example_model: "the configured model alias",
+    },
 ];
 
 /// A known frontier provider: endpoint, a default model, the key variable and
@@ -125,7 +170,7 @@ pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
         name: "anthropic",
         label: "Anthropic (Messages API)",
         base_url: "https://api.anthropic.com/v1",
-        model: "claude-opus-5-5",
+        model: "claude-sonnet-5-5",
         api_key_env: "ANTHROPIC_API_KEY",
         dialect: "anthropic",
         vision: true,
@@ -134,10 +179,100 @@ pub const FRONTIER_PRESETS: &[FrontierPreset] = &[
         name: "openai",
         label: "OpenAI (Responses API)",
         base_url: "https://api.openai.com/v1",
-        model: "gpt-5.5",
+        model: "gpt-6.1-sol",
         api_key_env: "OPENAI_API_KEY",
         dialect: "responses",
         vision: true,
+    },
+    FrontierPreset {
+        name: "gemini",
+        label: "Google Gemini",
+        base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+        model: "gemini-3.8-flash",
+        api_key_env: "GEMINI_API_KEY",
+        dialect: "chat",
+        vision: true,
+    },
+    FrontierPreset {
+        name: "openrouter",
+        label: "OpenRouter",
+        base_url: "https://openrouter.ai/api/v1",
+        model: "z-ai/glm-5.3-flash",
+        api_key_env: "OPENROUTER_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "deepseek",
+        label: "DeepSeek",
+        base_url: "https://api.deepseek.com",
+        model: "deepseek-v4-pro",
+        api_key_env: "DEEPSEEK_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "xai",
+        label: "xAI",
+        base_url: "https://api.x.ai/v1",
+        model: "grok-4.7",
+        api_key_env: "XAI_API_KEY",
+        dialect: "chat",
+        vision: true,
+    },
+    FrontierPreset {
+        name: "mistral",
+        label: "Mistral AI",
+        base_url: "https://api.mistral.ai/v1",
+        model: "",
+        api_key_env: "MISTRAL_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "groq",
+        label: "GroqCloud",
+        base_url: "https://api.groq.com/openai/v1",
+        model: "openai/gpt-oss-120b",
+        api_key_env: "GROQ_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "cerebras",
+        label: "Cerebras Inference",
+        base_url: "https://api.cerebras.ai/v1",
+        model: "gpt-oss-120b",
+        api_key_env: "CEREBRAS_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "together",
+        label: "Together AI",
+        base_url: "https://api.together.ai/v1",
+        model: "",
+        api_key_env: "TOGETHER_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "fireworks",
+        label: "Fireworks AI",
+        base_url: "https://api.fireworks.ai/inference/v1",
+        model: "",
+        api_key_env: "FIREWORKS_API_KEY",
+        dialect: "chat",
+        vision: false,
+    },
+    FrontierPreset {
+        name: "qwen",
+        label: "Alibaba Qwen (Singapore)",
+        base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+        model: "qwen-plus",
+        api_key_env: "DASHSCOPE_API_KEY",
+        dialect: "chat",
+        vision: false,
     },
 ];
 
@@ -159,6 +294,8 @@ pub fn loopback_ports() -> Vec<u16> {
             ports.push(p.port);
         }
     }
+    // Jan CLI serves on 6767; Jan Desktop commonly uses 1337.
+    ports.push(6767);
     ports
 }
 
@@ -170,12 +307,17 @@ pub struct Server {
     /// OpenAI-compatible server (oMLX, mlx_lm.server and others look alike).
     pub backend: Option<&'static str>,
     pub models: Vec<String>,
+    /// Environment variable used for discovery and later model requests.
+    pub api_key_env: Option<&'static str>,
 }
+
+const MAX_LISTING_BYTES: usize = 4 * 1024 * 1024;
 
 fn client(timeout: Duration) -> Option<reqwest::Client> {
     reqwest::Client::builder()
         .connect_timeout(timeout.min(Duration::from_millis(500)))
         .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()
 }
@@ -205,7 +347,7 @@ async fn get_json_with(
     for (k, v) in headers {
         rb = rb.header(k, v);
     }
-    let resp = rb.send().await.map_err(|e| {
+    let mut resp = rb.send().await.map_err(|e| {
         if e.is_connect() {
             "connection refused".to_owned()
         } else if e.is_timeout() {
@@ -218,9 +360,24 @@ async fn get_json_with(
     if !status.is_success() {
         return Err(format!("HTTP {}", status.as_u16()));
     }
-    resp.json::<Value>()
+    if resp
+        .content_length()
+        .is_some_and(|n| n > MAX_LISTING_BYTES as u64)
+    {
+        return Err("model listing exceeds size limit".into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|_| "reply is not JSON".to_owned())
+        .map_err(|_| "model listing read failed")?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_LISTING_BYTES {
+            return Err("model listing exceeds size limit".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|_| "reply is not JSON".to_owned())
 }
 
 /// Model ids in an OpenAI-style `/models` listing.
@@ -228,10 +385,101 @@ pub fn model_ids(listing: &Value) -> Vec<String> {
     listing
         .get("data")
         .and_then(Value::as_array)
+        .or_else(|| listing.as_array())
         .into_iter()
         .flatten()
         .filter_map(|m| m.get("id").and_then(Value::as_str).map(str::to_owned))
         .collect()
+}
+
+/// Models suitable for Duet's tool-driven text work, when a provider exposes
+/// capability metadata. Unknown capabilities are left for an explicit choice
+/// and `doctor --online` rather than guessed from a marketing label.
+pub fn agent_model_ids(listing: &Value) -> Vec<String> {
+    let entries = listing
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| listing.get("models").and_then(Value::as_array))
+        .or_else(|| listing.as_array());
+    let Some(entries) = entries else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = entries
+        .iter()
+        .filter(|m| {
+            let caps = m.get("capabilities");
+            !matches!(
+                caps.and_then(|c| c.get("completion_chat"))
+                    .and_then(Value::as_bool),
+                Some(false)
+            ) && !matches!(
+                caps.and_then(|c| c.get("function_calling"))
+                    .and_then(Value::as_bool),
+                Some(false)
+            ) && !matches!(
+                m.get("supports_tool_calls").and_then(Value::as_bool),
+                Some(false)
+            )
+        })
+        .filter_map(|m| {
+            m.get("id")
+                .or_else(|| m.get("name"))
+                .and_then(Value::as_str)
+        })
+        .filter(|id| id.len() <= 200 && !id.chars().any(char::is_control))
+        .filter(|id| {
+            let id = id.to_ascii_lowercase();
+            ![
+                "embedding",
+                "embed",
+                "rerank",
+                "whisper",
+                "transcrib",
+                "tts",
+                "moderation",
+                "guard",
+                "image-generation",
+                "flux",
+                "diffusion",
+                "video",
+                "realtime",
+                "audio",
+            ]
+            .iter()
+            .any(|word| id.contains(word))
+        })
+        .map(str::to_owned)
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+/// A model listing can advertise image input under several common schemas.
+/// An explicit false overrides a preset's default capability claim.
+pub fn model_vision_capability(listing: &Value, model: &str) -> Option<bool> {
+    let entry = listing
+        .get("data")
+        .and_then(Value::as_array)
+        .or_else(|| listing.as_array())
+        .into_iter()
+        .flatten()
+        .find(|m| m.get("id").and_then(Value::as_str) == Some(model));
+    let entry = entry?;
+    if let Some(vision) = entry
+        .get("capabilities")
+        .and_then(|v| v.get("vision"))
+        .and_then(Value::as_bool)
+    {
+        return Some(vision);
+    }
+    let modalities = entry
+        .get("architecture")
+        .and_then(|v| v.get("input_modalities"))
+        .or_else(|| entry.get("input_modalities"));
+    modalities
+        .and_then(Value::as_array)
+        .map(|list| list.iter().any(|v| v.as_str() == Some("image")))
 }
 
 /// The models `base_url` lists (`GET <base_url>/models`), as the raw listing.
@@ -262,12 +510,27 @@ pub async fn list_frontier_models(
     if let Some(k) = key {
         headers.extend(dialect.auth_headers(k));
     }
-    get_json_with(
+    let result = get_json_with(
         &client,
         &format!("{}/models", base_url.trim_end_matches('/')),
         &headers,
     )
-    .await
+    .await;
+    // Fireworks publishes its model catalog through an account-scoped API,
+    // separate from its OpenAI-compatible inference path.
+    if base_url == "https://api.fireworks.ai/inference/v1"
+        && result
+            .as_ref()
+            .is_err_and(|e| e != "HTTP 401" && e != "HTTP 403")
+    {
+        return get_json_with(
+            &client,
+            "https://api.fireworks.ai/v1/accounts/fireworks/models",
+            &headers,
+        )
+        .await;
+    }
+    result
 }
 
 /// Which backend serves `base_url`, from its documented native endpoints
@@ -313,12 +576,21 @@ pub async fn identify(
 pub async fn discover_loopback(ports: &[u16], timeout: Duration) -> Vec<Server> {
     let probes = ports.iter().map(|port| async move {
         let base_url = format!("http://127.0.0.1:{port}/v1");
-        let listing = list_models(&base_url, None, timeout).await.ok()?;
-        let backend = identify(&base_url, &listing, None, timeout).await;
+        let api_key_env = match port {
+            1337 | 6767 => Some("JAN_API_KEY"),
+            4000 => Some("LITELLM_API_KEY"),
+            _ => None,
+        };
+        let key = api_key_env
+            .and_then(|name| std::env::var(name).ok())
+            .filter(|s| !s.is_empty());
+        let listing = list_models(&base_url, key.as_deref(), timeout).await.ok()?;
+        let backend = identify(&base_url, &listing, key.as_deref(), timeout).await;
         Some(Server {
-            models: model_ids(&listing),
+            models: agent_model_ids(&listing),
             base_url,
             backend,
+            api_key_env: key.map(|_| api_key_env.unwrap()),
         })
     });
     futures_util::future::join_all(probes)
@@ -375,6 +647,11 @@ mod tests {
 
     #[test]
     fn frontier_presets_use_tls_known_dialects_and_distinct_names() {
+        let mut names: Vec<_> = FRONTIER_PRESETS.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), FRONTIER_PRESETS.len());
+        assert!(FRONTIER_PRESETS.len() >= 12);
         for p in FRONTIER_PRESETS {
             assert!(p.base_url.starts_with("https://"), "{}", p.name);
             assert!(crate::Dialect::parse(p.dialect).is_some(), "{}", p.name);
@@ -415,7 +692,10 @@ mod tests {
             preset("lmstudio").unwrap().base_url(Some(4321)),
             "http://127.0.0.1:4321/v1"
         );
-        assert_eq!(loopback_ports(), vec![11434, 1234, 8080, 8000]);
+        assert_eq!(
+            loopback_ports(),
+            vec![11434, 1234, 8080, 8000, 1337, 4891, 5001, 4000, 6767]
+        );
     }
 
     fn server(models: &[&str]) -> Server {
@@ -423,6 +703,7 @@ mod tests {
             base_url: "http://127.0.0.1:1/v1".into(),
             backend: None,
             models: models.iter().map(|m| (*m).to_owned()).collect(),
+            api_key_env: None,
         }
     }
 
@@ -446,6 +727,53 @@ mod tests {
             pick(&[server(&["b"]), server(&["b"])], Some("b")),
             Pick::Ambiguous
         );
+    }
+
+    #[test]
+    fn discovery_keeps_only_text_models_with_tool_use_when_known() {
+        let listing = serde_json::json!({"data": [
+            {"id":"coder", "capabilities":{"completion_chat":true,"function_calling":true}},
+            {"id":"text-only", "capabilities":{"completion_chat":true,"function_calling":false}},
+            {"id":"embed-large"}, {"id":"audio-transcription"},
+            {"id":"bad\nmodel"}, {"id":"coder"}
+        ]});
+        assert_eq!(agent_model_ids(&listing), vec!["coder"]);
+        assert_eq!(model_ids(&serde_json::json!([{"id":"one"}])), vec!["one"]);
+        assert_eq!(
+            model_vision_capability(
+                &serde_json::json!({"data": [{"id":"vision","architecture":{"input_modalities":["text","image"]}}]}),
+                "vision"
+            ),
+            Some(true)
+        );
+        assert_eq!(model_vision_capability(&listing, "coder"), None);
+        assert_eq!(
+            model_vision_capability(
+                &serde_json::json!({"data":[{"id":"text","capabilities":{"vision":false}}]}),
+                "text"
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            agent_model_ids(&serde_json::json!({"models": [
+                {"name":"accounts/fireworks/models/qwen3-coder"},
+                {"name":"accounts/fireworks/models/flux-kontext"}
+            ]})),
+            ["accounts/fireworks/models/qwen3-coder"]
+        );
+    }
+
+    #[tokio::test]
+    async fn local_discovery_reads_models_without_a_generation_call() {
+        let server = MockServer::start(&[(
+            "GET /v1/models",
+            200,
+            r#"{"data":[{"id":"qwen-coder"},{"id":"text-embedding"}]}"#,
+        )]);
+        let found = discover_loopback(&[server.port], T).await;
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].models, ["qwen-coder"]);
+        assert!(server.seen().iter().all(|request| request.method == "GET"));
     }
 
     #[tokio::test]

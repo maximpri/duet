@@ -253,7 +253,9 @@ impl Disclosure {
                     | AuditEvent::Compaction { .. }
                     | AuditEvent::MaskedNumbers { .. }
                     | AuditEvent::Explore { .. }
-                    | AuditEvent::HookFailed { .. } => {}
+                    | AuditEvent::HookFailed { .. }
+                    | AuditEvent::SecurityReview { .. }
+                    | AuditEvent::SecurityReviewAborted { .. } => {}
                 },
             }
         }

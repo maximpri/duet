@@ -412,10 +412,11 @@ pub fn usage_from_responses(u: &Value) -> Usage {
     let get = |v: &Value, p: &str| v.pointer(p).and_then(Value::as_u64).unwrap_or(0);
     let input = get(u, "/input_tokens");
     let cached = get(u, "/input_tokens_details/cached_tokens").min(input);
+    let written = get(u, "/input_tokens_details/cache_write_tokens").min(input - cached);
     Usage {
-        input: input - cached,
+        input: input - cached - written,
         cache_read: cached,
-        cache_write: 0,
+        cache_write: written,
         output: get(u, "/output_tokens"),
         reasoning: get(u, "/output_tokens_details/reasoning_tokens"),
         status: UsageStatus::Reported,

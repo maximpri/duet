@@ -180,3 +180,35 @@ fn throughput_10mb() {
         "imported rules alone: {mbps:.1} MB/s; {ran} of {total} rules past the keyword prefilter"
     );
 }
+
+#[test]
+#[ignore = "measurement; run with --release -- --ignored --nocapture"]
+fn copied_span_matching() {
+    use duet_boundary::overlap::OverlapIndex;
+    use std::hint::black_box;
+
+    let text = (0..2000)
+        .map(|n| {
+            format!(
+                "Confidential board document entry {n} includes Northwind forecast pricing strategy customer acquisition costs and European contracts.\n"
+            )
+        })
+        .collect::<String>();
+    for _ in 0..3 {
+        let started = Instant::now();
+        let mut index = OverlapIndex::default();
+        index.add_sensitive(black_box(&text));
+        let indexing = started.elapsed();
+        let started = Instant::now();
+        for _ in 0..30 {
+            assert_eq!(black_box(index.redact(black_box(&text))).1, 1);
+            assert_eq!(black_box(index.redact_strict(black_box(&text))).1, 1);
+        }
+        println!(
+            "bytes={} indexing_ms={:.3} redaction_ms={:.3}",
+            text.len(),
+            indexing.as_secs_f64() * 1000.0,
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+    }
+}

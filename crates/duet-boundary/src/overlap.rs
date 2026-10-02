@@ -5,7 +5,7 @@
 //! prose ("Q3 revenue for Northwind was 4,812,339") has none, so the gate also
 //! refuses to send long runs of text copied from sensitive content. Every
 //! sensitive handle is indexed as hashes of 8-token windows; outbound text with
-//! 3 or more consecutive matching windows (~24 tokens) has that span redacted.
+//! 3 or more consecutive matching windows (10+ tokens) has that span redacted.
 //! Text the local model writes about sensitive content is checked much more
 //! strictly ([`LOCAL_WINDOW`]-token windows): it should describe, never quote.
 //! Windows that also occur in public files are exempt, so ordinary shared code
@@ -18,42 +18,53 @@ pub const WINDOW: usize = 8;
 pub const MIN_CONSECUTIVE: usize = 3;
 pub const REDACTED: &str = "⟨redacted:copied-sensitive-text⟩";
 
-/// Word tokens with their byte ranges (letters/digits runs; everything else separates).
-fn tokens(text: &str) -> Vec<(usize, usize)> {
+/// Normalize each word once, while keeping its range in the original UTF-8
+/// text. Both index levels share these tokens; overlapping windows only borrow
+/// them instead of allocating another lowercase string for each occurrence.
+struct Token {
+    start: usize,
+    end: usize,
+    lowered: String,
+}
+
+/// Word tokens (letters/digits runs; everything else separates).
+fn tokens(text: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut start = None;
     for (i, c) in text.char_indices() {
         if c.is_alphanumeric() {
             start.get_or_insert(i);
         } else if let Some(s) = start.take() {
-            out.push((s, i));
+            out.push(Token {
+                start: s,
+                end: i,
+                lowered: text[s..i].to_lowercase(),
+            });
         }
     }
     if let Some(s) = start {
-        out.push((s, text.len()));
+        out.push(Token {
+            start: s,
+            end: text.len(),
+            lowered: text[s..].to_lowercase(),
+        });
     }
     out
 }
 
-fn window_hashes(text: &str, window: usize) -> Vec<(u64, usize, usize)> {
-    let toks = tokens(text);
-    if toks.len() < window {
-        return Vec::new();
-    }
-    (0..=toks.len() - window)
-        .map(|i| {
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            for &(s, e) in &toks[i..i + window] {
-                text[s..e].to_lowercase().hash(&mut h);
-            }
-            (h.finish(), toks[i].0, toks[i + window - 1].1)
-        })
-        .collect()
+fn window_hashes(tokens: &[Token], window: usize) -> impl Iterator<Item = (u64, usize, usize)> {
+    tokens.windows(window).map(move |words| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for word in words {
+            word.lowered.hash(&mut h);
+        }
+        (h.finish(), words[0].start, words[window - 1].end)
+    })
 }
 
 /// Local-model output is a description of sensitive content, never a
 /// quotation: any run of this many consecutive tokens copied from sensitive
-/// content is removed (the general outbound filter needs ~24).
+/// content is removed (the general outbound filter needs 10).
 pub const LOCAL_WINDOW: usize = 4;
 
 /// One index: windows of `window` tokens, a span counts once `min_run`
@@ -79,24 +90,11 @@ impl Level {
         if self.sensitive.is_empty() {
             return (text.to_owned(), 0);
         }
-        let windows = window_hashes(text, self.window);
-        let hit: Vec<bool> = windows
-            .iter()
-            .map(|(h, _, _)| self.sensitive.contains(h) && !self.public.contains(h))
-            .collect();
+        let tokens = tokens(text);
         let mut spans: Vec<(usize, usize)> = Vec::new();
-        let mut i = 0;
-        while i < hit.len() {
-            if !hit[i] {
-                i += 1;
-                continue;
-            }
-            let mut j = i;
-            while j < hit.len() && hit[j] {
-                j += 1;
-            }
-            if j - i >= self.min_run {
-                let (s, e) = (windows[i].1, windows[j - 1].2);
+        let mut run: Option<(usize, usize, usize)> = None;
+        let mut finish = |run: &mut Option<(usize, usize, usize)>| {
+            if let Some((s, e, _)) = run.take().filter(|(_, _, n)| *n >= self.min_run) {
                 // Windows overlap by up to `window - 1` tokens, so a run separated
                 // from the previous one by a single miss can start inside it.
                 match spans.last_mut() {
@@ -104,8 +102,21 @@ impl Level {
                     _ => spans.push((s, e)),
                 }
             }
-            i = j;
+        };
+        for (hash, start, end) in window_hashes(&tokens, self.window) {
+            if self.sensitive.contains(&hash) && !self.public.contains(&hash) {
+                match &mut run {
+                    Some((_, last, count)) => {
+                        *last = end;
+                        *count += 1;
+                    }
+                    None => run = Some((start, end, 1)),
+                }
+            } else {
+                finish(&mut run);
+            }
         }
+        finish(&mut run);
         if spans.is_empty() {
             return (text.to_owned(), 0);
         }
@@ -137,20 +148,20 @@ impl Default for OverlapIndex {
 
 impl OverlapIndex {
     pub fn add_sensitive(&mut self, text: &str) {
+        let tokens = tokens(text);
         for level in [&mut self.normal, &mut self.strict] {
             let w = level.window;
             level
                 .sensitive
-                .extend(window_hashes(text, w).into_iter().map(|w| w.0));
+                .extend(window_hashes(&tokens, w).map(|w| w.0));
         }
     }
 
     pub fn add_public(&mut self, text: &str) {
+        let tokens = tokens(text);
         for level in [&mut self.normal, &mut self.strict] {
             let w = level.window;
-            level
-                .public
-                .extend(window_hashes(text, w).into_iter().map(|w| w.0));
+            level.public.extend(window_hashes(&tokens, w).map(|w| w.0));
         }
     }
 
@@ -158,7 +169,7 @@ impl OverlapIndex {
         self.normal.sensitive.is_empty()
     }
 
-    /// Redacts copied sensitive spans (~24+ tokens). Returns the text and how
+    /// Redacts copied sensitive spans (10+ tokens). Returns the text and how
     /// many spans were removed.
     pub fn redact(&self, text: &str) -> (String, usize) {
         self.normal.redact(text)
@@ -190,7 +201,7 @@ mod tests {
             out.contains(REDACTED) && !out.contains("acquisition of Northwind closes"),
             "{out}"
         );
-        // A short mention is allowed (it is below the ~24-token threshold).
+        // A short mention is allowed (it is below the 10-token threshold).
         let (short, n) = idx.redact("It mentions Northwind and the announcement.");
         assert_eq!(n, 0);
         assert_eq!(short, "It mentions Northwind and the announcement.");
@@ -228,5 +239,39 @@ mod tests {
         idx.add_sensitive(SECRET_NOTE);
         let shouted = SECRET_NOTE.to_uppercase().replace(',', " ;");
         assert_eq!(idx.redact(&shouted).1, 1);
+    }
+
+    #[test]
+    fn matching_thresholds_count_overlapping_windows() {
+        let words = "one two three four five six seven eight nine ten";
+        let mut idx = OverlapIndex::default();
+        idx.add_sensitive(words);
+        assert_eq!(
+            idx.redact("one two three four five six seven eight nine").1,
+            0
+        );
+        assert_eq!(idx.redact(words), (REDACTED.to_owned(), 1));
+        assert_eq!(idx.redact_strict("one two three").1, 0);
+        assert_eq!(
+            idx.redact_strict("one two three four"),
+            (REDACTED.to_owned(), 1)
+        );
+    }
+
+    #[test]
+    fn unicode_and_separate_runs_preserve_original_byte_ranges() {
+        let mut idx = OverlapIndex::default();
+        idx.add_sensitive("ÉCOLE CAFÉ NAÏVE ΔΟΚΙΜΉ");
+        idx.add_sensitive("İSTANBUL MÜNCHEN 東京 Москва");
+        let (out, count) = idx.redact_strict(
+            "prefix: École café naïve δοκιμή; unrelated words between; İstanbul München 東京 Москва!",
+        );
+        assert_eq!(count, 2);
+        assert_eq!(
+            out,
+            format!("prefix: {REDACTED}; unrelated words between; {REDACTED}!")
+        );
+        idx.add_public("École café naïve δοκιμή");
+        assert_eq!(idx.redact_strict("ÉCOLE CAFÉ NAÏVE ΔΟΚΙΜΉ").1, 0);
     }
 }

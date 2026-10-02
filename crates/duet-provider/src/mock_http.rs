@@ -22,15 +22,38 @@ pub struct MockServer {
     stop: Arc<AtomicBool>,
 }
 
+struct Reply {
+    status: u16,
+    body: String,
+    headers: Vec<(String, String)>,
+}
+
 impl MockServer {
     /// Serves `routes` (`"GET /v1/models"` → (status, body)); anything else is 404.
     pub fn start(routes: &[(&str, u16, &str)]) -> Self {
+        Self::start_with_headers(routes, &[])
+    }
+
+    /// Adds the given response headers to each configured route.
+    pub fn start_with_headers(routes: &[(&str, u16, &str)], headers: &[(&str, &str)]) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
         let port = listener.local_addr().expect("addr").port();
-        let routes: Arc<HashMap<String, (u16, String)>> = Arc::new(
+        let routes: Arc<HashMap<String, Reply>> = Arc::new(
             routes
                 .iter()
-                .map(|(r, s, b)| ((*r).to_owned(), (*s, (*b).to_owned())))
+                .map(|(r, s, b)| {
+                    (
+                        (*r).to_owned(),
+                        Reply {
+                            status: *s,
+                            body: (*b).to_owned(),
+                            headers: headers
+                                .iter()
+                                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                                .collect(),
+                        },
+                    )
+                })
                 .collect(),
         );
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -67,7 +90,7 @@ impl Drop for MockServer {
     }
 }
 
-fn serve(stream: TcpStream, routes: &HashMap<String, (u16, String)>, seen: &Mutex<Vec<Seen>>) {
+fn serve(stream: TcpStream, routes: &HashMap<String, Reply>, seen: &Mutex<Vec<Seen>>) {
     let mut reader = BufReader::new(match stream.try_clone() {
         Ok(s) => s,
         Err(_) => return,
@@ -102,14 +125,23 @@ fn serve(stream: TcpStream, routes: &HashMap<String, (u16, String)>, seen: &Mute
             bearer,
         });
     }
-    let (status, body) = routes
-        .get(&format!("{method} {path}"))
-        .cloned()
-        .unwrap_or((404, r#"{"error":"not found"}"#.to_owned()));
+    let missing = Reply {
+        status: 404,
+        body: r#"{"error":"not found"}"#.into(),
+        headers: Vec::new(),
+    };
+    let reply = routes.get(&format!("{method} {path}")).unwrap_or(&missing);
     let mut out = stream;
+    let headers: String = reply
+        .headers
+        .iter()
+        .map(|(k, v)| format!("{k}: {v}\r\n"))
+        .collect();
     let _ = write!(
         out,
-        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
+        "HTTP/1.1 {} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n{headers}\r\n{}",
+        reply.status,
+        reply.body.len(),
+        reply.body
     );
 }

@@ -54,13 +54,19 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+mod attachment_queue;
+
 /// The session's arguments (`duet` without a command).
 pub(crate) struct ChatArgs {
     pub message: Option<String>,
+    pub goal: Option<String>,
+    pub goal_turns: Option<u64>,
     pub mode: Option<Mode>,
     pub frontier_url: Option<String>,
     pub frontier_model: Option<String>,
     pub no_privacy: bool,
+    /// One-session acceptance commands, in addition to project checks.
+    pub check: Vec<String>,
     /// `Some(None)`: the most recent open session.
     pub resume: Option<Option<String>>,
 }
@@ -74,7 +80,9 @@ pub(crate) struct Inbox {
 
 #[derive(Default)]
 struct Queue {
-    lines: VecDeque<(u64, String)>,
+    // Only operator lines have a sequence number and can answer a question.
+    // Background attachment jobs and requeued commands must never answer one.
+    lines: VecDeque<(Option<u64>, String)>,
     next: u64,
     closed: bool,
     /// An approval question waits for the operator's answer.
@@ -126,8 +134,14 @@ impl Inbox {
         let mut q = self.lock();
         let n = q.next;
         q.next += 1;
-        q.lines.push_back((n, line));
+        q.lines.push_back((Some(n), line));
         drop(q);
+        self.ready.notify_all();
+    }
+
+    /// Queue work from a background UI job without making it an approval answer.
+    fn push_deferred(&self, line: String) {
+        self.lock().lines.push_back((None, line));
         self.ready.notify_all();
     }
 
@@ -159,7 +173,7 @@ impl Inbox {
     fn requeue(&self, lines: Vec<String>) {
         let mut q = self.lock();
         for l in lines.into_iter().rev() {
-            q.lines.push_front((0, l));
+            q.lines.push_front((None, l));
         }
     }
 
@@ -183,7 +197,11 @@ impl Inbox {
     fn answer_after(&self, mark: u64, stop: &AtomicBool) -> Option<String> {
         let mut q = self.lock();
         loop {
-            if let Some(i) = q.lines.iter().position(|(n, _)| *n >= mark) {
+            if let Some(i) = q
+                .lines
+                .iter()
+                .position(|(n, _)| n.is_some_and(|n| n >= mark))
+            {
                 q.answering = false;
                 return q.lines.remove(i).map(|(_, l)| l);
             }
@@ -235,6 +253,12 @@ impl Approver for AskInline {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Command {
     Message(String),
+    Skills,
+    Skill(String),
+    Plugins,
+    PluginPrompt(String),
+    Goal(String),
+    History(Option<String>),
     /// End the running turn after its current step.
     Stop,
     Status,
@@ -250,6 +274,9 @@ pub(crate) enum Command {
         path: String,
         public: bool,
     },
+    Attach(String),
+    Attachments,
+    Detach(String),
     /// Show the mode, or switch to top clearance (`/mode [top-clearance]`).
     Mode(Option<String>),
     Unknown(String),
@@ -258,8 +285,37 @@ pub(crate) enum Command {
 
 /// The commands, for completion.
 pub(crate) const COMMANDS: &[&str] = &[
-    "/close", "/diff", "/exit", "/help", "/image", "/mode", "/quit", "/status", "/stop", "/undo",
+    "/attach",
+    "/close",
+    "/diff",
+    "/exit",
+    "/goal",
+    "/help",
+    "/history",
+    "/image",
+    "/mode",
+    "/quit",
+    "/status",
+    "/stop",
+    "/undo",
+    "/skills",
+    "/skill",
+    "/plugins",
+    "/command",
+    "/attachments",
+    "/detach",
 ];
+
+fn attachment_command(raw: &str) -> Command {
+    if crate::images::named_image(raw) {
+        Command::Image {
+            path: raw.to_owned(),
+            public: false,
+        }
+    } else {
+        Command::Attach(raw.to_owned())
+    }
+}
 
 pub(crate) fn parse(line: &str) -> Command {
     let trimmed = line.trim();
@@ -270,8 +326,42 @@ pub(crate) fn parse(line: &str) -> Command {
         return Command::Message(format!("/{rest}"));
     }
     let Some(word) = trimmed.strip_prefix('/') else {
+        if crate::attachments::is_path(trimmed) || crate::images::is_path(trimmed) {
+            return attachment_command(trimmed);
+        }
         return Command::Message(line.trim_end().to_owned());
     };
+    for (prefix, kind) in [
+        ("skill", Command::Skill as fn(String) -> Command),
+        ("command", Command::PluginPrompt),
+    ] {
+        if let Some(rest) = word.strip_prefix(prefix)
+            && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+        {
+            return kind(rest.trim().to_owned());
+        }
+    }
+    if let Some(rest) = word.strip_prefix("goal")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Command::Goal(rest.trim().to_owned());
+    }
+    if let Some(rest) = word.strip_prefix("history")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        let rest = rest.trim();
+        return Command::History((!rest.is_empty()).then(|| rest.to_owned()));
+    }
+    if let Some(rest) = word.strip_prefix("attach")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return attachment_command(rest.trim());
+    }
+    if let Some(rest) = word.strip_prefix("detach")
+        && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+    {
+        return Command::Detach(rest.trim().to_owned());
+    }
     if let Some(rest) = word.strip_prefix("image")
         && (rest.is_empty() || rest.starts_with(char::is_whitespace))
     {
@@ -292,6 +382,9 @@ pub(crate) fn parse(line: &str) -> Command {
         return Command::Mode((!rest.is_empty()).then(|| rest.to_owned()));
     }
     match word {
+        "skills" => Command::Skills,
+        "plugins" => Command::Plugins,
+        "attachments" => Command::Attachments,
         "status" => Command::Status,
         "diff" => Command::Diff,
         "undo" => Command::Undo,
@@ -299,6 +392,7 @@ pub(crate) fn parse(line: &str) -> Command {
         "help" | "?" => Command::Help,
         "quit" | "exit" => Command::Quit,
         "close" => Command::Close,
+        _ if crate::attachments::is_path(trimmed) => attachment_command(trimmed),
         other => Command::Unknown(other.to_owned()),
     }
 }
@@ -306,11 +400,23 @@ pub(crate) fn parse(line: &str) -> Command {
 const HELP: &str = "\
 Type a message and press Enter; end a line with \\ to continue on the next.
 While duet works, a message steers it: it arrives after the current step.
-Commands (never sent to the model):
+Workspace commands (task text and loaded guidance use the session privacy boundary):
+  /skills                list portable workflows found on this machine and project
+  /skill <name> [task]    use a workflow; instructions load only when needed
+  /plugins               list installed extension packages
+  /command plugin:name [arguments]  use a packaged command
+  /goal <objective>       work automatically; default 20 turns and session budgets
+  /goal                  show progress and remaining turns
+  /goal pause|resume     pause work or continue an unfinished goal
+  /goal cancel           abandon a goal without marking it complete
+  /history [session-id]  browse saved work or read a conversation
   /stop    end duet's turn after its current step (Ctrl-C ends it now)
   /status  turns, tokens, cost and time against the budgets
   /diff    what changed in the workspace (sensitive files are only named)
   /undo    revert the file writes of the last turn (repeat for earlier turns)
+  /attach <path>          attach a text file or image; dropped paths work too
+  /attachments           list files and images waiting for your next message
+  /detach ID|all         remove pending attachments (/attachments shows IDs)
   /image <path>           attach an image to your next message; in hybrid mode the
                           local model describes it (needs local.vision)
   /image --public <path>  attach an image the frontier may see itself (not scanned;
@@ -324,6 +430,80 @@ Commands (never sent to the model):
   //text   send a message that starts with /
 Ctrl-C stops duet's turn at once (a running command is killed);
 at the prompt, Ctrl-C twice leaves.";
+
+#[derive(Debug, PartialEq, Eq)]
+enum GoalAction<'a> {
+    Status,
+    Pause,
+    Resume,
+    Cancel,
+    Start(&'a str),
+}
+
+fn goal_action(raw: &str) -> GoalAction<'_> {
+    match raw.trim() {
+        "" | "status" => GoalAction::Status,
+        "pause" => GoalAction::Pause,
+        "resume" => GoalAction::Resume,
+        "cancel" => GoalAction::Cancel,
+        "start" => GoalAction::Status,
+        text => GoalAction::Start(text.strip_prefix("start ").unwrap_or(text).trim()),
+    }
+}
+
+fn show_history(ws: &Path, id: Option<String>, screen: &Screen) {
+    let result = match id {
+        None => crate::history::summary(ws),
+        Some(id) => crate::history::render(
+            ws,
+            crate::history::Args {
+                id: Some(id),
+                limit: 20,
+                search: None,
+                json: false,
+            },
+        ),
+    };
+    match result {
+        Ok(text) => screen.line(&text),
+        Err(e) => screen.line(&format!(
+            "History: {}",
+            duet_tui::term::safe(&format!("{e:#}"))
+        )),
+    }
+}
+
+fn plugin_command(cfg: &duet_config::Config, raw: &str) -> Result<String> {
+    ensure!(
+        cfg.bool("extensions.plugins_enabled")?,
+        "plugins are disabled for this workspace"
+    );
+    let (name, arguments) = raw
+        .trim()
+        .split_once(char::is_whitespace)
+        .unwrap_or((raw.trim(), ""));
+    let packages = crate::plugins::active_packages(&crate::plugins::store()?)?;
+    crate::plugins::command(&packages, name, arguments)
+}
+
+/// Validate an explicit workflow before bootstrap, provider requests or tool-server startup.
+fn preflight_extension(ws: &Path, cfg: &duet_config::Config, text: &str) -> Result<()> {
+    match parse(text) {
+        Command::Skill(raw) => {
+            ensure!(
+                cfg.bool("extensions.skills_enabled")?,
+                "skills are disabled for this workspace"
+            );
+            let runtime = crate::extensions::discover(ws, cfg)?;
+            crate::extensions::invoke(&runtime.skills, &raw)?;
+        }
+        Command::PluginPrompt(raw) => {
+            plugin_command(cfg, &raw)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
 
 /// Where the conversation is written: line by line on standard output
 /// (without a terminal, or when it cannot be driven: exactly as it always
@@ -476,12 +656,18 @@ async fn first_message(
     ws: &Path,
     cfg: &duet_config::Config,
     mode: Mode,
-) -> Option<(String, Vec<crate::images::AttachedImage>)> {
+) -> Option<(
+    String,
+    Vec<crate::images::AttachedImage>,
+    Vec<crate::attachments::Attachment>,
+    bool,
+)> {
     if !matches!(screen, Screen::Plain { tty: false }) {
         screen.line("a new session starts with your first message; /help lists the commands");
     }
     screen.prompt();
     let mut images = Vec::new();
+    let mut files = Vec::new();
     loop {
         if leave.load(Ordering::SeqCst) {
             return None;
@@ -494,43 +680,63 @@ async fn first_message(
             continue;
         };
         match parse(&line) {
-            Command::Message(m) => return Some((m, images)),
+            Command::Message(m) => return Some((if line.trim().starts_with("//") {line.trim().to_owned()}else{m}, images, files, false)),
+            Command::Skill(_) | Command::PluginPrompt(_) => match preflight_extension(ws, cfg, &line) {
+                Ok(()) => return Some((line.trim().to_owned(), images, files, false)),
+                Err(error) => screen.line(&duet_tui::term::safe(&format!("{error:#}"))),
+            },
+            Command::Skills => match crate::extensions::discover(ws,cfg) {
+                Ok(runtime)=>screen.line(&crate::extensions::list(&runtime.skills, cfg)),
+                Err(e)=>screen.line(&format!("Skills: {e:#}")),
+            },
+            Command::Plugins => match crate::plugins::list() {
+                Ok(text)=>screen.line(&text),Err(e)=>screen.line(&format!("Plugins: {e:#}")),
+            },
+            Command::Goal(raw) => match goal_action(&raw) {
+                GoalAction::Start(objective) => return Some((objective.to_owned(), images, files, true)),
+                _ => screen.line("Start a goal with /goal <objective>. It keeps working within your session budgets."),
+            },
+            Command::History(id) => show_history(ws, id, screen),
             Command::Quit | Command::Close => return None,
             Command::Help => screen.text(&format!("{HELP}\n")),
             Command::Empty => {}
+            Command::Attach(path) => match crate::attachments::add(&mut files, ws, &path) {
+                Ok(notice) => screen.line(&notice),
+                Err(e) => screen.line(&format!("attachment not added: {e:#}")),
+            },
+            Command::Attachments => screen.line(&attachment_queue::summary(&attachment_queue::chips(
+                &files, images.iter().map(|i| (i.path.as_path(), i.public)),
+            ))),
+            Command::Detach(raw) => match attachment_queue::detach(&mut files, &mut images, &raw) {
+                Ok(notice) => screen.line(&notice),
+                Err(e) => screen.line(&format!("{e:#}")),
+            },
+            Command::Unknown(c) => {
+                screen.line(&format!("unknown command /{c}; /help lists the commands"))
+            }
             Command::Image { path, public } => {
-                let a = crate::images::AttachedImage {
-                    path: image_path(ws, &path),
-                    public,
-                };
-                match crate::images::precheck(ws, cfg, mode, std::slice::from_ref(&a)) {
-                    Ok(()) => {
-                        screen.line(&format!(
-                            "image {path} will be attached to your first message"
-                        ));
-                        images.push(a);
-                    }
-                    Err(e) => screen.line(&format!("{e:#}")),
+                match crate::images::queue(&mut images, ws, cfg, mode, &path, public) {
+                    Ok(notice) => screen.line(&notice),
+                    Err(e) => screen.line(&format!("Image not attached: {e:#}")),
                 }
             }
             _ => screen.line("nothing to show yet: the session starts with your first message"),
         }
+        attachment_queue::publish(
+            screen,
+            attachment_queue::chips(&files, images.iter().map(|i| (i.path.as_path(), i.public))),
+        );
         screen.prompt();
     }
-}
-
-/// The file `/image` names: as given, else relative to the workspace.
-fn image_path(ws: &Path, raw: &str) -> PathBuf {
-    let raw = raw.trim().trim_matches(['"', '\'']);
-    let given = std::env::current_dir()
-        .map(|d| d.join(raw))
-        .unwrap_or_else(|_| PathBuf::from(raw));
-    if given.exists() { given } else { ws.join(raw) }
 }
 
 /// `duet` without a command. Returns the exit code: 0 when the session was left open or
 /// closed, 3 when a session budget is spent, 1 when it could not start.
 pub(crate) async fn chat(ws: PathBuf, args: ChatArgs, emb: &Embedding) -> Result<i32> {
+    ensure!(
+        args.check.is_empty() || args.resume.is_none(),
+        "--check belongs to a new session; resumed sessions use their original checks"
+    );
     match (args.mode, args.no_privacy) {
         (Some(Mode::Passthrough), false) if args.resume.is_none() => bail!(
             "--mode passthrough turns the privacy boundary off: everything the model reads, \
@@ -559,7 +765,13 @@ Add --no-privacy to confirm, or use --mode hybrid."
         leave: leave.clone(),
         idle_press: Mutex::new(None),
     });
-    let (inbox, screen) = open_screen(tty, &interrupts, || crate::workspace_settings(&ws, emb));
+    let clipboard = Arc::new(Mutex::new(crate::images::ClipboardImages::new(
+        ws.clone(),
+        cfg.int("images.max_side")? as u32,
+    )));
+    let (inbox, screen) = open_screen(tty, &interrupts, clipboard.clone(), || {
+        crate::workspace_settings(&ws, emb)
+    });
     // The terminal is given back on every way out.
     let _closing = Closing(screen.clone());
     // Refused before anything else when approval is on and nobody can answer.
@@ -578,8 +790,11 @@ Add --no-privacy to confirm, or use --mode hybrid."
         working,
         leave,
         screen: screen.clone(),
+        _clipboard: clipboard,
     };
-    let mut message = args.message;
+    let goal_turns = args.goal_turns.unwrap_or(crate::goals::DEFAULT_MAX_TURNS);
+    let mut start_goal = args.goal.is_some();
+    let mut message = args.goal.or(args.message);
     let mut resume = args.resume;
     // One session per pass; `/mode top-clearance` ends the pass with the
     // session left open and starts the next in top clearance.
@@ -608,8 +823,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 (resumed(&ws, id)?, true)
             }
             None => {
-                let (first, first_images) = match message.take() {
-                    Some(m) => (m, Vec::new()),
+                let (first, first_images, first_files, is_goal) = match message.take() {
+                    Some(m) => (m, Vec::new(), Vec::new(), start_goal),
                     None => {
                         match first_message(&io.inbox, &io.leave, &screen, &ws, &cfg, mode).await {
                             Some(m) => m,
@@ -617,6 +832,11 @@ Add --no-privacy to confirm, or use --mode hybrid."
                         }
                     }
                 };
+                start_goal = is_goal;
+                if !is_goal && let Err(error) = preflight_extension(&ws, &cfg, &first) {
+                    screen.line(&duet_tui::term::safe(&format!("{error:#}")));
+                    continue;
+                }
                 // Setting up prints freely.
                 screen.hide();
                 // With the local model off nothing is probed for one.
@@ -626,6 +846,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                             Ok(found) => found.map(|b| LocalOverride {
                                 base_url: b.base_url,
                                 model: b.model,
+                                api_key_env: b.api_key_env,
                             }),
                             Err(code) => return Ok(code),
                         }
@@ -636,6 +857,11 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     run_id: new_run_id(),
                     mode,
                     objective: first,
+                    checks: Some({
+                        let mut checks = cfg.list("checks.commands")?;
+                        checks.extend(args.check.iter().cloned());
+                        checks
+                    }),
                     frontier_url: args
                         .frontier_url
                         .clone()
@@ -648,6 +874,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     local,
                     session: true,
                     images: first_images,
+                    files: first_files,
                 };
                 (manifest, false)
             }
@@ -664,12 +891,16 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 &run_dir.join("run.json"),
                 &serde_json::to_vec_pretty(&manifest)?,
             )?;
+            if start_goal {
+                crate::goals::Store::load(&run_dir)?.start(&manifest.objective, goal_turns)?;
+            }
         }
         // Sessions last as long as the operator keeps them open: the provider's
         // own retry deadline is far away, and each turn sets its own.
         let limits = RunLimits {
             deadline: tokio::time::Instant::now() + Duration::from_secs(7 * 24 * 3600),
             interrupted: interrupted.clone(),
+            local_meter: crate::pricing::meter(&cfg)?,
         };
         let mut audit = None;
         let driven = std::panic::AssertUnwindSafe(converse(
@@ -683,6 +914,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
             &mut audit,
             &io,
             emb.hooks(),
+            start_goal && !resuming,
+            goal_turns,
         ))
         .catch_unwind()
         .await;
@@ -743,6 +976,7 @@ frontier, no web tools, no network for commands. It starts fresh, so nothing sai
 reaches the frontier; leaving top clearance needs a new session.",
             );
             mode = next;
+            start_goal = false;
             continue;
         }
         return Ok(match &terminal {
@@ -780,6 +1014,8 @@ struct Io {
     /// Raised by a second Ctrl-C at the prompt.
     leave: Arc<AtomicBool>,
     screen: Screen,
+    /// Keeps private pasted-image files alive until the chat and its UI finish.
+    _clipboard: Arc<Mutex<crate::images::ClipboardImages>>,
 }
 
 /// The workspace when standard input and output are a terminal that can take
@@ -787,6 +1023,7 @@ struct Io {
 fn open_screen(
     tty: bool,
     interrupts: &Arc<Interrupts>,
+    clipboard: Arc<Mutex<crate::images::ClipboardImages>>,
     settings: impl FnOnce() -> duet_tui::workspace::Settings,
 ) -> (Arc<Inbox>, Screen) {
     let plain = || (Inbox::stdin(), Screen::Plain { tty });
@@ -795,6 +1032,18 @@ fn open_screen(
     }
     let inbox = Arc::new(Inbox::default());
     let hooks = Hooks {
+        paste_image: {
+            let inbox = inbox.clone();
+            Arc::new(move |bytes| {
+                let path = clipboard
+                    .lock()
+                    .map_err(|_| "Clipboard image storage is unavailable".to_owned())?
+                    .store(bytes)
+                    .map_err(|e| e.to_string())?;
+                inbox.push_deferred(format!("/image {}", crate::attachments::quoted(&path)));
+                Ok("Image queued · sent with your next message".to_owned())
+            })
+        },
         line: {
             let inbox = inbox.clone();
             Box::new(move |l| inbox.push(l))
@@ -814,7 +1063,13 @@ fn open_screen(
     };
     match Workspace::start(hooks, COMMANDS, Some(settings())) {
         Ok(workspace) => (inbox, Screen::Live(workspace)),
-        Err(_) => plain(),
+        Err(error) => {
+            eprintln!(
+                "Full-screen UI unavailable: {}. Continuing in line mode.",
+                duet_tui::term::safe(&error.to_string())
+            );
+            plain()
+        }
     }
 }
 
@@ -882,6 +1137,8 @@ async fn converse(
     audit: &mut Option<AuditHandle>,
     io: &Io,
     hooks: &duet_agent::Hooks,
+    start_goal: bool,
+    goal_turns: u64,
 ) -> Result<(Terminal, RunStats, Option<Mode>)> {
     let Prepared {
         git,
@@ -926,13 +1183,27 @@ async fn converse(
                 .collect(),
         );
     }
+    let files = Mutex::new(if resume {
+        Vec::new()
+    } else {
+        manifest.files.clone()
+    });
+    let mut goals = crate::goals::Store::load(run_dir)?;
+    goals.checkpoint()?;
+    if start_goal {
+        goals.resume()?;
+    }
     let ctx = TurnCtx {
+        cfg,
+        mode: manifest.mode,
+        skills: &run_cfg.skills,
         run_dir,
         io,
         shown: &shown,
         ws,
         git: &git,
         presenter,
+        files: &files,
     };
     if let Some(w) = io.screen.workspace() {
         // The side panel follows the files this session changes, holding
@@ -944,12 +1215,71 @@ async fn converse(
             crate::policy(cfg)?,
         );
     }
-    show_status(io, &session, manifest, cfg);
+    let (closed, switch) = conduct(
+        &mut session,
+        manifest,
+        cfg,
+        &ctx,
+        &mut goals,
+        resume,
+        goal_turns,
+    )
+    .await?;
+    let (terminal, mut stats) = session.end(closed);
+    crate::mcp::stop(&run_cfg).await;
+    // The session's language servers lived across its turns; stop them now.
+    if let Some(lsp) = &run_cfg.lsp {
+        lsp.shutdown().await;
+    }
+    stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
+    let local_cost = limits.local_meter.snapshot();
+    stats.local_cost_usd = local_cost.cost_usd;
+    stats.local_usage_unknown_requests = local_cost.unpriced_cancelled_requests;
+    Ok((terminal, stats, switch))
+}
+
+/// Drives the operator controls and automatic goal turns. Provider construction
+/// stays outside so the same driver can be exercised with an in-process frontier.
+async fn conduct(
+    session: &mut Session<'_>,
+    manifest: &RunManifest,
+    cfg: &duet_config::Config,
+    ctx: &TurnCtx<'_>,
+    goals: &mut crate::goals::Store,
+    resume: bool,
+    goal_turns: u64,
+) -> Result<(bool, Option<Mode>)> {
+    let TurnCtx {
+        io,
+        ws,
+        git,
+        run_dir,
+        presenter,
+        files,
+        ..
+    } = *ctx;
+    show_status(io, session, manifest, cfg, goals);
     if resume {
-        recap(&session, &manifest.run_id, &io.screen);
+        recap(session, &manifest.run_id, &io.screen);
+        if goals.current().is_some() {
+            io.screen.line(&goals.describe());
+        }
     } else {
-        turns(&mut session, manifest.objective.clone(), &ctx).await;
-        show_status(io, &session, manifest, cfg);
+        let first = if let Some(prompt) = goals.prompt() {
+            Ok(prompt)
+        } else {
+            match parse(&manifest.objective) {
+                Command::Skill(raw) => crate::extensions::invoke(ctx.skills, &raw),
+                Command::PluginPrompt(raw) => plugin_command(cfg, &raw),
+                Command::Message(message) => Ok(message),
+                _ => Ok(manifest.objective.clone()),
+            }
+        };
+        match first {
+            Ok(first) => turns(session, first, ctx, goals).await?,
+            Err(error) => io.screen.line(&duet_tui::term::safe(&format!("{error:#}"))),
+        }
+        show_status(io, session, manifest, cfg, goals);
     }
     let (closed, switch) = loop {
         if io.leave.load(Ordering::SeqCst) {
@@ -961,6 +1291,16 @@ async fn converse(
             ));
             break (false, None);
         }
+        attachment_queue::publish(
+            &io.screen,
+            attachment_queue::chips(
+                &files.lock().unwrap(),
+                session
+                    .attached()
+                    .iter()
+                    .map(|i| (i.path.as_path(), i.public)),
+            ),
+        );
         io.screen.prompt();
         let line = loop {
             if io.leave.load(Ordering::SeqCst) {
@@ -968,6 +1308,15 @@ async fn converse(
             }
             match io.inbox.pop() {
                 Some(l) => break Some(l),
+                None if io.tty && io.inbox.drained() => break None,
+                None if goals.active() => {
+                    let next = goals.prompt().expect("active goal has a prompt");
+                    turns(session, next, ctx, goals).await?;
+                    show_status(io, session, manifest, cfg, goals);
+                    if session.spent().is_some() {
+                        break None;
+                    }
+                }
                 None if io.inbox.drained() => break None,
                 None => tokio::time::sleep(Duration::from_millis(50)).await,
             }
@@ -984,8 +1333,58 @@ async fn converse(
             Command::Quit => break (false, None),
             Command::Close => break (true, None),
             Command::Help => io.screen.text(&format!("{HELP}\n")),
-            Command::Status => say(&status(&session, &manifest.run_id, cfg)),
-            Command::Diff => io.screen.diff(&local_diff(&git, ws, run_dir, presenter)),
+            Command::Skills => say(&crate::extensions::list(ctx.skills, cfg)),
+            Command::Plugins => match crate::plugins::list() {
+                Ok(text) => say(&text),
+                Err(e) => say(&format!("Plugins: {e:#}")),
+            },
+            Command::Skill(raw) | Command::PluginPrompt(raw) => {
+                let message = if matches!(parse(&line), Command::Skill(_)) {
+                    crate::extensions::invoke(ctx.skills, &raw)
+                } else {
+                    plugin_command(cfg, &raw)
+                };
+                match message {
+                    Ok(message) => {
+                        turns(session, message, ctx, goals).await?;
+                        show_status(io, session, manifest, cfg, goals);
+                    }
+                    Err(e) => say(&duet_tui::term::safe(&format!("Extension: {e:#}"))),
+                }
+            }
+            Command::History(id) => show_history(ws, id, &io.screen),
+            Command::Goal(raw) => {
+                let result = match goal_action(&raw) {
+                    GoalAction::Status => Ok(()),
+                    GoalAction::Pause => {
+                        goals.pause("Paused by you. Use /goal resume to continue.")
+                    }
+                    GoalAction::Resume
+                        if goals
+                            .current()
+                            .is_some_and(|g| g.state == crate::goals::State::Waiting) =>
+                    {
+                        Err(anyhow::anyhow!(
+                            "Duet is waiting for your answer. Type a reply to continue the goal."
+                        ))
+                    }
+                    GoalAction::Resume => goals.resume(),
+                    GoalAction::Cancel => goals.cancel(),
+                    GoalAction::Start(objective) => goals.start(objective, goal_turns),
+                };
+                if let Err(e) = result {
+                    say(&format!("Goal: {e:#}"));
+                }
+                say(&goals.describe());
+                show_status(io, session, manifest, cfg, goals);
+            }
+            Command::Status => say(&format!(
+                "{}\n{}\n{}",
+                status(session, &manifest.run_id, cfg),
+                crate::pricing::status(run_dir, session.stats().cost_usd),
+                goals.describe(),
+            )),
+            Command::Diff => io.screen.diff(&local_diff(git, ws, run_dir, presenter)),
             Command::Undo => match session.undo() {
                 Ok((turn, paths)) if paths.is_empty() => {
                     say(&format!("turn {turn} wrote no files; nothing to revert"))
@@ -999,8 +1398,30 @@ async fn converse(
                 }
                 Err(e) => say(&format!("undo: {e}")),
             },
-            Command::Stop => say("duet is not working; nothing to stop"),
+            Command::Stop => {
+                goals.pause("Stopped by you. Use /goal resume to continue.")?;
+                say("Work paused.");
+            }
             Command::Unknown(c) => say(&format!("unknown command /{c}; /help lists the commands")),
+            Command::Attach(path) => {
+                match crate::attachments::add(&mut files.lock().unwrap(), ws, &path) {
+                    Ok(notice) => say(&notice),
+                    Err(e) => say(&format!("attachment not added: {e:#}")),
+                }
+            }
+            Command::Attachments => say(&attachment_queue::summary(&attachment_queue::chips(
+                &files.lock().unwrap(),
+                session
+                    .attached()
+                    .iter()
+                    .map(|i| (i.path.as_path(), i.public)),
+            ))),
+            Command::Detach(raw) => {
+                match attachment_queue::detach_session(&mut files.lock().unwrap(), session, &raw) {
+                    Ok(notice) => say(&notice),
+                    Err(e) => say(&format!("{e:#}")),
+                }
+            }
             Command::Mode(asked) => match mode_change(manifest.mode, asked.as_deref()) {
                 ModeChange::Switch(to) => break (false, Some(to)),
                 ModeChange::Say(text) => say(&text),
@@ -1013,63 +1434,105 @@ async fn converse(
                 }
             )),
             Command::Image { path, public } => {
-                match session.attach(image_path(ws, &path), public) {
+                let attached = (|| -> Result<String> {
+                    ensure!(
+                        session.attached().len() < crate::images::MAX_PENDING,
+                        "at most {} images can wait for one message",
+                        crate::images::MAX_PENDING
+                    );
+                    let image = crate::images::selected(ws, &path, public)?;
+                    session
+                        .attach(image.path, image.public)
+                        .map_err(anyhow::Error::msg)
+                })();
+                match attached {
                     Ok(said) => say(&format!("attached {said}")),
-                    Err(e) => say(&e.to_string()),
+                    Err(e) => say(&format!("Image not attached: {e:#}")),
                 }
             }
             Command::Message(m) => {
+                if goals
+                    .current()
+                    .is_some_and(|g| g.state == crate::goals::State::Waiting)
+                    && let Err(e) = goals.resume()
+                {
+                    say(&format!("Goal: {e:#}"));
+                    continue;
+                }
                 if !io.tty {
                     // Piped input is not on screen: the output keeps the conversation.
                     say(&format!("you> {}", m.replace('\n', "\n     ")));
                 }
-                turns(&mut session, m, &ctx).await;
-                show_status(io, &session, manifest, cfg);
+                turns(session, m, ctx, goals).await?;
+                show_status(io, session, manifest, cfg, goals);
             }
         }
     };
-    let (terminal, mut stats) = session.end(closed);
-    crate::mcp::stop(&run_cfg).await;
-    // The session's language servers lived across its turns; stop them now.
-    if let Some(lsp) = &run_cfg.lsp {
-        lsp.shutdown().await;
+    if closed {
+        goals.cancel()?;
+    } else if goals.active() {
+        goals.pause("Session left open. Resume the session, then use /goal resume.")?;
     }
-    stats.ledger.local = engine.as_ref().and_then(|e| e.take_local_stats());
-    Ok((terminal, stats, switch))
+    Ok((closed, switch))
 }
 
 /// What a turn needs besides the session.
 struct TurnCtx<'a> {
+    cfg: &'a duet_config::Config,
+    mode: Mode,
+    skills: &'a duet_agent::skills::Skills,
     run_dir: &'a Path,
     io: &'a Io,
     shown: &'a Arc<dyn Fn(&str) -> String + Send + Sync>,
     ws: &'a Path,
     git: &'a duet_git::Git,
     presenter: &'a dyn Presenter,
+    files: &'a Mutex<Vec<crate::attachments::Attachment>>,
 }
 
 /// Runs a turn for `message`; a message that arrived as a turn ended (too
 /// late to steer it) starts the next one, unless the operator stopped it.
-async fn turns(session: &mut Session<'_>, message: String, t: &TurnCtx<'_>) {
-    let mut next = Some(message);
-    while let Some(m) = next.take() {
-        let (end, late) = take_turn(session, &m, t).await;
-        if late.is_empty() {
-            continue;
+async fn turns(
+    session: &mut Session<'_>,
+    message: String,
+    t: &TurnCtx<'_>,
+    goals: &mut crate::goals::Store,
+) -> Result<()> {
+    let active = goals.active();
+    if active {
+        goals.begin_turn()?;
+    }
+    let m = crate::attachments::message(message, &mut t.files.lock().unwrap(), t.ws, t.presenter);
+    let (end, late, stopped) = take_turn(session, &m, t, active).await;
+    if active {
+        goals.finish_turn(&end)?;
+        if stopped {
+            goals.pause("Stopped by you. Use /goal resume to continue.")?;
         }
-        if matches!(end, TurnEnd::Stopped | TurnEnd::Interrupted) {
-            for l in &late {
-                t.io.screen.line(&format!(
-                    "not delivered (you stopped the turn): {}",
-                    clip(l)
-                ));
-            }
-        } else if session.spent().is_none() {
-            t.io.screen
-                .line("your message arrived as duet ended its turn; it starts the next one");
-            next = Some(late.join("\n\n"));
+        if let Some(status) = goals.status_line() {
+            t.io.screen.line(&status);
         }
     }
+    if stopped || matches!(end, TurnEnd::Stopped | TurnEnd::Interrupted) {
+        for l in &late {
+            t.io.screen.line(&format!(
+                "not delivered (you stopped the turn): {}",
+                clip(l)
+            ));
+        }
+    } else if !late.is_empty() && session.spent().is_none() {
+        t.io.screen
+            .line("your message arrived as duet ended its turn; it starts the next one");
+        // Append behind held commands: /quit and /goal pause take precedence.
+        // Escape slash prefixes so steering text cannot become a command.
+        let message = late.join("\n\n");
+        t.io.inbox.push(if message.starts_with('/') {
+            format!("/{message}")
+        } else {
+            message
+        });
+    }
+    Ok(())
 }
 
 /// Runs one turn, following its progress in the transcript as it is
@@ -1081,7 +1544,8 @@ async fn take_turn(
     session: &mut Session<'_>,
     message: &str,
     t: &TurnCtx<'_>,
-) -> (TurnEnd, Vec<String>) {
+    goal_active: bool,
+) -> (TurnEnd, Vec<String>, bool) {
     let io = t.io;
     let path = t.run_dir.join("transcript.jsonl");
     let from = std::fs::metadata(&path).map_or(0, |m| m.len());
@@ -1097,6 +1561,12 @@ async fn take_turn(
     let follower = tokio::spawn(following(shared.clone(), done.clone()));
     let steering = session.steering();
     let mut held = Vec::new();
+    let mut pending_images = Vec::new();
+    let mut image_failed = false;
+    let mut hold_messages = false;
+    let mut attachments_committed = false;
+    let mut stopped = false;
+    attachment_queue::publish(&io.screen, Vec::new());
     io.working.store(true, Ordering::SeqCst);
     let say = |text: &str| io.screen.line(text);
     let end = {
@@ -1119,16 +1589,66 @@ async fn take_turn(
             tokio::select! {
                 end = &mut turn => break end,
                 () = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if goal_active && io.tty && io.inbox.drained() {
+                        stopped = true;
+                        steering.stop();
+                    }
                     while let Some(line) = io.inbox.pop_unless_answering() {
                         match parse(&line) {
                             Command::Message(m) => {
+                                if hold_messages {
+                                    say("Message queued with your attachments for the next turn.");
+                                    held.push(line);
+                                    attachments_committed = true;
+                                    continue;
+                                }
                                 say(&format!(
                                     "  ▸ for duet after the current step: {}",
                                     clip(&m)
                                 ));
-                                steering.steer(m);
+                                steering.steer(crate::attachments::message(m, &mut t.files.lock().unwrap(), t.ws, t.presenter));
                             }
+                            Command::Attach(path) => {
+                                if attachments_committed {
+                                    held.push(line);
+                                    continue;
+                                }
+                                match crate::attachments::add(&mut t.files.lock().unwrap(), t.ws, &path) {
+                                    Ok(notice) => say(&notice),
+                                    Err(e) => say(&format!("attachment not added: {e:#}")),
+                                }
+                            },
+                            Command::Image { path, public } => {
+                                if attachments_committed {
+                                    held.push(line);
+                                    continue;
+                                }
+                                // The following request belongs with this image even
+                                // if validation fails; never steer it without its input.
+                                hold_messages = true;
+                                match crate::images::queue(&mut pending_images, t.ws, t.cfg, t.mode, &path, public) {
+                                    Ok(notice) => say(&notice),
+                                    Err(e) => {
+                                        image_failed = true;
+                                        say(&format!("Image not attached: {e:#}"));
+                                    }
+                                }
+                            },
+                            Command::Attachments => say(&attachment_queue::summary(&attachment_queue::chips(
+                                &t.files.lock().unwrap(), pending_images.iter().map(|i| (i.path.as_path(), i.public)),
+                            ))),
+                            Command::Detach(raw) => {
+                                if attachments_committed {
+                                    held.push(line);
+                                    continue;
+                                }
+                                match attachment_queue::detach(&mut t.files.lock().unwrap(), &mut pending_images, &raw) {
+                                    Ok(notice) => say(&notice),
+                                    Err(e) => say(&format!("{e:#}")),
+                                }
+                            },
                             Command::Stop => {
+                                stopped = true;
                                 steering.stop();
                                 say("  ■ stopping after the current step");
                             }
@@ -1136,6 +1656,10 @@ async fn take_turn(
                                 io.screen.diff(&local_diff(t.git, t.ws, t.run_dir, t.presenter))
                             }
                             Command::Help => io.screen.text(&format!("{HELP}\n")),
+                            Command::Skills => say(&crate::extensions::list(t.skills, t.cfg)),
+                            Command::Plugins => match crate::plugins::list() {
+                                Ok(text)=>say(&text),Err(e)=>say(&format!("Plugins: {e:#}")),
+                            },
                             Command::Empty => {}
                             Command::Unknown(c) => {
                                 say(&format!("unknown command /{c}; /help lists the commands"))
@@ -1144,23 +1668,90 @@ async fn take_turn(
                             | Command::Close
                             | Command::Undo
                             | Command::Status
-                            | Command::Mode(_)
-                            | Command::Image { .. } => {
+                            | Command::Skill(_)
+                            | Command::PluginPrompt(_)
+                            | Command::History(_)
+                            | Command::Goal(_)
+                            | Command::Mode(_) => {
+                                if hold_messages && attachment_queue::requests_turn(&parse(&line)) {
+                                    attachments_committed = true;
+                                }
+                                let pauses = match parse(&line) {
+                                    Command::Quit | Command::Close | Command::Undo | Command::Mode(_) => true,
+                                    Command::Goal(raw) => !matches!(goal_action(&raw), GoalAction::Status),
+                                    _ => false,
+                                };
+                                if goal_active && pauses {
+                                    stopped = true;
+                                    steering.stop();
+                                }
                                 say(&format!("  (after this turn: {})", line.trim()));
                                 held.push(line);
                             }
                         }
+                        attachment_queue::publish(&io.screen, attachment_queue::chips(
+                            &t.files.lock().unwrap(), pending_images.iter().map(|i| (i.path.as_path(), i.public)),
+                        ));
                     }
                 }
             }
         }
     };
     io.working.store(false, Ordering::SeqCst);
+    let previous_images = session.attached().len();
+    if !image_failed {
+        for image in pending_images {
+            if let Err(why) = session.attach(image.path, image.public) {
+                image_failed = true;
+                say(&format!(
+                    "Image could not remain attached: {why}. Attach it again before continuing."
+                ));
+                break;
+            }
+        }
+    }
+    if image_failed {
+        stopped = true;
+        // The queue is one message's attachment group. Reject it atomically so
+        // a valid sibling cannot accidentally accompany a later queued request.
+        // Preserve any images the session already had before this group's transfer.
+        while session.attached().len() > previous_images {
+            session.detach_image(previous_images);
+        }
+        // `turns` drained previous text attachments before starting this turn;
+        // all text currently in this queue belongs to the rejected group.
+        t.files.lock().unwrap().clear();
+        say(
+            "This request's attachment group was not sent. Attach its files again before resending.",
+        );
+        if let Some(draft) = attachment_queue::recover_dependent(&mut held) {
+            say(&format!(
+                "Not sent because its image could not be attached:\n{draft}"
+            ));
+            if let Some(workspace) = io.screen.workspace() {
+                workspace.recover_draft(draft);
+            } else {
+                say(
+                    "Your request is preserved above. Attach the image and send it again when ready.",
+                );
+            }
+        }
+    }
+    attachment_queue::publish(
+        &io.screen,
+        attachment_queue::chips(
+            &t.files.lock().unwrap(),
+            session
+                .attached()
+                .iter()
+                .map(|i| (i.path.as_path(), i.public)),
+        ),
+    );
     done.store(true, Ordering::SeqCst);
     let _ = follower.await;
     io.screen.end(&end);
     io.inbox.requeue(held);
-    (end, steering.take())
+    (end, steering.take(), stopped)
 }
 
 /// What `/mode` does.
@@ -1226,7 +1817,13 @@ fn mode_name(mode: Mode) -> &'static str {
 }
 
 /// The session's state in the workspace's status bar.
-fn show_status(io: &Io, session: &Session<'_>, manifest: &RunManifest, cfg: &duet_config::Config) {
+fn show_status(
+    io: &Io,
+    session: &Session<'_>,
+    manifest: &RunManifest,
+    cfg: &duet_config::Config,
+    goals: &crate::goals::Store,
+) {
     let Some(w) = io.screen.workspace() else {
         return;
     };
@@ -1240,6 +1837,7 @@ fn show_status(io: &Io, session: &Session<'_>, manifest: &RunManifest, cfg: &due
     };
     let s = session.stats();
     w.status(Status {
+        goal: goals.status_line(),
         session: manifest.run_id.clone(),
         mode: mode_name(manifest.mode).to_owned(),
         frontier: manifest.frontier_model.clone(),
@@ -1478,13 +2076,101 @@ impl duet_boundary::live::StreamTap for Ordered {
 }
 
 #[cfg(test)]
+#[path = "chat/goal_tests.rs"]
+mod goal_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn invalid_initial_workflows_are_reported_before_a_session_starts() {
+        let directory = tempfile::tempdir().unwrap();
+        let ws = directory.path().canonicalize().unwrap();
+        let owner = ws.join("config.toml");
+        std::fs::write(
+            &owner,
+            "[extensions]\nskills_enabled = false\nplugins_enabled = false\n",
+        )
+        .unwrap();
+        let cfg = duet_config::Config::load(&owner, None).unwrap();
+        let inbox = Inbox::default();
+        inbox.push("/skill example task".into());
+        inbox.push("/command example:review task".into());
+        inbox.push("//skill this is literal text".into());
+        inbox.close();
+        let message = first_message(
+            &inbox,
+            &AtomicBool::new(false),
+            &Screen::Plain { tty: false },
+            &ws,
+            &cfg,
+            Mode::Hybrid,
+        )
+        .await
+        .unwrap();
+        assert_eq!(message.0, "//skill this is literal text");
+        assert!(!ws.join(".duet").exists());
+        assert!(
+            crate::extensions::list(&duet_agent::skills::Skills::default(), &cfg)
+                .contains("disabled")
+        );
+    }
+
+    #[tokio::test]
+    async fn dropped_images_and_pending_removal_work_before_the_first_message() {
+        let directory = tempfile::tempdir().unwrap();
+        let ws = directory.path().canonicalize().unwrap();
+        let image = ws.join("screen (1).PNG");
+        std::fs::write(&image, duet_provider::image::solid_png(2, 2, [0, 0, 255])).unwrap();
+        let mut cfg = duet_config::Config::load(&ws.join("owner.toml"), None).unwrap();
+        cfg.set_owner("frontier.vision", toml::Value::Boolean(true))
+            .unwrap();
+        let inbox = Inbox::default();
+        inbox.push(format!("/attach {}", crate::attachments::quoted(&image)));
+        inbox.push("/attachments".into());
+        inbox.push("/detach i1".into());
+        inbox.push(crate::attachments::quoted(&image));
+        inbox.push("Describe this screen".into());
+        inbox.close();
+        let (message, images, files, _) = first_message(
+            &inbox,
+            &AtomicBool::new(false),
+            &Screen::Plain { tty: false },
+            &ws,
+            &cfg,
+            Mode::Passthrough,
+        )
+        .await
+        .unwrap();
+        assert_eq!(message, "Describe this screen");
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].path, image);
+        assert!(
+            !images[0].public,
+            "dropped images must never be promoted to public"
+        );
+        assert!(files.is_empty());
+    }
 
     #[test]
     fn commands_and_messages() {
         assert_eq!(parse("  "), Command::Empty);
         assert_eq!(parse("/diff"), Command::Diff);
+        assert_eq!(parse("/skills"), Command::Skills);
+        assert_eq!(parse("/plugins"), Command::Plugins);
+        assert_eq!(
+            parse("/skill review task"),
+            Command::Skill("review task".into())
+        );
+        assert_eq!(
+            parse("/command kit:review task"),
+            Command::PluginPrompt("kit:review task".into())
+        );
+        assert_eq!(
+            parse("//skill review"),
+            Command::Message("/skill review".into())
+        );
         assert_eq!(parse(" /quit "), Command::Quit);
         assert_eq!(parse("/close"), Command::Close);
         assert_eq!(parse("/nope"), Command::Unknown("nope".into()));
@@ -1507,6 +2193,14 @@ mod tests {
         assert_eq!(parse("/image --public ui.png "), image("ui.png", true));
         assert_eq!(parse("/image"), image("", false));
         assert_eq!(parse("/images"), Command::Unknown("images".into()));
+        assert_eq!(
+            parse("/attach './screen shot.png'"),
+            image("'./screen shot.png'", false)
+        );
+        assert_eq!(parse("./screen.png"), image("./screen.png", false));
+        assert_eq!(parse("screen.PNG"), image("screen.PNG", false));
+        assert_eq!(parse("/attachments"), Command::Attachments);
+        assert_eq!(parse("/detach all"), Command::Detach("all".into()));
     }
 
     #[test]
@@ -1590,5 +2284,28 @@ mod tests {
         assert_eq!(inbox.pop().as_deref(), Some("queued message"));
         stop.store(true, Ordering::SeqCst);
         assert_eq!(inbox.answer_after(inbox.mark(), &stop), None);
+    }
+
+    #[test]
+    fn background_images_and_requeued_commands_never_answer_approval() {
+        let inbox = Inbox::default();
+        // Include mark zero: it must not treat requeued work as an answer.
+        let mark = inbox.mark();
+        inbox.requeue(vec!["/status".into()]);
+        inbox.push_deferred("/image 'clipboard.png'".into());
+        assert_eq!(inbox.pop_unless_answering(), None);
+        inbox.push("y".into());
+        assert_eq!(
+            inbox.answer_after(mark, &AtomicBool::new(false)).as_deref(),
+            Some("y")
+        );
+        assert_eq!(inbox.pop().as_deref(), Some("/status"));
+        assert_eq!(inbox.pop().as_deref(), Some("/image 'clipboard.png'"));
+
+        let mark = inbox.mark();
+        inbox.push_deferred("/image 'another.png'".into());
+        inbox.close();
+        assert_eq!(inbox.answer_after(mark, &AtomicBool::new(false)), None);
+        assert_eq!(inbox.pop().as_deref(), Some("/image 'another.png'"));
     }
 }

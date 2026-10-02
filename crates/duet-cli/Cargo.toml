@@ -13,6 +13,7 @@ workspace = true
 
 [dependencies]
 duet-agent.workspace = true
+duet-extensions.workspace = true
 duet-boundary.workspace = true
 duet-provider.workspace = true
 duet-config.workspace = true
@@ -26,6 +27,8 @@ duet-egress.workspace = true
 duet-lsp.workspace = true
 url = "2"
 anyhow.workspace = true
+sha2.workspace = true
+hex.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -51,9 +54,6 @@ duet-fs = { workspace = true, features = ["fault-injection"] }
 tempfile = "3"
 bytes = "1"
 futures-util.workspace = true
-# The embedding tests check chain hashes.
-sha2.workspace = true
-hex.workspace = true
 
 [lib]
 path = "src/lib.rs"

@@ -34,15 +34,34 @@ PostgreSQL statements through parse → render → reparse:
 | PG16 non-decimal integers | `0x04` → `X'04'` (bit string; warehouse error), `0b1000` → `0 AS b1000` | tokenizer, dialect | log (INC-2288), reports only for 0o/0b |
 | string constant continuation | `'a'`⏎`'b'` → `'a' AS 'b'` (silent) or rejected | tokenizer | log (INC-2290, rejection), reports |
 | `BETWEEN SYMMETRIC` | rejected | parser, `Expr::Between` | log, reports |
-| `op ANY/ALL (subquery)` | rejected | parser, `Expr::AnyOp/AllOp` display | log (ANY), reports only (ALL with CTE, row ANY) |
+| `op ANY/ALL (subquery)` | rejected | parser; reference also simplifies `Expr::AnyOp/AllOp` display | log (ANY), reports only (ALL with CTE, row ANY) |
 | `FOR NO KEY UPDATE` / `FOR KEY SHARE` | rejected | parser, `LockType` | log |
 | audit fingerprints | missing | new `src/fingerprint.rs` | log (INC-2291), `docs/FINGERPRINT.md` |
 
 Silent misparses round-trip consistently, so the real-data tests compare token fingerprints of both
 the original and the rendered statement with a baseline (`holdout/tests/realdata/*.tsv`, computed by
-the reference; fingerprints contain no constants, hence no canaries). The rendering must not turn
-`ANY (SELECT …)` into `ANY ((SELECT …))`, which PostgreSQL reads as a scalar subquery used as an
-array.
+the reference; fingerprints contain no constants, hence no canaries). The rendering comparison
+normalizes redundant parentheses around ANY/ALL subqueries. The fingerprint API's exact-token
+tests and original-statement baselines remain strict.
+
+## Grader revision 2 (2026-09-30)
+
+Revision 1 incorrectly rejected `ANY ((SELECT …))`, including ALL with a CTE and row ANY,
+and treated the resulting fingerprint differences as semantic changes in two real-data tests.
+PostgreSQL 16 accepts those wrappers as part of the subquery: its
+[`select_with_parens` grammar](https://github.com/postgres/postgres/blob/REL_16_STABLE/src/backend/parser/gram.y)
+recursively absorbs them. PostgreSQL 16.13 execution and `pg_get_viewdef` checks confirmed identical
+results and parsed view definitions for the three forms. Casts and other expressions outside the
+inner SELECT can change the interpretation and are not normalized.
+
+The shared comparison helper checks both accepted wrappers and distinct casts, operators, arrays,
+set-operation grouping, quantifiers and quoted text. Its checks run inside an existing predicate
+test so the denominator stays 50. Starter remains 3/50; reference remains 50/50.
+
+`task.toml` records the grader revision and `seal.toml` covers the changed tests and helper.
+Agent-visible inputs are unchanged. Earlier scores belong to revision 1 and must not be mixed
+with revision 2. Twenty archived artifacts were regraded into a separate result directory;
+the original runs were retained. See [the audit](../../docs/X1-GRADER-AUDIT-2026-09-30.md).
 
 Sensitive assets: 1,887-line audit log (269 statements; customer names, e-mails and phones in
 constants and comments, analysts' e-mails, a business number, an injection attempt in a support-note

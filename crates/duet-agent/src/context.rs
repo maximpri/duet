@@ -70,8 +70,9 @@ pub fn is_masked(content: &str) -> bool {
 }
 
 fn quoted(s: &str) -> String {
-    let mut out: String = s.chars().take(ARG_CHARS).collect();
-    if s.chars().count() > ARG_CHARS {
+    let mut chars = s.chars();
+    let mut out: String = chars.by_ref().take(ARG_CHARS).collect();
+    if chars.next().is_some() {
         out.push('…');
     }
     out
@@ -132,10 +133,22 @@ pub fn stub(call: Option<&ToolCall>, content: &str) -> String {
 /// down to half the window. Returns the positions masked (empty below the
 /// threshold), as [`apply_mask`] takes them.
 pub fn mask_if_needed(items: &mut [Item], system: &str, window: u64, mask_at: f64) -> Vec<usize> {
-    if (estimate(items, system) as f64) < mask_at * window as f64 {
+    let current = estimate(items, system);
+    mask_from_estimate(items, current, window, mask_at)
+}
+
+/// Reuse the estimate the run already needs for its transcript. `current`
+/// must describe these items before any masking has been applied.
+pub(crate) fn mask_from_estimate(
+    items: &mut [Item],
+    current: u64,
+    window: u64,
+    mask_at: f64,
+) -> Vec<usize> {
+    if (current as f64) < mask_at * window as f64 {
         return Vec::new();
     }
-    let (positions, _) = mask_plan(items, system, window / 2);
+    let (positions, _) = mask_plan_from_estimate(items, current, window / 2);
     apply_mask(items, &positions);
     positions
 }
@@ -158,7 +171,16 @@ fn calls_of(items: &[Item]) -> HashMap<&str, &ToolCall> {
 /// masked: the last [`KEEP_RECENT_TURNS`] turns and short results stay),
 /// with the estimate after masking them.
 pub fn mask_plan(items: &[Item], system: &str, target: u64) -> (Vec<usize>, u64) {
-    let mut current = estimate(items, system);
+    mask_plan_from_estimate(items, estimate(items, system), target)
+}
+
+/// Plan against an estimate of the same, unchanged conversation. Both the
+/// run and compaction already have it; neither needs to serialize it again.
+pub(crate) fn mask_plan_from_estimate(
+    items: &[Item],
+    mut current: u64,
+    target: u64,
+) -> (Vec<usize>, u64) {
     let calls = calls_of(items);
     // Result positions grouped by the assistant turn that called them.
     let mut turns: Vec<Vec<usize>> = Vec::new();
@@ -304,6 +326,57 @@ mod tests {
 
     fn masked_at(v: &[Item], pos: usize) -> bool {
         matches!(&v[pos], Item::ToolResult { content, .. } if is_masked(content))
+    }
+
+    #[test]
+    #[ignore = "manual throughput measurement; run with --release --ignored --nocapture"]
+    fn request_masking_throughput() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        // Match the run loop before this refactor: it sized the conversation
+        // for the transcript, then the masking helper sized it again. A large
+        // window exercises the usual path, where nothing needs to be masked.
+        fn previous(items: &mut [Item]) -> (u64, Vec<usize>) {
+            let before = estimate(items, "system");
+            let positions = mask_if_needed(items, "system", 100_000_000, 0.7);
+            (before, positions)
+        }
+        fn current(items: &mut [Item]) -> (u64, Vec<usize>) {
+            let before = estimate(items, "system");
+            let positions = mask_from_estimate(items, before, 100_000_000, 0.7);
+            (before, positions)
+        }
+        for (turns, result_bytes) in [(32, 4_096), (128, 16_384)] {
+            let mut conversation = items(turns, 2, result_bytes);
+            assert_eq!(previous(&mut conversation), current(&mut conversation));
+            let samples = 300;
+            let mut elapsed = |f: fn(&mut [Item]) -> (u64, Vec<usize>)| {
+                let start = Instant::now();
+                for _ in 0..samples {
+                    black_box(f(black_box(&mut conversation)));
+                }
+                start.elapsed().as_secs_f64() * 1_000.0
+            };
+            let mut before = Vec::new();
+            let mut after = Vec::new();
+            for sample in 0..5 {
+                if sample % 2 == 0 {
+                    before.push(elapsed(previous));
+                    after.push(elapsed(current));
+                } else {
+                    after.push(elapsed(current));
+                    before.push(elapsed(previous));
+                }
+            }
+            before.sort_by(f64::total_cmp);
+            after.sort_by(f64::total_cmp);
+            let (before, after) = (before[2], after[2]);
+            eprintln!(
+                "request context check: {turns} turns x 2 x {result_bytes} bytes; median of 5 x {samples} samples; previous={before:.2}ms current={after:.2}ms ratio={:.2}x",
+                before / after
+            );
+        }
     }
 
     #[test]

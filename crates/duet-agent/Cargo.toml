@@ -14,6 +14,7 @@ workspace = true
 # Deliberately no dependency on the provider crate: the agent reaches models only
 # through duet-boundary's gate (enforced by tools/gate.sh).
 [dependencies]
+duet-extensions.workspace = true
 duet-boundary.workspace = true
 duet-config.workspace = true
 duet-fs.workspace = true
@@ -23,6 +24,7 @@ duet-web.workspace = true
 duet-egress.workspace = true
 duet-mcp.workspace = true
 duet-lsp.workspace = true
+duet-review.workspace = true
 url = "2"
 serde.workspace = true
 serde_json.workspace = true

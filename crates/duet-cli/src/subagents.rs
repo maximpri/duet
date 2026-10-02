@@ -22,6 +22,7 @@ pub(crate) fn setup(
     frontier: &GatedFrontier,
     engine: Option<&Arc<Engine>>,
     limits: &RunLimits,
+    catalog: &duet_provider::catalog::Catalog,
 ) -> Result<Option<Subagents>> {
     if !cfg.bool("subagents.enabled")? {
         return Ok(None);
@@ -56,10 +57,16 @@ pub(crate) fn setup(
         }
         (Some(Arc::new(gate.wrap(provider))), asked)
     };
-    let price = duet_provider::price::builtin(&priced);
+    let price = if local_only {
+        None
+    } else if own {
+        crate::pricing::quote(catalog, cfg, &priced, &manifest.frontier_url)
+    } else {
+        catalog.quote(&priced)
+    };
     if price.is_none() && !own {
-        eprintln!(
-            "warning: no price known for {priced}; sub-agents' dollar budget cannot be enforced"
+        anyhow::bail!(
+            "OpenRouter has no unique token price for sub-agent model {priced}; use its exact model slug to enforce the dollar budget"
         );
     }
     Ok(Some(Subagents {

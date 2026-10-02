@@ -4,6 +4,9 @@ use sqlparser::ast::Statement;
 use sqlparser::dialect::PostgreSqlDialect;
 use sqlparser::parser::Parser;
 
+#[path = "support/quantified.rs"]
+mod quantified;
+
 fn parse_one(sql: &str) -> Statement {
     let mut stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql)
         .unwrap_or_else(|e| panic!("{sql:?} does not parse: {e}"));
@@ -11,7 +14,11 @@ fn parse_one(sql: &str) -> Statement {
     let stmt = stmts.pop().unwrap();
     let again = Parser::parse_sql(&PostgreSqlDialect {}, &stmt.to_string())
         .unwrap_or_else(|e| panic!("rendering {stmt} does not parse: {e}"));
-    assert_eq!(again, vec![stmt.clone()], "rendering {stmt} changes the statement");
+    assert_eq!(
+        again,
+        vec![stmt.clone()],
+        "rendering {stmt} changes the statement"
+    );
     stmt
 }
 
@@ -19,15 +26,19 @@ fn round_trips(sql: &str) {
     assert_eq!(parse_one(sql).to_string(), sql);
 }
 
-/// The rendering compares against the rows of the subquery: `ANY (SELECT ...)`,
-/// never `ANY ((SELECT ...))` (a scalar subquery used as an array).
+/// The rendering must retain a subquery operand. PostgreSQL accepts redundant
+/// parentheses around it, including for row comparisons and WITH queries.
 fn assert_subquery_operand(rendered: &str, keyword: &str) {
-    let compact = rendered.replace(&format!("{keyword} ("), &format!("{keyword}("));
+    use sqlparser::tokenizer::Token;
+    let tokens = quantified::normalized(rendered);
     assert!(
-        compact.contains(&format!("{keyword}(SELECT")) || compact.contains(&format!("{keyword}(WITH")),
+        tokens.windows(3).any(|w| {
+            matches!(&w[0], Token::Word(k) if k.quote_style.is_none() && k.value == keyword)
+                && w[1] == Token::LParen
+                && matches!(&w[2], Token::Word(k) if k.quote_style.is_none() && matches!(k.value.as_str(), "SELECT" | "WITH"))
+        }),
         "{rendered}"
     );
-    assert!(!compact.contains(&format!("{keyword}((")), "{rendered}");
 }
 
 #[test]
@@ -53,7 +64,11 @@ fn between_symmetric_inside_a_conjunction() {
         "SELECT e.event_id FROM events e WHERE e.created_at BETWEEN SYMMETRIC now() AND now() - INTERVAL '1 day' AND e.account_id = 7",
     );
     let rendered = stmt.to_string();
-    assert!(rendered.contains("BETWEEN SYMMETRIC now() AND now() - INTERVAL '1 day' AND e.account_id = 7"), "{rendered}");
+    assert!(
+        rendered
+            .contains("BETWEEN SYMMETRIC now() AND now() - INTERVAL '1 day' AND e.account_id = 7"),
+        "{rendered}"
+    );
 }
 
 #[test]
@@ -63,6 +78,7 @@ fn between_asymmetric_is_accepted() {
 
 #[test]
 fn any_over_a_subquery() {
+    quantified::check_normalization();
     let stmt = parse_one(
         "SELECT r.refund_id FROM refunds r WHERE r.order_id = ANY (SELECT o.order_id FROM orders o WHERE o.customer_id = 48213)",
     );
@@ -87,7 +103,8 @@ fn row_compared_with_any_subquery() {
 
 #[test]
 fn any_over_an_array_is_unchanged() {
-    let stmt = parse_one("SELECT t.ticket_id FROM support_tickets t WHERE t.priority = ANY (ARRAY[1, 2])");
+    let stmt =
+        parse_one("SELECT t.ticket_id FROM support_tickets t WHERE t.priority = ANY (ARRAY[1, 2])");
     assert_eq!(
         stmt.to_string(),
         "SELECT t.ticket_id FROM support_tickets AS t WHERE t.priority = ANY(ARRAY[1, 2])"

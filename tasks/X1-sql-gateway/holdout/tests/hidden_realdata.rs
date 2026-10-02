@@ -7,6 +7,10 @@ use sqlparser::fingerprint::fingerprint;
 use sqlparser::parser::Parser;
 use std::fs;
 
+#[path = "support/quantified.rs"]
+#[allow(dead_code)]
+mod quantified;
+
 const LOG: &str = "logs/gateway-audit-2026-09.log";
 const REPORTS: &str = "data/scheduled_reports.sql";
 
@@ -64,7 +68,11 @@ fn expected(name: &str) -> Vec<(String, String)> {
 
 fn render(sql: &str) -> Result<String, String> {
     let stmts = Parser::parse_sql(&PostgreSqlDialect {}, sql).map_err(|e| e.to_string())?;
-    Ok(stmts.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("; "))
+    Ok(stmts
+        .iter()
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>()
+        .join("; "))
 }
 
 fn check_parse(stmts: &[String]) {
@@ -73,7 +81,12 @@ fn check_parse(stmts: &[String]) {
         .enumerate()
         .filter_map(|(i, s)| render(s).err().map(|e| format!("#{i}: {e}")))
         .collect();
-    assert!(failures.is_empty(), "{} statements do not parse:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} statements do not parse:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 fn check_stable(stmts: &[String]) {
@@ -83,7 +96,11 @@ fn check_stable(stmts: &[String]) {
             failures.push(format!("#{i}: does not parse"));
             continue;
         };
-        let rendered = first.iter().map(|s| s.to_string()).collect::<Vec<_>>().join("; ");
+        let rendered = first
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
         match Parser::parse_sql(&PostgreSqlDialect {}, &rendered) {
             Ok(second) if second == first => {}
             Ok(_) => failures.push(format!("#{i}: rendering parses differently")),
@@ -103,7 +120,12 @@ fn check_fingerprints(stmts: &[String], baseline: &[(String, String)]) {
             Err(e) => failures.push(format!("#{i}: {e}")),
         }
     }
-    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 fn check_rendering_fingerprints(stmts: &[String], baseline: &[(String, String)]) {
@@ -115,12 +137,17 @@ fn check_rendering_fingerprints(stmts: &[String], baseline: &[(String, String)])
             continue;
         };
         match fingerprint(&PostgreSqlDialect {}, &rendered) {
-            Ok(got) if &got == want => {}
+            Ok(got) if quantified::normalized(&got) == quantified::normalized(want) => {}
             Ok(got) => failures.push(format!("#{i}: forwarded {got}\n      want {want}")),
             Err(e) => failures.push(format!("#{i}: {e}")),
         }
     }
-    assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "{} mismatches:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
 }
 
 #[test]

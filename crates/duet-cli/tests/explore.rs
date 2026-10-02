@@ -61,6 +61,7 @@ fn call(name: &'static str, args: Value) -> Turn {
 struct LocalModel {
     turns: Arc<Mutex<VecDeque<Turn>>>,
     bodies: Arc<Mutex<Vec<Value>>>,
+    hanging: Arc<tokio::sync::Notify>,
 }
 
 impl LocalModel {
@@ -137,7 +138,10 @@ impl Transport for LocalModel {
                     ]))
                 });
             }
-            Some(Turn::Hang) => return Box::pin(futures_util::future::pending()),
+            Some(Turn::Hang) => {
+                self.hanging.notify_one();
+                return Box::pin(futures_util::future::pending());
+            }
             None => vec![("report", json!({"answer": "(the script ran out)"}))],
         };
         let deltas: Vec<Value> = calls
@@ -777,8 +781,9 @@ async fn a_run_interrupted_mid_exploration_resumes_and_decides_again() {
     ]);
     // The first call hangs in its second step; the operator interrupts.
     let flag = f.interrupted.clone();
+    let hanging = local.hanging.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        hanging.notified().await;
         flag.store(true, Ordering::SeqCst);
     });
     let (end, _) = run(&f).await;
@@ -792,7 +797,10 @@ async fn a_run_interrupted_mid_exploration_resumes_and_decides_again() {
             .iter()
             .any(|e| matches!(e, Entry::Interrupted { tool, .. } if tool == "explore"))
     );
-    assert_eq!(explored(&f)[0].outcome, "interrupted");
+    let interrupted = &explored(&f)[0];
+    assert_eq!(interrupted.outcome, "interrupted");
+    assert_eq!((interrupted.request_attempts, interrupted.steps), (2, 1));
+    assert!(interrupted.request_time_complete && interrupted.local_seconds > 0.0);
     // Resumed: the unanswered call is decided again and the run completes.
     // The local time of the interrupted call is still charged.
     f.interrupted.store(false, Ordering::SeqCst);
@@ -818,7 +826,13 @@ async fn a_run_interrupted_mid_exploration_resumes_and_decides_again() {
         (stats.ledger.explore.calls, stats.ledger.explore.reported),
         (2, 1)
     );
-    assert_eq!(stats.ledger.explore.local.calls, 3);
+    // Accounting retains the request interrupted before it produced usage:
+    // read + hanging request, followed by the resumed read + report.
+    assert_eq!(local.bodies().len(), 4);
+    assert_eq!(stats.ledger.explore.local.calls, 4);
+    assert_eq!(stats.ledger.explore.steps, 3);
+    assert!(stats.ledger.explore.local.request_time_complete);
+    assert!(stats.ledger.explore.local.seconds >= interrupted.local_seconds);
 }
 
 #[tokio::test(flavor = "multi_thread")]

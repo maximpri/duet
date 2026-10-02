@@ -12,7 +12,7 @@
 use crate::audit::list_runs;
 use crate::changes::{self, ChangedFile};
 use duet_agent::TurnEnd;
-use duet_agent::transcript::{Entry, Transcript};
+use duet_agent::transcript::Entry;
 use duet_boundary::audit::{self, AuditEvent, Line as Record};
 use duet_boundary::model::Item;
 use duet_boundary::policy::Policy;
@@ -23,6 +23,7 @@ use ratatui::style::{Color, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Paragraph, Wrap};
 use std::collections::BTreeSet;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 /// Characters shown of a message or result line.
@@ -39,6 +40,8 @@ pub enum Focus {
 pub struct RunView {
     pub(crate) runs: Vec<String>,
     pub(crate) selected: usize,
+    /// The operator's first task, kept visible while browsing later activity.
+    objective: Option<String>,
     /// Sizes of the transcript and audit log when last read.
     seen: Option<(String, u64, u64)>,
     pub(crate) feed: Vec<String>,
@@ -119,6 +122,7 @@ impl Default for RunView {
         Self {
             runs: Vec::new(),
             selected: 0,
+            objective: None,
             seen: None,
             feed: Vec::new(),
             withheld: Vec::new(),
@@ -148,6 +152,55 @@ fn len(p: &Path) -> u64 {
     std::fs::metadata(p).map_or(0, |m| m.len())
 }
 
+/// Snapshot complete transcript entries without repairing the live writer's
+/// unfinished tail. Only the session's recovery path may truncate its log.
+pub(crate) fn read_transcript(run_dir: &Path) -> Result<Vec<Entry>, duet_fs::FsError> {
+    let pinned =
+        duet_fs::pinned::PinnedParent::open(run_dir, Path::new("transcript.jsonl"), false)?;
+    let file = pinned.open_read()?;
+    if !file
+        .metadata()
+        .map_err(|e| duet_fs::FsError::io("inspect transcript", pinned.path(), e))?
+        .is_file()
+    {
+        return Err(duet_fs::FsError::NotAFile(
+            pinned.path().display().to_string(),
+        ));
+    }
+    let mut reader = BufReader::new(file);
+    let mut entries = Vec::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let read = reader
+            .read_until(b'\n', &mut line)
+            .map_err(|e| duet_fs::FsError::io("read transcript", pinned.path(), e))?;
+        if read == 0 || !line.ends_with(b"\n") {
+            break;
+        }
+        if let Ok(entry) = serde_json::from_slice(&line) {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
+fn objective(entries: &[Entry]) -> Option<String> {
+    let text = entries
+        .iter()
+        .find_map(|entry| match entry {
+            Entry::TurnStart { message, .. } if !message.trim().is_empty() => Some(message),
+            _ => None,
+        })
+        .or_else(|| {
+            entries.iter().find_map(|entry| match entry {
+                Entry::Start { objective, .. } if !objective.trim().is_empty() => Some(objective),
+                _ => None,
+            })
+        })?;
+    Some(crate::term::safe(&first_line(text)))
+}
+
 impl RunView {
     fn paths(ws: &Path, id: &str) -> (PathBuf, PathBuf) {
         (
@@ -171,6 +224,8 @@ impl RunView {
             self.files.clear();
             self.files_of = None;
             self.session = None;
+            self.objective = None;
+            self.seen = None;
             return;
         };
         let (run_dir, log) = Self::paths(ws, &id);
@@ -181,10 +236,11 @@ impl RunView {
         );
         if self.seen.as_ref() != Some(&stamp) {
             self.seen = Some(stamp);
-            let entries = Transcript::read(&run_dir).unwrap_or_default();
+            let entries = read_transcript(&run_dir).unwrap_or_default();
             let records = audit::read(&log).unwrap_or_default();
             (self.feed, self.withheld) = feeds(&entries, &records);
             self.session = SessionState::of(&entries);
+            self.objective = objective(&entries);
             self.derived_audit = records
                 .iter()
                 .filter_map(|r| match r {
@@ -300,6 +356,7 @@ fn feeds_from(
     let mut child_turns: std::collections::HashMap<String, usize> = Default::default();
     for e in entries {
         match e {
+            Entry::ReviewUsage { usage } => feed.push(format!("security review: {} frontier opinion(s), ${:.4}", usage.calls, usage.cost_usd)),
             Entry::Start {
                 objective,
                 mode,
@@ -595,6 +652,12 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
             if view.follow { "on" } else { "off" }
         ),
     };
+    let block = crate::ui::frame().border_style(focus_style(view.focus == Focus::Main));
+    let block = if let Some(objective) = &view.objective {
+        block.title(format!(" {objective} ")).title_bottom(title)
+    } else {
+        block.title(title)
+    };
     let height = feed_area.height.saturating_sub(2) as usize;
     let scroll = if view.follow {
         view.feed.len().saturating_sub(height)
@@ -605,11 +668,7 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
     f.render_widget(
         Paragraph::new(feed)
             .scroll((scroll.min(u16::MAX as usize) as u16, 0))
-            .block(
-                crate::ui::frame()
-                    .title(title)
-                    .border_style(focus_style(view.focus == Focus::Main)),
-            ),
+            .block(block),
         feed_area,
     );
     let withheld: Vec<Line> = view
@@ -631,4 +690,77 @@ fn draw_main(f: &mut Frame, view: &RunView, area: Rect) {
             .block(crate::ui::frame().title(" withheld and blocked ")),
         withheld_area,
     );
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+    use duet_agent::transcript::Transcript;
+    use std::io::Write;
+
+    #[test]
+    fn history_browsing_keeps_a_live_partial_entry_and_finds_its_task_when_complete() {
+        let dir = tempfile::tempdir().unwrap();
+        let run_dir = dir.path().join(".duet/runs/20261001-test");
+        let transcript = Transcript::open(&run_dir).unwrap();
+        transcript
+            .append(&Entry::Start {
+                objective: "Interactive session".into(),
+                mode: "hybrid".into(),
+                frontier_model: "test".into(),
+            })
+            .unwrap();
+        let entry = serde_json::to_vec(&Entry::TurnStart {
+            exchange: 1,
+            message: "Fix the login screen\nKeep the existing layout".into(),
+            journal_next: 1,
+        })
+        .unwrap();
+        let path = run_dir.join("transcript.jsonl");
+        let mut writer = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        let split = entry.len() / 2;
+        writer.write_all(&entry[..split]).unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let mut view = RunView::default();
+        view.refresh(dir.path(), &Policy::default());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(view.objective.as_deref(), Some("Interactive session"));
+        assert_eq!(read_transcript(&run_dir).unwrap().len(), 1);
+        writer.write_all(&entry[split..]).unwrap();
+        // Valid JSON without its newline is still an uncommitted tail.
+        assert_eq!(read_transcript(&run_dir).unwrap().len(), 1);
+        writer.write_all(b"\n").unwrap();
+        view.refresh(dir.path(), &Policy::default());
+        assert_eq!(read_transcript(&run_dir).unwrap().len(), 2);
+        assert_eq!(view.objective.as_deref(), Some("Fix the login screen"));
+        assert!(view.session.as_ref().unwrap().working);
+
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 24)).unwrap();
+        terminal
+            .draw(|frame| draw_main(frame, &view, frame.area()))
+            .unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(screen.contains("Fix the login screen"));
+        assert!(screen.contains("20261001-test"));
+    }
+
+    #[test]
+    fn history_reader_refuses_a_symlink_without_modifying_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        std::fs::write(&target, b"private incomplete tail").unwrap();
+        std::os::unix::fs::symlink(&target, dir.path().join("transcript.jsonl")).unwrap();
+        assert!(read_transcript(dir.path()).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"private incomplete tail");
+    }
 }

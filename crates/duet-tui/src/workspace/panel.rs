@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! The workspace's side panel, cycled with Ctrl-T:
+//! The workspace's side panel: Tab / Shift-Tab cycle its tabs; Ctrl-T also closes it.
 //!
 //! - Changes: the files this session changed and the selected file's diff,
 //!   from the session's write journal and git (see `crate::changes`). A file
 //!   that is sensitive by policy, or derived from sensitive data by a command,
 //!   is named, never shown, as everywhere else in duet.
-//! - Privacy: what the boundary withheld from the frontier, as the transcript
-//!   records it (results shown other than as they are, by kind; the values
-//!   and lines it replaced; local-model answers), counted and newest first.
+//! - Privacy: selectable actions, questions, outcomes and outbound evidence.
 //! - Session: turns, requests, tokens, cost and working time against the
 //!   session's budgets.
 
@@ -16,9 +14,7 @@ use super::cells::palette::{self, ACCENT, BAD, GOOD, HELD, MUTED, WARN};
 use crate::changes::{self, ChangedFile};
 use duet_agent::transcript::Entry;
 use duet_boundary::audit::{self, AuditEvent, Line as Record};
-use duet_boundary::model::Item;
 use duet_boundary::policy::Policy;
-use duet_boundary::view::ViewClass;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -55,9 +51,6 @@ struct Attached {
     policy: Policy,
 }
 
-/// Interventions kept for the Privacy view.
-const KEEP: usize = 500;
-
 /// How often the changed files are looked at while duet works.
 const EVERY: Duration = Duration::from_secs(1);
 
@@ -77,40 +70,33 @@ pub(super) struct Panel {
     derived_audit: Vec<String>,
     audit_len: u64,
     refreshed: Option<Instant>,
-    /// Results shown other than as they are, by how.
-    held: [usize; 5],
-    /// The boundary's interventions, oldest first.
-    withheld: Vec<String>,
-    local_answers: usize,
-    masked: usize,
-    compactions: usize,
+    privacy: super::privacy::Privacy,
+    economics: Option<serde_json::Value>,
+    session_scroll: usize,
+    recorded_cost: f64,
 }
-
-fn held_index(class: ViewClass) -> Option<usize> {
-    match class {
-        ViewClass::Raw => None,
-        ViewClass::Tokenized => Some(0),
-        ViewClass::HandleSummary => Some(1),
-        ViewClass::LocalAnswer => Some(2),
-        ViewClass::BulkyHandle => Some(3),
-        ViewClass::Protected => Some(4),
-    }
-}
-
-const HELD_TEXT: [&str; 5] = [
-    "values replaced by placeholders",
-    "sensitive, held locally (a summary was sent)",
-    "answered by the local model",
-    "large, held locally (an outline was sent)",
-    "protected source (only its interface was sent)",
-];
 
 impl Panel {
     /// Opens on a screen at least this wide, unless the operator chose.
     pub(super) const AUTO_WIDTH: u16 = 110;
 
     /// Follows the session in `run_dir` from now on.
-    pub(super) fn attach(&mut self, ws: PathBuf, run_dir: PathBuf, audit: PathBuf, policy: Policy) {
+    pub(super) fn attach(
+        &mut self,
+        ws: PathBuf,
+        run_dir: PathBuf,
+        audit: PathBuf,
+        policy: Policy,
+        history: &[Entry],
+    ) {
+        self.privacy = Default::default();
+        self.audit_len = 0;
+        self.economics = None;
+        self.session_scroll = 0;
+        self.recorded_cost = 0.0;
+        for entry in history {
+            self.entry(entry);
+        }
         self.attached = Some(Attached {
             ws,
             run_dir,
@@ -131,6 +117,18 @@ impl Panel {
         };
     }
 
+    /// Cycle only the three tabs; open a closed panel at the relevant end.
+    pub(super) fn switch_tab(&mut self, backwards: bool) {
+        self.chosen = true;
+        self.tab = Some(match (self.tab, backwards) {
+            (None, false) | (Some(Tab::Session), false) | (Some(Tab::Privacy), true) => {
+                Tab::Changes
+            }
+            (Some(Tab::Changes), false) | (Some(Tab::Session), true) => Tab::Privacy,
+            (None, true) | (Some(Tab::Privacy), false) | (Some(Tab::Changes), true) => Tab::Session,
+        });
+    }
+
     /// The panel's width on a screen `width` wide (0: not shown).
     pub(super) fn width(&mut self, width: u16) -> u16 {
         if !self.chosen {
@@ -142,8 +140,12 @@ impl Panel {
         }
     }
 
-    /// Ctrl-Up/Down: another file.
+    /// Ctrl-Up/Down: another file or privacy event.
     pub(super) fn select(&mut self, by: isize) {
+        if self.tab == Some(Tab::Privacy) {
+            self.privacy.select(by);
+            return;
+        }
         if self.files.is_empty() {
             return;
         }
@@ -153,8 +155,16 @@ impl Panel {
         self.diff_scroll = 0;
     }
 
-    /// Ctrl-PgUp/PgDn: the diff scrolls.
+    /// Ctrl-PgUp/PgDn: the active panel's details scroll.
     pub(super) fn scroll_diff(&mut self, by: isize) {
+        if self.tab == Some(Tab::Privacy) {
+            self.privacy.scroll(by);
+            return;
+        }
+        if self.tab == Some(Tab::Session) {
+            self.session_scroll = self.session_scroll.saturating_add_signed(by);
+            return;
+        }
         let rows = self.files.get(self.file).map_or(0, |f| f.rows.len());
         self.diff_scroll = self
             .diff_scroll
@@ -162,36 +172,20 @@ impl Panel {
             .min(rows.saturating_sub(1));
     }
 
+    /// Ctrl-O opens the selected privacy action's exact audit detail.
+    /// Returns false when another panel tab is active.
+    pub(super) fn toggle_privacy_details(&mut self) -> bool {
+        if self.tab != Some(Tab::Privacy) {
+            return false;
+        }
+        self.privacy.toggle_details();
+        true
+    }
+
     /// What a transcript entry adds to the Privacy view.
     pub(super) fn entry(&mut self, e: &Entry) {
-        match e {
-            Entry::Shown { class, .. } => {
-                if let Some(i) = held_index(*class) {
-                    self.held[i] += 1;
-                }
-            }
-            Entry::Usage {
-                turn,
-                interventions,
-                ..
-            } => {
-                self.withheld
-                    .extend(interventions.iter().map(|i| format!("turn {turn}: {i}")));
-                if self.withheld.len() > KEEP {
-                    let drop = self.withheld.len() - KEEP;
-                    self.withheld.drain(..drop);
-                }
-            }
-            Entry::Item {
-                item: Item::Assistant { tool_calls, .. },
-            } => {
-                self.local_answers += tool_calls.iter().filter(|c| c.name == "ask_local").count();
-            }
-            Entry::Masked { items, .. } => self.masked += items,
-            Entry::Compacted { .. } => self.compactions += 1,
-            Entry::Subagent { entry, .. } => self.entry(entry),
-            _ => {}
-        }
+        self.privacy.entry(e);
+        self.recorded_cost += entry_cost(e);
     }
 
     /// Brings the changed files up to date: now when `force`, else at most
@@ -204,11 +198,19 @@ impl Panel {
             return;
         }
         self.refreshed = Some(Instant::now());
+        self.economics = duet_fs::read_file(
+            &a.run_dir,
+            std::path::Path::new("economics.json"),
+            1024 * 1024,
+        )
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok());
         let len = std::fs::metadata(&a.audit).map_or(0, |m| m.len());
         if len != self.audit_len {
             self.audit_len = len;
-            self.derived_audit = audit::read(&a.audit)
-                .unwrap_or_default()
+            let records = audit::read(&a.audit).unwrap_or_default();
+            self.privacy.audit(&records);
+            self.derived_audit = records
                 .iter()
                 .filter_map(|r| match r {
                     Record::Event(e) => match &e.event {
@@ -240,7 +242,7 @@ impl Panel {
         }
     }
 
-    pub(super) fn draw(&self, f: &mut Frame<'_>, area: Rect, status: &Status) {
+    pub(super) fn draw(&mut self, f: &mut Frame<'_>, area: Rect, status: &Status) {
         let Some(tab) = self.tab else {
             return;
         };
@@ -261,12 +263,25 @@ impl Panel {
                 spans.push(Span::styled(format!(" {} ", t.title()), palette::muted()));
             }
         }
-        spans.push(Span::styled("  Ctrl-T", palette::muted()));
+        spans.push(Span::styled("  Tab / Shift-Tab", palette::muted()));
         f.render_widget(Paragraph::new(Line::from(spans)), head);
         match tab {
             Tab::Changes => self.draw_changes(f, body),
-            Tab::Privacy => self.draw_privacy(f, body),
-            Tab::Session => draw_session(f, body, status),
+            Tab::Privacy => {
+                self.privacy
+                    .draw(f, body, self.attached.as_ref().map(|a| a.run_dir.as_path()))
+            }
+            Tab::Session => {
+                let mut live = status.clone();
+                live.cost_usd = live.cost_usd.max(self.recorded_cost);
+                draw_session(
+                    f,
+                    body,
+                    &live,
+                    self.economics.as_ref(),
+                    &mut self.session_scroll,
+                );
+            }
         }
     }
 
@@ -359,7 +374,10 @@ impl Panel {
                     .unwrap_or(1)
                     .to_string()
                     .len();
-                for r in file.rows.iter().skip(self.diff_scroll) {
+                // Paragraph clips each unwrapped row to one screen line. Only
+                // format the rows that can actually fit below the file list.
+                let visible_rows = (area.height as usize).saturating_sub(lines.len());
+                for r in file.rows.iter().skip(self.diff_scroll).take(visible_rows) {
                     let n = r
                         .new
                         .or(r.old)
@@ -390,61 +408,19 @@ impl Panel {
         }
         f.render_widget(Paragraph::new(lines), area);
     }
+}
 
-    fn draw_privacy(&self, f: &mut Frame<'_>, area: Rect) {
-        let heading =
-            |t: &str| Line::styled(t.to_owned(), Style::new().add_modifier(Modifier::BOLD));
-        let mut lines = vec![heading("What the frontier did not see as it was")];
-        let total: usize = self.held.iter().sum();
-        if total == 0 && self.withheld.is_empty() && self.local_answers == 0 {
-            lines.push(Line::styled(
-                "nothing withheld so far in this session",
-                palette::muted(),
-            ));
-        }
-        for (n, what) in self.held.iter().zip(HELD_TEXT) {
-            if *n > 0 {
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{n:>4} "),
-                        Style::new().fg(HELD).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(format!("result(s): {what}")),
-                ]));
-            }
-        }
-        if self.local_answers > 0 {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    format!("{:>4} ", self.local_answers),
-                    Style::new().fg(HELD).add_modifier(Modifier::BOLD),
-                ),
-                Span::raw("question(s) answered by the local model"),
-            ]));
-        }
-        if self.masked > 0 || self.compactions > 0 {
-            lines.push(Line::styled(
-                format!(
-                    "context: {} old result(s) shortened, {} condensation(s)",
-                    self.masked, self.compactions
-                ),
-                palette::muted(),
-            ));
-        }
-        if !self.withheld.is_empty() {
-            lines.push(Line::default());
-            lines.push(heading(&format!(
-                "Interventions ({}), newest first",
-                self.withheld.len()
-            )));
-            for w in self.withheld.iter().rev() {
-                lines.push(Line::from(vec![
-                    Span::styled("◦ ", Style::new().fg(HELD)),
-                    Span::raw(crate::term::safe(w)),
-                ]));
-            }
-        }
-        f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
+fn entry_cost(e: &Entry) -> f64 {
+    let cost = match e {
+        Entry::Usage { cost_usd, .. } | Entry::FailedAttempts { cost_usd, .. } => *cost_usd,
+        Entry::ReviewUsage { usage } => usage.cost_usd,
+        Entry::Subagent { entry, .. } => entry_cost(entry),
+        _ => 0.0,
+    };
+    if cost.is_finite() && cost >= 0.0 {
+        cost
+    } else {
+        0.0
     }
 }
 
@@ -461,7 +437,13 @@ fn band(n: &str, sign: char, text: &str, fg: Color, bg: Color, width: usize) -> 
     ])
 }
 
-fn draw_session(f: &mut Frame<'_>, area: Rect, s: &Status) {
+fn draw_session(
+    f: &mut Frame<'_>,
+    area: Rect,
+    s: &Status,
+    economics: Option<&serde_json::Value>,
+    scroll: &mut usize,
+) {
     if s.session.is_empty() {
         f.render_widget(
             Paragraph::new(Line::styled(
@@ -475,7 +457,7 @@ fn draw_session(f: &mut Frame<'_>, area: Rect, s: &Status) {
     }
     let row = |k: &str, v: String| {
         Line::from(vec![
-            Span::styled(format!("{k:<13}"), palette::muted()),
+            Span::styled(format!("{k:<15}"), palette::muted()),
             Span::raw(v),
         ])
     };
@@ -523,7 +505,7 @@ fn draw_session(f: &mut Frame<'_>, area: Rect, s: &Status) {
     gauge(
         f,
         budget,
-        format!("cost  ${:.4} of ${:.2}", s.cost_usd, s.budget_usd),
+        format!("frontier  ${:.4} of ${:.2}", s.cost_usd, s.budget_usd),
         cost_ratio,
     );
     let time_ratio = if s.budget_minutes > 0 {
@@ -542,7 +524,114 @@ fn draw_session(f: &mut Frame<'_>, area: Rect, s: &Status) {
         ),
         time_ratio,
     );
-    let lines = vec![
+    let mut lines = Vec::new();
+    if let Some(goal) = &s.goal {
+        let safe = crate::term::safe(goal).replace('\n', " ");
+        let mut chars = safe.chars();
+        let mut summary: String = chars.by_ref().take(240).collect();
+        if chars.next().is_some() {
+            summary.push('…');
+        }
+        lines.push(row("goal", summary));
+        lines.push(Line::default());
+    }
+    if let Some(e) = economics {
+        let number = |path: &str| {
+            e.pointer(path)
+                .and_then(serde_json::Value::as_f64)
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .unwrap_or(0.0)
+        };
+        let local = number("/local/cost_usd");
+        lines.extend([
+            row("local estimate", format!("${local:.6}")),
+            row("combined", format!("${:.6}", s.cost_usd + local)),
+            row(
+                "local in/out",
+                format!(
+                    "{:.0} / {:.0} tokens",
+                    number("/local/input_tokens"),
+                    number("/local/output_tokens")
+                ),
+            ),
+            row(
+                "local $/1M",
+                format!(
+                    "{:.4} in / {:.4} out",
+                    number("/local_rates/input_per_million"),
+                    number("/local_rates/output_per_million")
+                ),
+            ),
+            Line::from("Local costs are outside frontier budgets."),
+            Line::default(),
+        ]);
+        if let Some(count) = e
+            .pointer("/local/unpriced_cancelled_requests")
+            .and_then(serde_json::Value::as_u64)
+            .filter(|count| *count > 0)
+        {
+            lines.push(Line::styled(
+                format!("Canceled local requests with unknown charges: {count}"),
+                Style::new().fg(WARN),
+            ));
+        }
+        if let Some(model) = e
+            .pointer("/frontier/price/model")
+            .and_then(serde_json::Value::as_str)
+        {
+            lines.push(row("priced model", crate::term::safe(model)));
+            lines.push(row(
+                "frontier $/1M",
+                format!(
+                    "{:.4} in / {:.4} out",
+                    number("/frontier/price/input"),
+                    number("/frontier/price/output")
+                ),
+            ));
+            lines.push(row(
+                "cache $/1M",
+                format!(
+                    "{:.4} read / {:.4} write",
+                    number("/frontier/price/cache_read"),
+                    number("/frontier/price/cache_write")
+                ),
+            ));
+            if e.pointer("/frontier/overrides")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|tiers| !tiers.is_empty())
+            {
+                lines.push(Line::from("Context/time tiers apply to this model."));
+            }
+        } else if s.mode != "top clearance" {
+            lines.push(Line::styled(
+                "Frontier price UNKNOWN; combined is a subtotal.",
+                Style::new().fg(WARN),
+            ));
+        }
+        if let Some(source) = e.get("pricing_source").and_then(serde_json::Value::as_str) {
+            lines.push(Line::from(crate::term::safe(source)));
+        }
+        if let Some(at) = e
+            .pointer("/frontier/fetched_at")
+            .and_then(serde_json::Value::as_u64)
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            lines.push(row(
+                "catalog age",
+                format!("{}h", now.saturating_sub(at) / 3600),
+            ));
+        }
+        lines.push(Line::from("Token estimates; provider bills may differ."));
+        lines.push(Line::styled(
+            "Ctrl-PgUp/PgDn scroll details",
+            palette::muted(),
+        ));
+        lines.push(Line::default());
+    }
+    lines.extend(vec![
         row("session", s.session.clone()),
         row("mode", s.mode.clone()),
         row("frontier", s.frontier.clone()),
@@ -564,6 +653,178 @@ fn draw_session(f: &mut Frame<'_>, area: Rect, s: &Status) {
         ),
         row("tokens out", thousands(s.tokens_out)),
         row("each turn", format!("at most ${:.2}", s.turn_budget_usd)),
-    ];
-    f.render_widget(Paragraph::new(lines), facts);
+    ]);
+    let rows = lines
+        .iter()
+        .flat_map(|l| super::ansi::wrap(l, facts.width.max(1) as usize))
+        .collect::<Vec<_>>();
+    *scroll = (*scroll).min(rows.len().saturating_sub(facts.height as usize));
+    let page = rows
+        .into_iter()
+        .skip(*scroll)
+        .take(facts.height as usize)
+        .collect::<Vec<_>>();
+    f.render_widget(Paragraph::new(page), facts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use duet_agent::journal::WriteJournal;
+    use duet_agent::transcript::Transcript;
+    use duet_boundary::model::{Item, ToolCall};
+    use ratatui::{Terminal, backend::TestBackend};
+    use serde_json::json;
+
+    #[test]
+    fn long_changes_view_keeps_scrolled_rows_and_last_line_reachable() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("workspace");
+        let run_dir = dir.path().join("run");
+        std::fs::create_dir_all(&ws).unwrap();
+        let mut journal = WriteJournal::open(&run_dir).unwrap();
+        let content = (1..=2_000)
+            .map(|n| format!("unique row {n:04}\n"))
+            .collect::<String>();
+        journal
+            .write(
+                &ws,
+                std::path::Path::new("long.txt"),
+                content.as_bytes(),
+                &duet_fs::Precondition::Any,
+            )
+            .unwrap();
+        let mut panel = Panel::default();
+        panel.attach(
+            ws,
+            run_dir,
+            dir.path().join("audit.jsonl"),
+            Policy::default(),
+            &[],
+        );
+        panel.tab = Some(Tab::Changes);
+        let mut terminal = Terminal::new(TestBackend::new(64, 20)).unwrap();
+        let mut show = |panel: &mut Panel| {
+            terminal
+                .draw(|frame| panel.draw(frame, frame.area(), &Status::default()))
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(64)
+                .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let first = show(&mut panel);
+        assert!(
+            first.contains("long.txt") && first.contains("unique row 0001"),
+            "{first}"
+        );
+        assert!(!first.contains("unique row 0020"));
+        panel.scroll_diff(1_000);
+        let middle = show(&mut panel);
+        assert!(middle.contains("unique row 1000"), "{middle}");
+        panel.scroll_diff(isize::MAX);
+        let last = show(&mut panel);
+        assert!(
+            last.contains("long.txt") && last.contains("unique row 2000"),
+            "{last}"
+        );
+    }
+
+    #[test]
+    fn resume_loads_privacy_events_and_session_shows_local_prices_and_live_cost() {
+        let dir = tempfile::tempdir().unwrap();
+        let t = Transcript::open(dir.path()).unwrap();
+        t.append(&Entry::Item {
+            item: Item::Assistant {
+                text: String::new(),
+                reasoning: None,
+                replay: None,
+                tool_calls: vec![ToolCall {
+                    id: "read1".into(),
+                    name: "read_file".into(),
+                    arguments: json!({"path":"spec.md"}).as_object().unwrap().clone(),
+                    raw_arguments: String::new(),
+                }],
+            },
+        })
+        .unwrap();
+        t.append(&Entry::Item {
+            item: Item::ToolResult {
+                call_id: "read1".into(),
+                content: "specification".into(),
+            },
+        })
+        .unwrap();
+        std::fs::write(dir.path().join("economics.json"), json!({
+            "local":{"cost_usd":0.25,"input_tokens":100,"output_tokens":50,"unpriced_cancelled_requests":2},
+            "local_rates":{"input_per_million":2.0,"output_per_million":5.0},
+            "frontier":{"price":{"model":"vendor/model","input":1.0,"output":4.0,"cache_read":0.1,"cache_write":1.25},"fetched_at":1},
+            "pricing_source":"OpenRouter test catalog"
+        }).to_string()).unwrap();
+        let history = Transcript::read(dir.path()).unwrap();
+        let live_usage = Entry::Usage {
+            turn: 1,
+            usage: Default::default(),
+            cost_usd: 0.50,
+            interventions: vec![],
+        };
+        // The session has already written this entry while its earlier Attach
+        // message is still queued. The snapshot must not read it a second time.
+        t.append(&live_usage).unwrap();
+        let mut panel = Panel::default();
+        panel.attach(
+            dir.path().to_owned(),
+            dir.path().to_owned(),
+            dir.path().join("audit.jsonl"),
+            Policy::default(),
+            &history,
+        );
+        let mut terminal = Terminal::new(TestBackend::new(64, 38)).unwrap();
+        let mut show = |panel: &mut Panel| {
+            terminal
+                .draw(|f| {
+                    panel.draw(
+                        f,
+                        f.area(),
+                        &Status {
+                            session: "test".into(),
+                            budget_usd: 5.0,
+                            ..Default::default()
+                        },
+                    )
+                })
+                .unwrap();
+            terminal
+                .backend()
+                .buffer()
+                .content
+                .chunks(64)
+                .map(|row| row.iter().map(|c| c.symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        panel.tab = Some(Tab::Privacy);
+        assert!(show(&mut panel).contains("spec.md"));
+        panel.entry(&live_usage);
+        panel.tab = Some(Tab::Session);
+        let view = show(&mut panel);
+        assert!(view.contains("frontier  $0.5000"), "{view}");
+        assert!(view.contains("$0.250000"), "{view}");
+        assert!(view.contains("$0.750000"), "{view}");
+        assert!(view.contains("2.0000 in / 5.0000 out"), "{view}");
+        assert!(view.contains("vendor/model"), "{view}");
+        assert!(
+            view.contains("Canceled local requests with unknown charges: 2"),
+            "{view}"
+        );
+        if let Ok(path) = std::env::var("DUET_FINOPS_PREVIEW") {
+            std::fs::write(path, view).unwrap();
+        }
+        panel.scroll_diff(isize::MAX);
+        assert!(show(&mut panel).contains("each turn"));
+    }
 }

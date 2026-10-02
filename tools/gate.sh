@@ -80,17 +80,20 @@ if [ -n "$hits" ]; then
 fi
 
 step "provenance"
-# Duet contains no code, formats or names from other coding agents. The only
-# allowlisted places are the evaluation lane adapters, which launch them as
-# black boxes for measurement, and the sandbox's list of home-directory
-# credential stores, which names their login directories only to deny them.
+# Duet's implementation is independent. Product names are permitted in the
+# evaluation adapters, credential denylist, and portable-skill discovery
+# adapter (the user requested interoperability with standard agent files).
 # Distinctive names match case-insensitively; names that are also ordinary words
 # (Cursor, Goose) match only as capitalized product names.
+# The clipboard decoder uses Rust's standard-library byte cursor; its import
+# and constructor calls are type references, not product provenance.
 pattern='(\bcodex\b|claude[ -]code|\bopencode\b|\bpi-mono\b|\baider\b|openhands|swe-agent|\bcline\b|\*\*\* Begin Patch)'
 products='\b(Cursor|Goose)\b'
 hits=$( { grep -rniE "$pattern" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml';
           grep -rnE "$products" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml'; } \
     | grep -v '^crates/duet-evals/src/lanes/' \
+    | grep -v '^crates/duet-cli/src/extensions.rs:' \
+    | grep -vE '^crates/duet-tui/src/clipboard\.rs:[0-9]+:.*(use std::io::\{Cursor, Read, Write\};|Cursor::new\()' \
     | grep -v '^crates/duet-sandbox/src/home_secrets.rs:' || true)
 if [ -n "$hits" ]; then
     echo "provenance check failed:" >&2

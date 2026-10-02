@@ -221,8 +221,12 @@ pub struct RunRecord {
     pub unreported_requests: u64,
     /// Frontier dollars at list price; `None` if any model is unpriced.
     pub frontier_cost_usd: Option<f64>,
-    /// Local model electricity. Until Duet reports model busy time, wall-clock
-    /// time is used as a conservative upper bound.
+    /// Seconds charged for local-model electricity. New Duet summaries with
+    /// complete local request timing use that time, capped at run wall time;
+    /// older or incomplete summaries use wall time as an upper bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub electricity_seconds: Option<f64>,
+    /// Local-model electricity estimated from `electricity_seconds`.
     pub electricity_usd: f64,
     /// Frontier plus electricity; `None` if any frontier model is unpriced.
     pub total_cost_usd: Option<f64>,
@@ -525,6 +529,20 @@ pub struct RunConfig<'a> {
     pub keep_build_output: bool,
 }
 
+fn local_electricity_seconds(wall_seconds: f64, ledger: Option<&DuetLedger>) -> f64 {
+    let wall = wall_seconds.max(0.0);
+    let Some(ledger) = ledger.filter(|l| l.local_request_time_complete) else {
+        return wall;
+    };
+    let request = ledger.local_busy_seconds;
+    if !request.is_finite() || request < 0.0 {
+        return wall;
+    }
+    // Concurrent local calls can sum to more than elapsed wall time; the
+    // hardware cannot consume more than one wall-second per wall-second.
+    request.min(wall)
+}
+
 pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
     let spec = &cfg.package.spec;
     cfg.package.verify_seal()?;
@@ -599,6 +617,7 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         usage_by_model: BTreeMap::new(),
         unreported_requests: 0,
         frontier_cost_usd: None,
+        electricity_seconds: None,
         electricity_usd: 0.0,
         total_cost_usd: None,
         error: None,
@@ -642,7 +661,9 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
     }
     record.frontier_cost_usd = total;
     if cfg.lane.uses_local_model() {
-        record.electricity_usd = cfg.prices.electricity(cfg.local_watts, record.wall_seconds);
+        let seconds = local_electricity_seconds(record.wall_seconds, record.duet_ledger.as_ref());
+        record.electricity_seconds = Some(seconds);
+        record.electricity_usd = cfg.prices.electricity(cfg.local_watts, seconds);
     }
     record.total_cost_usd = total.map(|t| t + record.electricity_usd);
     record.usage_by_model = usage.by_model;
@@ -875,6 +896,22 @@ pub fn manifest_of(run_dir: &Path) -> Result<Manifest> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn electricity_uses_complete_request_time_and_keeps_legacy_upper_bound() {
+        let mut ledger = DuetLedger {
+            local_calls: 3,
+            local_busy_seconds: 25.0,
+            ..DuetLedger::default()
+        };
+        assert_eq!(local_electricity_seconds(100.0, Some(&ledger)), 100.0);
+        assert_eq!(local_electricity_seconds(100.0, None), 100.0);
+        ledger.local_request_time_complete = true;
+        assert_eq!(local_electricity_seconds(100.0, Some(&ledger)), 25.0);
+        ledger.local_busy_seconds = 150.0;
+        assert_eq!(local_electricity_seconds(100.0, Some(&ledger)), 100.0);
+        assert_eq!(local_electricity_seconds(0.0, Some(&ledger)), 0.0);
+    }
 
     #[test]
     fn built_in_lanes_parse_and_have_unique_names() {

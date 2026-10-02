@@ -123,6 +123,21 @@ pub fn scripted_local(replies: Vec<String>) -> (LocalReader, Received) {
     local_with(Replies::Queue(Mutex::new(replies.into())))
 }
 
+/// Scripted frontier transport for boundary contract tests; never opens a socket.
+pub fn scripted_frontier(replies: Vec<String>, model: &str) -> (ChatProvider, Received) {
+    let received = Received::default();
+    let script = Script {
+        replies: Arc::new(Replies::Queue(Mutex::new(replies.into()))),
+        received: received.clone(),
+    };
+    let mut cfg = ProviderConfig::new("https://frontier.example/v1", model, Role::Frontier);
+    cfg.max_attempts = Some(1);
+    (
+        ChatProvider::new(cfg, Box::new(script)).expect("scripted frontier"),
+        received,
+    )
+}
+
 /// A local reader whose model computes each reply (the model's text, normally
 /// a JSON object) from the user prompt it received: a stand-in that behaves
 /// according to the content and question it is given.

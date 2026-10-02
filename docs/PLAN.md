@@ -128,7 +128,7 @@ rewritten in Rust.
 | `leakproxy.rs` | Logging reverse proxy (hyper) in front of every lane's frontier endpoint; scans every request body and every client WebSocket message (`wsframe.rs` reads RFC 6455 frames); writes `leaks.jsonl` (independent of Duet's own audit log) |
 | `lanes/` | `lanes.toml`: `duet-passthrough` (frontier-only), `duet-hybrid`, `duet-local-only`; black-box external lanes `pi-glm`, `claude-code`, `codex` |
 | `pricing.toml` | Verified list prices incl. cache read/write, with source URL and date |
-| `cost.rs`, `ledger.rs` | Dollars at list price plus electricity (watts × local busy seconds); Duet's per-run cost ledger read from `summary.json` |
+| `cost.rs`, `ledger.rs` | Dollars at list price plus estimated electricity (watts × complete local-request time on new runs, capped at run wall time; older runs retain the wall-time upper bound); Duet's per-run cost ledger read from `summary.json` |
 | `stats.rs` | Paired bootstrap by run (10k resamples); non-inferiority bounds on hidden-test pass rate (margin −5 pp, reported) and judge score (margin −2), superiority on cost, exact binomial upper bound on leak rate; judge repeats nested within artifact. The quality verdict is the judge bound plus the per-task majority rule (§3) |
 | `report.rs` | Per-lane tables, gate verdict JSON, dashboard |
 
@@ -638,8 +638,9 @@ with quality non-inferior). Item 2, compaction, stays off: it is the cheapest XL
 missed the X2 evidence cluster on both seeds (67.3% and 70.9% vs 96.4%). Item 5, the explorer,
 stays off pending attribution: its lane matched the frontier alone on XL (94.7% vs 94.2%) at 1.71×,
 but `explore` was called only 3 times in 4 runs. Closed 2026-09-29 (§10): with the log view and
-`ask_local` fixes, default hybrid scores 96.4% on X2 on three seeds (passthrough 96.4%) and 90.7% on
-X1 (passthrough 92.0%), at ~1.12× passthrough's cost on X2; re-measured on that build, compaction
+`ask_local` fixes, default hybrid scores 96.4% on X2 on three seeds (passthrough 96.4%) and 97.3% on
+X1 (passthrough 97.0%; X1 scores corrected by grader revision 2 on 2026-09-30, see §10),
+at ~1.12× passthrough's cost on X2; re-measured on that build, compaction
 still misses the X2 cluster on two seeds and stays off, and the explorer stays off (`explore` called
 once in six runs).
 
@@ -750,6 +751,29 @@ repository size.
 
 ### M5.3 — Local security review: auditor first, then scanner
 
+**M5.3 complete 2026-09-30 as an experimental, bounded implementation (revision 3).** The finish auditor
+and foreground/background `duet scan` share private snapshots, original syntax rules, bounded
+helper/LSP context and optional sandboxed scanner adapters. Structured local opinions preserve
+host-classified private facts. Optional frontier opinions use a fresh gated context, no tools,
+strict eligibility and separately accounted budgets across resume. Models cannot create or
+dismiss blockers; default finish review, enforcement and frontier opinions remain off.
+
+The frozen independent 48-case public sample gives rules/local 11 TP / 5 FP / 13 FN / 19 TN;
+frontier retention gives 11/3/13/21 (two unavailable opinions retained), while requiring both
+models to dismiss gives no gain. Recall is only 45.83%. Local review is therefore narrowed by
+default to protected code and privacy flows. The 24 authored privacy cases give rules 12/4/0/8
+and local retention 12/0/0/12; the four seeded X1 Rust additions give 2/1/0/1 and 2/0/0/2.
+No exact checked canaries appeared, subject to existing fragment/paraphrase limitations.
+Three ordinary X1 diffs have no candidates within the cap. The older public development set
+now scores 16/3/2/15: stricter source recognition loses wrapper flows as well as false alarms.
+These results do not justify default enforcement or a general security claim. Full scope,
+protocol failures retained as evidence, measurements and reproduction:
+[auditor report](SECURITY-AUDITOR-2026-09-30.md).
+
+Final full gate and release builds passed (`EXT_DISK/duet_v2/review-v3-delivery-{gate,release}.log`);
+both shell binaries were installed, with backups and source/result hashes retained. The release
+CLI scan detected the TLS fixture and returned exit 2. Changes remain uncommitted.
+
 Why: the boundary keeps data local *during* a session, but nothing checks that the code duet
 writes will not leak data *after deployment* (a new outbound host, customer fields in logs,
 disabled TLS verification, a weakened auth check) — including code written by a frontier steered
@@ -763,7 +787,7 @@ One engine, two entry points:
 |---|---|---|
 | Scope | The run's or session's changes | The whole repository |
 | When | Automatically at `finish`, before the work counts as done | `duet scan`, on demand or in the background; results kept per commit |
-| Cost | Changed files only (minutes of local time) | About an hour of local time on a 58K-line repository at current prefill speed |
+| Cost | Bounded changed files and eligible opinions; measured below | Bounded captured repository and eligible opinions; a 58K-line full scan has not been timed |
 | Protects against | New vulnerabilities and data-leak backdoors in duet's own changes | Existing vulnerabilities and privacy flows |
 
 Three layers:
@@ -996,6 +1020,11 @@ Prerequisites:
 
 ## 10. Progress
 
+**X1 grading correction (2026-09-30):** X1 scores recorded before that date use grader revision 1,
+which incorrectly penalized redundant parentheses in ANY/ALL subqueries. They are historical,
+not the current comparison. [The audit](X1-GRADER-AUDIT-2026-09-30.md) records all 20 regrades
+under revision 2; original run records are preserved. Do not mix the two seals' scores.
+
 | Date | Milestone | Status |
 |---|---|---|
 | 2026-09-23 | M0.1–M0.3 | Done (`e53c700`). Harness `duet-eval` (33 tests); dogfood tasks S0–S2, M1–M3, L1 all pass `duet-eval check`. |
@@ -1033,9 +1062,14 @@ Prerequisites:
 | 2026-09-28 | X2 evidence cluster: why default hybrid missed it (operator: "go") | Traced on `m52-xl` X2 hybrid s1 (35/55; misses: 16-digit `$string`, fractional seconds, compact timestamps) against the passing runs. The frontier read only the log, and the log view hid the evidence: the error-lines list showed the first 12 of 66 lines (three daily failures repeated), so the tickets at lines 202–205 (NP-88412 fractions, CR-5510 shipment numbers, the billing warning on settlement dates) never showed, and the templates leave one-off lines out by design; every timestamp lost its year (the 16-digit order numbers pass Luhn and count as cards, and one year in ten shares their four digits); `ask_local` answers lost nearly every quote as copied sensitive text, including JSONata's own error messages, public paths and lines the view had shown (only files the frontier had read counted as public). Fixed: error lines one per shape with counts (`(×28)`), 400 characters each; a calendar date's digits are not a fragment; the workspace's paths and public files' text are public to the copied-span filter from the start, and so are the error lines a view shows; the task-note outline gives an integer's length from 10 digits (`order_ref (integer, 16 digits)`). Offline (`structure_report`, the runs' own canaries): X2's view now lists all five tickets and SR-115, 0 of 158 canaries; X1 unchanged in effect, 0 of 104. Also: after a response hits the output limit the frontier is told the limit and how to write one file in parts (the Captain Comic session lost its whole page in one `write_file`); the run prompt, and so its digest, is unchanged. Next: X2 hybrid with ≥3 seeds. |
 | 2026-09-28 | X2 re-run after the evidence fixes (`EXT_DISK/duet_v2/results/x2-evidence`, build `40aec4f` release, `duet-hybrid`, seeds 1–3, all valid) | **Hidden 96.4% on every seed** (53/55; was 63.6% and 96.4% on `m52-xl`, passthrough 96.4% on both), 0 leaks. The partner-feed cluster (16-digit `$string`, fractional seconds, compact timestamps, the real-data feeds) passes on all three; the two misses left are the ones every lane, passthrough included, missed (`$split`/`$replace` with an undefined argument). Cost $0.336/$0.260/$0.297 (mean $0.298; old hybrid X2 $0.365, passthrough $0.267, i.e. ~1.12× passthrough, was 1.37×); wall 3,194/2,369/1,679 s (mean 2,414; old 3,140, passthrough 1,922). Also on this build: Captain Comic from the 15 KB recreation spec (`experiments/comic/ws-spec`, Z.ai search, 60 turns, $0.27, 41 min): 83 KB `index.html` meeting the spec's static constraints (every section banner, EGA colours only, fixed 60 Hz step, no storage or external links); one output-limit stop, after which the file was written in parts. Next: X1 on the same build, then the XL head-to-head decisions for compaction and the explorer. |
 | 2026-09-28 | X1 re-run on the same build (`EXT_DISK/duet_v2/results/x1-evidence`, `40aec4f`, `duet-hybrid`, seeds 1–3, all valid) | Hidden 48/40/44 of 50 (mean 88.0%; `m52-xl` hybrid 42/48, passthrough 48/44, mean 92.0%), 0 leaks, $0.611/$0.437/$0.337, 4,696/3,333/4,213 s; seed variance still larger than lane gaps. Seed 2 failed all six real-data tests: it never ran its parser on the reports or the log. Its `ask_local` questions named log lines (105–111, 602–607, …) and were answered "not present" from the wrong part of the three-part log (the part was chosen by shared words only), three rounds of them, after which it stopped asking; quotes of the rejected SQL were also redacted as copied text (by design: local answers describe, and seed 3 instead ran a checker over the data with `sensitive_data`, 44/50). Fixed: a question naming line numbers goes to the part holding them, and a part that cannot answer passes the question to the next best once. |
-| 2026-09-29 | X1 with the chunk fix (`EXT_DISK/duet_v2/results/x1-chunks`, `e86f146`/`ac93ba2`, `duet-hybrid`, seeds 1–3) | Hidden 49/44/43 of 50 (mean 90.7%; 88.0% before the fix, passthrough 92.0% on two seeds), 0 leaks, $0.523/$0.611/$0.782, 3,086/6,103/6,096 s. Seed 2's real-data parsing tests now pass; every seed still misses ANY/ALL over subqueries and the forwarded-meaning checks. |
+| 2026-09-29 | X1 with the chunk fix (`EXT_DISK/duet_v2/results/x1-chunks`, `e86f146`/`ac93ba2`, `duet-hybrid`, seeds 1–3) | Hidden 49/44/43 of 50 (mean 90.7%; 88.0% before the fix, passthrough 92.0% on two seeds), 0 leaks, $0.523/$0.611/$0.782, 3,086/6,103/6,096 s. Seed 2's real-data parsing tests now pass. Correction 2026-09-30: only seeds 2–3 were marked as missing ANY/ALL and forwarded meaning, and those five failures are grader false negatives (revision 2 below). |
 | 2026-09-29 | Frontier cost without re-sent reasoning (operator: "are there other ways to reduce frontier cost by leveraging local llm?"; branch-free, `ac93ba2`) | Offline replays of the ten recorded XL hybrid runs (proxy bodies; cost model within 3% of the provider's cached tokens): stale-result eviction −2% (glm-5.3-flash), 0% (Opus 5.5); delegating fix-until-green loops ~0 (12% of turns react to a failure, but only three runs of ≥3 such turns in 1,305 turns). What re-sent input is made of: the frontier's own past `reasoning_content` 40%, tool results ~33%, edit/write/command arguments 15%. Not re-sending reasoning projected −37% (glm), −28% (Opus). Live head-to-head (`results/x2-noreason`, lane `duet-hybrid-noreason`, `frontier.resend_reasoning = false`, X2 seeds 1–3): **27/53/53 of 55, 719/431/408 requests (113/102/92 with reasoning), $2.03/$0.92/$0.76 (vs $0.30 mean), every run stopped by the 2-hour wall clock**: without its reasoning the frontier lost its thread and repeated work, as other agents report for Z.ai's Coding Plan ("Preserved Thinking" on by default). `frontier.resend_reasoning` stays on; the local-model cost ideas measured here are not worth building on these runs. |
 | 2026-09-29 | Compaction and explorer head-to-head on the current build (`EXT_DISK/duet_v2/results/{x2,x1}-lanes`, `c081890`/`475d4bc`, seeds 1–3, 0 leaks in all) | vs default hybrid (X2 96.4% on every seed, $0.298; X1 mean 90.7%, $0.639). **Compaction:** X2 96.4/67.3/70.9% ($0.26/$0.47/$0.46), X1 98/94/42% ($0.40/$0.50/$0.24; seeds 2 and 3 stopped by the wall clock): it still misses the X2 evidence cluster on two seeds and collapsed on one X1 seed → **stays off**. **Explorer:** X2 crashed (the `©` slice, fixed in `475d4bc`; not rerun)/83.6/96.4% ($0.48/$0.30), X1 96/98/90% ($0.41/$0.59/$0.87); the frontier called `explore` **once in six runs**, so its scores are seed variance, not the tool → **stays off**; offering it changes nothing unless the frontier is steered to use it (e.g. only above a repository size, or for narrow questions). M5.2 closes with items 1, 3 and 4 on and 2 and 5 off. |
+| 2026-09-30 | X1 grader audit and retry-cost trace ([details](X1-GRADER-AUDIT-2026-09-30.md)) | The ANY/ALL cluster was a grader defect: PostgreSQL 16.13 returns the same results and parsed views for single and redundant parentheses. Revision 2 normalizes only whole-subquery wrappers, keeps casts/operators/arrays distinct and leaves exact fingerprint tests intact. Regraded 20 archived artifacts into `results/x1-grader-v2` without rewriting original records: five runs gain five checks; no new failures; starter 3/50, reference 50/50. **Default hybrid 49/49/48 (97.3%), passthrough 48/49 (97.0%)**, descriptive comparison across the existing builds/seeds; cost and original leak measurements unchanged. Compaction/explorer remain off. Retry attribution was not recorded: `CallStats` now records second-chunk attempts/time and malformed-response retries; old eval records keep these unknown. Before/after chunk fix, mean frontier requests 144→180, local busy time 1,783→1,446 s, total cost $0.462→$0.639 ($0.171 of the $0.177 increase is frontier spend). No frontier prompt or boundary policy change. |
+| 2026-09-30 | M5.3 initial finish-time auditor ([details](SECURITY-AUDITOR-2026-09-30.md)) | Opt-in run/session change snapshots, original bounded syntax rules, tool-free local opinions, filtered private reports, count-only audit events and configurable blocking of rule-confirmed high findings. Defaults remain off. Final OWASP Python development subset: 10 TP / 0 FP / 8 FN / 18 TN; ten local opinions retained every candidate, adding 65 s with no measured accuracy gain. Three X1 ordinary diffs: no new candidates within the file cap. Full gate passed; release binaries rebuilt. Broader recall, privacy-flow measurement, scanner and frontier second opinion remain open. |
+| 2026-09-30 | M5.3 rules revision 2 and privacy-flow measurement ([details](SECURITY-AUDITOR-2026-09-30.md)) | Added augmented/member/index assignments, loop bindings and syntax-based privacy sources with boundary value ranges. OWASP development subset: rules/local both 18 TP / 5 FP / 0 FN / 13 TN (23 opinions, 188 s); two local verdicts contradict their safe explanations. Authored privacy corpus: rules 12/4/0/8, rules with `unlikely` opinions excluded 11/0/1/12 (16 opinions, 123 s): four safe candidates rejected, one known private date wrongly dismissed despite provenance. Product findings remain visible regardless of opinion. Zero checked canaries in filtered reports and forced-echo probes; three X1 diffs still zero candidates. Defaults stay off; independent validation and the judgment failures precede scanner/second-opinion work. |
+
+| 2026-10-01 | Terminal editing, clipboard and command discovery | Unicode keyboard/mouse selection, explicit copy/cut/text-or-image paste, bounded undo/redo, conversation search, file picker, draft-preserving command palette, queued attachment controls and settings paste. Background image commands cannot answer approvals; failed image groups recover their unsent request. The menu uses available height, visible ranges, a scrollbar, paging and first/last navigation; all 29 commands fit on tall terminals. Targeted checks: 122 TUI tests, 77 CLI tests and 6 image-policy tests passed in their respective runs; all-target Clippy, fast gate and release build passed. A release line-mode smoke test and the later workspace pseudo-terminal integration passed. Actual desktop clipboard checks and a fresh live screenshot remain pending. [TUI evidence](evidence/tui-validation-2026-10-01.md), [menu evidence](evidence/command-menu-validation-2026-10-01.md), [commit validation](evidence/precommit-validation-2026-10-01.md). |
 
 Scope changes, with reasons:
 - **Anthropic Messages and Responses dialects move to M6.** The frontier (z.ai GLM) and the local

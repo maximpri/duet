@@ -3,7 +3,7 @@
 //! the digests of the images the frontier may receive, and the local model's
 //! description of an image the frontier may not see.
 
-use super::{Engine, State};
+use super::{Engine, State, safe_local_error};
 use crate::images::{Facts, ImageRequest, Origin, Route};
 use crate::model::Image;
 use crate::view::ViewClass;
@@ -95,7 +95,7 @@ ask_local(handle=\"{}\", questions=[...]).\n",
             }
             Err(e) => out.push_str(&format!(
                 "[local description unavailable: {}]\n",
-                e.message.chars().take(160).collect::<String>()
+                safe_local_error(&e)
             )),
         }
         out

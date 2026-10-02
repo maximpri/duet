@@ -25,6 +25,12 @@ pub const DUET_DIR: &str = ".duet";
 
 pub const ENTRIES: &[Entry] = &[
     Entry {
+        path: ".duet/skills",
+        lifetime: Lifetime::Preserved,
+        sensitive: true,
+        purpose: "project skill instructions and resources",
+    },
+    Entry {
         path: ".duet/config.toml",
         lifetime: Lifetime::Preserved,
         sensitive: false,

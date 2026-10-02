@@ -385,6 +385,7 @@ impl<'a> Session<'a> {
                 exchange: 0,
                 child: None,
                 context: Default::default(),
+                scoped_instructions: Default::default(),
             },
             stats: RunStats::default(),
             exchange: 0,
@@ -519,6 +520,22 @@ impl<'a> Session<'a> {
     /// Images waiting for the operator's next message.
     pub fn attached(&self) -> &[crate::images::Attachment] {
         &self.images
+    }
+
+    /// Remove an image waiting for the next message, by its zero-based index.
+    pub fn detach_image(&mut self, index: usize) -> bool {
+        if index >= self.images.len() {
+            return false;
+        }
+        self.images.remove(index);
+        true
+    }
+
+    /// Remove all images waiting for the next message; recorded turns are unchanged.
+    pub fn clear_images(&mut self) -> usize {
+        let count = self.images.len();
+        self.images.clear();
+        count
     }
 
     /// Restores placeholders in a frontier text for the operator.
@@ -695,6 +712,9 @@ impl<'a> Session<'a> {
         // Attached images: described ones become notes in the message, the
         // others follow it. One that cannot be attached fails the turn.
         let mut sanitized = sanitized;
+        if first && let Some(block) = crate::skills::block(self.cfg, self.presenter) {
+            sanitized.insert_str(0, &block);
+        }
         let attachments = std::mem::take(&mut self.images);
         let images = crate::images::attach_all(
             self.cfg,

@@ -25,7 +25,8 @@ use duet_boundary::policy::Policy;
 use duet_boundary::view::{Presenter, Source};
 use duet_fs::FsError;
 use serde_json::{Map, Value};
-use std::path::{Path, PathBuf};
+use std::io::Read;
+use std::path::{Component, Path, PathBuf};
 
 /// The run's image settings.
 #[derive(Debug, Clone)]
@@ -117,9 +118,13 @@ pub fn load(run_dir: &Path, items: &mut [Item]) {
                 loaded.push(img);
                 continue;
             }
+            if img.sha256.len() != 64 || !img.sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
+                eprintln!("warning: stored image has an invalid digest; continuing without it");
+                continue;
+            }
             let path = stored_path(run_dir, &img);
-            match std::fs::read(&path)
-                .map_err(|e| e.to_string())
+            match attachment_path(&path)
+                .and_then(|path| read_image_file(&path))
                 .and_then(|b| img.clone().with_data(b))
             {
                 Ok(img) => loaded.push(img),
@@ -250,24 +255,15 @@ pub fn precheck(
     attachment: &Attachment,
 ) -> Result<String, String> {
     let shown = attachment.path.display();
-    let path = attachment
-        .path
-        .canonicalize()
-        .map_err(|e| format!("cannot read {shown}: {e}"))?;
-    let meta = std::fs::metadata(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
-    if !meta.is_file() || meta.len() > MAX_INPUT_BYTES {
-        return Err(format!(
-            "{shown} is not a file of at most {} MB",
-            MAX_INPUT_BYTES / (1024 * 1024)
-        ));
-    }
-    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
+    let path = attachment_path(&attachment.path)?;
+    let origin = attachment_origin(workspace, &path)?;
+    let bytes = read_attachment_file(workspace, &path, &origin)?;
     let image = prepare_image(&bytes, max_side)
         .map_err(|e| format!("{shown} cannot be read as an image: {e}"))?;
-    let workspace = workspace
-        .canonicalize()
-        .unwrap_or_else(|_| workspace.to_path_buf());
-    let rel = path.strip_prefix(&workspace).ok();
+    let rel = match &origin {
+        Origin::Workspace(rel) => Some(rel.as_path()),
+        Origin::Attached(_) => None,
+    };
     let decided = duet_boundary::images::route(&Facts {
         boundary,
         frontier_vision,
@@ -306,39 +302,137 @@ fn load_attachment(
     presenter: &dyn Presenter,
     attachment: &Attachment,
 ) -> Result<(Origin, Vec<u8>), String> {
-    let shown = attachment.path.display();
-    let path = attachment
-        .path
-        .canonicalize()
-        .map_err(|e| format!("cannot read {shown}: {e}"))?;
-    let meta = std::fs::metadata(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
-    if !meta.is_file() {
-        return Err(format!("{shown} is not a file"));
+    let path = attachment_path(&attachment.path)?;
+    let origin = attachment_origin(&cfg.workspace, &path)?;
+    if let Origin::Workspace(rel) = &origin
+        && !presenter.path_visible(rel)
+    {
+        return Err(format!("{} is not available", attachment.path.display()));
     }
-    if meta.len() > MAX_INPUT_BYTES {
+    let bytes = read_attachment_file(&cfg.workspace, &path, &origin)?;
+    Ok((origin, bytes))
+}
+
+/// Preserve the selected spelling for workspace policy. Resolving a symlink
+/// here could turn `private/screenshot.png` into an apparently public external
+/// attachment. Parent traversals are ambiguous in the presence of symlinks.
+fn attachment_path(path: &Path) -> Result<PathBuf, String> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("cannot resolve image path: {e}"))?
+            .join(path)
+    };
+    if absolute
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err(
+            "image paths containing `..` are not supported; choose the file's full path".into(),
+        );
+    }
+    Ok(absolute.components().collect())
+}
+
+fn attachment_origin(workspace: &Path, path: &Path) -> Result<Origin, String> {
+    let given_workspace = attachment_path(workspace)?;
+    let physical_workspace = workspace.canonicalize().ok();
+    let platform_path = platform_path(path);
+    let relative = path.strip_prefix(&given_workspace).ok().or_else(|| {
+        physical_workspace
+            .as_ref()
+            .and_then(|root| platform_path.strip_prefix(root).ok())
+    });
+    if let Some(rel) = relative {
+        if duet_fs::is_reserved(rel) {
+            return Err(format!(
+                "{} is not available as an attachment",
+                path.display()
+            ));
+        }
+        Ok(Origin::Workspace(rel.to_path_buf()))
+    } else {
+        Ok(Origin::Attached(path.file_name().map_or_else(
+            || "image".into(),
+            |name| name.to_string_lossy().into_owned(),
+        )))
+    }
+}
+
+/// A configured workspace root is the host's chosen directory. Resolve only
+/// that root after classifying the original relative spelling; every component
+/// below it still goes through the nofollow reader.
+fn read_attachment_file(
+    workspace: &Path,
+    selected: &Path,
+    origin: &Origin,
+) -> Result<Vec<u8>, String> {
+    let path = match origin {
+        Origin::Workspace(relative) => workspace
+            .canonicalize()
+            .map_err(|e| format!("cannot open image workspace: {e}"))?
+            .join(relative),
+        Origin::Attached(_) => selected.to_path_buf(),
+    };
+    read_image_file(&path)
+}
+
+/// macOS exposes OS-managed temporary directories through these aliases. Map
+/// only their known targets, after verifying the link itself; never resolve an
+/// operator/project-controlled interior symlink. Policy comparisons use the
+/// same mapping so `/var/.../workspace/private.png` cannot become "external".
+fn platform_path(path: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    for (alias, target) in [("/tmp", "/private/tmp"), ("/var", "/private/var")] {
+        if let Ok(relative) = path.strip_prefix(alias)
+            && let Ok(link) = std::fs::read_link(alias)
+            && (link == Path::new(target) || Path::new("/").join(&link) == Path::new(target))
+        {
+            return Path::new(target).join(relative);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Pin every directory from `/`, refuse symlinks and special files, then bound
+/// the read on that same opened handle. A concurrent growth/replacement cannot
+/// turn the size check into an unbounded read or redirect it to another file.
+fn read_image_file(path: &Path) -> Result<Vec<u8>, String> {
+    let path = platform_path(path);
+    let relative = path
+        .strip_prefix(Path::new("/"))
+        .map_err(|_| "image path must be absolute".to_owned())?;
+    let parent = duet_fs::pinned::PinnedParent::open(Path::new("/"), relative, false)
+        .map_err(|e| format!("cannot read image {}: {e}", path.display()))?;
+    let file = parent
+        .open_read()
+        .map_err(|e| format!("cannot read image {}: {e}", path.display()))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("cannot inspect image {}: {e}", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular image file", path.display()));
+    }
+    if metadata.len() > MAX_INPUT_BYTES {
         return Err(format!(
-            "{shown} is larger than {} MB",
+            "{} exceeds the {} MiB image limit",
+            path.display(),
             MAX_INPUT_BYTES / (1024 * 1024)
         ));
     }
-    let workspace = cfg
-        .workspace
-        .canonicalize()
-        .unwrap_or_else(|_| cfg.workspace.clone());
-    let origin = match path.strip_prefix(&workspace) {
-        Ok(rel) => {
-            if !presenter.path_visible(rel) {
-                return Err(format!("{shown} is not available"));
-            }
-            Origin::Workspace(rel.to_path_buf())
-        }
-        Err(_) => Origin::Attached(
-            path.file_name()
-                .map_or_else(|| "image".into(), |n| n.to_string_lossy().into_owned()),
-        ),
-    };
-    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read {shown}: {e}"))?;
-    Ok((origin, bytes))
+    let mut bytes = Vec::new();
+    file.take(MAX_INPUT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read image {}: {e}", path.display()))?;
+    if bytes.len() as u64 > MAX_INPUT_BYTES {
+        return Err(format!(
+            "{} exceeds the {} MiB image limit",
+            path.display(),
+            MAX_INPUT_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(bytes)
 }
 
 fn request<'a>(
@@ -428,4 +522,329 @@ pub fn attach_all(
         images.extend(placed.images);
     }
     Ok(images)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use duet_boundary::engine::Engine;
+    use duet_boundary::images::ToFrontier;
+    use duet_boundary::model::solid_png;
+    use duet_boundary::view::PassThrough;
+
+    fn fixture() -> (tempfile::TempDir, RunConfig, Vec<u8>) {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let workspace = root.join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        let mut cfg = RunConfig::new(&workspace, workspace.join(".duet/runs/images"), "Task");
+        cfg.images.frontier_vision = true;
+        (directory, cfg, solid_png(8, 8, [12, 34, 56]))
+    }
+
+    fn selected(path: impl Into<PathBuf>, public: bool) -> Attachment {
+        Attachment {
+            path: path.into(),
+            public,
+        }
+    }
+
+    fn preflight(
+        cfg: &RunConfig,
+        policy: &Policy,
+        attachment: &Attachment,
+    ) -> Result<String, String> {
+        precheck(
+            &cfg.workspace,
+            policy,
+            true,
+            true,
+            DEFAULT_MAX_SIDE,
+            attachment,
+        )
+    }
+
+    #[test]
+    fn attachment_origins_keep_workspace_privacy_in_precheck_and_live_session() {
+        let (directory, cfg, png) = fixture();
+        for path in ["docs/ui.png", "private/account.png", "sealed/design.png"] {
+            let path = cfg.workspace.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, &png).unwrap();
+        }
+        let outside = directory.path().canonicalize().unwrap().join("outside.png");
+        std::fs::write(&outside, &png).unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["private/**".into()],
+            sealed: vec!["sealed/**".into()],
+            images_to_frontier: ToFrontier::Public,
+            local_vision: true,
+            ..Policy::default()
+        };
+        let (local, received) = duet_boundary::testing::scripted_local(Vec::new());
+        let engine = Engine::open(&cfg.run_dir, policy.clone(), Some(local)).unwrap();
+        let private = selected(cfg.workspace.join("private/account.png"), true);
+        assert_eq!(
+            load_attachment(&cfg, engine.as_ref(), &private).unwrap().0,
+            Origin::Workspace("private/account.png".into())
+        );
+        for attachment in [
+            private,
+            selected(cfg.workspace.join("sealed/design.png"), true),
+        ] {
+            assert!(preflight(&cfg, &policy, &attachment).is_err());
+            assert!(check_attachment(&cfg, engine.as_ref(), &attachment).is_err());
+            assert!(
+                attach(&cfg, engine.as_ref(), None, &attachment)
+                    .images
+                    .is_empty()
+            );
+        }
+        let private = selected(cfg.workspace.join("private/account.png"), false);
+        assert!(
+            preflight(&cfg, &policy, &private)
+                .unwrap()
+                .contains("local model will describe")
+        );
+        assert!(
+            check_attachment(&cfg, engine.as_ref(), &private)
+                .unwrap()
+                .contains("local model will describe")
+        );
+        let public = selected(cfg.workspace.join("docs/ui.png"), false);
+        assert!(
+            preflight(&cfg, &policy, &public)
+                .unwrap()
+                .contains("frontier will see")
+        );
+        assert!(
+            check_attachment(&cfg, engine.as_ref(), &public)
+                .unwrap()
+                .contains("frontier will see")
+        );
+        let external = selected(outside, true);
+        assert_eq!(
+            load_attachment(&cfg, engine.as_ref(), &external).unwrap().0,
+            Origin::Attached("outside.png".into())
+        );
+        assert!(
+            preflight(&cfg, &policy, &external)
+                .unwrap()
+                .contains("frontier will see")
+        );
+        assert!(
+            received.bodies().is_empty(),
+            "routing checks do not call a model"
+        );
+        let no_local = Engine::open(&cfg.run_dir.join("no-local"), policy, None).unwrap();
+        assert!(check_attachment(&cfg, no_local.as_ref(), &private).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn configured_workspace_root_alias_preserves_private_relative_paths() {
+        use std::os::unix::fs::symlink;
+        let (directory, mut cfg, png) = fixture();
+        std::fs::create_dir(cfg.workspace.join("private")).unwrap();
+        std::fs::write(cfg.workspace.join("private/ui.png"), &png).unwrap();
+        symlink("ui.png", cfg.workspace.join("private/link.png")).unwrap();
+        let alias = directory
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join("workspace-alias");
+        symlink(&cfg.workspace, &alias).unwrap();
+        cfg.workspace = alias;
+        let private = selected(cfg.workspace.join("private/ui.png"), true);
+        let policy = Policy {
+            sensitive_globs: vec!["private/**".into()],
+            ..Policy::default()
+        };
+        let passthrough = PassThrough { max_bytes: 100 };
+        assert_eq!(
+            load_attachment(&cfg, &passthrough, &private).unwrap().0,
+            Origin::Workspace("private/ui.png".into())
+        );
+        assert!(
+            preflight(&cfg, &policy, &private)
+                .unwrap_err()
+                .contains("sensitive path")
+        );
+        assert!(
+            load_attachment(
+                &cfg,
+                &passthrough,
+                &selected(cfg.workspace.join("private/link.png"), true)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_temporary_aliases_are_readable_without_erasing_workspace_policy() {
+        for base in [std::env::temp_dir(), PathBuf::from("/private/tmp")] {
+            let directory = tempfile::tempdir_in(base).unwrap();
+            let root = directory.path().canonicalize().unwrap();
+            let workspace = root.join("workspace");
+            std::fs::create_dir_all(workspace.join("private")).unwrap();
+            let cfg = RunConfig::new(&workspace, workspace.join(".duet/runs/images"), "Task");
+            let png = solid_png(8, 8, [12, 34, 56]);
+            let (physical, alias) = if root.starts_with("/private/var") {
+                ("/private/var", "/var")
+            } else {
+                ("/private/tmp", "/tmp")
+            };
+            let alias_root = Path::new(alias).join(root.strip_prefix(physical).unwrap());
+            let actual = cfg.workspace.join("private/ui.png");
+            std::fs::write(&actual, &png).unwrap();
+            let aliased = selected(alias_root.join("workspace/private/ui.png"), true);
+            let policy = Policy {
+                sensitive_globs: vec!["private/**".into()],
+                ..Policy::default()
+            };
+            assert_eq!(
+                load_attachment(&cfg, &PassThrough { max_bytes: 100 }, &aliased)
+                    .unwrap()
+                    .0,
+                Origin::Workspace("private/ui.png".into())
+            );
+            assert!(
+                preflight(&cfg, &policy, &aliased)
+                    .unwrap_err()
+                    .contains("sensitive path")
+            );
+            std::fs::write(root.join("external.png"), &png).unwrap();
+            let external = selected(alias_root.join("external.png"), true);
+            assert!(
+                preflight(&cfg, &policy, &external)
+                    .unwrap()
+                    .contains("frontier will see")
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn attachment_symlinks_cannot_reclassify_private_paths_as_public_images() {
+        use std::os::unix::fs::symlink;
+        let (directory, cfg, png) = fixture();
+        let outside = directory.path().canonicalize().unwrap().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("ui.png"), &png).unwrap();
+        std::fs::create_dir(cfg.workspace.join("private")).unwrap();
+        symlink(
+            outside.join("ui.png"),
+            cfg.workspace.join("private/leaf.png"),
+        )
+        .unwrap();
+        symlink(&outside, cfg.workspace.join("private/ancestor")).unwrap();
+        symlink(
+            cfg.workspace.join("private/leaf.png"),
+            outside.join("alias.png"),
+        )
+        .unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["private/**".into()],
+            ..Policy::default()
+        };
+        let presenter = PassThrough { max_bytes: 100 };
+        for path in [
+            cfg.workspace.join("private/leaf.png"),
+            cfg.workspace.join("private/ancestor/ui.png"),
+            outside.join("alias.png"),
+        ] {
+            let attachment = selected(path, true);
+            assert!(preflight(&cfg, &policy, &attachment).is_err());
+            assert!(check_attachment(&cfg, &presenter, &attachment).is_err());
+            let placed = attach(&cfg, &presenter, None, &attachment);
+            assert!(placed.text.is_err() && placed.images.is_empty());
+            assert!(
+                placed.destination.is_none(),
+                "symlink must fail before routing"
+            );
+        }
+    }
+
+    #[test]
+    fn hidden_reserved_oversized_and_nonregular_attachments_fail_closed() {
+        struct Hidden;
+        impl Presenter for Hidden {
+            fn path_visible(&self, path: &Path) -> bool {
+                !path.starts_with("hidden")
+            }
+            fn present(&self, _: &Source, _: &[u8]) -> String {
+                panic!("hidden image was presented")
+            }
+        }
+        let (_directory, cfg, png) = fixture();
+        for folder in ["hidden", ".duet", ".git"] {
+            let directory = cfg.workspace.join(folder);
+            std::fs::create_dir_all(&directory).unwrap();
+            std::fs::write(directory.join("ui.png"), &png).unwrap();
+            let attachment = selected(directory.join("ui.png"), true);
+            assert!(load_attachment(&cfg, &Hidden, &attachment).is_err());
+            if folder != "hidden" {
+                assert!(preflight(&cfg, &Policy::default(), &attachment).is_err());
+            }
+        }
+        let large = cfg.workspace.join("large.png");
+        std::fs::File::create(&large)
+            .unwrap()
+            .set_len(MAX_INPUT_BYTES + 1)
+            .unwrap();
+        let oversized = selected(large, true);
+        assert!(
+            load_attachment(&cfg, &Hidden, &oversized)
+                .unwrap_err()
+                .contains("limit")
+        );
+        assert!(
+            preflight(&cfg, &Policy::default(), &oversized)
+                .unwrap_err()
+                .contains("limit")
+        );
+        assert!(read_image_file(&cfg.workspace).is_err());
+        assert!(attachment_path(&cfg.workspace.join("../outside.png")).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn resumed_images_use_bounded_nofollow_reads_and_validate_digest_names() {
+        use std::os::unix::fs::symlink;
+        let (directory, cfg, png) = fixture();
+        let image = prepare_image(&png, DEFAULT_MAX_SIDE).unwrap();
+        store(&cfg.run_dir, &image).unwrap();
+        let unloaded: Image =
+            serde_json::from_value(serde_json::to_value(&image).unwrap()).unwrap();
+        let reload = |image: Image| {
+            let mut items = [Item::Images {
+                call_id: None,
+                images: vec![image],
+            }];
+            load(&cfg.run_dir, &mut items);
+            let Item::Images { images, .. } = items.into_iter().next().unwrap() else {
+                unreachable!()
+            };
+            images
+        };
+        assert!(reload(unloaded.clone())[0].is_loaded());
+        let stored = stored_path(&cfg.run_dir, &image);
+        std::fs::File::create(&stored)
+            .unwrap()
+            .set_len(MAX_INPUT_BYTES + 1)
+            .unwrap();
+        assert!(reload(unloaded.clone()).is_empty());
+        std::fs::remove_file(&stored).unwrap();
+        let outside = directory.path().canonicalize().unwrap().join("outside.png");
+        std::fs::write(&outside, image.data()).unwrap();
+        symlink(outside, &stored).unwrap();
+        assert!(
+            reload(unloaded.clone()).is_empty(),
+            "matching digest does not authorize following symlinks"
+        );
+        let mut invalid = unloaded;
+        invalid.sha256 = "é".repeat(32);
+        assert!(reload(invalid).is_empty());
+    }
 }

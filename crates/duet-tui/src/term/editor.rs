@@ -3,39 +3,94 @@
 //! independent of the terminal (the workspace feeds it keys and draws what
 //! [`Editor::display`] returns).
 //!
-//! Keys: arrows, Home/End, Ctrl-A/E (line start/end), Ctrl-B/F, Alt-B/F and
-//! Ctrl/Alt-arrows (by word), Backspace/Delete, Ctrl-W and Alt-Backspace
-//! (the word before), Alt-D (the word after), Ctrl-K/U (to the line's
-//! end/start), Ctrl-Y (put back what was cut), Up/Down and Ctrl-P/N
-//! (between lines of the message, then through history), Ctrl-R (search the
-//! history; Enter takes the match into the input), Tab (complete commands
-//! and `/image` paths), Enter (send; a line ending with `\` continues on
-//! the next), Alt-Enter, Shift-Enter (where the terminal reports it) and
-//! Ctrl-J (a new line in the message), Ctrl-L (clear the screen), Ctrl-D
-//! (on an empty input: the end of input). Ctrl-C and Ctrl-Z are handed to
-//! the workspace.
+//! Keys: Shift-navigation selects; Ctrl-A selects all; Ctrl-C copies a
+//! selection (otherwise interrupts), Ctrl-X cuts, Ctrl-V/Shift-Insert pastes.
+//! Ctrl-Z undoes, Ctrl-Shift-Z/Ctrl-Y redoes; Ctrl-Alt-Z suspends. Home/End
+//! move within a line, Ctrl-Home/End through the message, Ctrl-B/F move by
+//! grapheme, and Ctrl/Alt-arrows or Alt-B/F move by word. Ctrl-W,
+//! Alt-Backspace/D and Ctrl-K/U cut words/lines; Alt-Y restores the last cut.
+//! Up/Down and Ctrl-P/N move through lines, then history (selection never
+//! enters history). Ctrl-R searches history. Tab completes commands/paths.
+//! Enter sends; a final `\` continues. Alt/Shift/Ctrl-Enter and Ctrl-J add
+//! a newline. Pasting never sends. Ctrl-L clears the screen; Ctrl-D on an
+//! empty input signals EOF.
 
-use super::{Span, Style, char_width, paint};
+use super::{Span, Style, paint};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::collections::VecDeque;
+use std::ops::Range;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
+
+/// Maximum editable message size; oversized pastes stop at a grapheme boundary.
+pub const MAX_INPUT_BYTES: usize = 256 * 1024;
+const MAX_UNDO_ENTRIES: usize = 100;
+const MAX_UNDO_BYTES: usize = 4 * 1024 * 1024;
 
 /// What a key asks of the workspace.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// Only the input changed (or nothing did).
     Edited,
     /// A message or command to send (continuation lines joined).
     Submit(String),
     /// Ctrl-D on an empty input.
     Eof,
-    /// Ctrl-C: the input is cleared; the workspace applies the interrupt rules.
+    /// Ctrl-C without a selection: cleared input and an interrupt request.
     Interrupt,
-    /// Tab: the workspace completes (it knows the commands and the directory).
+    /// Copy selected text to the clipboard (Ctrl-X already removed it).
+    Copy(String),
+    /// Request clipboard text; the host feeds the result to `insert`.
+    Paste,
+    /// Tab: the workspace knows the commands and the directory.
     Complete,
     ClearScreen,
-    /// Ctrl-Z.
+    /// Ctrl-Alt-Z; Ctrl-Z belongs to editing undo.
     Suspend,
+}
+
+#[derive(Clone)]
+struct Snapshot {
+    buf: String,
+    cursor: usize,
+    anchor: Option<usize>,
+}
+
+#[derive(Default)]
+struct UndoStack {
+    entries: VecDeque<Snapshot>,
+    bytes: usize,
+}
+
+impl UndoStack {
+    fn push(&mut self, snapshot: Snapshot) {
+        self.bytes += snapshot.buf.len();
+        self.entries.push_back(snapshot);
+        while self.entries.len() > MAX_UNDO_ENTRIES || self.bytes > MAX_UNDO_BYTES {
+            if let Some(old) = self.entries.pop_front() {
+                self.bytes -= old.buf.len();
+            }
+        }
+    }
+
+    fn pop(&mut self) -> Option<Snapshot> {
+        let snapshot = self.entries.pop_back()?;
+        self.bytes -= snapshot.buf.len();
+        Some(snapshot)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Motion {
+    Left,
+    Right,
+    WordLeft,
+    WordRight,
+    Home,
+    End,
+    First,
+    Last,
+    Up,
+    Down,
 }
 
 /// Ctrl-R's state.
@@ -44,7 +99,7 @@ struct Search {
     /// The history entry that matches, newest first.
     found: Option<usize>,
     /// The input before the search, restored when it is cancelled.
-    before: (String, usize),
+    before: Snapshot,
 }
 
 #[derive(Default)]
@@ -52,6 +107,9 @@ pub struct Editor {
     buf: String,
     /// Byte offset, on a grapheme boundary.
     cursor: usize,
+    anchor: Option<usize>,
+    undo: UndoStack,
+    redo: UndoStack,
     history: Vec<String>,
     /// The history entry shown while browsing, and the input before it.
     browsing: Option<(usize, String)>,
@@ -68,6 +126,11 @@ impl Editor {
         &self.buf
     }
 
+    /// Byte offset at an extended grapheme boundary.
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
     /// Adds entries to the history (oldest first), e.g. the operator's
     /// earlier messages of a resumed session.
     pub fn remember(&mut self, entries: impl IntoIterator<Item = String>) {
@@ -79,28 +142,103 @@ impl Editor {
         }
     }
 
+    /// Selected bytes, always at extended grapheme boundaries.
+    pub fn selection_range(&self) -> Option<Range<usize>> {
+        let anchor = self.anchor?;
+        (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
+    }
+
+    pub fn selected_text(&self) -> Option<&str> {
+        self.selection_range().map(|range| &self.buf[range])
+    }
+
+    pub fn select_all(&mut self) {
+        self.accept_search();
+        self.anchor = Some(0);
+        self.cursor = self.buf.len();
+    }
+
     pub fn clear(&mut self) {
         self.buf.clear();
         self.cursor = 0;
+        self.anchor = None;
         self.browsing = None;
         self.search = None;
+        // Submitted/interrupted messages do not reappear through undo.
+        self.undo = UndoStack::default();
+        self.redo = UndoStack::default();
     }
 
-    /// Inserts text (typed or pasted); control characters other than
-    /// newlines and tabs are dropped, and pasted line ends are normalized.
-    pub fn insert(&mut self, text: &str) {
-        self.accept_search();
-        let text = text.replace("\r\n", "\n").replace('\r', "\n");
-        let clean: String = text
-            .chars()
-            .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
-            .collect();
-        self.buf.insert_str(self.cursor, &clean);
-        self.cursor += clean.len();
+    fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            buf: self.buf.clone(),
+            cursor: self.cursor,
+            anchor: self.anchor,
+        }
+    }
+
+    fn restore(&mut self, snapshot: Snapshot) {
+        self.buf = snapshot.buf;
+        self.cursor = snapshot.cursor;
+        self.anchor = snapshot.anchor;
+        self.search = None;
         self.browsing = None;
     }
 
-    /// Applies a key.
+    fn checkpoint(&mut self) {
+        self.undo.push(self.snapshot());
+        self.redo = UndoStack::default();
+    }
+
+    fn undo(&mut self) {
+        if let Some(previous) = self.undo.pop() {
+            self.redo.push(self.snapshot());
+            self.restore(previous);
+        }
+    }
+
+    fn redo(&mut self) {
+        if let Some(next) = self.redo.pop() {
+            self.undo.push(self.snapshot());
+            self.restore(next);
+        }
+    }
+
+    /// Insert typed/pasted text as one undoable edit, replacing any selection.
+    /// Control characters except newlines/tabs are dropped, CRLF/CR becomes LF.
+    /// Input is capped at MAX_INPUT_BYTES; a paste never submits the message.
+    pub fn insert(&mut self, text: &str) {
+        self.accept_search();
+        let range = self.selection_range().unwrap_or(self.cursor..self.cursor);
+        let available = MAX_INPUT_BYTES.saturating_sub(self.buf.len() - range.len());
+        let clean = clean_text(text, available);
+        if !clean.is_empty() {
+            self.replace(range, &clean);
+        }
+    }
+
+    fn replace(&mut self, range: Range<usize>, text: &str) {
+        if self.buf[range.clone()] == *text {
+            self.cursor = range.start + text.len();
+            self.anchor = None;
+            return;
+        }
+        self.checkpoint();
+        self.buf.replace_range(range.clone(), text);
+        // Insertion/deletion may join adjacent combining marks or emoji into
+        // a new grapheme. Never leave a cursor in the middle of that cluster.
+        let desired = range.start + text.len();
+        self.cursor = self
+            .buf
+            .grapheme_indices(true)
+            .map(|(i, _)| i)
+            .find(|&i| i >= desired)
+            .unwrap_or(self.buf.len());
+        self.anchor = None;
+        self.browsing = None;
+    }
+
+    /// Applies a key. Clipboard actions are returned to the host, not executed.
     pub fn key(&mut self, k: KeyEvent) -> Outcome {
         if k.kind == KeyEventKind::Release {
             return Outcome::Edited;
@@ -109,47 +247,84 @@ impl Editor {
         let alt = k.modifiers.contains(KeyModifiers::ALT);
         let shift = k.modifiers.contains(KeyModifiers::SHIFT);
         if ctrl && matches!(k.code, KeyCode::Char('c' | 'C')) {
+            if let Some(text) = self.selected_text() {
+                return Outcome::Copy(text.to_owned());
+            }
             self.clear();
             return Outcome::Interrupt;
         }
         if self.search.is_some() {
             match self.search_key(k, ctrl) {
                 Some(outcome) => return outcome,
-                // The key ends the search and then does what it does.
                 None => self.accept_search(),
             }
         }
+        if ctrl && alt && matches!(k.code, KeyCode::Char('z' | 'Z')) {
+            return Outcome::Suspend;
+        }
+        let motion = match k.code {
+            KeyCode::Left if alt || ctrl => Some(Motion::WordLeft),
+            KeyCode::Right if alt || ctrl => Some(Motion::WordRight),
+            KeyCode::Left => Some(Motion::Left),
+            KeyCode::Right => Some(Motion::Right),
+            KeyCode::Home if ctrl => Some(Motion::First),
+            KeyCode::End if ctrl => Some(Motion::Last),
+            KeyCode::Home => Some(Motion::Home),
+            KeyCode::End => Some(Motion::End),
+            KeyCode::Up => Some(Motion::Up),
+            KeyCode::Down => Some(Motion::Down),
+            _ => None,
+        };
+        if let Some(motion) = motion {
+            self.navigate(motion, shift);
+            return Outcome::Edited;
+        }
         match k.code {
-            KeyCode::Char(c) if ctrl => return self.control(c),
-            KeyCode::Char(c) if alt => self.meta(c),
+            KeyCode::Char(c) if ctrl => return self.control(c, shift),
+            KeyCode::Char(c) if alt => self.meta(c, shift),
             KeyCode::Char(c) => self.insert(&c.to_string()),
             KeyCode::Enter if alt || shift || ctrl => self.insert("\n"),
             KeyCode::Enter => return self.enter(),
+            KeyCode::Insert if shift => return Outcome::Paste,
+            KeyCode::Insert if ctrl => {
+                if let Some(text) = self.selected_text() {
+                    return Outcome::Copy(text.to_owned());
+                }
+            }
+            KeyCode::Delete if shift => return self.copy_cut(),
             KeyCode::Tab => return Outcome::Complete,
             KeyCode::Backspace if alt || ctrl => self.cut_word_before(),
             KeyCode::Backspace => self.backspace(),
+            KeyCode::Delete if alt || ctrl => self.cut_word_after(),
             KeyCode::Delete => self.delete(),
-            KeyCode::Left if alt || ctrl => self.word_left(),
-            KeyCode::Right if alt || ctrl => self.word_right(),
-            KeyCode::Left => self.left(),
-            KeyCode::Right => self.right(),
-            KeyCode::Home => self.cursor = self.line_start(),
-            KeyCode::End => self.cursor = self.line_end(),
-            KeyCode::Up => self.up(),
-            KeyCode::Down => self.down(),
+            KeyCode::Esc => self.anchor = None,
             _ => {}
         }
         Outcome::Edited
     }
 
-    fn control(&mut self, c: char) -> Outcome {
+    fn copy_cut(&mut self) -> Outcome {
+        let Some(range) = self.selection_range() else {
+            return Outcome::Edited;
+        };
+        let copied = self.buf[range.clone()].to_owned();
+        self.cut_range(range.start, range.end);
+        Outcome::Copy(copied)
+    }
+
+    fn control(&mut self, c: char, shift: bool) -> Outcome {
         match c.to_ascii_lowercase() {
-            'a' => self.cursor = self.line_start(),
-            'e' => self.cursor = self.line_end(),
-            'b' => self.left(),
-            'f' => self.right(),
-            'p' => self.up(),
-            'n' => self.down(),
+            'a' => self.select_all(),
+            'e' => self.navigate(Motion::End, shift),
+            'b' => self.navigate(Motion::Left, shift),
+            'f' => self.navigate(Motion::Right, shift),
+            'p' => self.navigate(Motion::Up, shift),
+            'n' => self.navigate(Motion::Down, shift),
+            'x' => return self.copy_cut(),
+            'v' => return Outcome::Paste,
+            'z' if shift => self.redo(),
+            'z' => self.undo(),
+            'y' => self.redo(),
             'h' => self.backspace(),
             'd' if self.buf.is_empty() => return Outcome::Eof,
             'd' => self.delete(),
@@ -164,44 +339,91 @@ impl Editor {
             }
             'u' => self.cut_range(self.line_start(), self.cursor),
             'w' => {
-                let before = &self.buf[..self.cursor];
-                let trimmed = before.trim_end_matches(|c: char| c.is_whitespace());
-                let start = trimmed.rfind(char::is_whitespace).map_or(0, |i| {
-                    i + trimmed[i..].chars().next().map_or(1, char::len_utf8)
-                });
+                let mut before = self.buf[..self.cursor]
+                    .grapheme_indices(true)
+                    .rev()
+                    .peekable();
+                let mut start = self.cursor;
+                while let Some(&(i, g)) = before.peek() {
+                    if !g.chars().all(char::is_whitespace) {
+                        break;
+                    }
+                    start = i;
+                    before.next();
+                }
+                for (i, g) in before {
+                    if g.chars().all(char::is_whitespace) {
+                        break;
+                    }
+                    start = i;
+                }
                 self.cut_range(start, self.cursor);
             }
-            'y' => {
-                let cut = self.cut.clone();
-                self.insert(&cut);
-            }
             'r' => {
+                let before = self.snapshot();
+                self.anchor = None;
                 self.search = Some(Search {
                     query: String::new(),
                     found: None,
-                    before: (self.buf.clone(), self.cursor),
+                    before,
                 });
             }
             'j' => self.insert("\n"),
             'l' => return Outcome::ClearScreen,
-            'z' => return Outcome::Suspend,
             _ => {}
         }
         Outcome::Edited
     }
 
-    fn meta(&mut self, c: char) {
-        match c {
-            'b' => self.word_left(),
-            'f' => self.word_right(),
-            'd' => {
-                let from = self.cursor;
-                self.word_right();
-                let to = self.cursor;
-                self.cursor = from;
-                self.cut_range(from, to);
+    fn meta(&mut self, c: char, shift: bool) {
+        match c.to_ascii_lowercase() {
+            'b' => self.navigate(Motion::WordLeft, shift),
+            'f' => self.navigate(Motion::WordRight, shift),
+            'd' => self.cut_word_after(),
+            'y' => {
+                let cut = self.cut.clone();
+                self.insert(&cut);
             }
             _ => {}
+        }
+    }
+
+    fn navigate(&mut self, motion: Motion, extend: bool) {
+        if extend {
+            self.anchor.get_or_insert(self.cursor);
+        } else {
+            if let Some(range) = self.selection_range() {
+                match motion {
+                    Motion::Left => {
+                        self.cursor = range.start;
+                        self.anchor = None;
+                        return;
+                    }
+                    Motion::Right => {
+                        self.cursor = range.end;
+                        self.anchor = None;
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+            self.anchor = None;
+        }
+        match motion {
+            Motion::Left => self.left(),
+            Motion::Right => self.right(),
+            Motion::WordLeft => self.word_left(),
+            Motion::WordRight => self.word_right(),
+            Motion::Home => self.cursor = self.line_start(),
+            Motion::End => self.cursor = self.line_end(),
+            Motion::First => self.cursor = 0,
+            Motion::Last => self.cursor = self.buf.len(),
+            Motion::Up if extend && self.line_start() == 0 => self.cursor = 0,
+            Motion::Down if extend && self.line_end() == self.buf.len() => {
+                self.cursor = self.buf.len()
+            }
+            Motion::Up => self.up(),
+            Motion::Down => self.down(),
         }
     }
 
@@ -220,38 +442,55 @@ impl Editor {
     }
 
     fn cut_range(&mut self, from: usize, to: usize) {
-        if from >= to {
+        let range = self.selection_range().unwrap_or(from..to);
+        if range.is_empty() {
             return;
         }
-        self.cut = self.buf[from..to].to_owned();
-        self.buf.replace_range(from..to, "");
-        self.cursor = from;
-        self.browsing = None;
+        self.cut = self.buf[range.clone()].to_owned();
+        self.replace(range, "");
     }
 
     fn cut_word_before(&mut self) {
         let to = self.cursor;
         self.word_left();
         let from = self.cursor;
+        self.cursor = to;
+        self.cut_range(from, to);
+    }
+
+    fn cut_word_after(&mut self) {
+        let from = self.cursor;
+        self.word_right();
+        let to = self.cursor;
+        self.cursor = from;
         self.cut_range(from, to);
     }
 
     fn backspace(&mut self) {
+        if let Some(range) = self.selection_range() {
+            self.replace(range, "");
+            return;
+        }
         let to = self.cursor;
         self.left();
-        if self.cursor < to {
-            self.buf.replace_range(self.cursor..to, "");
-            self.browsing = None;
+        let from = self.cursor;
+        self.cursor = to;
+        if from < to {
+            self.replace(from..to, "");
         }
     }
 
     fn delete(&mut self) {
+        if let Some(range) = self.selection_range() {
+            self.replace(range, "");
+            return;
+        }
         let from = self.cursor;
         self.right();
-        if self.cursor > from {
-            self.buf.replace_range(from..self.cursor, "");
-            self.cursor = from;
-            self.browsing = None;
+        let to = self.cursor;
+        self.cursor = from;
+        if from < to {
+            self.replace(from..to, "");
         }
     }
 
@@ -269,33 +508,41 @@ impl Editor {
     }
 
     fn word_left(&mut self) {
-        let before: Vec<(usize, char)> = self.buf[..self.cursor].char_indices().collect();
-        let mut i = before.len();
-        while i > 0 && !is_word(before[i - 1].1) {
-            i -= 1;
+        let mut before = self.buf[..self.cursor]
+            .grapheme_indices(true)
+            .rev()
+            .peekable();
+        while let Some(&(i, g)) = before.peek() {
+            if g.chars().any(is_word) {
+                break;
+            }
+            self.cursor = i;
+            before.next();
         }
-        while i > 0 && is_word(before[i - 1].1) {
-            i -= 1;
+        for (i, g) in before {
+            if !g.chars().any(is_word) {
+                break;
+            }
+            self.cursor = i;
         }
-        self.cursor = before.get(i).map_or(0, |(at, _)| *at);
     }
 
     fn word_right(&mut self) {
-        let mut chars = self.buf[self.cursor..].char_indices().peekable();
-        let mut end = self.buf.len() - self.cursor;
-        while let Some(&(_, c)) = chars.peek() {
-            if is_word(c) {
+        let mut after = self.buf[self.cursor..].grapheme_indices(true).peekable();
+        let start = self.cursor;
+        while let Some(&(i, g)) = after.peek() {
+            if g.chars().any(is_word) {
                 break;
             }
-            chars.next();
+            self.cursor = start + i + g.len();
+            after.next();
         }
-        for (i, c) in chars {
-            if !is_word(c) {
-                end = i;
+        for (i, g) in after {
+            if !g.chars().any(is_word) {
                 break;
             }
+            self.cursor = start + i + g.len();
         }
-        self.cursor += end;
     }
 
     fn line_start(&self) -> usize {
@@ -347,7 +594,8 @@ impl Editor {
             Some((_, draft)) => draft,
             None => self.buf.clone(),
         };
-        self.buf = self.history[next].clone();
+        self.checkpoint();
+        self.buf = clean_text(&self.history[next], MAX_INPUT_BYTES);
         self.cursor = self.buf.len();
         self.browsing = Some((next, draft));
     }
@@ -362,8 +610,9 @@ impl Editor {
         let Some((i, draft)) = self.browsing.take() else {
             return;
         };
+        self.checkpoint();
         if i + 1 < self.history.len() {
-            self.buf = self.history[i + 1].clone();
+            self.buf = clean_text(&self.history[i + 1], MAX_INPUT_BYTES);
             self.browsing = Some((i + 1, draft));
         } else {
             self.buf = draft;
@@ -383,11 +632,15 @@ impl Editor {
             KeyCode::Char('g' | 'G') if ctrl => self.cancel_search(),
             KeyCode::Esc => self.cancel_search(),
             KeyCode::Char(c) if !ctrl && !k.modifiers.contains(KeyModifiers::ALT) => {
-                s.query.push(c);
+                if s.query.len() + c.len_utf8() <= MAX_INPUT_BYTES {
+                    s.query.push(c);
+                }
                 s.found = find(&self.history, &s.query, self.history.len());
             }
             KeyCode::Backspace => {
-                s.query.pop();
+                if let Some((at, _)) = s.query.grapheme_indices(true).next_back() {
+                    s.query.truncate(at);
+                }
                 s.found = find(&self.history, &s.query, self.history.len());
             }
             KeyCode::Enter => self.accept_search(),
@@ -398,7 +651,7 @@ impl Editor {
 
     fn cancel_search(&mut self) {
         if let Some(s) = self.search.take() {
-            (self.buf, self.cursor) = s.before;
+            self.restore(s.before);
         }
     }
 
@@ -406,8 +659,10 @@ impl Editor {
         if let Some(s) = self.search.take()
             && let Some(i) = s.found
         {
-            self.buf = self.history[i].clone();
+            self.checkpoint();
+            self.buf = clean_text(&self.history[i], MAX_INPUT_BYTES);
             self.cursor = self.buf.len();
+            self.anchor = None;
         }
     }
 
@@ -416,6 +671,7 @@ impl Editor {
     /// they replace). Returns the choices to show when the word cannot be
     /// completed further.
     pub fn complete(&mut self, cwd: &Path, commands: &[&str]) -> Vec<String> {
+        self.anchor = None;
         let Some((word_len, choices, suffix)) =
             completions(&self.buf[..self.cursor], cwd, commands)
         else {
@@ -451,6 +707,55 @@ impl Editor {
             .collect()
     }
 
+    /// Move/extend selection at a displayed cell, using exactly `display`'s
+    /// wrapping and cursor-following viewport. Row/column are zero-based in
+    /// the input area, including the prompt. Click with `extend=false`, then
+    /// drag with `extend=true`. A cell inside a wide grapheme maps to its
+    /// nearest edge. Returns false during history search or if unchanged.
+    pub fn select_at(
+        &mut self,
+        prompt: &[Span],
+        columns: usize,
+        max_rows: usize,
+        row: usize,
+        column: usize,
+        extend: bool,
+    ) -> bool {
+        if self.search.is_some() {
+            return false;
+        }
+        let indent: usize = prompt.iter().map(|s| display_width(&s.text)).sum();
+        let room = columns.saturating_sub(indent + 1).max(1);
+        let (rows, cursor) = layout(&self.buf, self.cursor, room);
+        let window = visible_rows(rows.len(), cursor.0, max_rows);
+        let row = &rows[(window.start + row).min(window.end - 1)];
+        let column = column.saturating_sub(indent);
+        let mut offset = row.end;
+        let mut used = 0;
+        for (i, g) in self.buf[row.clone()].grapheme_indices(true) {
+            let width = display_width(g);
+            if column < used + width {
+                offset = row.start
+                    + i
+                    + if (column - used) * 2 >= width {
+                        g.len()
+                    } else {
+                        0
+                    };
+                break;
+            }
+            used += width;
+        }
+        let before = (self.cursor, self.anchor);
+        if extend {
+            self.anchor.get_or_insert(self.cursor);
+        } else {
+            self.anchor = None;
+        }
+        self.cursor = offset;
+        before != (self.cursor, self.anchor)
+    }
+
     /// The input as it is drawn: `prompt` before the first row, later rows
     /// indented as far, wrapped at `columns`, at most `max_rows` rows (a
     /// window around the cursor). Returns the rows and the cursor's row and
@@ -479,46 +784,41 @@ impl Editor {
         };
         let indent: usize = prompt.iter().map(|s| display_width(&s.text)).sum();
         let room = columns.saturating_sub(indent + 1).max(1);
-        let mut rows: Vec<String> = vec![String::new()];
-        let mut col = 0;
-        let mut at = (0, 0);
-        let mut placed = false;
-        for (i, g) in text.grapheme_indices(true) {
-            if i == cursor {
-                at = (rows.len() - 1, col);
-                placed = true;
-            }
-            if g == "\n" || g == "\r\n" {
-                rows.push(String::new());
-                col = 0;
-                continue;
-            }
-            let (shown, w) = if g == "\t" {
-                ("    ", 4)
-            } else {
-                (g, display_width(g))
-            };
-            if col + w > room {
-                rows.push(String::new());
-                col = 0;
-            }
-            rows.last_mut().expect("a row").push_str(shown);
-            col += w;
-        }
-        // One column is kept free after a full row for the cursor.
-        if !placed {
-            at = (rows.len() - 1, col);
-        }
-        // With a search, the match follows the query on the first row.
+        let (rows, at) = layout(text, cursor, room);
+        let selection = if self.search.is_none() {
+            self.selection_range()
+        } else {
+            None
+        };
         let mut painted: Vec<String> = rows
             .iter()
             .enumerate()
-            .map(|(i, r)| {
-                if i == 0 {
-                    format!("{}{r}", paint(&prompt, colour))
+            .map(|(i, range)| {
+                let mut row = if i == 0 {
+                    paint(&prompt, colour)
                 } else {
-                    format!("{}{r}", " ".repeat(indent))
+                    " ".repeat(indent)
+                };
+                for (offset, g) in text[range.clone()].grapheme_indices(true) {
+                    let selected = selection
+                        .as_ref()
+                        .is_some_and(|s| s.contains(&(range.start + offset)));
+                    let shown = if g == "\t" { "    " } else { g };
+                    // Reverse video is a selection affordance, including NO_COLOR.
+                    if selected {
+                        row.push_str("\x1b[7m");
+                    }
+                    row.push_str(shown);
+                    if selected {
+                        row.push_str("\x1b[27m");
+                    }
                 }
+                if text.as_bytes().get(range.end) == Some(&b'\n')
+                    && selection.as_ref().is_some_and(|s| s.contains(&range.end))
+                {
+                    row.push_str("\x1b[7m \x1b[27m");
+                }
+                row
             })
             .collect();
         if let Some(s) = &self.search
@@ -531,11 +831,11 @@ impl Editor {
             );
             painted[0].push_str(&paint(&[Span::new(shown, Style::DIM)], colour));
         }
-        let max_rows = max_rows.max(1);
-        let start = (at.0 + 1).saturating_sub(max_rows);
-        let end = (start + max_rows).min(painted.len());
-        let window = painted[start..end].to_vec();
-        (window, (at.0 - start, indent + at.1))
+        let window = visible_rows(painted.len(), at.0, max_rows);
+        (
+            painted[window.clone()].to_vec(),
+            (at.0 - window.start, indent + at.1),
+        )
     }
 }
 
@@ -552,9 +852,76 @@ fn find(history: &[String], query: &str, before: usize) -> Option<usize> {
 }
 
 fn display_width(text: &str) -> usize {
-    text.chars()
-        .map(|c| if c == '\t' { 4 } else { char_width(c) })
-        .sum()
+    text.split('\t').map(super::width).sum::<usize>()
+        + text.bytes().filter(|&b| b == b'\t').count() * 4
+}
+
+/// Normalize without allocating an unbounded copy of a pasted clipboard.
+fn clean_text(text: &str, max_bytes: usize) -> String {
+    let mut out = String::with_capacity(text.len().min(max_bytes));
+    for g in text.graphemes(true) {
+        let start = out.len();
+        if matches!(g, "\r\n" | "\r") {
+            if out.len() == max_bytes {
+                break;
+            }
+            out.push('\n');
+            continue;
+        }
+        for c in g
+            .chars()
+            .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        {
+            if out.len() + c.len_utf8() > max_bytes {
+                out.truncate(start);
+                return out;
+            }
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Byte ranges of visual rows (excluding newline separators), and the cursor.
+/// The cursor is placed after wrapping, so a cursor before a wide glyph
+/// belongs to the row that actually displays that glyph.
+fn layout(text: &str, cursor: usize, room: usize) -> (Vec<Range<usize>>, (usize, usize)) {
+    let mut rows = Vec::new();
+    let mut start = 0;
+    let mut column = 0;
+    let mut at = (0, 0);
+    for (offset, g) in text.grapheme_indices(true) {
+        if g == "\n" {
+            if offset == cursor {
+                at = (rows.len(), column);
+            }
+            rows.push(start..offset);
+            start = offset + 1;
+            column = 0;
+            continue;
+        }
+        let width = display_width(g);
+        if column > 0 && column + width > room {
+            rows.push(start..offset);
+            start = offset;
+            column = 0;
+        }
+        if offset == cursor {
+            at = (rows.len(), column);
+        }
+        column += width;
+    }
+    rows.push(start..text.len());
+    if cursor == text.len() {
+        at = (rows.len() - 1, column);
+    }
+    (rows, at)
+}
+
+fn visible_rows(count: usize, cursor_row: usize, max_rows: usize) -> Range<usize> {
+    let max_rows = max_rows.max(1);
+    let start = (cursor_row + 1).saturating_sub(max_rows);
+    start..(start + max_rows).min(count)
 }
 
 fn common_prefix(items: &[String]) -> String {
@@ -600,13 +967,16 @@ fn completions(
     }
     let arg = before
         .strip_prefix("/image")
+        .or_else(|| before.strip_prefix("/attach"))
         .filter(|r| r.starts_with(char::is_whitespace))?
         .trim_start();
-    if arg.starts_with('-') && "--public".starts_with(arg) {
+    if before.starts_with("/image ") && arg.starts_with('-') && "--public".starts_with(arg) {
         return Some((arg.len(), vec!["--public".to_owned()], " "));
     }
     let path = match arg.strip_prefix("--public") {
-        Some(rest) if rest.starts_with(char::is_whitespace) => rest.trim_start(),
+        Some(rest) if before.starts_with("/image ") && rest.starts_with(char::is_whitespace) => {
+            rest.trim_start()
+        }
         _ => arg,
     };
     let choices = paths(path, cwd)?;
@@ -680,17 +1050,217 @@ mod tests {
     const NONE: KeyModifiers = KeyModifiers::NONE;
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
     const ALT: KeyModifiers = KeyModifiers::ALT;
+    const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
+
+    #[test]
+    fn selection_copy_cut_replace_and_undo_preserve_multiline_graphemes() {
+        let mut e = Editor::default();
+        let original = "a👩‍💻e\u{301}中\n文z";
+        e.insert(original);
+        for _ in 0..5 {
+            e.key(key(KeyCode::Left, SHIFT));
+        }
+        let selected = "e\u{301}中\n文z";
+        assert_eq!(e.selected_text(), Some(selected));
+        assert_eq!(
+            e.key(key(KeyCode::Char('c'), CTRL)),
+            Outcome::Copy(selected.into())
+        );
+        assert_eq!(e.buffer(), original);
+        assert_eq!(
+            e.key(key(KeyCode::Char('x'), CTRL)),
+            Outcome::Copy(selected.into())
+        );
+        assert_eq!(e.buffer(), "a👩‍💻");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        assert_eq!(e.buffer(), original);
+        assert_eq!(e.selected_text(), Some(selected));
+        e.insert("Q");
+        assert_eq!(e.buffer(), "a👩‍💻Q");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        e.key(key(KeyCode::Delete, NONE));
+        assert_eq!(e.buffer(), "a👩‍💻");
+        assert_eq!(e.key(key(KeyCode::Char('c'), CTRL)), Outcome::Interrupt);
+        assert_eq!(e.buffer(), "");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        assert_eq!(e.buffer(), "", "interrupt clears undo state");
+    }
+
+    #[test]
+    fn word_and_line_selection_never_split_combining_text_or_enter_history() {
+        let mut e = Editor::default();
+        e.remember(["older message".into()]);
+        e.insert("e\u{301}clair 👩‍💻 中文_xyz!");
+        e.key(key(KeyCode::Home, CTRL));
+        e.key(key(KeyCode::Right, CTRL | SHIFT));
+        assert_eq!(e.selected_text(), Some("e\u{301}clair"));
+        e.key(key(KeyCode::Right, ALT | SHIFT));
+        assert_eq!(e.selected_text(), Some("e\u{301}clair 👩‍💻 中文_xyz"));
+        e.key(key(KeyCode::Right, NONE));
+        assert!(e.selected_text().is_none());
+        assert_eq!(&e.buffer()[e.cursor()..], "!");
+        e.key(key(KeyCode::Char('a'), CTRL));
+        e.insert("top\nα中");
+        e.key(key(KeyCode::Home, SHIFT));
+        assert_eq!(e.selected_text(), Some("α中"));
+        e.key(key(KeyCode::Up, SHIFT));
+        e.key(key(KeyCode::Up, SHIFT));
+        assert_eq!(e.selected_text(), Some("top\nα中"));
+        assert_eq!(e.buffer(), "top\nα中", "selection cannot recall history");
+        e.key(key(KeyCode::End, CTRL | SHIFT));
+        assert!(e.selected_text().is_none());
+        e.key(key(KeyCode::Home, CTRL | SHIFT));
+        assert_eq!(e.selected_text(), Some("top\nα中"));
+    }
+
+    #[test]
+    fn paste_is_one_undoable_edit_and_never_implicitly_submits() {
+        let mut e = Editor::default();
+        e.insert("draft");
+        e.select_all();
+        assert_eq!(e.key(key(KeyCode::Char('v'), CTRL)), Outcome::Paste);
+        assert_eq!(e.buffer(), "draft");
+        e.insert("first\r\n中文\r👩‍💻\x1b\0\n");
+        assert_eq!(e.buffer(), "first\n中文\n👩‍💻\n");
+        assert_eq!(e.key(key(KeyCode::Char('z'), CTRL)), Outcome::Edited);
+        assert_eq!(e.buffer(), "draft");
+        assert_eq!(e.selected_text(), Some("draft"));
+        e.key(key(KeyCode::Char('Z'), CTRL | SHIFT));
+        assert_eq!(e.buffer(), "first\n中文\n👩‍💻\n");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        e.key(key(KeyCode::Char('y'), CTRL));
+        assert_eq!(e.buffer(), "first\n中文\n👩‍💻\n");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        e.insert("replacement");
+        e.key(key(KeyCode::Char('y'), CTRL));
+        assert_eq!(e.buffer(), "replacement", "new edits invalidate redo");
+        assert_eq!(e.key(key(KeyCode::Insert, SHIFT)), Outcome::Paste);
+        assert_eq!(e.key(key(KeyCode::Char('z'), CTRL | ALT)), Outcome::Suspend);
+        assert_eq!(
+            e.key(key(KeyCode::Enter, NONE)),
+            Outcome::Submit("replacement".into())
+        );
+        e.key(key(KeyCode::Char('z'), CTRL));
+        assert_eq!(
+            e.buffer(),
+            "",
+            "sent messages cannot be undone into the input"
+        );
+    }
+
+    #[test]
+    fn insertion_and_deletion_keep_cursor_at_new_grapheme_boundaries() {
+        let mut e = Editor::default();
+        e.insert("\u{301}x");
+        e.key(key(KeyCode::Home, NONE));
+        e.insert("e");
+        assert_eq!(e.buffer(), "e\u{301}x");
+        assert_eq!(e.cursor(), "e\u{301}".len());
+        e.key(key(KeyCode::Backspace, NONE));
+        assert_eq!(e.buffer(), "x");
+        e.clear();
+        e.insert("🇨 🇦");
+        e.key(key(KeyCode::Home, NONE));
+        e.key(key(KeyCode::Right, NONE));
+        e.key(key(KeyCode::Delete, NONE));
+        assert_eq!(e.buffer(), "🇨🇦");
+        assert_eq!(e.cursor(), e.buffer().len());
+        e.key(key(KeyCode::Backspace, NONE));
+        assert_eq!(e.buffer(), "");
+    }
+
+    #[test]
+    fn mouse_selection_matches_wrapping_wide_graphemes_and_visible_window() {
+        let mut e = Editor::default();
+        e.insert("ab中👩‍💻x\nz");
+        let prompt = [Span::new("> ", Style::PLAIN)];
+        let (rows, cursor) = e.display(&prompt, false, 9, 2);
+        assert_eq!(rows, ["  x", "  z"]);
+        assert_eq!(cursor, (1, 3));
+        assert!(e.select_at(&prompt, 9, 2, 0, 2, false));
+        // Moving to the first visible row changes the cursor-following
+        // viewport. Use the current full layout for the following drag.
+        assert!(e.select_at(&prompt, 9, 10, 2, 3, true));
+        assert_eq!(e.selected_text(), Some("x\nz"));
+        e.select_at(&prompt, 9, 10, 0, 7, false);
+        assert_eq!(
+            e.cursor(),
+            "ab中👩‍💻".len(),
+            "second emoji cell maps to its trailing edge"
+        );
+        e.select_at(&prompt, 9, 10, 0, 4, true);
+        assert_eq!(e.selected_text(), Some("中👩‍💻"));
+        let (rows, cursor) = e.display(&prompt, false, 9, 10);
+        assert!(rows[0].contains("\x1b[7m中\x1b[27m\x1b[7m👩‍💻\x1b[27m"));
+        assert_eq!(cursor, (0, 4));
+        e.key(key(KeyCode::Right, NONE));
+        let (_, cursor) = e.display(&prompt, false, 9, 10);
+        assert_eq!(
+            cursor,
+            (1, 2),
+            "cursor before a wrapped glyph is on that glyph's row"
+        );
+    }
+
+    #[test]
+    fn selection_marks_newlines_and_search_backspace_removes_whole_graphemes() {
+        let mut e = Editor::default();
+        e.insert("a\nb");
+        e.select_all();
+        let (rows, _) = e.display(&[], false, 20, 10);
+        assert_eq!(
+            rows,
+            ["\x1b[7ma\x1b[27m\x1b[7m \x1b[27m", "\x1b[7mb\x1b[27m"]
+        );
+        e.key(key(KeyCode::Char('r'), CTRL));
+        typed(&mut e, "e\u{301}");
+        e.key(key(KeyCode::Backspace, NONE));
+        let (rows, _) = e.display(&[], false, 80, 5);
+        assert_eq!(rows, ["search: "]);
+        e.key(key(KeyCode::Esc, NONE));
+        assert_eq!(e.selected_text(), Some("a\nb"));
+    }
+
+    #[test]
+    fn oversized_pastes_and_undo_history_are_bounded() {
+        let mut e = Editor::default();
+        e.insert(&format!("{}👩‍💻suffix", "a".repeat(MAX_INPUT_BYTES - 1)));
+        assert_eq!(e.buffer().len(), MAX_INPUT_BYTES - 1);
+        assert!(!e.buffer().contains('👩'));
+        e.select_all();
+        e.insert("中");
+        assert_eq!(e.buffer(), "中", "selection frees capacity before paste");
+        e.key(key(KeyCode::Char('z'), CTRL));
+        assert_eq!(e.buffer().len(), MAX_INPUT_BYTES - 1);
+        // Successive full replacements exercise the byte bound as well as
+        // the entry bound, without retaining unbounded copies of a paste.
+        for i in 0..20 {
+            e.select_all();
+            e.insert(&format!("{i:02}{}", "b".repeat(MAX_INPUT_BYTES - 2)));
+        }
+        assert!(e.undo.bytes <= MAX_UNDO_BYTES);
+        assert!(e.undo.entries.len() <= MAX_UNDO_ENTRIES);
+        e.clear();
+        for _ in 0..MAX_UNDO_ENTRIES + 20 {
+            e.insert("x");
+        }
+        for _ in 0..MAX_UNDO_ENTRIES + 20 {
+            e.key(key(KeyCode::Char('z'), CTRL));
+        }
+        assert_eq!(e.buffer(), "x".repeat(20));
+        assert!(e.redo.bytes <= MAX_UNDO_BYTES && e.redo.entries.len() <= MAX_UNDO_ENTRIES);
+    }
 
     #[test]
     fn editing_moves_by_character_word_and_line() {
         let mut e = Editor::default();
         typed(&mut e, "fix the csv export");
-        e.key(key(KeyCode::Char('a'), CTRL));
+        e.key(key(KeyCode::Home, NONE));
         e.key(key(KeyCode::Char('f'), ALT));
         e.key(key(KeyCode::Char('f'), ALT));
         e.key(key(KeyCode::Char('w'), CTRL));
         assert_eq!(e.buffer(), "fix  csv export");
-        e.key(key(KeyCode::Char('y'), CTRL));
+        e.key(key(KeyCode::Char('y'), ALT));
         assert_eq!(e.buffer(), "fix the csv export");
         e.key(key(KeyCode::Char('e'), CTRL));
         e.key(key(KeyCode::Backspace, ALT));

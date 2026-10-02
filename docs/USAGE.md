@@ -11,7 +11,18 @@ duet                            # the workspace: code in a conversation (hybrid 
 duet "fix the failing export"   # the same, with the first message given
 duet --mode top-clearance       # only the local model works; nothing leaves this machine
 duet --resume                   # continue the most recent open session (or --resume <id>)
+duet --goal "fix and verify the export" --check 'cargo test'  # keep working within budgets
+duet history                    # recent sessions and runs, with resume commands
+duet history --search export    # search saved titles and conversations
+duet history <id>               # read a conversation; --json for scripts
+duet skills list                # discover portable SKILL.md workflows and diagnostics
+duet skills show code-review    # read a skill locally, without calling a model
+duet plugins inspect examples/plugins/quality-kit  # inspect a native package; runs no code
+duet plugins install examples/plugins/quality-kit  # enable a private snapshot for the next session
+duet plugins list               # installed packages, capabilities and content digests
 duet run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
+duet run --check 'cargo test --offline' "fix the export"  # require a passing check at finish
+duet --check 'npm test' "build the page"  # the same contract for a session
 duet run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
 duet run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
 duet audit show <run>           # see exactly what was sent to the frontier, and the security events
@@ -20,18 +31,69 @@ duet audit disclosure <run>     # what was withheld from the frontier, by class 
 duet resume <run>               # continue an interrupted one-shot run
 duet config list                # every setting, its value and where it came from
 duet config set --project ip.interface_only '["src/pricing/**"]'
-duet config preset              # local backends and frontier providers (zai, anthropic, openai)
+duet setup                      # discover credentials and served models; review and save settings
+duet setup --provider openai --yes   # explicit cloud recipient; apply without a prompt
+duet setup --local-url http://127.0.0.1:9000/v1  # custom local server
+duet config preset              # show all local and frontier presets
 duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
 duet config preset anthropic --confirm                 # frontier endpoint, model, key variable, dialect
 duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
 duet local-eval                 # measure the configured local model in its reading roles
+duet scan --rules-only          # scan existing code without model opinions
+duet scan --background          # return a scan id; inspect with duet scan --status <id>
 duet purge                      # delete raw run data older than the retention period
 ```
+
+## Goals and history
+
+Start an ongoing goal with `duet --goal "what you want accomplished"`, or type
+`/goal <objective>` in the workspace. Duet continues after progress replies without needing
+another “go”. It stops for a question, failure, stop request, or budget limit. Completion means
+the agent called `finish` and every configured acceptance check passed; choose meaningful
+checks with `--check` or `checks.commands` for the quality you need.
+
+| In the workspace | What it does |
+|---|---|
+| `/goal` | Show the objective, state, progress and remaining turns |
+| `/goal pause` or `/stop` | Pause after the current step; Ctrl-C interrupts immediately |
+| `/goal resume` | Explicitly continue a paused goal using its remaining allowance |
+| A reply to Duet's question | Answer and continue the waiting goal |
+| `/goal cancel` | End the goal without claiming success; a new goal can then start |
+| `/history` | List recent work with its status, cost and resume command |
+| `/history <id>` | Read a saved conversation without calling a model |
+
+Goals allow **20 turns by default**, configurable for new goals with `--goal-turns N`
+(1–1000). Each turn also obeys the existing request, time and dollar limits. Cumulative
+`session.frontier_usd` and `session.wall_clock_minutes` limits still apply across goals and
+process restarts. Reserving a goal turn happens before its work starts, so interruption does
+not refund that turn. A used-up allowance cannot be reset by resuming.
+
+`/quit` leaves the session resumable and pauses active goal work. After reopening it with
+`duet --resume <id>`, inspect `/goal` and explicitly use `/goal resume`. Reopening never starts
+goal requests by itself. `/close` closes the session and cancels any unfinished goal. A crash
+also recovers to a paused goal. Duet must remain running for automatic work to continue.
+
+History is local to the workspace. `duet history --search TEXT --limit 50` searches saved
+objectives and messages; `--json` provides structured records. Large histories are read with
+limits, and partial records are labelled. History browsing never repairs or truncates a log
+that may still be receiving writes. Goal state and progress are private files beside the
+session transcript in `.duet/runs/<id>/`; `duet purge` retention applies to both. Goals enter
+the same privacy boundary as ordinary messages.
 
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
 evaluation baseline). A repository can forbid it, for new and resumed runs and sessions alike:
 `duet config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
 with `--confirm`).
+
+**Acceptance checks.** Repeat `--check COMMAND` to add task-specific checks to the project's
+`checks.commands`. Duet runs them in its command sandbox when the agent calls `finish`; a failing
+check returns its filtered output to the agent for repair, and the task cannot finish while a check
+fails. Checks are saved with the run or session, so resume uses the same commands even if project
+settings change. Use executable tests of the requested behavior: for a browser game, a project
+script can check item counts, progression and victory conditions and exercise the first screen in a
+headless browser. A parse check alone does not establish that the game meets its brief. Passing
+checks use local command time and the run's finish-attempt budget without a separate model reviewer;
+failures can add frontier repair turns and cost.
 
 **Top clearance.** For work whose content may not leave the machine at all, `--mode
 top-clearance` (in a session, `/mode top-clearance`) has the local model do everything: it reads,
@@ -51,16 +113,40 @@ clearance without `--mode`, and every other mode is refused (lifting it is the o
 `--mode local-only` is the same mode under its old name. Details: [SECURITY.md](../SECURITY.md)
 (Top clearance).
 
-**Project instructions.** Put how to work in a repository (conventions, the commands that build and
-test it, its layout) in `DUET.md` at its root, and your own standing instructions for every
-repository in `~/.config/duet/DUET.md` (next to your config; `$DUET_CONFIG_HOME/DUET.md` when that
-is set). Duet gives both to the frontier at the start of every run, session and sub-agent, ahead of
-the task and framed as instructions (yours first); they never change during the conversation, so
-the request prefix stays cached. Each is limited to 16 KiB (a longer one is cut at a line, with a
-note); `duet doctor` says which it found. The repository's file is repository text: in hybrid mode
-it is scanned like any file (a key in it reaches the frontier as a placeholder), and it cannot
-change a setting, the policy or the sandbox, whatever it says. Details:
-[SECURITY.md](../SECURITY.md) (Project instructions).
+**Project instructions.** Duet reads `AGENTS.md` (or `AGENTS.override.md`), `CLAUDE.md`,
+`GEMINI.md`, root `.github/copilot-instructions.md`, then `DUET.md`. More specific directories
+take precedence. The current user request outranks owner instructions, which outrank
+repository guidance; all remain within Duet's host rules. Owner equivalents beside
+`~/.config/duet/config.toml` are loaded first;
+`DUET_CONFIG_HOME` changes that directory. Root instructions enter the opening message once
+and are replayed on resume. Relevant descendant instructions load for the path named by
+`read_file`, `edit_file`, `write_file`, `edit_protected` or `rename`; a newly discovered block
+defers that operation until the model has seen it. The model is instructed to read files before
+shell changes; shell paths and additional rename targets are not automatically enumerated.
+Each file contributes at
+most 16 KiB, combined root instructions at most 64 KiB and scoped blocks at most 32 KiB.
+Project text passes the privacy boundary and cannot change policy or the sandbox.
+[Ordering, scope, refresh and limits](EXTENSIONS.md#repository-instructions).
+
+**Skills and plugins.** Put a workflow in `.agents/skills/<name>/SKILL.md`, with YAML
+`name` and `description` fields followed by Markdown instructions. Duet also discovers familiar
+owner and project skill locations. It sends short metadata first and loads full instructions
+and referenced text only when needed. Install a native package with `duet plugins install PATH`;
+inspect it first with `duet plugins inspect PATH`. Installation takes a private content snapshot
+and executes no scripts. Enabled packages can contribute MCP servers at the next session start.
+
+| In the workspace | What it does |
+|---|---|
+| `/skills` | List skills and discovery diagnostics |
+| `/skill <name> [task]` | Select a workflow, including one requiring explicit invocation |
+| `/plugins` | Show installed packages and their capabilities |
+| `/command plugin:name [arguments]` | Use a packaged Markdown prompt command |
+
+Plugin skill names are qualified, for example `quality-kit:code-review`. Use `duet skills show
+quality-kit:code-review` to inspect one locally. Restart the session after installing or updating
+extensions to refresh its catalog and tool servers. Repository settings can disable discovery
+with `extensions.skills_enabled = false` or packages with `extensions.plugins_enabled = false`.
+Skill instructions grant no tools or permissions. [Example, lifecycle, privacy and compatibility](EXTENSIONS.md).
 
 **Without git.** Duet works in any folder. Outside a git repository, files are listed and searched
 by a walk that honours `.gitignore` and `.ignore` files and skips `.git`, `.duet` and dependency and
@@ -68,6 +154,70 @@ build-output directories (`node_modules`, `target`, `dist`, `__pycache__`, `.ven
 and `/diff` compare the files duet wrote with their content before the run (changes made only by
 commands are not shown); `/undo`, resume and the audit work as in a repository; the git tools are
 not offered (`git init` adds them).
+
+## Security review and repository scans
+
+```sh
+duet scan                          # existing code, rules and eligible local opinions
+duet scan --rules-only --json       # no model or language-server requests
+duet scan --fail-on-high            # exit 2 for rule-confirmed high findings
+duet scan --background              # detached worker; prints the scan id
+duet scan --status scan-...         # state, commit, dirty flag and private report location
+duet config set review.enabled true
+duet config set review.block_high true  # optional finish enforcement; requires review.enabled
+```
+
+Scanning does not require `review.enabled`; that setting adds review to `finish` after ordinary
+checks pass. Findings compare against a private run-start snapshot, including pre-existing dirty
+files. Resume retains that baseline. A rule-confirmed high finding can enter the normal repair
+loop when enforcement is enabled. Model opinions cannot create a blocker or hide a finding.
+
+Reports live at `.duet/runs/<id>/security-review.json`. Repository scans also write
+`scan-status.json`, recording the starting commit (or null outside git), dirty state, timing and
+model usage. `scan-usage.json` preserves metering even if a started review fails. A captured
+source or commit changing during review prevents completion. Incomplete
+coverage is explicit; an empty report is not a security certificate. A background process killed
+without cleanup can leave a running status; inspect its PID and start a new scan.
+
+Local review defaults to protected code and privacy flows. `review.local_open = true` also asks
+the local model about ordinary open-code candidates; measurements have not shown an accuracy
+gain there. `review.max_candidates` limits local opinions (default 16). Configured sandboxed
+language servers supply bounded context when `review.references` is true. They are not installed
+automatically. Pass-through and top-clearance finish auditing currently use rules and installed
+scanners without a separate local reviewer; a manual scan uses the configured local reader.
+
+An optional fresh-context frontier opinion has no working conversation or tools. It is offered
+only for high or locally uncertain findings on eligible open code. Protected paths, private
+values, recognized privacy flows and external-scanner candidates are excluded. Enable it with
+`duet config set review.frontier true --confirm` (owner only). The extra send requires the
+configuration command's existing privacy-loosening confirmation. Its default limits are four
+opinions per attempt and $0.50 per reviewer, also constrained by the remaining run budget.
+Usage, failed attempts and dollars survive resume. Top clearance never uses this frontier role.
+
+Optional scanners must already be installed outside the repository. Configure their absolute
+executable, argument array, output format and timeout in owner configuration:
+
+```toml
+[review.scanners.example]
+command = "/absolute/path/to/installed/scanner"
+args = ["--format", "sarif", "."] # replace with that scanner's actual arguments
+format = "sarif"
+timeout_seconds = 60
+```
+
+Formats: SARIF, Bandit, gosec, cargo-audit, npm-audit and pip-audit JSON. At most four tools run,
+with no network or source writes, on a bounded UTF-8 snapshot. `{workspace}` in an argument is
+replaced with that snapshot's directory. Offline databases and configuration must already be
+available; tools requiring network access report unavailable. `--rules-only` still runs these
+configured tools. Duet bundles no third-party scanner rules and does not execute reviewed source.
+Scanner failures and explicit analysis errors mark coverage incomplete. Exit 1 is accepted
+only with validated findings; other nonzero exits are failures. New cross-file findings are
+retained even when the scanner reports them in an unchanged file.
+Raw tool JSON is private at `security-scanners/<index>-{before,after}.json`; untrusted descriptions
+do not enter model prompts. Only locations inside the snapshot become advisory findings.
+
+Defaults remain off for finish review, blocking and frontier opinions. The
+[auditor report](SECURITY-AUDITOR-2026-09-30.md) records coverage, measurements and known limits.
 
 ## Coding with duet: the workspace
 
@@ -77,16 +227,16 @@ with duet's reply, a question for you, or a finished task; your next message con
 everything said and done so far.
 
 ```text
-  DUET  /  billing                        F1 help · Ctrl-O details · Ctrl-T panel · F2 settings
-  hybrid · frontier glm-5.3-flash · local omlx-coding · sensitive values stay on this machine
-                                                        │  Changes  Privacy  Session   Ctrl-T
+  DUET  /  billing                        F1 help · Ctrl-O details · Tab panel · F2 settings
+  hybrid · frontier glm-5.3-flash · local omlx-coding · privacy boundary active
+                                                        │  Changes  Privacy  Session   Tab / ⇧Tab
   › you                                                 │ 1 file(s)  +3 −1
   │ The CSV export drops the last row. Fix it.          │ › ● src/export.rs  +3 −1
                                                         │ ──────────────────────────────────
   ● read  src/export.rs                                 │ 41 - for i in 0..rows.len() - 1 {
     │ src/export.rs (lines 1-120 of 120)                │ 41 + for i in 0..rows.len() {
     … 118 more lines · Ctrl-O                           │
-  ● read  data/customers.csv  ◦ held locally, a summary was sent
+  ● read  data/customers.csv · done  ◦ sensitive: raw content held; filtered view prepared
                                                         │
   ● edit  src/export.rs  ◦ +1 −1                        │
     - for i in 0..rows.len() - 1 {                      │
@@ -99,24 +249,42 @@ everything said and done so far.
  DONE  │ turn 1 · $0.0184 of $20.00 · 42.1k in · 1.2k out                              F1 help
 ```
 
-- **The screen.** The header: the workspace, the mode, the frontier and local models, and where
-  sensitive values go (in passthrough, in red, that the privacy boundary is off). The conversation,
+- **The screen.** The header: the workspace, the mode, the frontier and local models, and whether
+  the privacy boundary is active (in passthrough, a red warning says it is off). The conversation,
   as cells: your messages (`› you`), duet's replies as the frontier writes them (`◆ duet`, formatted
   lightly: headings, lists, quotes, code blocks, inline code and bold), each tool call (`● read`,
-  `● run`, `✗` when it failed) with its result as the frontier saw it (placeholders kept: that is what
-  left the machine) folded to its first lines (Ctrl-O shows all; a failure is shown longer), every
+  `● run`, `✗` when it failed) with an explicit running/done/failed/stopped status and its prepared
+  result (placeholders kept), folded to its first lines (Ctrl-O expands; a failure is shown longer).
+  Local questions show the handle, source path when available, every question and the filtered
+  answer, with a redaction count. Reads show requested line ranges; long commands remain visible
+  in full. The journal also shows every
   edit with its diff (a sensitive file is named, never shown), what the boundary withheld (`◦`), and
   how each turn ended (`✓ done`, a question, a stop). While duet works a line under the conversation
   shows the turn's time, its cost so far and what runs now. It follows new output; PgUp/PgDn or the
-  mouse wheel scroll back (it then stays put and says how many rows are below; Ctrl-End returns).
+  mouse wheel scroll back (it stays put and shows how many rows are below; Ctrl-End on empty input returns).
   The status line's badge says READY, WORKING, DONE, YOUR ANSWER, STOPPED or FAILED, beside the
-  turn, the cost against the session budget and the tokens. The side panel (Ctrl-T cycles it; it opens by itself on a window 110 columns or wider):
+  turn, the cost against the session budget and the tokens. The side panel (Tab / Shift-Tab cycle
+  its tabs; Ctrl-T also cycles through closed; it opens by itself on a window 110 columns or wider):
   **Changes** lists the files the session changed with added/removed line counts above the selected
   file's diff (Ctrl-↑ ↓ pick a file, Ctrl-PgUp/PgDn scroll the diff); files that are sensitive, or
-  were produced by a command that read sensitive data, are named and never shown. **Privacy** counts
-  what the frontier did not see as it was (results replaced by placeholders, held locally, answered
-  by the local model) and lists the interventions, newest first. **Session** shows turns, requests,
-  tool calls, tokens, cost and working time against the budgets. Colour unless `NO_COLOR` is set.
+  were produced by a command that read sensitive data, are named and never shown. **Privacy** shows
+  individual reads, local questions, commands and filtering decisions, newest first. Its default
+  view explains what Duet did, whether a matching cloud send passed its checks, and how the result
+  was handled. Ctrl-↑/↓ selects an action; Ctrl-O opens or closes its full record, including the
+  exact outbound text, audit number, time and model. Ctrl-PgUp/PgDn scrolls the selected view.
+  Prepared results are distinct from records that passed the outbound checks; those records do
+  not confirm provider receipt. Failed and pending calls are labeled separately. Outbound
+  filtering records identify the history item/call, tool, file and argument field, changed line
+  numbers, replacement placeholders and where each value was first detected. They do not log
+  the matched secret. The journal groups repeated descriptions from history rechecks; Privacy
+  retains the details for each request. Older count-only records are labeled incomplete because
+  they did not record the affected fields. Resuming reloads the recorded privacy events.
+  Local-model endpoint decisions show the host and trust decision. The latest 500 activities are retained
+  in this view; `/audit` opens the full record. Metadata and filtered views are shown without
+  opening raw handles or restoring their secret values. **Session** shows turns, requests,
+  tool calls, tokens, frontier and local cost estimates, the model/rates/catalog source used,
+  and working time against the budgets. Ctrl-PgUp/PgDn scrolls Session details too.
+  Colour unless `NO_COLOR` is set.
 - **Talking to duet.** Every message is a turn. duet ends it with `duet:` (a reply), `duet asks:`
   (a clarifying question: your next message is the answer) or `duet finished:` (it called `finish`
   and `checks.commands` passed). `//text` sends a message that starts with `/`. `@path` names a
@@ -126,28 +294,70 @@ everything said and done so far.
   |---|---|
   | Enter | send (a line ending with `\` continues instead) |
   | Alt-Enter, Shift-Enter, Ctrl-J | a new line in the message (Shift-Enter where the terminal reports it: kitty, WezTerm, Ghostty, foot, recent iTerm2) |
-  | ← → , Ctrl-B / Ctrl-F, Home / End, Ctrl-A / Ctrl-E | move; Alt-B / Alt-F, Ctrl-← / Ctrl-→ by word |
-  | Backspace, Delete, Ctrl-W, Alt-Backspace, Alt-D, Ctrl-K, Ctrl-U, Ctrl-Y | delete; cut a word or to the line's end/start; put back what was cut |
-  | ↑ ↓, Ctrl-P / Ctrl-N | move between the lines of a message, then through your earlier messages of this session |
-  | Ctrl-R | search those messages (type to narrow, Ctrl-R for an older match, Enter takes it into the input, Esc cancels) |
-  | `/` | the command palette: every command with what it does (↑↓ pick, Enter runs it, Tab puts it in the input) |
-  | `@` | the file picker: the workspace's files as you type (↑↓ pick, Tab or Enter) |
-  | Tab | complete a command or a path after `/image` |
-  | PgUp / PgDn, mouse wheel | scroll the conversation |
-  | Ctrl-O | show or fold tool results |
-  | Ctrl-T | the side panel: Changes, Privacy, Session, closed |
-  | Ctrl-↑ / Ctrl-↓, Ctrl-PgUp / Ctrl-PgDn | pick a changed file; scroll its diff |
-  | F2 | the settings (below) |
-  | F1 | the keys and commands |
-  | mouse drag | select text of the conversation; it is copied when you let go |
-  | Ctrl-Z, Ctrl-D | suspend (`fg` returns); on an empty input, leave (like the end of input) |
+  | ← →, Home / End, Ctrl-Home / Ctrl-End | move by grapheme, line or message; Alt-B / Alt-F and Ctrl-← / Ctrl-→ move by word |
+  | Shift + arrows / Home / End | select text; add Ctrl or Alt for word selection |
+  | Ctrl-A | select the whole message |
+  | Ctrl-C / Ctrl-X | copy / cut selected input; Ctrl-C copies a conversation selection before considering interruption |
+  | Ctrl-V, Shift-Insert, `/paste` | explicitly read the local clipboard: insert text or queue an image for the next message |
+  | Ctrl-Insert / Shift-Delete | copy / cut selected input |
+  | Ctrl-Z / Ctrl-Y, Ctrl-Shift-Z | undo / redo message edits; each paste is one edit |
+  | Backspace, Delete, Ctrl-W, Alt-Backspace, Alt-D, Ctrl-K, Ctrl-U, Alt-Y | delete; cut a word or to line end/start; restore the last internal cut |
+  | ↑ ↓, Ctrl-N | move between lines, then through earlier messages in this session |
+  | Ctrl-R | search message history (type to narrow, Ctrl-R for an older match, Enter takes it into input, Esc cancels) |
+  | `/`, F4, Ctrl-Shift-P | command palette; type to filter, ↑↓ / wheel selects, PgUp/PgDn pages, Home/End jumps to first/last, Enter runs, Tab inserts; F4 preserves the draft and Esc restores it |
+  | `@`, Ctrl-P | choose a workspace file reference; Ctrl-P appends a picker to the draft |
+  | Ctrl-F, `/find` | search rendered conversation text; Enter / Shift-Enter moves between matching rows; Esc returns to the draft |
+  | F3 / Shift-F3 | next / previous search result after closing Find |
+  | Ctrl-Shift-C, `/copy` | copy the latest reply when nothing is selected |
+  | Tab / Shift-Tab | next / previous panel; Tab accepts an active completion or completes `/image` and `/attach` paths |
+  | PgUp / PgDn, mouse wheel | scroll conversation; the wheel over panel details scrolls that panel |
+  | Ctrl-End with empty input | return to the latest conversation output |
+  | Ctrl-O | unfold tool results; in Privacy, show summary / full record |
+  | Ctrl-T | cycle Changes, Privacy, Session, closed |
+  | Ctrl-↑ / Ctrl-↓, Ctrl-PgUp / Ctrl-PgDn | select a changed file or privacy event; scroll its details |
+  | F2 / F1 | settings / scrollable shortcut help |
+  | Mouse click / drag | position the input cursor / select text in the input or conversation; Ctrl-C copies |
+  | Ctrl-Alt-Z / Ctrl-D | suspend (`fg` resumes) / leave on empty input |
 
-  History is the session's own messages, read from its transcript: nothing new is stored. Ctrl-C
-  follows the rules below whatever you were typing (the line is cleared). Dragging selects text of
-  the conversation and copies it when you let go (with `pbcopy` on macOS, else through the terminal);
-  holding Option (macOS) or Shift while dragging uses the terminal's own selection instead. Anything
-  else in the process prints (a warning, a setup note) appears in the conversation, dimmed and
-  marked `│`, never over the screen.
+  The command menu uses the available terminal height. When commands do not all fit, it shows
+  the visible range, how many remain above/below, and a scrollbar. Click a command to select it;
+  Enter runs it. Mouse scrolling over the menu browses commands; outside it, scrolling remains
+  with the conversation or side panel. Help, goals, history, status, models and settings come first.
+
+  Text selection supports combining marks, CJK and emoji sequences. Pasted text never submits
+  itself. The message editor holds up to 256 KiB and keeps bounded undo history. Ctrl-C with no
+  selection clears the draft and follows the interruption rules below. To use the terminal's own
+  selection instead, use its mouse modifier (often Option on macOS or Shift on Linux).
+
+  **Clipboard images.** On macOS, copy an image or screenshot, then press **Ctrl-V** or type
+  **`/paste`**. Native **Cmd-V** is handled by the terminal and ordinarily pastes text; Duet cannot
+  force a terminal to forward an intercepted shortcut. Linux image paste uses system-installed
+  `wl-clipboard` on Wayland or `xclip` on X11; `xsel` supports text only. Clipboard actions run in
+  a worker with bounded input/output and a three-second helper deadline. There is no clipboard
+  polling or clipboard read through OSC 52. Under SSH, use terminal text paste or `/image PATH`
+  for an image already on the remote host. Copy can fall back to an OSC 52 write request; the
+  terminal decides whether to accept it, and Duet reports that as a request rather than a confirmed
+  clipboard change. Clipboard behavior on Linux is covered by mock helpers, not a live desktop test.
+
+  Pasted images are validated and re-encoded as PNG, stored in a private temporary directory
+  outside the repository, and removed when the chat ends normally. They are **not marked public**:
+  existing image privacy and model-vision settings determine their destination. Clipboard input
+  is limited to 16 MiB encoded, 40 million pixels and 16,384 pixels per side; normal image preparation
+  applies its additional limits. The temporary store allows up to 64 captures / 256 MiB per chat.
+  A crash may leave private temporary files; run-image copies follow normal run retention.
+
+  Queued attachments appear above the message. **`/attachments`** lists their current IDs;
+  **`/detach i1`**, **`/detach t1`**, or **`/detach all`** removes them from the queue without deleting
+  their source files. Dropped PNG/JPEG/GIF/WebP paths are recognized as images, including quoted
+  paths with spaces. Relative attachment paths use the displayed workspace, including with
+  `--workspace`. Enter waits while a clipboard image is being prepared. An image queued
+  during a running turn is paired with the following message after that turn. If it fails to
+  attach, its message is kept unsent for review. File references chosen with `@` are references
+  in the prompt; `/attach` snapshots file content.
+
+  Find searches rendered rows (unfold tool details with Ctrl-O to include their contents).
+  Settings fields accept bracketed text paste without submitting or approving a change.
+  Warnings and setup output appear in the conversation, never over the input.
 - **Steering while it works.** Type while duet is working: the message is delivered after the
   current step (its tool results are recorded first; a running command is never cut short), and
   duet takes it into account from its next step. Several messages typed meanwhile arrive together,
@@ -165,6 +375,13 @@ everything said and done so far.
 - **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `duet
   --resume` continues the latest open one (with a recap of its last turns), `--resume <id>` a given
   one, also after a crash.
+- **Text attachments.** Drag a Markdown or other UTF-8 text file into the input, or enter
+  `/attach /path/to/spec.md`, then send your instruction. Duet confirms the filename and size;
+  quoted paths and shell-escaped spaces/parentheses work. The file is snapshotted when attached,
+  including files outside the workspace, and included with the next message or steering message.
+  Sensitive files use local handles; detected private values are filtered. Large files use the
+  normal bounded file view. Each file is limited to 512 KiB, with at most 16 files / 2 MiB pending.
+  Attachments delivered in a session remain in its private transcript/handles when resumed.
 - **Privacy.** You see real values in your terminal; the frontier gets your messages the way it
   gets task text: detected secrets and personal data become placeholders, and values it has seen
   as placeholders stay placeholders. duet's replies show the real values back to you. See
@@ -391,7 +608,8 @@ where nobody can be asked (`duet run` with approval off, a session without a ter
 not offered. The read-only git tools always are. Details: [SECURITY.md](../SECURITY.md) (Git
 tools).
 
-**MCP servers** (`[mcp.servers.<name>]` in the owner config; the only plugin mechanism): Duet's
+**MCP servers** (`[mcp.servers.<name>]` in the owner config, or declared by a
+[native plugin](EXTENSIONS.md#optional-mcp-tool-servers)): Duet's
 own Model Context Protocol client (stdio and streamable HTTP) starts each enabled server at run
 start and offers its tools as `mcp__<server>__<tool>`. A stdio server runs in the command sandbox
 (same hidden paths as commands, the workspace as working directory, no network unless `network =
@@ -553,9 +771,17 @@ duet config set frontier.vision true --confirm         # the frontier model acce
 duet config set --project images.to_frontier '"never"' # default; "public" also sends non-sensitive workspace images
 ```
 
-**Getting a local model.** With no `local.base_url` in your user config, `duet run` looks for a
-server on this machine only (127.0.0.1 on the preset ports 11434, 1234, 8080 and 8000, or
-`DUET_LOCAL_PORTS`), lists what answered, and uses it for that run when exactly one model is on
+**Getting a local model.** `duet setup` probes the local preset ports on `127.0.0.1`, reads
+`/v1/models`, and offers the served text/chat models. Its defaults cover Ollama (11434), LM Studio
+(1234), llama.cpp, LocalAI and MLX (8080), vLLM and oMLX (8000), Jan Desktop (1337), Jan CLI
+(6767), GPT4All (4891), KoboldCpp (5001), and LiteLLM (4000). `DUET_LOCAL_PORTS` can replace
+that list, or `duet setup --local-url URL` can select a custom endpoint. A remote local endpoint
+must pass Duet's allowlist and transport checks before discovery contacts it. Jan and LiteLLM
+can use `JAN_API_KEY` and `LITELLM_API_KEY`; only their variable names are saved. Model discovery
+does not download, load or test a model.
+
+With no `local.base_url` in your user config, `duet run` also looks for a server on this machine
+only, lists what answered, and uses it for that run when exactly one model is on
 offer (saying so, and recording it in the run). With several, or none, it prints the exact
 `duet config set` commands and stops. It never writes configuration: `duet config preset <name>`
 does that, through the same `--confirm` and audit path as any endpoint change.
@@ -622,7 +848,7 @@ and X1/X2 runs the condensed outputs shrank by 48%, but only 43 of 1,635 command
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git (and,
-outside a repository, what works without one), the project instructions found (`DUET.md`), disk
+outside a repository, what works without one), supported instruction files and overrides, disk
 space, the audit chains and anchors of the latest runs, run data past retention, the approval
 mode, and whether release signing keys are present (a warning in a build made by
 `tools/release.sh`; a note in a development build, since no release has been published). It uses no
@@ -641,20 +867,108 @@ Live smoke tests, one per local backend, run with
 
 ## Models
 
-- **Frontier:** z.ai `glm-5.3-flash` by default. `frontier.dialect` selects the API the endpoint
-  speaks: `chat` (any OpenAI-compatible Chat Completions endpoint, the default), `anthropic`
-  (Anthropic Messages, with prompt-cache breakpoints on the stable prefix and a rolling one on the
-  conversation) or `responses` (OpenAI Responses, stateless). Presets: `zai` (`glm-5.3-flash`),
-  `anthropic` (`claude-opus-5-5`), `openai` (`gpt-5.5`). The outbound gate filters, checks and
-  audits the exact body of whichever dialect is used. The Anthropic and Responses dialects are
-  tested against scripted streams only; no live run has used them yet.
-- **Local:** any OpenAI-compatible Chat Completions server (oMLX, LM Studio, llama.cpp, vLLM,
-  Ollama) on loopback, or on a host the owner allowlists; plain HTTP to a non-loopback host needs
-  `local.allow_plaintext`. The default, `omlx-coding` (Qwen 3.8 27B on oMLX), was chosen with
-  `duet local-eval`. Only oMLX has served live runs so far; the other servers are supported through
-  presets and discovery tested against mocked replies, and their live smoke tests have not been run
-  yet. `omlx-coding` does not read images (the vision check found the server drops image parts),
-  so with it `local.vision` stays off and images in hybrid runs go to the frontier only when public.
+`duet setup` looks for provider keys by environment variable name. One key lets it select a cloud
+provider automatically; several prompt for the intended recipient. `--yes` does not guess among
+several cloud accounts. It fetches only that provider's model listing, chooses the existing or
+preset model if served, otherwise offers a short ranked list of candidate chat models. A listing
+that explicitly says tools or chat are unsupported excludes that model. This is a suggestion,
+not a tool-use benchmark. Authentication rejection stops setup. If a listing is unavailable for
+another reason, a preset model or `--model ID` can be used. Image input is enabled automatically
+only for the preset's known default or when the listing advertises image input. Run
+`duet doctor --online` to check the selected model's listing, context, cache and image behavior.
+
+| Frontier preset | Key variable | API dialect |
+|---|---|---|
+| `zai` | `ZAI_API_KEY` | OpenAI-style chat |
+| `anthropic` | `ANTHROPIC_API_KEY` | Anthropic Messages |
+| `openai` | `OPENAI_API_KEY` | OpenAI Responses |
+| `gemini` | `GEMINI_API_KEY` | OpenAI-style chat |
+| `openrouter` | `OPENROUTER_API_KEY` | OpenAI-style chat |
+| `deepseek` | `DEEPSEEK_API_KEY` | OpenAI-style chat |
+| `xai` | `XAI_API_KEY` | OpenAI-style chat |
+| `mistral` | `MISTRAL_API_KEY` | OpenAI-style chat |
+| `groq` | `GROQ_API_KEY` | OpenAI-style chat |
+| `cerebras` | `CEREBRAS_API_KEY` | OpenAI-style chat |
+| `together` | `TOGETHER_API_KEY` | OpenAI-style chat |
+| `fireworks` | `FIREWORKS_API_KEY` | OpenAI-style chat |
+| `qwen` (Singapore endpoint) | `DASHSCOPE_API_KEY` | OpenAI-style chat |
+
+`frontier.dialect` also supports compatible custom endpoints. The preset URLs and protocol choices
+follow the providers' published APIs; live provider/model combinations still need checking with
+your account. Mistral, Together and Fireworks deliberately have no hardcoded model: setup uses a
+live listing or `--model`. For Fireworks, setup also tries its public account-scoped model
+catalog when the inference endpoint has no listing; an account-specific deployment may still need
+`--model`. These presets are tested against scripted protocol streams; they are not
+a claim that every hosted model supports Duet's tool calls. The outbound gate filters, checks and
+audits the exact request body in each dialect.
+
+The default local model is `omlx-coding` (Qwen 3.8 27B on oMLX), chosen with `duet local-eval`.
+Only oMLX has served live runs so far; other local backends have preset/discovery tests and need
+a live smoke test on the operator's machine. `omlx-coding` does not read images, so
+`local.vision` stays off. Generic OpenAI-compatible local servers work on loopback or an
+allowlisted host; plain HTTP away from loopback needs `local.allow_plaintext`.
+
+## Costs and pricing
+
+Frontier token estimates use OpenRouter's public catalog for the selected model, including cache
+reads/writes and conditional context/time rates. Exact model slugs are preferred; unqualified
+names resolve only when unique. The catalog is refreshed when its saved copy is at least 24 hours
+old. If unavailable, Duet uses the saved copy or the bundled 2026-09-30 snapshot, labeling its source
+and age in **Session** and `/status`. This public request sends no prompts or API credentials.
+Top-clearance runs and loopback frontier endpoints never refresh the catalog. To disable the
+lookup elsewhere, set `pricing.offline true`.
+
+If your endpoint uses a model alias, map its pricing to the exact OpenRouter slug:
+
+```sh
+duet config set pricing.frontier_model '"z-ai/glm-5.3-flash"'
+```
+
+This changes the price lookup, not the model sent to the endpoint. Clear it with `duet config set
+pricing.frontier_model '""'` when returning to automatic resolution. Unknown or ambiguous frontier
+prices stop the run before a model request instead of silently charging zero. A delegated frontier
+model uses its own catalog price; optional frontier security opinions use the main frontier quote.
+
+For a direct provider whose rate differs from OpenRouter's estimate, set the rate published by that
+provider. The override applies only to the exact model and endpoint; both input and output rates
+must be positive:
+
+```sh
+duet config set pricing.manual_model '"my-model-id"'
+duet config set pricing.manual_base_url '"https://api.example.com/v1"'
+duet config set pricing.manual_input_usd_per_million 2.00
+duet config set pricing.manual_output_usd_per_million 8.00
+# optional: pricing.manual_cache_read_usd_per_million and pricing.manual_cache_write_usd_per_million
+```
+
+Rates are USD per million tokens. If cache rates are left at zero, Duet uses the input rate for
+those tokens. A quote is a budget estimate, not the provider invoice. `duet doctor` shows its
+source and warns when no enforceable price is available.
+
+Local input/output rates default to **$0**. Set your own USD-per-million-token estimates in F2
+settings, or for example:
+
+```sh
+duet config set local.input_usd_per_million 0.20
+duet config set local.output_usd_per_million 0.80
+```
+
+Rates apply after restarting/resuming the session. All local roles share the meter, including
+readers, explorers, reviews, compaction and top-clearance coding. Cached input uses the same local
+input rate. Session and `/status` show local tokens/rates/cost, frontier cost and the combined
+estimate. Local costs stay outside the frontier dollar budgets. `economics.json` in the private
+run directory stores the cumulative local estimate; `pricing-history.jsonl` records price bases
+on each start/resume. Changing rates does not reprice previously recorded spending. Sessions from
+older releases start local accounting with new work; historical costs are not reconstructed.
+
+These are token-cost estimates, not invoices. Provider counts are used when available; missing
+counts and retries that produced partial output use estimates. When a local request is canceled,
+usage from completed attempts is retained and `local_usage_unknown_requests` in the run summary
+counts requests whose in-flight token charge remains unknown. Session and `/status` also flag that count;
+the displayed dollar figure may be low by the unreported charge. UTC tiers use the accounting
+time. Request fees, non-token services, subscriptions,
+taxes and endpoint-specific discounts are outside the estimate; a model with a known fixed request
+fee is rejected. The frontier budget continues to use the recorded per-response cost.
 
 ## Configuration
 

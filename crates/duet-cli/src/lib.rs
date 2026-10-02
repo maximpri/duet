@@ -35,15 +35,25 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 mod approve;
+mod attachments;
 mod chat;
 mod doctor;
 mod egress;
 mod embedding;
 mod explore;
+mod extensions;
+mod goals;
+mod history;
 mod images;
 mod lsp;
 mod mcp;
 mod overrides;
+mod plugins;
+mod pricing;
+mod scan;
+#[cfg(test)]
+mod scoped_instruction_tests;
+mod security_review;
 mod setup;
 mod subagents;
 mod term;
@@ -78,6 +88,12 @@ struct Cli {
 struct SessionArgs {
     /// The first message (otherwise typed in the workspace).
     message: Option<String>,
+    /// Keep working on this goal until verified completion, a question, or a limit.
+    #[arg(long, conflicts_with_all = ["message", "resume"])]
+    goal: Option<String>,
+    /// Maximum turns for a new goal [default: 20]; session dollar and time budgets also apply.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..=1000))]
+    goal_turns: Option<u64>,
     /// The mode [default: hybrid; top-clearance where clearance.required is top].
     #[arg(long, value_enum)]
     mode: Option<Mode>,
@@ -90,6 +106,10 @@ struct SessionArgs {
     /// Acknowledge that `--mode passthrough` turns the privacy boundary off.
     #[arg(long)]
     no_privacy: bool,
+    /// Run this acceptance command at finish; repeatable. Added to the
+    /// project's checks for this session and kept across resume.
+    #[arg(long = "check", value_name = "COMMAND")]
+    check: Vec<String>,
     /// Continue a session: the one named, or the most recent open one.
     #[arg(long, num_args = 0..=1, value_name = "SESSION_ID")]
     resume: Option<Option<String>>,
@@ -124,6 +144,38 @@ impl Mode {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Discover and inspect portable SKILL.md workflows.
+    Skills {
+        #[command(subcommand)]
+        action: Option<extensions::SkillsAction>,
+    },
+    /// Inspect, install and manage extension packages.
+    Plugins {
+        #[command(subcommand)]
+        action: Option<plugins::Action>,
+    },
+    /// Browse saved sessions and runs, or read one conversation. No model calls.
+    History(history::Args),
+    /// Discover local servers and frontier credentials, choose models, and save one audited setup.
+    Setup {
+        /// Cloud provider to use when several API keys are present.
+        #[arg(long)]
+        provider: Option<String>,
+        /// Exact frontier model id (otherwise choose from the live listing).
+        #[arg(long)]
+        model: Option<String>,
+        /// Exact local model id (otherwise choose from loopback discovery).
+        #[arg(long)]
+        local_model: Option<String>,
+        /// Local OpenAI-compatible API URL, for a custom port or trusted host.
+        #[arg(long)]
+        local_url: Option<String>,
+        /// Apply the discovered settings without an interactive confirmation.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Scan the repository for security candidates; reports stay in .duet/runs.
+    Scan(scan::Args),
     /// Run a task.
     Run {
         /// The task, as text.
@@ -144,6 +196,10 @@ enum Cmd {
         /// (required for that mode).
         #[arg(long)]
         no_privacy: bool,
+        /// Run this acceptance command at finish; repeatable. Added to the
+        /// project's checks for this run and kept across resume.
+        #[arg(long = "check", value_name = "COMMAND")]
+        check: Vec<String>,
         /// Attach an image (PNG, JPEG, GIF, WebP) to the task; repeatable. In
         /// hybrid mode the local model describes it and the frontier gets the
         /// description (needs local.vision).
@@ -245,9 +301,8 @@ enum ConfigCmd {
         #[arg(long)]
         confirm: bool,
     },
-    /// Point the local role at a known backend (Ollama, LM Studio, llama.cpp,
-    /// vLLM, oMLX, MLX) on loopback, the frontier at a known provider (zai,
-    /// anthropic, openai: endpoint, model, key variable and dialect), or web
+    /// Point the local role at a known backend, the frontier at a known
+    /// provider (endpoint, model, key variable and dialect), or web
     /// search at a private SearXNG in Docker (searxng: prints the commands,
     /// runs nothing). Without a name, lists the presets.
     Preset {
@@ -270,6 +325,10 @@ struct RunManifest {
     run_id: String,
     mode: Mode,
     objective: String,
+    /// Frozen at creation, so a resumed run uses exactly its original
+    /// acceptance contract. Older manifests fall back to project settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checks: Option<Vec<String>>,
     frontier_url: String,
     frontier_model: String,
     /// The frontier's wire dialect when the run started (runs from before
@@ -285,12 +344,17 @@ struct RunManifest {
     /// Images attached to the task (`--image`, `--image-public`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     images: Vec<images::AttachedImage>,
+    /// Operator-selected text snapshots. Kept in the private manifest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    files: Vec<attachments::Attachment>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct LocalOverride {
     base_url: String,
     model: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    api_key_env: Option<String>,
 }
 
 fn workspace(cli: &Cli) -> Result<PathBuf> {
@@ -351,6 +415,7 @@ fn new_run_id() -> String {
 struct RunLimits {
     deadline: tokio::time::Instant,
     interrupted: Arc<AtomicBool>,
+    local_meter: Arc<duet_provider::meter::Meter>,
 }
 
 fn limit_retries(pc: &mut ProviderConfig, limits: Option<&RunLimits>) {
@@ -413,8 +478,11 @@ fn local_provider(
             allow_plaintext,
         },
     );
+    pc.local_meter = limits.map(|l| l.local_meter.clone());
     limit_retries(&mut pc, limits);
-    let key_env = cfg.str("local.api_key_env")?;
+    let key_env = over
+        .and_then(|o| o.api_key_env.clone())
+        .unwrap_or(cfg.str("local.api_key_env")?);
     if !key_env.is_empty() {
         pc.api_key_env = Some(key_env);
     }
@@ -583,6 +651,7 @@ async fn execute(
     let limits = RunLimits {
         deadline: tokio::time::Instant::now() + Duration::from_secs(wall_minutes * 60),
         interrupted: Arc::new(AtomicBool::new(false)),
+        local_meter: pricing::meter(&cfg)?,
     };
     let flag = limits.interrupted.clone();
     let notices = watch.clone();
@@ -726,6 +795,9 @@ async fn start(
     mcp::stop(&p.run_cfg).await;
     // Local model work of this invocation (a resumed run reports only its own).
     stats.ledger.local = p.engine.as_ref().and_then(|e| e.take_local_stats());
+    let local_cost = limits.local_meter.snapshot();
+    stats.local_cost_usd = local_cost.cost_usd;
+    stats.local_usage_unknown_requests = local_cost.unpriced_cancelled_requests;
     Ok((terminal, stats))
 }
 
@@ -833,22 +905,56 @@ async fn prepare(
     if let Some(event) = trust {
         frontier.audit().record(event);
     }
-    let price = duet_provider::price::builtin(&price_model);
+    let (catalog, price_source) =
+        pricing::catalog(cfg, &manifest.frontier_url, top_clearance).await;
+    let price = (!top_clearance)
+        .then(|| pricing::quote(&catalog, cfg, &price_model, &manifest.frontier_url))
+        .flatten();
     if price.is_none() && !price_model.is_empty() {
-        eprintln!(
-            "warning: no price known for {price_model}; the dollar budget cannot be enforced"
+        bail!(
+            "no usable token price for {price_model}; cannot enforce the frontier dollar budget. Use an exact pricing.frontier_model catalog slug, or set pricing.manual_model, pricing.manual_base_url and this provider's input/output rates."
         );
     }
+    if let Some(price) = &price {
+        eprintln!("pricing: {} · {price_source}", price.description());
+    }
+    pricing::attach(run_dir, &limits.local_meter, price.clone(), price_source)?;
     let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
     let frontier_key_env = cfg.str("frontier.api_key_env")?;
+    let lsp = lsp::servers(cfg, ws, run_dir, sandbox)?;
+    let mut review = security_review::settings(cfg, ws, lsp.clone())?;
+    if review.enabled {
+        review.second = security_review::second(
+            cfg,
+            manifest.mode,
+            &manifest.frontier_url,
+            &manifest.frontier_model,
+            manifest
+                .frontier_dialect
+                .as_deref()
+                .and_then(Dialect::parse)
+                .unwrap_or(Dialect::Chat),
+            engine.as_ref(),
+            frontier.audit(),
+            limits,
+            price.clone(),
+        )?;
+    }
+    let extensions = extensions::discover(ws, cfg)?;
+    let plugin_servers = plugins::servers(&extensions.plugins, cfg)?;
     // Every field from the configuration, not `..RunConfig::new`: a new field
     // is a compile error here until the CLI sets it.
     let run_cfg = RunConfig {
+        skills: extensions.skills,
         workspace: ws.to_path_buf(),
         run_dir: run_dir.to_path_buf(),
         objective: manifest.objective.clone(),
         mode: manifest.mode.as_str().to_owned(),
-        checks: cfg.list("checks.commands")?,
+        checks: manifest
+            .checks
+            .clone()
+            .map_or_else(|| cfg.list("checks.commands"), Ok)?,
+        review,
         sandbox,
         // Top clearance: commands get no network at all, whatever
         // sandbox.network says (no egress proxy, no package registries).
@@ -902,10 +1008,11 @@ async fn prepare(
                 .map(|e| e as &dyn duet_boundary::view::Presenter),
             frontier.audit(),
             top_clearance,
+            plugin_servers,
         )
         .await?,
-        lsp: lsp::servers(cfg, ws, run_dir, sandbox)?,
-        subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits)?,
+        lsp,
+        subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits, &catalog)?,
         explore: explore::setup(cfg, manifest, frontier.audit(), limits)?,
         images: images::config(cfg, manifest.mode, &manifest.images)?,
         owner_instructions: Some(duet_config::owner_instructions_path()),
@@ -1130,18 +1237,24 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
     let Some(command) = cli.command else {
         let SessionArgs {
             message,
+            goal,
+            goal_turns,
             mode,
             frontier_url,
             frontier_model,
             no_privacy,
+            check,
             resume,
         } = cli.session;
         let args = chat::ChatArgs {
             message,
+            goal,
+            goal_turns,
             mode,
             frontier_url,
             frontier_model,
             no_privacy,
+            check,
             resume,
         };
         return chat::chat(ws, args, emb).await;
@@ -1149,15 +1262,55 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
     let session = &cli.session;
     ensure!(
         session.message.is_none()
+            && session.goal.is_none()
+            && session.goal_turns.is_none()
             && session.mode.is_none()
             && session.frontier_url.is_none()
             && session.frontier_model.is_none()
             && !session.no_privacy
+            && session.check.is_empty()
             && session.resume.is_none(),
-        "a message, --mode, --frontier-url, --frontier-model, --no-privacy and --resume before a \
+        "a message, --goal, --goal-turns, --mode, --frontier-url, --frontier-model, --no-privacy, --check and --resume before a \
 command are for a session (`duet` alone); give a command its own options after its name"
     );
     match command {
+        Cmd::Skills { action } => {
+            extensions::show(
+                &ws,
+                &load_config(&ws, emb)?,
+                action.unwrap_or(extensions::SkillsAction::List),
+            )?;
+            Ok(0)
+        }
+        Cmd::Plugins { action } => {
+            plugins::run(action.unwrap_or(plugins::Action::List))?;
+            Ok(0)
+        }
+        Cmd::History(args) => {
+            history::show(&ws, args)?;
+            Ok(0)
+        }
+        Cmd::Setup {
+            provider,
+            model,
+            local_model,
+            local_url,
+            yes,
+        } => {
+            let mut cfg = load_config(&ws, emb)?;
+            setup::auto(
+                &mut cfg,
+                setup::AutoOptions {
+                    provider,
+                    model,
+                    local_model,
+                    local_url,
+                    yes,
+                },
+            )
+            .await
+        }
+        Cmd::Scan(args) => scan::run(&ws, args, emb).await,
         Cmd::Run {
             objective,
             objective_file,
@@ -1165,6 +1318,7 @@ command are for a session (`duet` alone); give a command its own options after i
             frontier_url,
             frontier_model,
             no_privacy,
+            check,
             image,
             image_public,
             quiet,
@@ -1187,6 +1341,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 _ => bail!("give the task as text or with --objective-file (not both)"),
             };
             let cfg = load_config(&ws, emb)?;
+            let mut checks = cfg.list("checks.commands")?;
+            checks.extend(check);
             // Refused before bootstrap probes anything.
             let mode = overrides::resolve_mode(
                 &cfg,
@@ -1203,6 +1359,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                         Ok(found) => found.map(|b| LocalOverride {
                             base_url: b.base_url,
                             model: b.model,
+                            api_key_env: b.api_key_env,
                         }),
                         Err(code) => return Ok(code),
                     }
@@ -1213,12 +1370,14 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 run_id: new_run_id(),
                 mode,
                 objective,
+                checks: Some(checks),
                 frontier_url: frontier_url.unwrap_or(cfg.str("frontier.base_url")?),
                 frontier_model: frontier_model.unwrap_or(cfg.str("frontier.model")?),
                 frontier_dialect: Some(frontier_dialect(&cfg)?.as_str().to_owned()),
                 local,
                 session: false,
                 images: attached,
+                files: Vec::new(),
             };
             overrides::check(&cfg, &manifest)?;
             eprintln!("run {} ({:?})", manifest.run_id, manifest.mode);
@@ -1405,5 +1564,88 @@ Add --no-privacy to confirm, or use --mode hybrid."
             }
             Ok(doctor::exit_code(&checks))
         }
+    }
+}
+
+#[cfg(test)]
+mod acceptance_cli_tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn goals_have_bounded_turns_and_history_needs_no_provider_options() {
+        let cli = Cli::try_parse_from([
+            "duet",
+            "--goal",
+            "Fix the parser",
+            "--goal-turns",
+            "5",
+            "--check",
+            "cargo test",
+        ])
+        .unwrap();
+        assert_eq!(cli.session.goal.as_deref(), Some("Fix the parser"));
+        assert_eq!(cli.session.goal_turns, Some(5));
+        assert_eq!(cli.session.check, ["cargo test"]);
+        for limit in ["0", "1001", "-1"] {
+            assert!(
+                Cli::try_parse_from(["duet", "--goal", "task", "--goal-turns", limit]).is_err()
+            );
+        }
+        assert!(Cli::try_parse_from(["duet", "--resume", "r1", "--goal", "task"]).is_err());
+        assert!(matches!(
+            Cli::try_parse_from(["duet", "history", "--search", "parser", "--json"])
+                .unwrap()
+                .command,
+            Some(Cmd::History(_))
+        ));
+    }
+
+    #[test]
+    fn one_shot_and_session_accept_repeated_checks() {
+        let run = Cli::try_parse_from([
+            "duet",
+            "run",
+            "--check",
+            "node --check app.js",
+            "--check",
+            "npm test",
+            "Build it",
+        ])
+        .unwrap();
+        match run.command {
+            Some(Cmd::Run { check, .. }) => {
+                assert_eq!(check, ["node --check app.js", "npm test"])
+            }
+            _ => panic!("expected run"),
+        }
+
+        let session = Cli::try_parse_from([
+            "duet",
+            "--check",
+            "node --check app.js",
+            "--check",
+            "npm test",
+            "Build it",
+        ])
+        .unwrap();
+        assert_eq!(session.session.check, ["node --check app.js", "npm test"]);
+    }
+
+    #[test]
+    fn manifest_retains_empty_check_snapshot_and_reads_legacy_runs() {
+        let mut record = serde_json::json!({
+            "run_id": "example", "mode": "hybrid", "objective": "Build it",
+            "frontier_url": "https://example.test/v1", "frontier_model": "example"
+        });
+        let old: RunManifest = serde_json::from_value(record.clone()).unwrap();
+        assert!(old.checks.is_none());
+
+        record["checks"] = serde_json::json!([]);
+        let new: RunManifest = serde_json::from_value(record).unwrap();
+        assert_eq!(new.checks, Some(Vec::new()));
+        let roundtrip: RunManifest =
+            serde_json::from_value(serde_json::to_value(&new).unwrap()).unwrap();
+        assert_eq!(roundtrip.checks, Some(Vec::new()));
     }
 }

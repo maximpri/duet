@@ -1,4 +1,6 @@
 id = "X1"
+# Grader revision 2 (2026-09-30): PostgreSQL-equivalent ANY/ALL parentheses.
+# See NOTES.md; revision 1 scores must not be mixed with this seal's scores.
 name = "sql-gateway"
 tier = "XL"
 language = "rust"

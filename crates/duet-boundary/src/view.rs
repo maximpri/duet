@@ -176,6 +176,38 @@ pub struct Condensed {
 }
 
 pub trait Presenter: Send + Sync {
+    /// A second opinion is optional and must independently enforce open-code,
+    /// non-privacy eligibility. `paths` includes every contextual source.
+    fn review_second(
+        &self,
+        _candidate: &duet_review::Candidate,
+        _paths: &[PathBuf],
+        _diff: &str,
+        _remaining_usd: f64,
+    ) -> Option<Result<duet_review::Judgment, String>> {
+        None
+    }
+    fn take_review_usage(&self) -> crate::review::UsageStats {
+        Default::default()
+    }
+    /// Local-only judgment of a rule candidate. No tools or frontier fallback.
+    /// `None` means this presenter has no local reviewer.
+    fn review_candidate(
+        &self,
+        _candidate: &duet_review::Candidate,
+    ) -> Option<Result<duet_review::Judgment, String>> {
+        None
+    }
+    /// Names from sensitive schemas, for advisory privacy-flow candidates.
+    /// Never the values of those fields.
+    fn review_fields(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// Byte ranges of locally recognized private values in source. The review
+    /// layer receives offsets, never the vault's values or protected-code tokens.
+    fn review_value_spans(&self, _source: &str) -> Vec<(usize, usize)> {
+        Vec::new()
+    }
     /// Text shown to the frontier for `bytes` produced by `source`.
     fn present(&self, source: &Source, bytes: &[u8]) -> String;
     /// How the latest `present` or `call_tool` result was shown, once; `None`
