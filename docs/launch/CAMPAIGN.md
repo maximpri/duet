@@ -26,7 +26,7 @@ Lead broad developer content with the working product. Use the banking backgroun
 
 ## Before a broad launch
 
-These are substantive release tasks; this documentation branch does not mark them complete:
+These are substantive release tasks; this launch package does not mark them complete:
 
 - **Close disclosure findings.** Merge the dogfood regression fix only after review; retain the before/after evidence. Run a new independent red-team pass and representative quality gates after the tightened preview behavior.
 - **Provide a real private vulnerability-reporting route.** `SECURITY.md` and `docs/security.txt` still contain placeholder contact information. The owner must select and verify a contact or private reporting route before a security-led public push.
@@ -99,4 +99,4 @@ Operational experiment thresholds below are proposed decision rules, not externa
 
 Planning assumption: one maintainer can reserve approximately 6–8 hours/week for documentation, recording, community participation and measurement, in addition to engineering. If that capacity is unavailable, publish one strong demonstration every two weeks. Independent audits, signed releases and support require their own engineering capacity and budgets; campaign dates move with readiness.
 
-Use [LinkedIn drafts](LINKEDIN.md), the [Reddit author brief](REDDIT.md), [research sources](RESEARCH.md) and the [demo packet](DEMO.md). All content is local draft material. Nothing has been posted, messaged, pushed or scheduled.
+Use [LinkedIn drafts](LINKEDIN.md), the [Reddit author brief](REDDIT.md), [research sources](RESEARCH.md) and the [demo packet](DEMO.md). Social content remains draft material even when this source package is published. No social posts, outreach or campaign scheduling have been performed.
