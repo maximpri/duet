@@ -1,0 +1,16 @@
+{
+  "frontier": null,
+  "pricing_source": "OpenRouter cache (<24h)",
+  "local_rates": {
+    "input_per_million": 0.0,
+    "output_per_million": 0.0
+  },
+  "local": {
+    "requests": 5,
+    "input_tokens": 18673,
+    "output_tokens": 438,
+    "estimated_requests": 0,
+    "unpriced_cancelled_requests": 0,
+    "cost_usd": 0.0
+  }
+}

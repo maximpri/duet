@@ -1,0 +1,2 @@
+chain intact: 8 records
+anchor matches (/tmp/duet-launch-capture/config/state/audit-anchors/runs/20261002-015935-813200/ba1da9d0b7cc68ca.json)

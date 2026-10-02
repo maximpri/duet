@@ -1,0 +1,357 @@
+{
+  "recorded_local_date": "2026-10-01",
+  "timezone": "America/Toronto",
+  "recorded_utc_date": "2026-10-02",
+  "capture_source_commit": "c9e1d5aaa427ad19b4650529f73079cbfe81c973",
+  "baseline_source_commit": "a36cee764b355239a95fff7bd19e9ef7656d288e",
+  "binary_sha256": "44703f8c42fffa1b607420fd17b731c5166f74283a7b8721f6fda52992782e14",
+  "host": {
+    "os": "Darwin",
+    "release": "27.0.0",
+    "architecture": "arm64"
+  },
+  "runs": {
+    "before_fixes": "20261002-010910-f40d96",
+    "preview_fix_only": "20261002-014943-f0e51f",
+    "hybrid_final": "20261002-015935-813200",
+    "top_clearance": "20261002-020143-2d4f8b"
+  },
+  "model_identity": {
+    "frontier": "glm-5.3-flash (provider identifier)",
+    "local": "omlx-coding (alias; underlying weights not verified)"
+  },
+  "transport_limit": "Owner-configured plaintext LAN local endpoint; synthetic data only. This is not same-device or production transport evidence.",
+  "capture_tools": {
+    "xterm": "5.5.0",
+    "playwright": "1.58.2",
+    "cols": 130,
+    "tui_rows": 36,
+    "cli_rows": 24,
+    "font": "Menlo 16",
+    "source": "Actual controlling PTY output, not synthesized UI"
+  },
+  "edits": {
+    "privacy": "privacy-edit.json",
+    "audit": "audit-edit.json",
+    "top_clearance": "clearance-edit.json"
+  },
+  "recordings": [
+    "hybrid.cast.gz",
+    "hybrid-fixed.cast.gz",
+    "hybrid-final.cast.gz",
+    "clearance-final.cast.gz",
+    "audit-proof.cast.gz"
+  ],
+  "video": {
+    "duet-audit.mp4": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 1288,
+          "height": 792,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "20.000000"
+      }
+    },
+    "duet-privacy.mp4": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 1288,
+          "height": 792,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "22.333333"
+      }
+    },
+    "duet-top-clearance.mp4": {
+      "programs": [],
+      "stream_groups": [],
+      "streams": [
+        {
+          "codec_name": "h264",
+          "width": 1288,
+          "height": 792,
+          "r_frame_rate": "30/1"
+        }
+      ],
+      "format": {
+        "duration": "10.000000"
+      }
+    }
+  },
+  "artifact_digests": {
+    "docs/evidence/launch-2026-10-01/after-tests.txt": {
+      "sha256": "052ebbcfd920da08d1b83aeb094852ae26ad7b00f383691c9aa52e94862933c1",
+      "bytes": 320
+    },
+    "docs/evidence/launch-2026-10-01/audit-edit.json": {
+      "sha256": "e6eaa4f9177fc09b61110fd91634d1c49f381a506d53a5b9e393175f0af65418",
+      "bytes": 5685
+    },
+    "docs/evidence/launch-2026-10-01/audit-proof.cast.gz": {
+      "sha256": "5943733fcc359d10e3e728a43e0495ff740c164c19770a1b7e2b048ae90c1254",
+      "bytes": 671
+    },
+    "docs/evidence/launch-2026-10-01/before-fix-audit-verify.txt": {
+      "sha256": "de18dd2e03ac2da14fb1061d7a13e651c02cddd0bbd896c38d185476ebe677ea",
+      "bytes": 143
+    },
+    "docs/evidence/launch-2026-10-01/before-fix-audit.jsonl": {
+      "sha256": "32ddf98fea7b46e026ecd5fe11ff3a2089f7943920934b3f983f582cf61412f0",
+      "bytes": 79411
+    },
+    "docs/evidence/launch-2026-10-01/before-fix-canaries.json": {
+      "sha256": "f71c4dae2c88692264e7bf5d2ee7776bc40367a78ecbb73c23b877290f51db11",
+      "bytes": 2349
+    },
+    "docs/evidence/launch-2026-10-01/before-fix-disclosure.txt": {
+      "sha256": "8122511a84a0415fb87cd3432fa3304b886e7e605ec92cb9b1d3bed0dd647d0b",
+      "bytes": 1023
+    },
+    "docs/evidence/launch-2026-10-01/before-tests.txt": {
+      "sha256": "c6d21fde59fa3ff2996d542bea15bcec166cf2aa9c81e2d30d3b835bd1a2b97e",
+      "bytes": 836
+    },
+    "docs/evidence/launch-2026-10-01/billing-fix.patch": {
+      "sha256": "6d6d9976437c213d7a2896d0e554409a177a8c6f0db47648175fe46f8f28e3e4",
+      "bytes": 339
+    },
+    "docs/evidence/launch-2026-10-01/boundary-final-tests.txt": {
+      "sha256": "00acab8d6f8c303d7e9c39108b0b254566280fb20a4eda61edf67cd5d514cd04",
+      "bytes": 22049
+    },
+    "docs/evidence/launch-2026-10-01/boundary-integration-tests.txt": {
+      "sha256": "0cb737145929f32f208a2bd817379e03fc16dbd86f7d1a8589f4b1484d8fb8f7",
+      "bytes": 1207
+    },
+    "docs/evidence/launch-2026-10-01/boundary-tests.txt": {
+      "sha256": "a390fd2182a1747e0af16d74b019dea0bf01afd3451d6553ef255fae9de858a5",
+      "bytes": 20996
+    },
+    "docs/evidence/launch-2026-10-01/build.txt": {
+      "sha256": "5e43de8421830f96ced15db39bade137f80714a2d10f310bfcc4fb003f6c55f1",
+      "bytes": 739
+    },
+    "docs/evidence/launch-2026-10-01/canary-check.json": {
+      "sha256": "277fd1c06d26701c6a90ba1591528a4597b0df14c6f68430c53e4107e760b40f",
+      "bytes": 2348
+    },
+    "docs/evidence/launch-2026-10-01/clearance-edit.json": {
+      "sha256": "a12e9150f7fdf451a2adce3c0727e63b4d35122d4d6080b9067760c8b54b2517",
+      "bytes": 2933
+    },
+    "docs/evidence/launch-2026-10-01/clearance-final.cast.gz": {
+      "sha256": "786c8fa694b4f884164d71d14c83ac249d899483b2fb052b2f6ed8159b08e303",
+      "bytes": 21476
+    },
+    "docs/evidence/launch-2026-10-01/cli-tests.txt": {
+      "sha256": "f8399aecfcee19a37baa688024b0ed5f11e79b908832e7301e0ed81a609f302e",
+      "bytes": 6800
+    },
+    "docs/evidence/launch-2026-10-01/clippy.txt": {
+      "sha256": "e9fc8b90eae94087d865b6d4b874d951f66b2f6ade131d4d7611f1f3c9f4dcd9",
+      "bytes": 738
+    },
+    "docs/evidence/launch-2026-10-01/config-sandbox-tests.txt": {
+      "sha256": "1834df506b58e9d049b09ec5abc146a4d834d268d51064f4e72e1bcff5a45b54",
+      "bytes": 5509
+    },
+    "docs/evidence/launch-2026-10-01/fast-gate.txt": {
+      "sha256": "7aefe088433e531d77959d894571cf44ec76dead0360ebc3adc37b8653cd541c",
+      "bytes": 161
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-anchor.json": {
+      "sha256": "12747842b70d0ebc9f78355582db556f1aed9fc0af112025a089f42e242c2d08",
+      "bytes": 262
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-audit-verify.txt": {
+      "sha256": "ba25fbfd26f3383ec927912f941ac10c898efd47268596c87b9f7de5c013dae9",
+      "bytes": 143
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-audit.jsonl": {
+      "sha256": "bbb78e274dcd10e648a7988015e132675de7ab961d0e6b42b8798ae7205581b2",
+      "bytes": 78118
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-disclosure.txt": {
+      "sha256": "4df8929703a0ea58430e9296a96c9619a24a89c68e2e5506a594e15b28be95d7",
+      "bytes": 974
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-economics.json": {
+      "sha256": "b8fb5abc8ede81a8a81026a93393f4cc1280619874250f678111dbf75c635997",
+      "bytes": 532
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-final.cast.gz": {
+      "sha256": "fa648570da0b80e95a8a0161cc57dffaadea03218c8ffdd86cd8cc0ea89cf367",
+      "bytes": 62209
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-fixed.cast.gz": {
+      "sha256": "d52f643760be8efb7c8c1e0c78e8ac4bc4deafcc331bef4a5b10cd14c2d27643",
+      "bytes": 23747
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-run.json": {
+      "sha256": "6f2b07ce03208a75ce4a63ff490cb707bbc2a6f5f028123149a664298c7e92fb",
+      "bytes": 604
+    },
+    "docs/evidence/launch-2026-10-01/hybrid-transcript.jsonl": {
+      "sha256": "92b2eb202f37f3de546e6cbbc0f9fe66f5e9b67a9c01a78fdf07a26fc768c9a6",
+      "bytes": 12218
+    },
+    "docs/evidence/launch-2026-10-01/hybrid.cast.gz": {
+      "sha256": "9d635e95c85209b14f70ca24f17a5373d556061ffbd3007ab204d243a67ca92a",
+      "bytes": 106681
+    },
+    "docs/evidence/launch-2026-10-01/independent-audit-check.json": {
+      "sha256": "bd154a0c6689451a5f05fb57d94bd208632e5e0e5067c85b87c9cc24a461d09b",
+      "bytes": 281
+    },
+    "docs/evidence/launch-2026-10-01/independent-tamper-check.json": {
+      "sha256": "3b0015b6c0690dcdfc2c88dd2aef1eaa44acff17d5f7858a5a154bd30908cc35",
+      "bytes": 282
+    },
+    "docs/evidence/launch-2026-10-01/initial-cli-tests.txt": {
+      "sha256": "a171e0c15bcc0cbbfa2cc286a1ceca0d01c1f69a82957e8659404094f27fc768",
+      "bytes": 7573
+    },
+    "docs/evidence/launch-2026-10-01/intermediate-audit.jsonl": {
+      "sha256": "7355e10759b47401367d040b2df79fa06e9a14412589a3b642f116ef44f79707",
+      "bytes": 78772
+    },
+    "docs/evidence/launch-2026-10-01/intermediate-canaries.json": {
+      "sha256": "0a2408aeaa7db6d8b56d6eb88d6cc13997c8be921088cccffda116628e253b73",
+      "bytes": 2348
+    },
+    "docs/evidence/launch-2026-10-01/privacy-edit.json": {
+      "sha256": "6e648290208201da1283abde2f7168892bbfc79bc7ac158f03843d164a64dc65",
+      "bytes": 6455
+    },
+    "docs/evidence/launch-2026-10-01/regression-before.txt": {
+      "sha256": "ef1d5ff902141c31f2f13f727ce6e2f85886a582ad3b935dbdfc2805fa8200a6",
+      "bytes": 2166
+    },
+    "docs/evidence/launch-2026-10-01/tampered-audit-verify.txt": {
+      "sha256": "a3d3726de30b6343b2b9d772569f78f5db9333e3bbe0b3b166ccd0faa96cbcbc",
+      "bytes": 125
+    },
+    "docs/evidence/launch-2026-10-01/tampered-audit.jsonl": {
+      "sha256": "ad960a03ef6969037543d9591e87249fc0a831bfcaa8286f91f51a0144bf9315",
+      "bytes": 78119
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-anchor.json": {
+      "sha256": "4171a2b576eaf96d87eada486af97ff2e45f80d2ba9dae6b23ef656b0d4a9209",
+      "bytes": 264
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-audit-verify.txt": {
+      "sha256": "933b6aa8666ea775288d32910cb8c14e57137a67de513f70ddbf6bd52995c8c5",
+      "bytes": 143
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-audit.jsonl": {
+      "sha256": "d3a0c87c6dbf66c3b7ab042b6df3e5cee1e9bdb8ef8236e8d4adae1a733fdb4d",
+      "bytes": 69802
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-economics.json": {
+      "sha256": "4ede71eadb7f3d78c81d306e223afaaee2870b79d88bac187314d1c04c7a7fbf",
+      "bytes": 330
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-fix.patch": {
+      "sha256": "6d6d9976437c213d7a2896d0e554409a177a8c6f0db47648175fe46f8f28e3e4",
+      "bytes": 339
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-run.json": {
+      "sha256": "52012a1bad5674aaaa69bcbda29fffc260d197a8c2e1e57d2752da948bd63f28",
+      "bytes": 422
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-tests.txt": {
+      "sha256": "052ebbcfd920da08d1b83aeb094852ae26ad7b00f383691c9aa52e94862933c1",
+      "bytes": 320
+    },
+    "docs/evidence/launch-2026-10-01/top-clearance-transcript.jsonl": {
+      "sha256": "99d650f3f48e08fbae275a5ed643d51ee8fe07661a2845d054e7853ab2f6f8ba",
+      "bytes": 7121
+    },
+    "docs/assets/launch/duet-audit.gif": {
+      "sha256": "209957ad7bf81365790e993bd7db38dd22e0b307a102220c64e5029bef95ace8",
+      "bytes": 238064
+    },
+    "docs/assets/launch/duet-audit.mp4": {
+      "sha256": "ad749b70e29fbdb0b1be26691a2e793090a8f4ab5f28ec6c3e71a103d50bfcd8",
+      "bytes": 414096
+    },
+    "docs/assets/launch/duet-audit.png": {
+      "sha256": "00b6b0842603df3a55d373f6c09ffa6f4e44308c68c5ad147756eac1430dea16",
+      "bytes": 177303
+    },
+    "docs/assets/launch/duet-changes.png": {
+      "sha256": "2896d9144144920269bf84992aa6214298a43a65581f4dfc488da96fed74d5d1",
+      "bytes": 182868
+    },
+    "docs/assets/launch/duet-outbound.png": {
+      "sha256": "0ef75d1c2046a78ff981def618946f5d0fef3c51e3c7fe3eab8c0b92b16a019a",
+      "bytes": 219535
+    },
+    "docs/assets/launch/duet-privacy.gif": {
+      "sha256": "a75813cc96893e59d4b2ffa24249e32397d2592352b7b5bdd8623e28f9c60ef1",
+      "bytes": 639566
+    },
+    "docs/assets/launch/duet-privacy.mp4": {
+      "sha256": "ab6760b57bc300a9100629a436ccfff840ebd551f4ccb32c79f5e8b2a9312a3e",
+      "bytes": 870274
+    },
+    "docs/assets/launch/duet-privacy.png": {
+      "sha256": "3120d66bd70aa678639121ae44b6388150e930abc42d34cd3af69aec77bd391a",
+      "bytes": 212832
+    },
+    "docs/assets/launch/duet-top-clearance.gif": {
+      "sha256": "8bee70e36630ac6115b3786b255954eab223be3b08fa02084c83bb82d531f0d9",
+      "bytes": 511003
+    },
+    "docs/assets/launch/duet-top-clearance.mp4": {
+      "sha256": "7e34c37d20ed65f00e03ffbb6a17b0b4c5b75b023d21fbfa0b2d016c0f112e8b",
+      "bytes": 512248
+    },
+    "docs/assets/launch/duet-top-clearance.png": {
+      "sha256": "94f022109b35ccc664031c96ee899d87129902ddc06c21a9dc90088648401853",
+      "bytes": 149425
+    },
+    "docs/launch/billing-demo/README.md": {
+      "sha256": "523b3e04cd60b0948f6b3dc8eeab04261bfbc6d8bfbdb1ade76be01fbfd1f964",
+      "bytes": 279
+    },
+    "docs/launch/billing-demo/billing.py": {
+      "sha256": "3f0540011f64dd3e256da5a56f646f99344b4563e927983eb5e344717fd6ab66",
+      "bytes": 219
+    },
+    "docs/launch/billing-demo/data/customers.csv": {
+      "sha256": "91bcbe2ceacb2cb0d70e4113112c6dc1962721b4ba80c554bf7df0ff15d6cc0d",
+      "bytes": 293
+    },
+    "docs/launch/billing-demo/env.example": {
+      "sha256": "b2c598875b2a73d32fcee5c57e7fd4241baf2a87e9fb3df52bfe42ffddb939af",
+      "bytes": 77
+    },
+    "docs/launch/billing-demo/prompt.txt": {
+      "sha256": "2ef3bbbda0b3de0b6a4db1f898fe90d273f5d8b1027d3de3e0ac779fb31ff273",
+      "bytes": 334
+    },
+    "docs/launch/billing-demo/test_billing.py": {
+      "sha256": "f4a6c6c61ec2b3e4603a8e050a49fbe5cf9172afdf41e851f21d72e4794f160f",
+      "bytes": 684
+    }
+  },
+  "limitations": [
+    "Digests identify artifacts; they are not signed provenance or independent custody.",
+    "Canary checks scan recorded requests, not observed provider receipt or all host traffic.",
+    "The capture revision predates wording-only local-endpoint clarifications; the original recordings are unchanged.",
+    "Text test/build logs have trailing blank lines removed; audit JSONL and compressed original PTY recordings retain their original bytes. Billing patches use zero context."
+  ],
+  "reproduction_build_command": "cargo build --release --locked -p duet-cli"
+}

@@ -1,0 +1,2 @@
+chain intact: 8 records
+REWRITTEN OR TRUNCATED since it was anchored: rewritten: entry 8 no longer matches the anchored head

@@ -1,0 +1,25 @@
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-boundary)
+    Finished `release` profile [optimized] target(s) in 20.46s
+     Running tests/dialect_gate.rs (/tmp/duet-launch-target/release/deps/dialect_gate-4a07351e945e82d9)
+
+running 3 tests
+test refused_replayed_reasoning_is_dropped_from_the_front_and_resent ... ok
+test a_blocked_body_is_blocked_in_every_dialect ... ok
+test every_dialect_sends_only_the_filtered_audited_body ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/outbound_agreement.rs (/tmp/duet-launch-target/release/deps/outbound_agreement-029cb3113aa29733)
+
+running 1 test
+test the_check_passes_what_the_filter_returns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+     Running tests/structure_views.rs (/tmp/duet-launch-target/release/deps/structure_views-36a6c58852dec279)
+
+running 2 tests
+test a_twin_holds_no_value_the_knowledge_knows_whatever_the_seed ... ok
+test no_value_leaks_through_views_samples_or_masked_output ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.26s

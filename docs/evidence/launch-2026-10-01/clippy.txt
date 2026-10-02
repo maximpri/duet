@@ -1,0 +1,9 @@
+    Checking duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-boundary)
+    Checking duet-net v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-net)
+    Checking duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-mcp)
+    Checking duet-web v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-web)
+    Checking duet-egress v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-egress)
+    Checking duet-agent v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-agent)
+    Checking duet-tui v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-tui)
+    Checking duet-cli v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-cli)
+    Finished `release` profile [optimized] target(s) in 9.67s

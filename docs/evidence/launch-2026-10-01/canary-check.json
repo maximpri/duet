@@ -1,0 +1,120 @@
+{
+  "audit_sha256": "bbb78e274dcd10e648a7988015e132675de7ab961d0e6b42b8798ae7205581b2",
+  "scope": "Recorded outbound request bodies only; no packet capture or provider receipt. Complete planted values in literal, base64, hex and URL forms; duplicate encodings counted once. No claim about fragments, paraphrase or all encodings.",
+  "request_count": 4,
+  "audit_records": 8,
+  "canary_count": 13,
+  "checks": [
+    {
+      "canary": "CUST-CANARY-ORCHID",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "Mira Canarystone",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "mira.canary@privacy-fixture.invalid",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "125.50",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "CUST-CANARY-CEDAR",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "Theo Canarybrook",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "theo.canary@privacy-fixture.invalid",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "900.00",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "CUST-CANARY-MAPLE",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "Nora Canaryvale",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "nora.canary@privacy-fixture.invalid",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0,
+        "url": 0
+      }
+    },
+    {
+      "canary": "74.50",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    },
+    {
+      "canary": "duet_canary_p7H4x9L2",
+      "matches": {
+        "literal": 0,
+        "base64": 0,
+        "hex": 0
+      }
+    }
+  ],
+  "total_matches": 0
+}

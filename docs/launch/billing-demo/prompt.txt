@@ -1,0 +1,1 @@
+Fix the billing export: inactive accounts are being included in active_total. Read data/customers.csv to understand its shape, keeping customer values private. Inspect billing.py and test_billing.py, fix the bug, and run python3 -m unittest -v. Keep the change small. Explain what you changed and what the frontier was allowed to see.

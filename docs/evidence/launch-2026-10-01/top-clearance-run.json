@@ -1,0 +1,12 @@
+{
+  "run_id": "20261002-020143-2d4f8b",
+  "mode": "top-clearance",
+  "objective": "Fix the inactive-account inclusion bug in billing.py. Read billing.py and test_billing.py, keep the change small, and run python3 -m unittest -v.",
+  "checks": [
+    "python3 -m unittest -v"
+  ],
+  "frontier_url": "https://api.z.ai/api/coding/paas/v4",
+  "frontier_model": "glm-5.3-flash",
+  "frontier_dialect": "chat",
+  "session": true
+}

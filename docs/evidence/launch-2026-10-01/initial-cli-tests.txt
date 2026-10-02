@@ -1,0 +1,161 @@
+   Compiling duet-fs v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-fs)
+   Compiling duet-review v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-review)
+   Compiling duet-config v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-config)
+   Compiling duet-provider v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-provider)
+   Compiling duet-governor v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-governor)
+   Compiling duet-sandbox v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-sandbox)
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-boundary)
+   Compiling duet-extensions v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-extensions)
+   Compiling duet-git v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-git)
+   Compiling duet-lsp v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-lsp)
+   Compiling duet-net v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-net)
+   Compiling duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-mcp)
+   Compiling duet-web v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-web)
+   Compiling duet-egress v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-egress)
+   Compiling duet-agent v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-agent)
+   Compiling duet-tui v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-tui)
+   Compiling duet-cli v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.68s
+     Running tests/outbound_gate.rs (/Users/maximp/OpenCode/duet_v2/target/debug/deps/outbound_gate-573f8a12ddcb1a4a)
+
+running 4 tests
+test a_request_withholding_cannot_clear_ends_the_run_with_the_reason ... ok
+test a_part_the_check_refuses_after_filtering_is_withheld_and_the_run_goes_on ... ok
+test reading_a_file_whose_path_a_detector_flags_does_not_stop_the_run ... ok
+test a_value_found_in_a_masking_stub_is_replaced_in_the_call_it_quotes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running tests/privacy_scenarios.rs (/Users/maximp/OpenCode/duet_v2/target/debug/deps/privacy_scenarios-01b408e93b7a0efd)
+
+running 23 tests
+test a_careless_local_answer_repeating_a_whole_line_leaves_no_field_of_it ... ok
+test a_careless_local_answer_repeating_a_whole_line_is_cleaned ... ok
+test a_careless_local_answer_repeating_digit_runs_is_cleaned ... ok
+test a_secret_in_a_steering_message_is_replaced ... ok
+test a_careless_local_answer_encoding_a_value_is_cleaned ... ok
+test a_careless_local_answer_spelling_a_value_out_is_cleaned ... ok
+test a_file_derived_into_target_stays_sensitive_when_read ... ok
+test card_a_an_unlabelled_number_failing_the_checksum_never_reaches_the_frontier ... ok
+test card_a_a_labelled_number_failing_the_checksum_never_reaches_the_frontier ... ok
+test a_failing_public_test_printing_customer_data_is_condensed_without_it ... ok
+test a_value_from_an_ignored_env_file_typed_by_the_operator_is_replaced ... ok
+test a_value_from_a_tracked_env_file_typed_by_the_operator_is_replaced ... ok
+test card_b_the_placeholder_works_for_the_frontier_and_the_operator_sees_the_value ... ok
+test image_a_screenshot_of_an_unindexed_password_is_described_without_it ... ok
+test image_the_operator_attaches_from_a_sensitive_path_is_described_never_sent ... ok
+test a_sensitive_data_command_cannot_read_the_vault ... ok
+test card_b_a_valid_card_number_stays_out_through_ask_local_and_a_run_state_read ... ok
+test narrow_questions_about_one_value_do_not_add_up_to_it ... ok
+test narrow_questions_about_one_value_repeat_no_run_of_its_digits ... ok
+test a_file_derived_by_a_sensitive_data_command_stays_sensitive_when_read ... ok
+test image_a_screenshot_of_customer_data_reaches_the_frontier_only_as_a_cleaned_description ... ok
+test structure_views_samples_and_masked_output_carry_no_planted_value ... ok
+test grep_probes_of_the_env_file_stop_at_the_budget ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.89s
+
+     Running tests/secure_defaults.rs (/Users/maximp/OpenCode/duet_v2/target/debug/deps/secure_defaults-f14195636e297a4b)
+
+running 4 tests
+test passthrough_needs_an_explicit_acknowledgement ... ok
+test audit_verify_checks_the_anchor_and_show_lists_events ... ok
+test loosening_a_setting_needs_confirm_and_is_audited ... ok
+test a_remote_local_model_over_plain_http_is_refused ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s
+
+     Running tests/top_clearance.rs (/Users/maximp/OpenCode/duet_v2/target/debug/deps/top_clearance-2bbe69e497c24f14)
+
+running 5 tests
+test a_repository_can_require_top_clearance ... ok
+test only_the_local_model_works_and_nothing_leaves ... ok
+test local_token_cost_defaults_to_zero_and_uses_owner_rates_when_set ... ok
+test frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request ... FAILED
+test a_session_continues_in_top_clearance_and_cannot_leave_it ... ok
+
+failures:
+
+---- frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request stdout ----
+
+thread 'frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request' (4589558) panicked at crates/duet-cli/tests/top_clearance.rs:368:13:
+{
+  "run_id": "20261002-010913-5e8a55",
+  "terminal": {
+    "state": "failed",
+    "reason": "no usable token price for private-alias; cannot enforce the frontier dollar budget. Use an exact pricing.frontier_model catalog slug, or set pricing.manual_model, pricing.manual_base_url and this provider's input/output rates."
+  },
+  "stats": {
+    "turns": 0,
+    "usage": {
+      "input": 0,
+      "cache_read": 0,
+      "cache_write": 0,
+      "output": 0,
+      "reasoning": 0,
+      "status": "reported"
+    },
+    "cost_usd": 0.0,
+    "local_cost_usd": 0.0,
+    "tool_calls": 0,
+    "masked_results": 0,
+    "wall_seconds": 0.0,
+    "ledger": {
+      "by_class": {},
+      "request_tokens": 0,
+      "ask_local_calls": 0,
+      "ask_local_questions": 0,
+      "sensitive_data_commands": 0,
+      "sandbox_denials": 0,
+      "input_usd": 0.0,
+      "output_usd": 0.0
+    }
+  },
+  "disclosure": {
+    "boundary": false,
+    "requests": 0,
+    "requests_filtered": 0,
+    "placeholders": {},
+    "copied_spans_redacted": 0,
+    "protected_handles": 0,
+    "protected_lines_withheld": 0,
+    "blocked_sends": {},
+    "sandbox_denials": 0,
+    "sensitive_data_runs": 0,
+    "derived_files": 0,
+    "protected_edits": 0,
+    "approvals": {
+      "asked": 0,
+      "approved": 0,
+      "denied": 0
+    },
+    "ask_local_calls": 0,
+    "local_probes": 0,
+    "local_pieces_withheld": 0,
+    "views": {
+      "handle_summary": 0,
+      "tokenized": 0,
+      "local_answers": 0,
+      "protected": 0,
+      "bulky": 0,
+      "raw": 0
+    }
+  }
+}
+run 20261002-010913-5e8a55 (Passthrough)
+=====================================================================
+ PRIVACY BOUNDARY OFF (passthrough mode)
+ File contents, command output, secrets and personal data are sent to
+ the frontier provider unfiltered. Use it only on repositories with
+ nothing sensitive, as a reference lane.
+=====================================================================
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    frontier_alias_uses_openrouter_price_and_unknown_models_stop_before_a_request
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+
+error: test failed, to rerun pass `-p duet-cli --test top_clearance`

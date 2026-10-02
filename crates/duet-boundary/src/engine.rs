@@ -1098,7 +1098,7 @@ impl Engine {
             .map(|l| self.bounded_digest(l, source_label, text, wait));
         let mut st = self.lock();
         let mut out = format!(
-            "{} ({}): {} lines, {} bytes, {} line(s) mention errors. Raw content stays on this machine; \
+            "{} ({}): {} lines, {} bytes, {} line(s) mention errors. Raw content is withheld from the frontier; \
 ask questions with ask_local(handle=\"{}\", question=...).\n",
             handle.id,
             source_label,
@@ -2287,7 +2287,7 @@ impl Presenter for Engine {
                 name: "run_command".into(),
                 description: "Run a shell command in the repository root (sandboxed: no network, writes limited to the \
 repository). Sensitive files (data, logs, secrets) are unreadable to commands. To run something that must read them \
-(e.g. the program on the real data), set sensitive_data: the output then stays on this machine and you get a summary \
+(e.g. the program on the real data), set sensitive_data: raw output is withheld from the frontier and you get a summary \
 and a handle for ask_local, and files the command writes become sensitive too; placeholders (⟨…⟩) in such a command \
 are replaced by their values on this machine (cargo builds into a private $CARGO_TARGET_DIR there). Prefer synthetic \
 fixtures for tests."
@@ -2301,7 +2301,7 @@ fixtures for tests."
             ToolSpec {
                 name: "ask_local".into(),
                 description: "Ask the local model about content held under a handle (sensitive files, logs, \
-command output). It reads the raw content on this machine and answers without revealing sensitive values. \
+command output). The configured local endpoint receives raw content; its answer is checked for sensitive values. \
 Put everything you need to know about one handle in a single call."
                     .into(),
                 parameters: json!({"type": "object", "properties": {

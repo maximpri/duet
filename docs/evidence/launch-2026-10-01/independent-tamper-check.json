@@ -1,0 +1,7 @@
+{
+  "audit_sha256": "ad960a03ef6969037543d9591e87249fc0a831bfcaa8286f91f51a0144bf9315",
+  "records": 8,
+  "chain_and_body_errors": [],
+  "supplied_anchor_matches": false,
+  "scope": "Artifact consistency only; no independent custody, provider receipt or disclosure-safety claim."
+}

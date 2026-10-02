@@ -1,0 +1,17 @@
+test_decimal_precision (test_billing.BillingTests) ... ok
+test_empty_export (test_billing.BillingTests) ... ok
+test_exact_status (test_billing.BillingTests) ... ok
+test_excludes_inactive (test_billing.BillingTests) ... FAIL
+
+======================================================================
+FAIL: test_excludes_inactive (test_billing.BillingTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/private/tmp/duet-launch-capture/billing-demo/test_billing.py", line 7, in test_excludes_inactive
+    self.assertEqual(active_total("status,amount\nactive,10.25\ninactive,99.00\n"), Decimal("10.25"))
+AssertionError: Decimal('109.25') != Decimal('10.25')
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.001s
+
+FAILED (failures=1)

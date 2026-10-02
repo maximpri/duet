@@ -1,0 +1,155 @@
+{
+  "fps": 3,
+  "frames": [
+    {
+      "frame": 0,
+      "cast": "clearance-final.cast",
+      "source_seconds": 12
+    },
+    {
+      "frame": 1,
+      "cast": "clearance-final.cast",
+      "source_seconds": 14
+    },
+    {
+      "frame": 2,
+      "cast": "clearance-final.cast",
+      "source_seconds": 16
+    },
+    {
+      "frame": 3,
+      "cast": "clearance-final.cast",
+      "source_seconds": 18
+    },
+    {
+      "frame": 4,
+      "cast": "clearance-final.cast",
+      "source_seconds": 20
+    },
+    {
+      "frame": 5,
+      "cast": "clearance-final.cast",
+      "source_seconds": 22
+    },
+    {
+      "frame": 6,
+      "cast": "clearance-final.cast",
+      "source_seconds": 24
+    },
+    {
+      "frame": 7,
+      "cast": "clearance-final.cast",
+      "source_seconds": 26
+    },
+    {
+      "frame": 8,
+      "cast": "clearance-final.cast",
+      "source_seconds": 28
+    },
+    {
+      "frame": 9,
+      "cast": "clearance-final.cast",
+      "source_seconds": 30
+    },
+    {
+      "frame": 10,
+      "cast": "clearance-final.cast",
+      "source_seconds": 32
+    },
+    {
+      "frame": 11,
+      "cast": "clearance-final.cast",
+      "source_seconds": 34
+    },
+    {
+      "frame": 12,
+      "cast": "clearance-final.cast",
+      "source_seconds": 36
+    },
+    {
+      "frame": 13,
+      "cast": "clearance-final.cast",
+      "source_seconds": 38
+    },
+    {
+      "frame": 14,
+      "cast": "clearance-final.cast",
+      "source_seconds": 40
+    },
+    {
+      "frame": 15,
+      "cast": "clearance-final.cast",
+      "source_seconds": 42
+    },
+    {
+      "frame": 16,
+      "cast": "clearance-final.cast",
+      "source_seconds": 44
+    },
+    {
+      "frame": 17,
+      "cast": "clearance-final.cast",
+      "source_seconds": 46
+    },
+    {
+      "frame": 18,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 19,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 20,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 21,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 22,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 23,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 24,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 25,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 26,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 27,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 28,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    },
+    {
+      "frame": 29,
+      "cast": "clearance-final.cast",
+      "source_seconds": 50
+    }
+  ]
+}

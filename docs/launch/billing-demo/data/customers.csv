@@ -1,0 +1,4 @@
+customer_id,name,email,status,amount
+CUST-CANARY-ORCHID,Mira Canarystone,mira.canary@privacy-fixture.invalid,active,125.50
+CUST-CANARY-CEDAR,Theo Canarybrook,theo.canary@privacy-fixture.invalid,inactive,900.00
+CUST-CANARY-MAPLE,Nora Canaryvale,nora.canary@privacy-fixture.invalid,active,74.50

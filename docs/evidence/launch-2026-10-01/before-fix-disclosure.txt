@@ -1,0 +1,25 @@
+disclosure report for run 20261002-010910-f40d96
+
+requests sent: 4 (4 changed by the outbound filter)
+
+withheld from the frontier:
+  placeholders: name                           3
+  placeholders: secret                         1
+  copied spans of sensitive text removed       0
+  protected bodies/constants (handles)         0
+  protected code lines withheld from output    0
+  (per-result views unavailable: the run has no summary.json, e.g. interrupted or purged)
+
+enforcement:
+  requests blocked (not sent)                  0
+  sandbox denials                              0
+  sensitive_data commands                      0
+  files marked sensitive by them               0
+  protected edits (local model)                0
+  ask_local calls                              0
+  ask_local questions probing a value          0
+  pieces of values withheld from answers       0
+  synthetic samples shown                      1
+  synthetic samples withheld by their checks   0
+
+Counts and kinds only; values stay on this machine.

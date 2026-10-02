@@ -1,0 +1,305 @@
+{
+  "fps": 3,
+  "frames": [
+    {
+      "frame": 0,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 1,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 2,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 3,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 4,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 5,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 6,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 7,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 135
+    },
+    {
+      "frame": 8,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 9,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 10,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 11,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 12,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 13,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 14,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 15,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 16,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 17,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 18,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 19,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 180
+    },
+    {
+      "frame": 20,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 21,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 22,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 23,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 24,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 25,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 26,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 27,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 28,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 29,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 30,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 31,
+      "cast": "hybrid-final.cast",
+      "source_seconds": 310
+    },
+    {
+      "frame": 32,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 33,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 34,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 35,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 36,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 37,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 38,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 39,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 40,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 41,
+      "cast": "audit-proof.cast",
+      "source_seconds": 68
+    },
+    {
+      "frame": 42,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 43,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 44,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 45,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 46,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 47,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 48,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 49,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 50,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 51,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 52,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 53,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 54,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 55,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 56,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 57,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 58,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    },
+    {
+      "frame": 59,
+      "cast": "audit-proof.cast",
+      "source_seconds": 240
+    }
+  ]
+}

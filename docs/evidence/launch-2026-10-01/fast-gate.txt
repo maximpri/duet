@@ -1,0 +1,12 @@
+
+== format
+
+== license headers
+
+== privacy by construction
+
+== egress by construction
+
+== provenance
+
+gate (fast): checks passed; the full gate runs before push

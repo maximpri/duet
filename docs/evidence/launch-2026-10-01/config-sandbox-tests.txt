@@ -1,0 +1,106 @@
+   Compiling rustix v0.38.44
+   Compiling syn v3.0.6
+   Compiling once_cell v1.21.4
+   Compiling aho-corasick v1.1.5
+   Compiling tempfile v3.27.0
+   Compiling regex-automata v0.4.18
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.20
+   Compiling tokio-macros v2.7.2
+   Compiling tokio v1.53.1
+   Compiling thiserror v2.0.20
+   Compiling regex v1.13.1
+   Compiling duet-fs v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-fs)
+   Compiling serde v1.0.229
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling duet-governor v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-governor)
+   Compiling toml_edit v0.22.27
+   Compiling toml v0.8.23
+   Compiling duet-sandbox v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-sandbox)
+   Compiling duet-config v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-config)
+    Finished `release` profile [optimized] target(s) in 15.13s
+     Running unittests src/lib.rs (/tmp/duet-launch-target/release/deps/duet_config-beb5b67a01dd583c)
+
+running 25 tests
+test policy::tests::no_setting_uses_the_policy_table_name ... ok
+test policy::tests::rules_explain_the_bound_of_each_key ... ok
+test policy::tests::a_policy_that_cannot_be_used_fails_closed ... ok
+test tests::every_default_is_valid ... ok
+test policy::tests::tighter_values_from_the_files_apply ... ok
+test policy::tests::the_file_source_reads_an_unsigned_policy_and_its_meta ... ok
+test policy::tests::command_line_overrides_are_checked_against_the_policy ... ok
+test policy::tests::template_instances_are_bounded_but_not_created ... ok
+test tests::owner_and_project_merge_with_origins ... ok
+test policy::tests::looser_values_from_the_files_give_way_to_the_policy ... ok
+test tests::language_servers_are_template_settings_of_the_owner ... ok
+test tests::a_project_may_turn_the_local_model_off_and_only_the_owner_back_on ... ok
+test tests::proposals_match_what_apply_enforces ... ok
+test tests::custom_patterns_must_compile_and_only_tighten_from_a_project ... ok
+test tests::project_may_add_globs ... ok
+test tests::approval_is_owner_only_and_turning_it_down_needs_confirmation ... ok
+test tests::reloading_config_reads_new_files_and_preserves_independent_defaults ... ok
+test tests::loosening_needs_confirmation_and_tightening_does_not ... ok
+test tests::project_cannot_loosen ... ok
+test tests::unknown_keys_in_files_are_errors ... ok
+test tests::set_owner_validates_and_persists ... ok
+test tests::mcp_servers_are_template_settings_of_the_owner ... ok
+test tests::project_cannot_set_owner_only_keys ... ok
+test policy::tests::changes_past_the_policy_are_refused_and_tightening_is_not ... ok
+test tests::sandbox_network_reads_old_booleans_and_loosens_only_with_confirmation ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running unittests src/lib.rs (/tmp/duet-launch-target/release/deps/duet_sandbox-aa97bdbf5e9bd8bb)
+
+running 25 tests
+test network_rule_tests::proxy_variables_point_at_loopback_and_spare_it ... ok
+test network_rule_tests::bwrap_keeps_its_network_namespace_with_the_bridge ... ok
+test network_rule_tests::seatbelt_rules_follow_the_network_mode ... ok
+test bwrap_args_tests::bwrap_args_protect_reserved_dirs_and_deny_reads ... ok
+test tests::a_denied_path_that_does_not_exist_is_not_created ... ok
+test tests::environment_is_cleared_to_the_allowlist ... ok
+test tests::a_server_process_talks_over_its_streams_under_the_same_sandbox ... ok
+test tests::credential_stores_in_the_home_directory_are_unreadable ... ok
+test tests::denied_paths_cannot_be_read_by_any_means ... ok
+test tests::denied_paths_stay_denied_through_symlinks ... ok
+test tests::a_read_only_command_reads_the_workspace_and_writes_only_its_scratch ... ok
+test tests::sandbox_is_detected ... ok
+test tests::large_output_is_capped_and_spilled ... ok
+test tests::git_and_run_state_are_unreadable_when_denied ... ok
+test tests::network_is_denied_by_default ... ok
+test tests::run_state_is_unreadable_even_when_nothing_is_denied ... ok
+test tests::real_toolchains_run ... ok
+test linker_tests::builds_produce_no_xcrun_cache_errors ... ok
+test tests::writes_inside_workspace_and_scratch_only ... ok
+test tests::reserved_directories_are_read_only_at_any_depth ... ok
+test toolchain_tests::cargo_test_and_node_test_run_inside_the_sandbox ... ok
+test tests::unix_sockets_are_unreachable_without_network ... ok
+test tests::a_stop_kills_the_whole_tree_at_once ... ok
+test tests::a_runaway_process_is_stopped_and_the_output_says_why ... ok
+test tests::timeout_kills_detached_descendants ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+
+     Running tests/network.rs (/tmp/duet-launch-target/release/deps/network-96c07d39acfb9602)
+
+running 5 tests
+test without_network_a_command_reaches_not_even_the_proxy ... ok
+test the_bridge_helper_hands_connections_to_the_host ... ok
+test with_the_proxy_route_a_command_reaches_the_proxy_and_nothing_else ... ok
+test unix_sockets_stay_unreachable_with_the_proxy_route ... ok
+test with_the_proxy_route_a_command_reaches_the_servers_it_starts ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+   Doc-tests duet_config
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests duet_sandbox
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

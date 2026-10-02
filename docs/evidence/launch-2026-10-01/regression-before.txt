@@ -1,0 +1,32 @@
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-boundary)
+   Compiling duet-net v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-net)
+   Compiling duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-mcp)
+   Compiling duet-web v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-web)
+   Compiling duet-egress v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-egress)
+   Compiling duet-agent v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-agent)
+   Compiling duet-tui v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-tui)
+   Compiling duet-cli v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.24s
+     Running tests/privacy_scenarios.rs (/Users/maximp/OpenCode/duet_v2/target/debug/deps/privacy_scenarios-01b408e93b7a0efd)
+
+running 1 test
+test error_words_in_customer_data_do_not_publish_rows_as_diagnostics ... FAILED
+
+failures:
+
+---- error_words_in_customer_data_do_not_publish_rows_as_diagnostics stdout ----
+
+thread 'error_words_in_customer_data_do_not_publish_rows_as_diagnostics' (4692926) panicked at crates/duet-cli/tests/privacy/mod.rs:632:13:
+3 canary appearance(s) reached the frontier:
+  request 2 of 2, messages[3] result of read_file: Exact of "CUST-CANARY-ORCHID" in … sensitive values replaced):⏎     2  2  CUST-CANARY-ORCHID,⟨name:name#4⟩,mira.canary@privacy-f…
+  request 2 of 2, messages[3] result of read_file: Exact of "mira.canary@privacy-fixture.invalid" in …2  CUST-CANARY-ORCHID,⟨name:name#4⟩,mira.canary@privacy-fixture.invalid,active,125.50⏎Structure (CSV, read here…
+  request 2 of 2, messages[3] result of read_file: Exact of "125.50" in …a.canary@privacy-fixture.invalid,active,125.50⏎Structure (CSV, read here without a mod…
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    error_words_in_customer_data_do_not_publish_rows_as_diagnostics
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.60s
+
+error: test failed, to rerun pass `-p duet-cli --test privacy_scenarios`

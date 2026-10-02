@@ -1,0 +1,9 @@
+   Compiling duet-boundary v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-boundary)
+   Compiling duet-net v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-net)
+   Compiling duet-mcp v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-mcp)
+   Compiling duet-web v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-web)
+   Compiling duet-egress v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-egress)
+   Compiling duet-agent v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-agent)
+   Compiling duet-tui v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-tui)
+   Compiling duet-cli v0.1.0 (/Users/maximp/OpenCode/duet-launch/crates/duet-cli)
+    Finished `release` profile [optimized] target(s) in 1m 01s

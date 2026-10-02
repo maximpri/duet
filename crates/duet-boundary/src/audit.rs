@@ -4,8 +4,11 @@
 //!
 //! Each line carries the SHA-256 of the previous line, so any edit, deletion or
 //! reordering breaks verification. Requests are stored after the gate's
-//! substitutions, and events carry names, paths and counts only: the log never
-//! holds raw sensitive values.
+//! substitutions, and events carry names, paths and counts only. Request
+//! bodies contain whatever cleared the active mode's boundary: a disclosure
+//! bug can therefore leave sensitive values in the audit too. Top-clearance
+//! requests to the local model can include raw sensitive content. Protect
+//! the log as sensitive storage; integrity is not a privacy guarantee.
 //!
 //! Tamper evidence: the chain proves the log is internally consistent, not that
 //! it is the log that was written, since a rewritten log can be re-chained. An
