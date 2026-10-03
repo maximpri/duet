@@ -60,9 +60,14 @@ passed with warnings denied. The final agent tool subset passed 11 tests,
 including both timestamp-preserving regressions and failed-inspection handling.
 After replacing the build timestamp-window heuristic with before/after snapshots,
 all six sensitive-command tests and both timestamp regressions passed.
-The combined gate and platform reruns are pending; use the parent publication
-evidence for their final results. Earlier release
-readiness evidence is in [PUBLISH_READINESS.md](PUBLISH_READINESS.md).
+The final combined macOS gate passed 1,278 tests (22 ignored), Clippy,
+formatting, dependency/license policy and architecture checks. A complete
+x86-64 Linux guest passed 29 sandbox tests, six network tests and 17
+setup/doctor tests. It reproduced the cancellation race above before the fix;
+the original regression passes unchanged afterward. The
+[verification record](evidence/release-hardening-2026-10-03/README.md) identifies
+source snapshots, toolchains and limitations; [publication readiness](PUBLISH_READINESS.md)
+separates these results from historical checks and live benchmark evidence.
 
 ## Demonstrated limit: semantic disclosure
 

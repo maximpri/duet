@@ -5,9 +5,10 @@ preview**. Its code, tests and recorded tasks support evaluation of frontier
 coding with local handling of sensitive content. They do not establish that all
 product goals are met or approve a deployment for confidential institutional data.
 
-This review covers the source changes committed with this document; the retained
-[verification record](evidence/publication-review-2026-10-02/README.md) identifies
-the checked files and logs. The older
+The current implementation is commit
+`b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4`. The retained
+[verification record](evidence/release-hardening-2026-10-03/README.md) identifies
+the checked source and environments. The older
 [acceptance ledger](ACCEPTANCE.md) preserves historical measurements and verdicts;
 its individual rows have not all been re-audited.
 
@@ -35,10 +36,11 @@ The follow-up adds six release and operations improvements:
 The combined current-source macOS gate passed **1,278 tests (22 ignored)**,
 formatting, Clippy, dependency/license policy and architecture checks. Its
 [retained record](evidence/release-hardening-2026-10-03/README.md) identifies the
-checked source. The current Linux x86-64 check remains in progress: a full guest
-kernel passes setup/doctor and network isolation, while a cancellation failure
-is being investigated. The verification table below remains the October 2
-baseline; it is not the new platform result.
+checked source. A full x86-64 Linux guest passes 29 sandbox tests, six network
+tests and 17 setup/doctor tests. This check reproduced and fixed a cancellation
+race (DUET-2026-039); the original failing regression passes unchanged. The
+guest uses an emulated complete x86 machine and kernel, not user-mode container
+translation. Physical x86 hardware has not been tested in this review.
 
 ## Goals and evidence
 
@@ -47,11 +49,24 @@ baseline; it is not the new platform result.
 | Frontier-level coding results | The project's paired small-to-large benchmark reported 98.3% hidden-test success for hybrid versus 97.5% for passthrough, with its quality gate passed. [Results and methodology](VALUE_EVIDENCE.md) | A fresh representative benchmark on the final release build, both judge families, protected-code tasks and reproducible public results. Later fixes and unpaired reruns do not establish universal parity. |
 | Sensitive content handled locally | Classified files use local processing, placeholders and structure views; outbound requests are filtered and checked. Recorded synthetic tasks include zero-canary outcomes and retained failures. [Security design](SECURE_BY_DESIGN.md), [launch evidence](launch/DEMO.md) | Independent adversarial assessment and validation of each deployment's data types. Classification limits, semantic inference and probing remain in the [threat model](../SECURITY.md). Hybrid intentionally sends permitted code and checked context to the frontier. |
 | Local-only operation | Top-clearance tests exercise a local endpoint, frontier trap, disabled web/command networking and restricted MCP startup. [Tests](../crates/duet-cli/tests/top_clearance.rs) | Validate the approved endpoint and its transport. An owner-allowlisted remote local model receives sensitive data; this mode alone does not establish an air gap. |
-| Tool isolation and policy enforcement | OS sandbox, owner/project policy separation, reserved-path protection and gated egress have automated coverage. This review fixed interrupted sensitive output classification, implicit model proxies and setup endpoint validation: **DUET-2026-033–035**. Offline diagnostics also skip network-enabled MCP servers. | Reassess configured extensions and local endpoint trust in the deployment environment. The Linux runtime checks below cover ARM64; x86-64 seccomp still needs runtime verification. |
-| Recoverable runs and inspectable audits | Tests cover termination, interruption, resume and hash-chain verification. The new interruption regression checks that derived-file classification survives reopening the run. [Runtime tests](../crates/duet-cli/tests/termination.rs), [audit implementation](../crates/duet-boundary/src/audit.rs) | Operational retention, access control and independent custody of audit anchors. A valid chain verifies recorded integrity, not whether its contents were safe to disclose. |
+| Tool isolation and policy enforcement | OS sandbox, owner/project policy separation, reserved-path protection and gated egress have automated coverage. The publication work fixed **DUET-2026-033–039**, including proxy routing, persistent derived classifications and cancellation. Offline diagnostics skip network-enabled MCP servers. Linux runtime evidence covers ARM64 and a complete emulated x86-64 kernel with seccomp enabled. | Reassess configured extensions and local endpoint trust in the deployment environment; validate its exact OS and hardware. |
+| Recoverable runs and inspectable audits | Tests cover termination, interruption, resume and hash-chain verification. Derived classifications survive new runs and purge; audit export, checks, retention reports and purge previews have CLI regressions. [Operations](OPERATIONS.md), [runtime tests](../crates/duet-cli/tests/termination.rs) | Operational retention, access control and independent custody of audit anchors. A valid chain verifies recorded integrity, not whether its contents were safe to disclose. |
 | GPL source and binary distribution | License grant, retained upstream notices, dependency policy and scripts for matching vendored source accompany the release procedure. An isolated source archive rebuilt successfully with Cargo's frozen mode. [Licensing and distribution](../LICENSES.md) | For a binary release, package from the final clean commit, sign and verify artifacts, and publish matching source and notices alongside the binary. |
 
-## Verification for this publication review
+## Current verification
+
+| Check | Status |
+| --- | --- |
+| Combined macOS ARM64 gate | **Passed:** formatting, Clippy, 1,278 tests (22 ignored), dependency/license policy, headers, privacy/egress construction and provenance. Includes the final cancellation and benchmark scheduling changes. |
+| Linux x86-64 sandbox | **Passed:** original 29 sandbox and six network tests in a complete Debian 6.1 x86 guest; 17 setup/doctor tests also passed. A single-thread TCG rerun passed without the multi-thread emulator's memory-ordering warning. Logs retain the original cancellation failure and both passing runs. |
+| Rust 1.90 Linux x86-64 build | **Passed:** optimized application build at `b9eb511`, evaluation harness compilation, version/help checks and all 11 release tests. Operations/privacy/proxy tests passed on the preceding implementation; their sources did not change. [Platform record](evidence/release-hardening-2026-10-03/linux-x86/README.md) |
+| GPL corresponding source | Final-commit vendored archive and isolated frozen build in progress. No production release is signed or published by this review. |
+| Fresh bounded benchmark | 54 cases planned across nine tasks, three seeds and two lanes, with a $50 aggregate frontier allowance. In progress; fresh quality-judge scores are unscored. |
+
+## Retained October 2 baseline
+
+These checks belong to the earlier source snapshot. They complement the current
+record rather than asserting that every platform was rerun after every change.
 
 | Check | Status |
 | --- | --- |
@@ -81,9 +96,8 @@ The placeholder is deployed on [Cloudflare Pages](https://duet-site-9oe.pages.de
 `duet.priezjev.com` is registered with Pages but still requires a proxied CNAME:
 `duet` → `duet-site-9oe.pages.dev`. The deployment login has no DNS-write permission.
 
-Builds used Rust 1.97.1 on macOS and 1.99 on Linux. Dependency manifests were
-checked against the declared Rust 1.90 minimum; this review did not build with
-Rust 1.90 itself.
+The October 2 baseline used Rust 1.97.1 on macOS and 1.99 on Linux. The current
+Linux check additionally builds with the declared Rust 1.90 minimum.
 
 Before real-data adoption in a bank or government team, evaluate representative
 tasks and threat scenarios, approve local and frontier endpoints, and establish

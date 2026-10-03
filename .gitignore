@@ -4,7 +4,8 @@
 .duet/
 .env
 .env.*
-/results/
+# Keep local experiment directories and external-storage symlinks out of source.
+/results
 # Task fixtures hold canary templates, not secrets; they are part of the sealed packages.
 !tasks/*/assets/.env
 !tasks/*/assets/.env.*

@@ -1,0 +1,66 @@
+--- a/crates/duet-sandbox/src/lib.rs
++++ b/crates/duet-sandbox/src/lib.rs
+@@ -1452,26 +1452,47 @@
+         .collect()
+ }
+ 
+-/// Kills `root` and every descendant, including ones that left its process
+-/// group with `setsid`, by walking the parent links reported by `ps`.
++/// Stops the discovered tree from root down, then kills it from leaves up.
++/// Freezing ancestors first prevents a waiting shell from running its next
++/// command when its child is killed. Rescans include forks racing the first
++/// snapshot; the bounded parent-link walk cannot recover processes already
++/// reparented outside the tree before it starts.
+ pub fn kill_tree(root: u32) {
+-    let table = process_table();
++    use std::collections::{HashMap, HashSet};
++    let signal = |pid: u32, signal| {
++        if let Some(p) = rustix::process::Pid::from_raw(pid as i32) {
++            let _ = rustix::process::kill_process(p, signal);
++        }
++    };
+     let mut victims = vec![root];
+-    let mut i = 0;
+-    while i < victims.len() {
+-        let parent = victims[i];
+-        victims.extend(
+-            table
+-                .iter()
+-                .filter(|(_, pp)| *pp == parent)
+-                .map(|(p, _)| *p),
+-        );
+-        i += 1;
++    let mut seen = HashSet::from([root]);
++    let mut stopped = 0;
++    // Freeze before each rescan. A process racing a fork cannot keep the
++    // caller scanning indefinitely; any last discovered members are stopped
++    // below before the kill pass as well.
++    for _ in 0..8 {
++        for &pid in &victims[stopped..] {
++            signal(pid, rustix::process::Signal::Stop);
++        }
++        stopped = victims.len();
++        let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
++        for (pid, parent) in process_table() {
++            children.entry(parent).or_default().push(pid);
++        }
++        let mut i = 0;
++        while i < victims.len() {
++            if let Some(descendants) = children.get(&victims[i]) {
++                victims.extend(descendants.iter().copied().filter(|pid| seen.insert(*pid)));
++            }
++            i += 1;
++        }
++        if victims.len() == stopped { break; }
++    }
++    for &pid in &victims[stopped..] {
++        signal(pid, rustix::process::Signal::Stop);
+     }
+     for pid in victims.into_iter().rev() {
+-        if let Some(p) = rustix::process::Pid::from_raw(pid as i32) {
+-            let _ = rustix::process::kill_process(p, rustix::process::Signal::Kill);
+-        }
++        signal(pid, rustix::process::Signal::Kill);
+     }
+ }
+ 

@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "base_commit": "a43c878d7e63ee6342a0bbda2b2710a1154bd9dd",
+  "source_manifest_format": "Sorted relative paths; SHA-256 and POSIX file mode for files, literal targets for symlinks. No symlink traversal. Manifest SHA-256 identifies the complete captured source tree.",
+  "source_manifest_sha256": {
+    "source-a43c878.json": "2473de2c1d5f5c31041835037e9a9f3bfbe261e4bf90fab7b7f407cd063df8b6",
+    "source-fixed-prototype.json": "295207a492eb20f78ec685c42076631d78c32fea043d55695d7163b1fca65f41",
+    "source-b9eb511.json": "dba1da6fe7291b58549e322794fc4935d384626df6285bc841304bfc2fd3bc97"
+  },
+  "prototype_differences_from_base": [
+    "crates/duet-sandbox/src/lib.rs",
+    "docs/PUBLISH_READINESS.md",
+    "docs/evidence/release-hardening-2026-10-03/README.md",
+    "docs/evidence/release-hardening-2026-10-03/macos-gate.log.gz",
+    "docs/evidence/release-hardening-2026-10-03/manifest.json"
+  ],
+  "environment": {
+    "host": "macOS ARM64",
+    "compiler": "rustc 1.90.0 (1159e78c4 2025-09-14)",
+    "guest_kernel": "Linux 6.1.0-53-amd64, Debian 6.1.187-1",
+    "qemu": "QEMU emulator version 7.2.22 (Debian 1:7.2+dfsg-7+deb12u18+b3), native ARM64 process emulating complete x86-64 kernel/machine; not physical x86 hardware",
+    "kernel_features": [
+      "CONFIG_SECCOMP=y",
+      "CONFIG_SECCOMP_FILTER=y",
+      "CONFIG_USER_NS=y",
+      "CONFIG_PID_NS=y",
+      "CONFIG_NET_NS=y"
+    ],
+    "guest_network": "No network device; loopback enabled for fixture receivers",
+    "qemu_arguments": "-accel tcg,thread=multi -cpu max -smp 2 -m 3072 -kernel vmlinuz -initrd initrd.img -drive file=rootfs.ext4,format=raw,if=virtio -append \"root=/dev/vda rw noresume console=ttyS0 init=/duet-reaper panic=1\" -nographic -monitor none -serial stdio -no-reboot -nic none",
+    "test_environment": {
+      "RUST_TEST_THREADS": "1",
+      "CARGO_PKG_NAME": "duet-sandbox",
+      "CARGO_HOME": "/usr/local/cargo",
+      "RUSTUP_HOME": "/usr/local/rustup",
+      "DUET_SANDBOX_BRIDGE": "/cache/build/debug/duet-sandbox-bridge"
+    },
+    "final_qemu_arguments": "-accel tcg,thread=single -cpu max -smp 2 -m 3072 -kernel vmlinuz -initrd initrd.img -drive file=rootfs.ext4,format=raw,if=virtio -append \"root=/dev/vda rw noresume console=ttyS0 init=/duet-reaper panic=1\" -nographic -monitor none -serial stdio -no-reboot -nic none",
+    "prior_multithread_tcg_warning": "Multi-thread TCG warns guest expects stronger memory ordering than ARM64 host; final single-thread run avoids this warning and also passes."
+  },
+  "results": {
+    "user_emulation": "Rust1.90 optimized build, release11 and proxy1 passed; setupdoctor15/17, two seccomp EINVAL failures; not full runtime verification",
+    "full_kernel_before_fix": "Original unchanged sandbox28/29, network6/6; cancellation survivor marker reproduced with corrected Cargo environment and reaping PID1",
+    "full_kernel_after_fix": "Original unchanged sandbox29/29 and network6/6, status0",
+    "full_kernel_setup_doctor": "17/17 passed in complete x86 kernel. Earlier harness lacked Cargo env; sandbox results in that log are superseded by separate corrected-harness logs",
+    "native_macos": "Sandbox26/26, network6/6 and all-target Clippy with warnings denied passed",
+    "final_source_msrv": "PASS: exact b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4 source, rustc1.90.0 optimized duet build (3m07s), binary --version and --help, duet-evals cargo check and signed release11 tests. No later app changes are covered by this record.",
+    "full_kernel_after_fix_single_thread_tcg": "Original sandbox29/29 and network6/6 passed, status0; no guest/host memory-ordering warning"
+  },
+  "logs": [
+    {
+      "file": "x86-user-emulation-partial.log",
+      "raw_sha256": "2058e2690d87fc775946bad03317bfbe0daefe1c63d0ee1417045b40a2362408",
+      "normalized_sha256": "2058e2690d87fc775946bad03317bfbe0daefe1c63d0ee1417045b40a2362408"
+    },
+    {
+      "file": "x86-kernel-before-fix.log",
+      "raw_sha256": "4ea48fad31bd23ec0cecb8be43794f9bb6b5aaf208c35300c71ba4446075ae8d",
+      "normalized_sha256": "405d2678e650bbc01dfaf336f7533abcdcd0d2811b20faaa6352c7bd15533378"
+    },
+    {
+      "file": "x86-kernel-setup-doctor.log",
+      "raw_sha256": "52bb671fb11f3e0124d596838fd41e9836d5112e61459d366d6cbee6a5988a95",
+      "normalized_sha256": "6c8f10d3e1b1d04b124cd0f410d3e72e44036a5775d42313d9d00fcb706bfaa1"
+    },
+    {
+      "file": "x86-kernel-after-fix.log",
+      "raw_sha256": "052dd5473f62f6a5d92684ea96ea2468a69a2e325f72c1b2dc5a1105f76eda1a",
+      "normalized_sha256": "66081685037d3d3d55d9b4b78f502f465822b5d8f5590254cfc55c4dcc46c527"
+    },
+    {
+      "file": "macos-sandbox-after-fix.log",
+      "raw_sha256": "0a90c283490036ab13c712c9f62b33bc5ced3181ca52fc6e8699da405604bba0",
+      "normalized_sha256": "4545add9a6f272b0476240f5453bc619baa3afc4c4ec37491b9c01e6cc22a5bb"
+    },
+    {
+      "file": "macos-sandbox-clippy.log",
+      "raw_sha256": "a40b138c5e0e1d94811aac7196086b77b2531f5f1fc2df8e96fe4d2fc71d6375",
+      "normalized_sha256": "e9ce66add8fe8c10fd87675d576839cb506c1a5f3f116a35ac87b1fe2a07bd71"
+    },
+    {
+      "file": "rust190-a43c878.log",
+      "raw_sha256": "4737ac092776ef5925c4f66bc9b987d81da955a38a08fab5b849e0c193073f57",
+      "normalized_sha256": "4737ac092776ef5925c4f66bc9b987d81da955a38a08fab5b849e0c193073f57"
+    },
+    {
+      "file": "x86-kernel-after-fix-single-tcg.log",
+      "raw_sha256": "7f7c8f13d61a3b1c863beeba00629bb54fb4d067f99222a78cf5425deb10a86c",
+      "normalized_sha256": "6336c81b5fd47156f3aac5f7df9717e19edb33ad36382193bd4132c5150d2d59"
+    },
+    {
+      "file": "rust190-b9eb511.log",
+      "raw_sha256": "9fb1f2344a0f23974783dd8bf47d964191bc9ff7fad80956ae83b3576ff29ff1",
+      "normalized_sha256": "9fb1f2344a0f23974783dd8bf47d964191bc9ff7fad80956ae83b3576ff29ff1"
+    }
+  ],
+  "tested_sandbox_matches_final_commit_after_rustfmt": true,
+  "final_sandbox_source_sha256": "54c4f43fd9baebc40f7943ca837be65ff395d3d48d126015090756a784476872",
+  "final_commit": "b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4",
+  "final_release_binary_sha256": "3093a7f431468d4b839b9403d197d8cea51795f930bcaf47b1da41e031d94115",
+  "build_command": "DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet",
+  "compiler_base_image": "rust:1.90.0-bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f",
+  "final_check_commands": [
+    "duet --version",
+    "duet --help",
+    "cargo check --locked -p duet-evals",
+    "cargo test --locked -p duet-release"
+  ]
+}
