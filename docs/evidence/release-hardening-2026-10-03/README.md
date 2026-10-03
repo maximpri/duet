@@ -20,6 +20,10 @@ optimized build at `b9eb511`. Commit `ae66b4a` changes only archive packaging an
 its tests from that application source: macOS filesystem metadata is excluded,
 with real-xattr regressions for source and binary archives.
 
-The paid benchmark is running from the frozen `b9eb511` application. A fresh
-offline source build from `ae66b4a` is in progress. See
-[publication readiness](../../PUBLISH_READINESS.md) for the current scope.
+The [offline source record](offline-source/README.md) verifies the final
+`1e4f2e4` archive against a successful frozen build from `ae66b4a`; their build
+inputs and vendored dependencies are identical. The final archive also removes
+the tracked link to local experiment storage.
+
+The paid benchmark is running from the frozen `b9eb511` application. See
+[publication readiness](../../PUBLISH_READINESS.md) for its current scope.
