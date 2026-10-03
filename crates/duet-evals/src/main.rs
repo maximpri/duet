@@ -325,8 +325,8 @@ async fn main() -> Result<()> {
                 .collect::<Result<Vec<_>>>()?;
             if budget.is_some() {
                 let mut planned = Vec::new();
-                for package in &packages {
-                    for seed in &seeds {
+                for seed in &seeds {
+                    for package in &packages {
                         for lane in &lane_names {
                             planned.push(serde_json::json!({"task":package.spec.id,"seed":seed,"lane":lane,"run_id":format!("{}-{lane}-s{seed}",package.spec.id)}));
                         }
@@ -339,8 +339,10 @@ async fn main() -> Result<()> {
                     )?,
                 )?;
             }
-            for t in &packages {
-                for &seed in &seeds {
+            // Cover every task at each seed before starting the next seed;
+            // the two lanes for a task stay adjacent for paired comparisons.
+            for &seed in &seeds {
+                for t in &packages {
                     for name in &lane_names {
                         if let Some(budget) = &budget {
                             budget.check()?;

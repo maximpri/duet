@@ -1479,10 +1479,12 @@ deploying what a run produced.**
 
 ## Advisories and fixed leak classes
 
-Every disclosure path found is fixed at the class level, covered by a regression test, and published
-as an advisory with its CWE root cause; so is every class of false blocks (the fail-closed check
-stopping a run over a value that was not being disclosed), since each costs whole runs. Classes
-fixed before the first public release, all found by Duet's own canary measurements and runs:
+The table records defect classes fixed before the first public release, with
+their root causes and regression coverage. Findings came from code review,
+automated tests, canary measurements and recorded runs. It includes false blocks
+that stopped valid work, as well as disclosure and isolation defects. Known
+protection limits remain in this threat model and the
+[independent-review brief](docs/SECURITY_REVIEW_BRIEF.md).
 
 | ID | Class | Root cause (CWE) | What happened | Fix |
 |---|---|---|---|---|
@@ -1524,6 +1526,7 @@ fixed before the first public release, all found by Duet's own canary measuremen
 | DUET-2026-036 | Context probes inherited environment proxies | CWE-923 Improper Restriction of Communication Channel to Intended Endpoints | The context-window probe had its own HTTP client and could send a local API bearer token through an environment proxy. The earlier model/discovery fix did not cover this constructor. Model-catalog traffic also inherited proxy defaults | One private model HTTP factory requires an approved endpoint and disables implicit proxies and redirects. Discovery, probes, catalogs and model transports use it; a repository gate rejects alternate constructors. The isolated proxy regression now includes context probes, and independent receiver tests cover redirects and adapter recipient changes |
 | DUET-2026-037 | A new run forgot sensitive derived files | CWE-200 Exposure of Sensitive Information | Sensitive-command output paths were stored only in that run's derived manifest. A later run could treat an arbitrary-path export of private prose as public; raw-run purge also removed that record. A regression reproduced the loss before this fix | Persist classifications in protected workspace state, import retained legacy records and preserve them through purge. Write a durable pending marker before sensitive execution; unfinished classification refuses subsequent hybrid startup. Pinned directory handles and bounded, validated manifests protect reads and writes. Regression and independent TCP-receiver tests verify new-run withholding. See [recovery and retention](docs/OPERATIONS.md) |
 | DUET-2026-038 | Timestamp-preserving sensitive writes escaped derived classification | CWE-200 Exposure of Sensitive Information | Before this fix, ordinary workspace snapshots compared only modification time and size; build output was classified by modification time alone. A sensitive command using timestamp-preserving copies or restoring mtime could leave same-sized rewritten files, or new exports under `target/`, classified as public. Two regressions reproduced the missing classifications | Include inode change time, device and inode in before/after workspace stamps, including build and dependency directories. This also avoids falsely classifying untouched recent build files. Unprivileged commands cannot restore ctime. Failed directory/stat inspection now fails closed and keeps the pending classification marker. Tests: `timestamp_preserving_sensitive_writes_are_detected`, `timestamp_preserving_sensitive_build_exports_are_detected`, and `failed_workspace_inspection_is_not_an_empty_successful_snapshot` |
+| DUET-2026-039 | A waiting shell could continue during cancellation | CWE-362 Race Condition | Killing a child before its waiting parent could wake the shell long enough to execute its next command during teardown. The unchanged stop-tree regression reproduced a survivor marker after cancellation on a complete Linux x86-64 kernel under QEMU | Stop the root and discovered ancestors before killing descendants. Bounded rescans include forks racing the initial snapshot; frozen parents cannot continue their command tails when children die. The original 29 sandbox tests and six network tests pass on the same x86-64 kernel with seccomp enabled. Parent-link discovery cannot recover processes already reparented outside the tree before inspection |
 
 Related hardening: offline `duet doctor` now skips network-enabled stdio MCP servers as well as
 HTTP MCP servers; `--online` is required to start either. This closes an unexpected network path

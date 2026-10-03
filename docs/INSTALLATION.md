@@ -111,7 +111,13 @@ tools/release-platform-check.sh --platform linux/amd64 --rust 1.90.0 \
 
 Use `linux/arm64` for the ARM64 check. Docker may emulate the selected architecture
 when it differs from the host; the output records the platform and compiler.
+User-mode emulation can validate compilation and ordinary CLI behavior, but may
+reject seccomp filters supported by a native kernel. Validate sandbox behavior
+on matching hardware or a full-system guest with that architecture's kernel;
+do not count an emulated container's runtime failure as a passing platform check.
+The [publication review](PUBLISH_READINESS.md) records the tested environments.
 The check first snapshots the selected worktree files so concurrent edits do not
 change a running test. The container has namespace privileges for bubblewrap's
-runtime tests, with that read-only source snapshot and the explicit writable cache. The check does not mount
-the user's home or Docker socket and does not create or publish release keys.
+runtime tests, with that read-only source snapshot and the explicit writable
+cache. The check does not mount the user's home or Docker socket and does not
+create or publish release keys.

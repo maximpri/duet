@@ -31,6 +31,11 @@ Duet's ordinary command sandbox remains active. The allowance is enforced for
 model traffic routed through this proxy; it is not an account-wide provider cap
 or a protection against an owner modifying the harness or lane configuration.
 
+Runs are scheduled seed, then task, then lane: each seed covers every task
+before the next seed starts, with paired lanes adjacent. `planned-runs.json`
+records the full requested matrix before any paid request, including cases left
+unstarted if accounting becomes unknown or the allowance is exhausted.
+
 The journal is single-use. A restart refuses an existing journal rather than
 silently resetting charges or guessing what an interrupted provider request cost.
 Keep the entire batch, including unsuccessful runs and its journal. Do not delete
