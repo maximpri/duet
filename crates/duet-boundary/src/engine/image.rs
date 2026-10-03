@@ -189,7 +189,8 @@ mod tests {
             "protected_path"
         );
         // A file a sensitive command wrote is sensitive from then on.
-        e.mark_sensitive(d.path(), &["docs/derived.png".into()]);
+        e.mark_sensitive(d.path(), &["docs/derived.png".into()])
+            .unwrap();
         let derived = Origin::Workspace("docs/derived.png".into());
         assert_eq!(
             e.route_image(&request(&derived, &sensitive, false))

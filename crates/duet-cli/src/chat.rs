@@ -262,6 +262,7 @@ pub(crate) enum Command {
     /// End the running turn after its current step.
     Stop,
     Status,
+    Privacy,
     Diff,
     Undo,
     Help,
@@ -296,6 +297,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "/mode",
     "/quit",
     "/status",
+    "/privacy",
     "/stop",
     "/undo",
     "/skills",
@@ -386,6 +388,7 @@ pub(crate) fn parse(line: &str) -> Command {
         "plugins" => Command::Plugins,
         "attachments" => Command::Attachments,
         "status" => Command::Status,
+        "privacy" => Command::Privacy,
         "diff" => Command::Diff,
         "undo" => Command::Undo,
         "stop" => Command::Stop,
@@ -411,6 +414,7 @@ Workspace commands (task text and loaded guidance use the session privacy bounda
   /goal cancel           abandon a goal without marking it complete
   /history [session-id]  browse saved work or read a conversation
   /stop    end duet's turn after its current step (Ctrl-C ends it now)
+  /privacy offline preview of file rules, destinations and policy exceptions
   /status  turns, tokens, cost and time against the budgets
   /diff    what changed in the workspace (sensitive files are only named)
   /undo    revert the file writes of the last turn (repeat for earlier turns)
@@ -646,6 +650,26 @@ fn resumed(ws: &Path, id: Option<String>) -> Result<RunManifest> {
     Ok(manifest)
 }
 
+fn show_privacy(
+    screen: &Screen,
+    ws: &Path,
+    cfg: &duet_config::Config,
+    mode: Mode,
+    frontier_url: Option<&str>,
+    local_url: Option<&str>,
+    files: bool,
+) {
+    // Keep piped session output stable; an explicit /privacy still prints its report.
+    if !files && matches!(screen, Screen::Plain { tty: false }) {
+        return;
+    }
+    match crate::privacy::collect(ws, cfg, mode, frontier_url, local_url) {
+        Ok(report) => screen.line(&report.render(files)),
+        Err(_) => screen
+            .line("Privacy preview unavailable; run `duet privacy` to inspect the configuration."),
+    }
+}
+
 /// Waits for the first message of a new session, and the images attached to
 /// it (`/image`, checked against the rules as they are attached); `None`
 /// when the operator leaves first.
@@ -656,6 +680,7 @@ async fn first_message(
     ws: &Path,
     cfg: &duet_config::Config,
     mode: Mode,
+    frontier_url: Option<&str>,
 ) -> Option<(
     String,
     Vec<crate::images::AttachedImage>,
@@ -697,6 +722,7 @@ async fn first_message(
                 _ => screen.line("Start a goal with /goal <objective>. It keeps working within your session budgets."),
             },
             Command::History(id) => show_history(ws, id, screen),
+            Command::Privacy => show_privacy(screen, ws, cfg, mode, frontier_url, None, true),
             Command::Quit | Command::Close => return None,
             Command::Help => screen.text(&format!("{HELP}\n")),
             Command::Empty => {}
@@ -823,10 +849,29 @@ Add --no-privacy to confirm, or use --mode hybrid."
                 (resumed(&ws, id)?, true)
             }
             None => {
+                show_privacy(
+                    &screen,
+                    &ws,
+                    &cfg,
+                    mode,
+                    args.frontier_url.as_deref(),
+                    None,
+                    false,
+                );
                 let (first, first_images, first_files, is_goal) = match message.take() {
                     Some(m) => (m, Vec::new(), Vec::new(), start_goal),
                     None => {
-                        match first_message(&io.inbox, &io.leave, &screen, &ws, &cfg, mode).await {
+                        match first_message(
+                            &io.inbox,
+                            &io.leave,
+                            &screen,
+                            &ws,
+                            &cfg,
+                            mode,
+                            args.frontier_url.as_deref(),
+                        )
+                        .await
+                        {
                             Some(m) => m,
                             None => return Ok(0),
                         }
@@ -881,6 +926,17 @@ Add --no-privacy to confirm, or use --mode hybrid."
         };
         mode = manifest.mode;
         crate::overrides::check(&cfg, &manifest)?;
+        if resuming || manifest.local.is_some() {
+            show_privacy(
+                &screen,
+                &ws,
+                &cfg,
+                manifest.mode,
+                Some(&manifest.frontier_url),
+                manifest.local.as_ref().map(|l| l.base_url.as_str()),
+                false,
+            );
+        }
         eprintln!("session {} ({:?})", manifest.run_id, manifest.mode);
         let lock = duet_fs::lock::WorkspaceLock::acquire(&ws)?;
         let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
@@ -1350,6 +1406,15 @@ async fn conduct(
                 }
             }
             Command::History(id) => show_history(ws, id, &io.screen),
+            Command::Privacy => show_privacy(
+                &io.screen,
+                ws,
+                cfg,
+                manifest.mode,
+                Some(&manifest.frontier_url),
+                manifest.local.as_ref().map(|l| l.base_url.as_str()),
+                true,
+            ),
             Command::Goal(raw) => {
                 let result = match goal_action(&raw) {
                     GoalAction::Status => Ok(()),
@@ -1665,6 +1730,7 @@ async fn take_turn(
                             | Command::Close
                             | Command::Undo
                             | Command::Status
+                            | Command::Privacy
                             | Command::Skill(_)
                             | Command::PluginPrompt(_)
                             | Command::History(_)
@@ -2103,6 +2169,7 @@ mod tests {
             &ws,
             &cfg,
             Mode::Hybrid,
+            None,
         )
         .await
         .unwrap();
@@ -2137,6 +2204,7 @@ mod tests {
             &ws,
             &cfg,
             Mode::Passthrough,
+            None,
         )
         .await
         .unwrap();

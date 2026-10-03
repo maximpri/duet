@@ -79,6 +79,19 @@ if [ -n "$hits" ]; then
     exit 1
 fi
 
+step "model HTTP policy by construction"
+# Every model/discovery/probe/catalog adapter must use the private client
+# factory. It requires an ApprovedEndpoint and fixes proxies/redirects before
+# returning a Client (never a loosenable builder).
+model_http='(Client|ClientBuilder)::(builder|new|default)|reqwest::(get|blocking)|\.(proxy|no_proxy|redirect)\('
+hits=$( { grep -rnE "$model_http" crates/duet-provider/src --include='*.rs' \
+    | grep -vE '/(http|tests|mock_http)\.rs:'; } || true)
+if [ -n "$hits" ]; then
+    echo "model HTTP construction/policy outside the approved factory:" >&2
+    echo "$hits" >&2
+    exit 1
+fi
+
 step "provenance"
 # Duet's implementation is independent. Product names are permitted in the
 # evaluation adapters, credential denylist, and portable-skill discovery

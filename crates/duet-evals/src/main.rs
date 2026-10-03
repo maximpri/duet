@@ -3,6 +3,7 @@
 //! judging and statistics.
 
 mod benchmark;
+mod budget;
 mod canary;
 mod cost;
 mod governor;
@@ -96,6 +97,10 @@ enum Cmd {
         /// Keep build output (`target/` directories) after grading.
         #[arg(long)]
         keep_build_output: bool,
+        /// Hard pre-send list-price cap (at most $50), one fresh batch journal.
+        /// Restricted to verified GLM-5.3-Flash text chat (1M context, 128K output).
+        #[arg(long)]
+        frontier_budget_usd: Option<f64>,
     },
     /// Judge the code quality of every run in a batch, once per judge; each
     /// judge's result is stored separately in the run directory.
@@ -270,6 +275,7 @@ async fn main() -> Result<()> {
             mem_per_process_mb,
             mem_per_run_mb,
             keep_build_output,
+            frontier_budget_usd,
         } => {
             let machine = governor::Limits::for_this_machine(priority);
             let limits = governor::Limits {
@@ -285,15 +291,60 @@ async fn main() -> Result<()> {
             let prices = cost::PriceTable::load(&prices)?;
             let seeds = parse_seeds(&seeds)?;
             fs::create_dir_all(&out)?;
+            let budget = frontier_budget_usd
+                .map(|cap| {
+                    for name in &lane_names {
+                        let lane = lanes::find_lane(&all_lanes, name)?;
+                        ensure!(
+                            lane.kind == lanes::LaneKind::Duet
+                                && lane.argv.first().is_some_and(|s| s == "{duet_bin}")
+                                && lane.upstream == "https://api.z.ai/api/coding/paas/v4",
+                            "bounded mode requires configured Duet Z.ai coding lanes"
+                        );
+                        ensure!(
+                            lane.model == "glm-5.3-flash",
+                            "bounded mode requires GLM-5.3-Flash"
+                        );
+                    }
+                    let price = prices.verified("glm-5.3-flash")?;
+                    ensure!(
+                        price.input == 0.15
+                            && price.cache_read == 0.03
+                            && price.cache_write == 0.15
+                            && price.output == 0.50,
+                        "bounded mode price changed: reverify reservation policy first"
+                    );
+                    budget::Budget::create(&out.join("budget.jsonl"), cap, price, 1 << 20, 1 << 17)
+                })
+                .transpose()?;
             // Every requested task spec is loaded before the first run, and other
             // packages are never parsed, so adding a task mid-batch cannot stop it.
             let packages = task_ids
                 .iter()
                 .map(|id| load_task(&cli.tasks, id))
                 .collect::<Result<Vec<_>>>()?;
+            if budget.is_some() {
+                let mut planned = Vec::new();
+                for package in &packages {
+                    for seed in &seeds {
+                        for lane in &lane_names {
+                            planned.push(serde_json::json!({"task":package.spec.id,"seed":seed,"lane":lane,"run_id":format!("{}-{lane}-s{seed}",package.spec.id)}));
+                        }
+                    }
+                }
+                fs::write(
+                    out.join("planned-runs.json"),
+                    serde_json::to_vec_pretty(
+                        &serde_json::json!({"schema_version":1,"runs":planned,"frontier_budget_usd":frontier_budget_usd,"web_enabled":false,"automatic_quota_retries":false}),
+                    )?,
+                )?;
+            }
             for t in &packages {
                 for &seed in &seeds {
                     for name in &lane_names {
+                        if let Some(budget) = &budget {
+                            budget.check()?;
+                        }
                         let lane = lanes::find_lane(&all_lanes, name)?;
                         let run_dir = out.join(format!("{}-{}-s{seed}", t.spec.id, lane.name));
                         if run_dir.join("run.json").is_file() {
@@ -324,10 +375,15 @@ async fn main() -> Result<()> {
                                 local_watts,
                                 limits,
                                 keep_build_output,
+                                budget: budget.clone(),
                             })
                             .await?;
                             attempt += 1;
-                            if rec.invalid.is_some() && rec.rate_limited && attempt < 3 {
+                            if budget.is_none()
+                                && rec.invalid.is_some()
+                                && rec.rate_limited
+                                && attempt < 3
+                            {
                                 eprintln!(
                                     "{}: invalid ({}); waiting for the provider",
                                     rec.run_id,
@@ -376,6 +432,9 @@ async fn main() -> Result<()> {
                         );
                     }
                 }
+            }
+            if let Some(budget) = &budget {
+                budget.check()?;
             }
         }
         Cmd::Judge {

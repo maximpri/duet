@@ -459,10 +459,12 @@ pub async fn auto(cfg: &mut Config, options: AutoOptions) -> Result<i32> {
     }
 
     if let Some(url) = options.local_url.as_deref() {
-        duet_provider::endpoint::check_local_endpoint(
+        let endpoint = duet_provider::endpoint::ApprovedEndpoint::new(
             url,
-            &cfg.list("local.allowlist")?,
-            cfg.bool("local.allow_plaintext")?,
+            &duet_provider::Role::Local {
+                allowlist: cfg.list("local.allowlist")?,
+                allow_plaintext: cfg.bool("local.allow_plaintext")?,
+            },
         )
         .map_err(|e| anyhow::anyhow!(e.message))?;
         let same = cfg.str("local.base_url")? == url;
@@ -474,7 +476,7 @@ pub async fn auto(cfg: &mut Config, options: AutoOptions) -> Result<i32> {
         let key = (!key_env.is_empty())
             .then(|| std::env::var(&key_env).ok())
             .flatten();
-        let listing = backends::list_models(url, key.as_deref(), Duration::from_secs(5))
+        let listing = backends::list_models(&endpoint, key.as_deref(), Duration::from_secs(5))
             .await
             .map_err(anyhow::Error::msg)?;
         let ids = backends::agent_model_ids(&listing);
@@ -499,17 +501,19 @@ pub async fn auto(cfg: &mut Config, options: AutoOptions) -> Result<i32> {
         && let Some(model) = options.local_model.as_deref()
     {
         let url = cfg.str("local.base_url")?;
-        duet_provider::endpoint::check_local_endpoint(
+        let endpoint = duet_provider::endpoint::ApprovedEndpoint::new(
             &url,
-            &cfg.list("local.allowlist")?,
-            cfg.bool("local.allow_plaintext")?,
+            &duet_provider::Role::Local {
+                allowlist: cfg.list("local.allowlist")?,
+                allow_plaintext: cfg.bool("local.allow_plaintext")?,
+            },
         )
         .map_err(|e| anyhow::anyhow!(e.message))?;
         let key_env = cfg.str("local.api_key_env")?;
         let key = (!key_env.is_empty())
             .then(|| std::env::var(&key_env).ok())
             .flatten();
-        let listing = backends::list_models(&url, key.as_deref(), Duration::from_secs(5))
+        let listing = backends::list_models(&endpoint, key.as_deref(), Duration::from_secs(5))
             .await
             .map_err(anyhow::Error::msg)?;
         anyhow::ensure!(

@@ -843,8 +843,12 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         .get("sensitive_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let before = sensitive_data.then(|| snapshot(ctx.workspace));
-    let started = std::time::SystemTime::now();
+    if sensitive_data {
+        ctx.presenter.begin_sensitive_command()
+            .map_err(|_| "Cannot start sensitive command: private classification state requires owner review.".to_owned())?;
+    }
+    let before = sensitive_data.then(|| snapshot(ctx.workspace)).transpose()
+        .map_err(|_| "Cannot inspect workspace for sensitive command; private classification state requires owner review.".to_owned())?;
     let access = if sensitive_data {
         Access::SensitiveData
     } else {
@@ -856,14 +860,19 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
     let result = sandboxed(ctx, command, timeout, access).await;
     let exit_code = result.as_ref().ok().and_then(|o| o.exit_code);
     let source = if let Some(before) = before {
-        let after = snapshot(ctx.workspace);
-        let mut changed: Vec<PathBuf> = after
+        let after = snapshot(ctx.workspace)
+            .map_err(|_| "Cannot classify all sensitive command outputs; private classification state requires owner review.".to_owned())?;
+        let changed: Vec<PathBuf> = after
             .iter()
             .filter(|(p, stamp)| before.get(*p) != Some(stamp))
             .map(|(p, _)| p.clone())
             .collect();
-        changed.extend(build_output_changed(ctx.workspace, started));
-        ctx.presenter.mark_sensitive(ctx.workspace, &changed);
+        ctx.presenter
+            .mark_sensitive(ctx.workspace, &changed)
+            .map_err(|_| {
+                "Cannot persist private file classifications; further runs require owner review."
+                    .to_owned()
+            })?;
         ctx.record(AuditEvent::SensitiveCommand {
             command: command.to_owned(),
             exit_code,
@@ -906,77 +915,65 @@ use .git; you do not need one: list_files and search work without it, and diff s
 static GIT_WORD: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"(^|[\s;&|(`])git(\s|$)").expect("static regex"));
 
-/// Directories whose files are build output or dependencies, not data.
-const SNAPSHOT_SKIP: &[&str] = &[".git", ".duet", "target", "node_modules"];
-/// Directories [`snapshot`] skips that a command may still write data into.
-const BUILD_OUTPUT: &[&str] = &["target", "node_modules"];
-/// How far before a command's start a file's modification time may lie and
-/// still count as written by it (file systems stamp times coarsely).
-const MTIME_SLACK: Duration = Duration::from_secs(1);
+/// Command sandboxes refuse writes to these state directories. Every other
+/// directory, including build output and dependencies, is snapshotted: a time
+/// window cannot distinguish a new export from an untouched recent build file.
+const SNAPSHOT_SKIP: &[&str] = &[".git", ".duet"];
 
-/// Files under build output and dependency directories (`target/`,
-/// `node_modules/`, at any depth) modified since `since`: what a command
-/// wrote there. [`snapshot`] skips these directories (they are large and
-/// hold no data of their own), so a sensitive command's writes into them are
-/// found by modification time alone: one pass over them, no copy of their
-/// state before the command.
-fn build_output_changed(workspace: &Path, since: std::time::SystemTime) -> Vec<PathBuf> {
-    let since = since.checked_sub(MTIME_SLACK).unwrap_or(since);
-    let mut out = Vec::new();
-    // (directory, inside build output)
-    let mut stack = vec![(PathBuf::new(), false)];
-    while let Some((rel, inside)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            let child = rel.join(name.as_ref());
-            match entry.metadata() {
-                Ok(m) if m.is_dir() => {
-                    if name == ".git" || name == ".duet" {
-                        continue;
-                    }
-                    stack.push((child, inside || BUILD_OUTPUT.contains(&name.as_ref())));
-                }
-                Ok(m) if m.is_file() && inside && m.modified().is_ok_and(|t| t >= since) => {
-                    out.push(child);
-                }
-                _ => {}
-            }
-        }
-    }
-    out.sort();
-    out
+fn inode_change_time(m: &std::fs::Metadata) -> std::time::SystemTime {
+    use std::os::unix::fs::MetadataExt;
+    u64::try_from(m.ctime())
+        .ok()
+        .and_then(|seconds| {
+            std::time::UNIX_EPOCH.checked_add(Duration::new(seconds, m.ctime_nsec() as u32))
+        })
+        .unwrap_or(std::time::UNIX_EPOCH)
 }
 
-/// Modification time and size of every workspace file outside build output.
-fn snapshot(workspace: &Path) -> std::collections::BTreeMap<PathBuf, (std::time::SystemTime, u64)> {
+#[derive(Debug, PartialEq, Eq)]
+struct FileStamp {
+    modified: std::time::SystemTime,
+    changed: std::time::SystemTime,
+    device: u64,
+    inode: u64,
+    size: u64,
+}
+
+/// Includes non-user-settable inode change time and identity, so restored
+/// mtime and same-length replacements do not conceal sensitive writes.
+fn snapshot(workspace: &Path) -> std::io::Result<std::collections::BTreeMap<PathBuf, FileStamp>> {
+    use std::os::unix::fs::MetadataExt;
     let mut out = std::collections::BTreeMap::new();
     let mut stack = vec![PathBuf::new()];
     while let Some(rel) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(workspace.join(&rel)) else {
-            continue;
-        };
-        for entry in entries.flatten() {
+        let entries = std::fs::read_dir(workspace.join(&rel))?;
+        for entry in entries {
+            let entry = entry?;
             let name = entry.file_name();
             let child = rel.join(&name);
-            match entry.metadata() {
-                Ok(m) if m.is_dir() => {
+            match entry.metadata()? {
+                m if m.is_dir() => {
                     if !SNAPSHOT_SKIP.contains(&name.to_string_lossy().as_ref()) {
                         stack.push(child);
                     }
                 }
-                Ok(m) if m.is_file() => {
-                    let modified = m.modified().unwrap_or(std::time::UNIX_EPOCH);
-                    out.insert(child, (modified, m.len()));
+                m if m.is_file() => {
+                    out.insert(
+                        child,
+                        FileStamp {
+                            modified: m.modified()?,
+                            changed: inode_change_time(&m),
+                            device: m.dev(),
+                            inode: m.ino(),
+                            size: m.len(),
+                        },
+                    );
                 }
                 _ => {}
             }
         }
     }
-    out
+    Ok(out)
 }
 
 async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
@@ -1021,6 +1018,72 @@ pub fn written_paths(journal: &WriteJournal) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn failed_workspace_inspection_is_not_an_empty_successful_snapshot() {
+        let d = tempfile::tempdir().unwrap();
+        let missing = d.path().join("missing");
+        assert!(super::snapshot(&missing).is_err());
+    }
+
+    #[test]
+    fn timestamp_preserving_sensitive_writes_are_detected() {
+        let d = tempfile::tempdir().unwrap();
+        let export = d.path().join("export.txt");
+        std::fs::write(&export, "publicxx").unwrap();
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_600_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&export)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let before = super::snapshot(d.path()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        std::fs::write(&export, "privatex").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&export)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let after = super::snapshot(d.path()).unwrap();
+        assert_ne!(
+            before.get(std::path::Path::new("export.txt")),
+            after.get(std::path::Path::new("export.txt")),
+            "same size plus restored mtime must not conceal a write"
+        );
+    }
+
+    #[test]
+    fn timestamp_preserving_sensitive_build_exports_are_detected() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir(d.path().join("target")).unwrap();
+        let untouched = d.path().join("target/untouched.txt");
+        std::fs::write(&untouched, "ordinary recent build output").unwrap();
+        let before = super::snapshot(d.path()).unwrap();
+        let export = d.path().join("target/export.txt");
+        std::fs::write(&export, "private result").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&export)
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH)
+            .unwrap();
+        assert!(
+            super::snapshot(d.path())
+                .unwrap()
+                .contains_key(std::path::Path::new("target/export.txt"))
+                && !before.contains_key(std::path::Path::new("target/export.txt")),
+            "cp -p can preserve an old source mtime in a new export"
+        );
+        assert_eq!(
+            before.get(std::path::Path::new("target/untouched.txt")),
+            super::snapshot(d.path())
+                .unwrap()
+                .get(std::path::Path::new("target/untouched.txt")),
+            "recent untouched build output must not become sensitive"
+        );
+    }
     use super::*;
 
     #[test]
@@ -1501,8 +1564,8 @@ mod sensitive_command_tests {
 
     #[tokio::test]
     async fn what_a_sensitive_command_writes_into_build_output_stays_sensitive() {
-        // Found by the privacy scenarios: the snapshot skips `target/` and
-        // `node_modules/`, so a transformed copy written there was public.
+        // Build output must be included in before/after snapshots: transformed
+        // copies are private; untouched recent outputs keep their classification.
         let d = tempfile::tempdir().unwrap();
         let ws = d.path().canonicalize().unwrap().join("ws");
         let run = d

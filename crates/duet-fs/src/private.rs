@@ -78,6 +78,34 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<(), FsError> {
     written
 }
 
+/// Durable private replacement through a pinned parent. Unlike path-based
+/// writes, a renamed or symlink-swapped parent cannot redirect the operation.
+pub fn write_private_pinned(
+    pinned: &crate::pinned::PinnedParent,
+    bytes: &[u8],
+) -> Result<(), FsError> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let temp = std::ffi::OsString::from(format!(
+        ".private-{}-{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let written = (|| {
+        let mut file = pinned.create_temp(&temp, 0o600)?;
+        crate::fault::write_all(&mut file, "write", pinned.path(), bytes)
+            .map_err(|e| FsError::io("write", pinned.path(), e))?;
+        file.sync_all()
+            .map_err(|e| FsError::io("sync", pinned.path(), e))?;
+        drop(file);
+        pinned.rename_into_place(&temp)?;
+        pinned.sync()
+    })();
+    if written.is_err() {
+        pinned.remove_temp(&temp);
+    }
+    written
+}
+
 /// Reads a JSON-lines file, dropping a torn final line left by a crash.
 /// Returns the complete lines; the file is truncated to them. Read and repair
 /// use the same regular-file handle without following a leaf symlink. An
@@ -180,6 +208,35 @@ mod tests {
         assert!(
             read_lines_repairing(&log).is_err(),
             "a dangling link is not a missing log"
+        );
+    }
+
+    #[test]
+    fn pinned_private_write_cannot_be_redirected_by_a_parent_symlink_swap() {
+        let d = tempfile::tempdir().unwrap();
+        let original = d.path().join("state");
+        let moved = d.path().join("old-state");
+        let outside = d.path().join("outside");
+        ensure_private_dir(&original).unwrap();
+        ensure_private_dir(&outside).unwrap();
+        let pinned =
+            crate::pinned::PinnedParent::open(d.path(), Path::new("state/derived.json"), false)
+                .unwrap();
+        fs::rename(&original, &moved).unwrap();
+        std::os::unix::fs::symlink(&outside, &original).unwrap();
+        write_private_pinned(&pinned, b"[\"export.txt\"]").unwrap();
+        assert_eq!(
+            fs::read(moved.join("derived.json")).unwrap(),
+            b"[\"export.txt\"]"
+        );
+        assert!(!outside.join("derived.json").exists());
+        assert_eq!(
+            fs::metadata(moved.join("derived.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
         );
     }
 

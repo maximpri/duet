@@ -3,6 +3,59 @@
 
 use crate::error::{ErrorKind, ProviderError};
 
+/// An immutable model endpoint admitted for an explicit role. Model-listing
+/// and diagnostic APIs require this token, so adding a caller cannot omit
+/// the local endpoint trust check before sending its credentials.
+#[derive(Debug, Clone)]
+pub struct ApprovedEndpoint {
+    url: reqwest::Url,
+}
+
+impl ApprovedEndpoint {
+    pub fn new(base_url: &str, role: &crate::Role) -> Result<Self, ProviderError> {
+        let url = reqwest::Url::parse(base_url).map_err(|_| {
+            ProviderError::new(
+                ErrorKind::Forbidden,
+                "model endpoint must be a valid HTTP(S) URL",
+            )
+        })?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(ProviderError::new(
+                ErrorKind::Forbidden,
+                "model endpoint must be HTTP(S), without URL credentials, query or fragment",
+            ));
+        }
+        if let crate::Role::Local {
+            allowlist,
+            allow_plaintext,
+        } = role
+        {
+            check_local_endpoint(url.as_str(), allowlist, *allow_plaintext)?;
+        }
+        Ok(Self { url })
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.url.as_str().trim_end_matches('/')
+    }
+
+    /// A wire-dialect adapter can change the API path, never the recipient.
+    pub(crate) fn permits(&self, target: &str) -> bool {
+        reqwest::Url::parse(target).is_ok_and(|url| {
+            url.origin() == self.url.origin()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.fragment().is_none()
+        })
+    }
+}
+
 /// Host and port of an `http(s)://host[:port]/...` URL.
 pub fn host_port(base_url: &str) -> Option<(String, u16)> {
     parsed_endpoint(base_url).map(|(host, port, _)| (host, port))
@@ -117,6 +170,41 @@ pub fn is_plaintext_remote(base_url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn approval_is_role_bound_and_rejects_credentials_without_echoing_them() {
+        let local = crate::Role::Local {
+            allowlist: Vec::new(),
+            allow_plaintext: false,
+        };
+        assert!(ApprovedEndpoint::new("https://untrusted.example/v1", &local).is_err());
+        assert!(
+            ApprovedEndpoint::new("https://provider.example/v1", &crate::Role::Frontier).is_ok()
+        );
+        for url in [
+            "http://user:fixture-password@127.0.0.1/v1",
+            "http://127.0.0.1/v1?key=fixture-password",
+            "http://127.0.0.1/v1#fixture-password",
+        ] {
+            let error = ApprovedEndpoint::new(url, &local).unwrap_err();
+            assert!(!error.message.contains("fixture-password"));
+        }
+    }
+
+    #[test]
+    fn an_approved_endpoint_allows_native_paths_but_never_another_recipient() {
+        let endpoint =
+            ApprovedEndpoint::new("https://provider.example/v1", &crate::Role::Frontier).unwrap();
+        assert!(endpoint.permits("https://provider.example/api/show"));
+        for url in [
+            "https://elsewhere.example/v1/chat/completions",
+            "http://provider.example/v1/chat/completions",
+            "https://provider.example:8443/v1/chat/completions",
+            "https://user:fixture@provider.example/v1/chat/completions",
+        ] {
+            assert!(!endpoint.permits(url));
+        }
+    }
 
     #[test]
     fn parses_hosts() {

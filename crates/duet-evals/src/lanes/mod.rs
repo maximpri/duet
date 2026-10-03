@@ -527,6 +527,7 @@ pub struct RunConfig<'a> {
     pub limits: Limits,
     /// Keep build output after grading (by default it is deleted).
     pub keep_build_output: bool,
+    pub budget: Option<std::sync::Arc<crate::budget::Budget>>,
 }
 
 fn local_electricity_seconds(wall_seconds: f64, ledger: Option<&DuetLedger>) -> f64 {
@@ -571,12 +572,24 @@ pub async fn run_one(cfg: RunConfig<'_>) -> Result<RunRecord> {
         fs::write(ws.join(".duet/config.toml"), project)?;
     }
 
+    if cfg.budget.is_some() {
+        // Host-side search may incur charges outside model completions.
+        fs::create_dir_all(ws.join(".duet"))?;
+        let path = ws.join(".duet/config.toml");
+        let mut project: toml::Table = fs::read_to_string(&path).unwrap_or_default().parse()?;
+        let mut web = toml::Table::new();
+        web.insert("enabled".into(), toml::Value::Boolean(false));
+        project.insert("web".into(), toml::Value::Table(web));
+        fs::write(path, toml::to_string(&project)?)?;
+    }
+
     let proxy_dir = run_dir.join("proxy");
-    let proxy = leakproxy::start(
+    let proxy = leakproxy::start_budgeted(
         "127.0.0.1:0".parse()?,
         &cfg.lane.upstream,
         prepared.manifest.clone(),
         &proxy_dir,
+        cfg.budget.clone(),
     )
     .await?;
     let proxy_url = proxy.base_url();

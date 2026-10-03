@@ -21,7 +21,15 @@ const PROXIES: &[&str] = &[
 fn model_requests_and_discovery_ignore_environment_proxies() {
     if let Ok(endpoint) = std::env::var(CHILD_ENDPOINT) {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
-            let transport = ReqwestTransport::new(Duration::from_millis(500));
+            let approved = duet_provider::endpoint::ApprovedEndpoint::new(
+                &endpoint,
+                &duet_provider::Role::Local {
+                    allowlist: Vec::new(),
+                    allow_plaintext: false,
+                },
+            )
+            .unwrap();
+            let transport = ReqwestTransport::new(approved.clone(), Duration::from_millis(500));
             let response = transport
                 .post(
                     format!("{endpoint}/chat/completions"),
@@ -30,7 +38,7 @@ fn model_requests_and_discovery_ignore_environment_proxies() {
                 )
                 .await;
             let listing = duet_provider::backends::list_models(
-                &endpoint,
+                &approved,
                 Some("fictional-discovery-key"),
                 Duration::from_millis(500),
             )
@@ -38,6 +46,13 @@ fn model_requests_and_discovery_ignore_environment_proxies() {
             if endpoint.starts_with("http://") {
                 assert_eq!(response.unwrap().status, 200);
                 assert!(listing.unwrap()["data"].is_array());
+                let context = duet_provider::probe::probe_context_window(
+                    &approved,
+                    "coder",
+                    Some("fictional-context-key"),
+                )
+                .await;
+                assert_eq!(context, Some(65536));
             } else {
                 // This reserved loopback port has no TLS server. A refused
                 // direct connection must not become a proxy CONNECT request.
@@ -50,7 +65,11 @@ fn model_requests_and_discovery_ignore_environment_proxies() {
 
     let direct = MockServer::start(&[
         ("POST /v1/chat/completions", 200, "{}"),
-        ("GET /v1/models", 200, r#"{"data":[]}"#),
+        (
+            "GET /v1/models",
+            200,
+            r#"{"data":[{"id":"coder","max_model_len":65536}]}"#,
+        ),
     ]);
     // Keep the port reserved without accepting requests, so HTTPS reliably
     // fails within the client's timeout without involving an external host.
@@ -89,6 +108,6 @@ fn model_requests_and_discovery_ignore_environment_proxies() {
         }
     }
     let seen = direct.seen();
-    assert_eq!(seen.len(), PROXIES.len() * 2);
+    assert_eq!(seen.len(), PROXIES.len() * 3);
     assert!(seen.iter().all(|request| request.bearer));
 }

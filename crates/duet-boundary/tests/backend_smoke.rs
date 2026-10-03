@@ -27,10 +27,18 @@ async fn smoke(backend: &str) {
         eprintln!("{var} is not set; skipped");
         return;
     };
+    let endpoint = duet_provider::endpoint::ApprovedEndpoint::new(
+        &url,
+        &Role::Local {
+            allowlist: Vec::new(),
+            allow_plaintext: false,
+        },
+    )
+    .expect("loopback endpoint");
     let model = match std::env::var(format!("DUET_LIVE_{backend}_MODEL")) {
         Ok(m) => m,
         Err(_) => {
-            let listing = list_models(&url, None, Duration::from_secs(10))
+            let listing = list_models(&endpoint, None, Duration::from_secs(10))
                 .await
                 .unwrap_or_else(|e| panic!("{url}: {e}"));
             model_ids(&listing)

@@ -28,7 +28,7 @@ use crate::canary::Manifest;
 use crate::wsframe::{self, ControlKind, DataKind};
 use anyhow::{Context, Result};
 use bytes::Bytes;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use http_body_util::{BodyExt, StreamBody, combinators::BoxBody};
 use hyper::body::{Frame, Incoming};
 use hyper::header::HeaderMap;
@@ -148,6 +148,7 @@ struct State {
     client: reqwest::Client,
     /// HTTP/1.1 only: WebSocket upgrades.
     upgrade_client: reqwest::Client,
+    budget: Option<Arc<crate::budget::Budget>>,
 }
 
 pub struct ProxyHandle {
@@ -171,6 +172,16 @@ pub async fn start(
     manifest: Manifest,
     log_dir: &Path,
 ) -> Result<ProxyHandle> {
+    start_budgeted(listen, upstream, manifest, log_dir, None).await
+}
+
+pub async fn start_budgeted(
+    listen: SocketAddr,
+    upstream: &str,
+    manifest: Manifest,
+    log_dir: &Path,
+    budget: Option<Arc<crate::budget::Budget>>,
+) -> Result<ProxyHandle> {
     fs::create_dir_all(log_dir.join("requests"))?;
     fs::create_dir_all(log_dir.join("responses"))?;
     let state = Arc::new(State {
@@ -178,8 +189,18 @@ pub async fn start(
         manifest,
         log_dir: log_dir.to_path_buf(),
         seq: AtomicU64::new(0),
-        client: reqwest::Client::builder().build()?,
-        upgrade_client: reqwest::Client::builder().http1_only().build()?,
+        client: reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .build()?,
+        upgrade_client: reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .http1_only()
+            .build()?,
+        budget,
     });
     let listener = TcpListener::bind(listen).await?;
     let addr = listener.local_addr()?;
@@ -292,6 +313,14 @@ async fn forward(state: &Arc<State>, mut req: Request<Incoming>) -> Result<Respo
     // Scan and store before anything leaves the machine.
     let leaked_names = scan(state, seq, &body)?;
 
+    let reservation = state
+        .budget
+        .as_ref()
+        .map(|budget| {
+            anyhow::ensure!(!websocket, "budgeted requests cannot use WebSockets");
+            budget.reserve(parts.method.as_str(), &path, &body)
+        })
+        .transpose()?;
     let url = format!("{}{}", state.upstream, path);
     let method = reqwest::Method::from_bytes(parts.method.as_str().as_bytes())?;
     let client = if websocket {
@@ -401,16 +430,41 @@ async fn forward(state: &Arc<State>, mut req: Request<Incoming>) -> Result<Respo
     }
 
     let capture = state.log_dir.join(format!("responses/{seq:05}.body"));
-    let mut file = fs::File::create(&capture)?;
-    let stream = resp
-        .bytes_stream()
-        .map_err(std::io::Error::other)
-        .map(move |chunk| {
-            if let Ok(bytes) = &chunk {
-                let _ = file.write_all(bytes);
+    let file = fs::File::create(&capture)?;
+    let stream = futures_util::stream::unfold(
+        (resp.bytes_stream(), file, reservation, Vec::new()),
+        move |(mut source, mut file, reservation, mut captured)| async move {
+            match source.next().await {
+                Some(chunk) => {
+                    let chunk = chunk.map_err(std::io::Error::other).and_then(|bytes| {
+                        file.write_all(&bytes)?;
+                        if reservation.is_some() {
+                            if captured.len().saturating_add(bytes.len()) > MAX_WS_MESSAGE {
+                                return Err(std::io::Error::other(
+                                    "budget response exceeds capture limit",
+                                ));
+                            }
+                            captured.extend_from_slice(&bytes);
+                        }
+                        Ok(Frame::data(bytes))
+                    });
+                    Some((chunk, (source, file, reservation, captured)))
+                }
+                None => {
+                    if let Some(reservation) = reservation
+                        && let Err(error) =
+                            reservation.finish(&captured, (200..300).contains(&status))
+                    {
+                        return Some((
+                            Err(std::io::Error::other(error.to_string())),
+                            (source, file, None, captured),
+                        ));
+                    }
+                    None
+                }
             }
-            chunk.map(Frame::data)
-        });
+        },
+    );
     Ok(builder.body(BodyExt::boxed(StreamBody::new(stream)))?)
 }
 
@@ -781,6 +835,76 @@ mod tests {
     use super::*;
     use crate::canary::{CanaryKind, Generator};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn budget_halts_after_missing_usage_and_refuses_unpriced_traffic() {
+        let upstream = fake_upstream().await;
+        let dir = tempfile::tempdir().unwrap();
+        let price = crate::cost::Price {
+            model: "test".into(),
+            input: 1.0,
+            cache_read: 0.1,
+            cache_write: 1.0,
+            output: 2.0,
+            source: "test".into(),
+            observed: "test".into(),
+            verified: true,
+        };
+        let budget = crate::budget::Budget::create(
+            &dir.path().join("budget.jsonl"),
+            1.0,
+            &price,
+            1000,
+            1000,
+        )
+        .unwrap();
+        let proxy = start_budgeted(
+            "127.0.0.1:0".parse().unwrap(),
+            &format!("http://{upstream}"),
+            Generator::new("S1", 1).manifest("budget", 1),
+            &dir.path().join("proxy"),
+            Some(budget.clone()),
+        )
+        .await
+        .unwrap();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = client
+            .get(format!("{}/models", proxy.base_url()))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        assert!(
+            !fs::read_to_string(dir.path().join("budget.jsonl"))
+                .unwrap()
+                .contains("reserved")
+        );
+        let response = client
+            .post(format!("{}/chat/completions", proxy.base_url()))
+            .body(r#"{"model":"test","messages":[]}"#)
+            .send()
+            .await;
+        if let Ok(response) = response {
+            let _ = response.bytes().await;
+        }
+        assert!(budget.check().is_err());
+        let response = client
+            .post(format!("{}/chat/completions", proxy.base_url()))
+            .body(r#"{"model":"test","messages":[]}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 502);
+        let journal = fs::read_to_string(dir.path().join("budget.jsonl")).unwrap();
+        assert_eq!(
+            journal
+                .lines()
+                .filter(|s| s.contains("\"reserved\""))
+                .count(),
+            1
+        );
+        proxy.stop();
+    }
 
     /// A fake provider that streams two SSE chunks and echoes the request path.
     async fn fake_upstream() -> SocketAddr {

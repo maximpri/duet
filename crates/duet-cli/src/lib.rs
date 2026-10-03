@@ -47,9 +47,11 @@ mod history;
 mod images;
 mod lsp;
 mod mcp;
+mod operations;
 mod overrides;
 mod plugins;
 mod pricing;
+mod privacy;
 mod scan;
 #[cfg(test)]
 mod scoped_instruction_tests;
@@ -176,6 +178,8 @@ enum Cmd {
     },
     /// Scan the repository for security candidates; reports stay in .duet/runs.
     Scan(scan::Args),
+    /// Preview file rules, model destinations and privacy exceptions offline.
+    Privacy(privacy::Args),
     /// Run a task.
     Run {
         /// The task, as text.
@@ -236,8 +240,11 @@ enum Cmd {
     /// Delete raw run data (handles, transcripts, vault) older than the retention period, or one run.
     Purge {
         run_id: Option<String>,
-        #[arg(long)]
+        #[arg(long, conflicts_with = "run_id")]
         all: bool,
+        /// List selected runs without deleting data.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Measure the configured local model in its reading roles (accuracy, schema, leaks, prefill).
     LocalEval {
@@ -264,6 +271,12 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum AuditCmd {
+    /// Export verified, metadata-only audit events as JSON.
+    Export { run_id: String },
+    /// Check for missing, altered or unanchored audit logs; exit 1 needs attention.
+    Check { run_id: Option<String> },
+    /// Report raw-data expiry and audit logs due for retention review.
+    Retention,
     /// List a run's outbound requests and security events.
     Show {
         run_id: String,
@@ -529,11 +542,7 @@ pub(crate) fn run_anchor(ws: &Path, run_id: &str) -> RunAnchors {
 }
 
 fn checked_run_id(run_id: &str) -> Result<&str> {
-    ensure!(
-        !run_id.is_empty() && !run_id.contains('/') && !run_id.contains(".."),
-        "invalid run id"
-    );
-    Ok(run_id)
+    duet_agent::purge::check_run_id(run_id).map_err(anyhow::Error::msg)
 }
 
 const PASSTHROUGH_BANNER: &str = "\
@@ -845,12 +854,13 @@ async fn prepare(
             eprintln!(
                 "no local model (local.enabled = false): sensitive content reaches the frontier only as handles; ask_local and edit_protected are refused"
             );
-            Some(Engine::open(run_dir, policy(cfg)?, None)?)
+            Some(Engine::open_for_workspace(ws, run_dir, policy(cfg)?, None)?)
         }
         Mode::Hybrid => {
             let (local, event) = local_provider(cfg, manifest.local.as_ref(), Some(limits))?;
             trust = Some(event);
-            Some(Engine::open(
+            Some(Engine::open_for_workspace(
+                ws,
                 run_dir,
                 policy(cfg)?,
                 Some(LocalReader::new(local)),
@@ -1054,23 +1064,40 @@ fn verify_run(path: &Path, anchors: &RunAnchors) -> Result<i32> {
     Ok(code)
 }
 
-fn purge(ws: &Path, run_id: Option<&str>, all: bool, retention_days: i64) -> Result<()> {
-    use duet_agent::purge::{Scope, candidates, purge_run};
-    if let Some(id) = run_id {
-        purge_run(ws, id).with_context(|| format!("run {id}"))?;
-        println!("purged {id}");
-        return Ok(());
-    }
-    let scope = if all {
-        Scope::All
+fn purge(
+    ws: &Path,
+    run_id: Option<&str>,
+    all: bool,
+    retention_days: i64,
+    dry_run: bool,
+) -> Result<()> {
+    use duet_agent::purge::{Scope, purge_run, try_candidates};
+    let _lock = if dry_run {
+        None
     } else {
-        Scope::OlderThan {
-            days: retention_days,
-        }
+        Some(duet_fs::lock::WorkspaceLock::acquire(ws)?)
     };
-    for id in candidates(ws, scope) {
-        purge_run(ws, &id).with_context(|| format!("run {id}"))?;
-        println!("purged {id}");
+    let selected = if let Some(id) = run_id {
+        vec![checked_run_id(id)?.to_owned()]
+    } else {
+        try_candidates(
+            ws,
+            if all {
+                Scope::All
+            } else {
+                Scope::OlderThan {
+                    days: retention_days,
+                }
+            },
+        )?
+    };
+    for id in selected {
+        if dry_run {
+            println!("would purge {}", duet_tui::term::safe(&id));
+        } else {
+            purge_run(ws, &id).with_context(|| format!("run {id}"))?;
+            println!("purged {}", duet_tui::term::safe(&id));
+        }
     }
     Ok(())
 }
@@ -1402,6 +1429,9 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         Cmd::Audit { action } => {
             match action {
+                AuditCmd::Export { run_id } => return operations::export(&ws, &run_id),
+                AuditCmd::Check { run_id } => return operations::check(&ws, run_id.as_deref()),
+                AuditCmd::Retention => return operations::retention(&ws, &load_config(&ws, emb)?),
                 AuditCmd::Show { run_id, raw } => {
                     let path = ws
                         .join(".duet/audit")
@@ -1499,9 +1529,20 @@ Add --no-privacy to confirm, or use --mode hybrid."
             }
             Ok(0)
         }
-        Cmd::Purge { run_id, all } => {
+        Cmd::Privacy(args) => privacy::run(&ws, args, &load_config(&ws, emb)?),
+        Cmd::Purge {
+            run_id,
+            all,
+            dry_run,
+        } => {
             let cfg = load_config(&ws, emb)?;
-            purge(&ws, run_id.as_deref(), all, cfg.int("data.retention_days")?)?;
+            purge(
+                &ws,
+                run_id.as_deref(),
+                all,
+                cfg.int("data.retention_days")?,
+                dry_run,
+            )?;
             Ok(0)
         }
         Cmd::LocalEval { sizes, seed, out } => {

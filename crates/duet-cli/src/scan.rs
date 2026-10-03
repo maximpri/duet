@@ -177,7 +177,7 @@ async fn scan(
     } else {
         None
     };
-    let engine = Engine::open(dir, crate::policy(&cfg)?, local)?;
+    let engine = Engine::open_for_workspace(ws, dir, crate::policy(&cfg)?, local)?;
     let git = duet_git::Git::locate()?;
     let commit = || {
         git.run(ws, &["rev-parse", "--verify", "HEAD"], &[], None)

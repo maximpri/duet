@@ -83,6 +83,27 @@ impl Transport for Script {
 }
 
 #[tokio::test]
+async fn approved_transport_refuses_an_adapter_switching_the_recipient() {
+    use crate::client::ReqwestTransport;
+    use crate::mock_http::MockServer;
+    let approved = MockServer::start(&[]);
+    let other = MockServer::start(&[("POST /v1/chat/completions", 200, "{}")]);
+    let endpoint =
+        crate::endpoint::ApprovedEndpoint::new(&approved.base_url(), &Role::Frontier).unwrap();
+    let transport = ReqwestTransport::new(endpoint, Duration::from_secs(2));
+    let result = transport
+        .post(
+            format!("{}/chat/completions", other.base_url()),
+            vec![("authorization".into(), "Bearer test-only-key".into())],
+            b"private prompt".to_vec(),
+        )
+        .await;
+    assert!(result.is_err());
+    assert!(approved.seen().is_empty());
+    assert!(other.seen().is_empty());
+}
+
+#[tokio::test]
 async fn http_transport_does_not_forward_requests_to_redirect_recipients() {
     use crate::client::ReqwestTransport;
     use crate::mock_http::MockServer;
@@ -93,7 +114,9 @@ async fn http_transport_does_not_forward_requests_to_redirect_recipients() {
         &[("POST /v1/chat/completions", 307, "{}")],
         &[("location", &location)],
     );
-    let transport = ReqwestTransport::new(Duration::from_secs(2));
+    let endpoint =
+        crate::endpoint::ApprovedEndpoint::new(&source.base_url(), &Role::Frontier).unwrap();
+    let transport = ReqwestTransport::new(endpoint, Duration::from_secs(2));
     let reply = transport
         .post(
             format!("{}/chat/completions", source.base_url()),

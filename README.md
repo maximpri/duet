@@ -1,6 +1,6 @@
 # Duet
 
-**Frontier coding. Keep your private data local.**
+**Frontier coding for private work.**
 
 Duet brings frontier models to confidential software work. It is designed for banks, government security teams and organizations building systems around data they cannot share with a model provider.
 
@@ -16,14 +16,15 @@ Fix a financial reporting pipeline. Debug against confidential logs. Work with a
 
 The two models have different jobs. The frontier does the coding. The local model reads sensitive content and answers questions about it. Duet checks those answers before they enter the frontier's context.
 
-- **Private data stays behind the boundary.** Files classified as sensitive are represented by references, schemas and synthetic examples. Detected credentials become placeholders.
+- **Raw sensitive files stay behind the boundary.** Files classified as sensitive are represented by references, schemas and synthetic examples. Detected credentials become placeholders.
 - **You decide how much code to share.** Keep ordinary code available to the frontier, expose only the interface of a private module, or seal its contents.
 - **The application enforces the rules.** Sandboxed commands and outbound checks apply regardless of what a model or repository instruction asks for.
+- **Check the policy before you start.** `duet privacy` previews file rules, model destinations and policy exceptions offline.
 - **You can inspect the result.** Review the patch in **Changes** and what was prepared for the frontier in **Privacy**. Saved audits can be checked for tampering.
 
-In our six-task comparison, with 18 runs per lane, Duet passed **98.3% of hidden tests**, versus **97.5%** with the same frontier model and the privacy boundary disabled. No planted private values appeared in the hybrid lane's captured outbound traffic. [Results and methodology](docs/VALUE_EVIDENCE.md)
+In our recorded six-task comparison, with 18 runs per lane, Duet passed **98.3% of hidden tests**, versus **97.5%** with the same frontier model and the privacy boundary disabled. No planted private values appeared in the hybrid lane's captured outbound traffic. [Results and methodology](docs/VALUE_EVIDENCE.md)
 
-Hybrid mode sends permitted code and filtered context to the frontier. For work that must use only your own model, `duet --mode top-clearance` disables frontier calls, web tools and command networking. Use a model on your machine or a trusted self-hosted endpoint.
+Hybrid mode sends permitted code and checked answers to the frontier. Choose `duet --mode top-clearance` when source data and conclusions must stay with your own model: it disables frontier calls, web tools and command networking. Use a model on your machine or a trusted self-hosted endpoint.
 
 [Security design](docs/SECURE_BY_DESIGN.md) · [Threat model](SECURITY.md) · [Measured results](docs/VALUE_EVIDENCE.md)
 
@@ -41,9 +42,12 @@ The installer builds Duet and puts it in `~/.local/bin`. Add that directory to y
 export PATH="$HOME/.local/bin:$PATH"
 duet setup
 duet doctor
+duet privacy
 ```
 
-[Model setup](docs/USAGE.md#models)
+[Model setup](docs/USAGE.md#models) · [Verified GitHub release installation](docs/INSTALLATION.md#install-a-verified-binary)
+
+Binary installation is ready for owner-published releases on macOS and Linux, on ARM64 and x86-64. It verifies the release against a signing identity you trust and retains the matching GPL source and notices.
 
 ## Use it
 
@@ -62,5 +66,7 @@ duet --check 'python3 -m unittest -v'
 Try the [fictional billing example](docs/launch/DEMO.md#reproduce-the-task), or read the [usage guide](docs/USAGE.md) for configuration, audit commands and local-only work.
 
 Evaluating Duet for your organization? The [deployment evaluation guide](docs/INSTITUTIONAL_EVALUATION.md) maps controls to evidence and walks through a pilot with synthetic data. Duet is a development preview; the [publication review](docs/PUBLISH_READINESS.md) records verified checks and remaining work, and the [security documentation](SECURITY.md) defines its trust assumptions and protection scope.
+
+[Privacy preview](docs/PRIVACY_PREFLIGHT.md) · [Audit and retention](docs/OPERATIONS.md) · [Independent review brief](docs/SECURITY_REVIEW_BRIEF.md)
 
 [Contributing](CONTRIBUTING.md) · [Extensions](docs/EXTENSIONS.md) · [GPL-3.0-or-later](LICENSE) · [Third-party notices](LICENSES.md)

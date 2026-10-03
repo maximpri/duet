@@ -27,6 +27,11 @@ duet run --quiet "..."          # the same without progress on standard error (t
 duet run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
 duet audit show <run>           # see exactly what was sent to the frontier, and the security events
 duet audit verify <run>         # check the hash chain and its anchor
+duet audit export <run>         # verified metadata-only JSON; no request or event text
+duet audit check [run]          # nonzero exit for missing, altered or unanchored logs
+duet audit retention            # review raw-data expiry and audit archival thresholds
+duet purge --dry-run            # preview expired raw runs without deleting them
+duet privacy                    # offline file rules, model destinations and exceptions
 duet audit disclosure <run>     # what was withheld from the frontier, by class (counts only)
 duet resume <run>               # continue an interrupted one-shot run
 duet config list                # every setting, its value and where it came from
@@ -43,6 +48,9 @@ duet scan --rules-only          # scan existing code without model opinions
 duet scan --background          # return a scan id; inspect with duet scan --status <id>
 duet purge                      # delete raw run data older than the retention period
 ```
+
+[Privacy preview](PRIVACY_PREFLIGHT.md) explains the offline report and its exit codes.
+[Operations](OPERATIONS.md) covers audit export, monitoring and retention.
 
 ## Goals and history
 

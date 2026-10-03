@@ -25,6 +25,18 @@ pub const DUET_DIR: &str = ".duet";
 
 pub const ENTRIES: &[Entry] = &[
     Entry {
+        path: ".duet/derived.json",
+        lifetime: Lifetime::Preserved,
+        sensitive: true,
+        purpose: "workspace-wide paths derived from sensitive data",
+    },
+    Entry {
+        path: ".duet/derived.pending",
+        lifetime: Lifetime::Preserved,
+        sensitive: true,
+        purpose: "incomplete sensitive-command classification marker",
+    },
+    Entry {
         path: ".duet/skills",
         lifetime: Lifetime::Preserved,
         sensitive: true,

@@ -16,6 +16,7 @@ duet-provider.workspace = true
 duet-fs.workspace = true
 duet-config.workspace = true
 duet-review.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -42,6 +43,7 @@ futures-util = { workspace = true, optional = true }
 test-support = ["dep:bytes", "dep:futures-util"]
 
 [dev-dependencies]
+duet-fs = { workspace = true, features = ["fault-injection"] }
 tempfile = "3"
 # The integration tests use `testing::canary`.
 duet-boundary = { path = ".", features = ["test-support"] }

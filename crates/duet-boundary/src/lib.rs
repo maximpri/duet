@@ -8,6 +8,7 @@
 pub mod audit;
 pub mod bulky;
 pub mod condense;
+pub mod derived;
 pub mod detect;
 pub mod engine;
 pub mod gate;

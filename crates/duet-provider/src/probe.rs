@@ -74,22 +74,25 @@ pub fn context_from_native(document: &Value) -> Option<u64> {
 
 /// Queries `base_url` (ending in `/v1`) for `model`'s context window.
 pub async fn probe_context_window(
-    base_url: &str,
+    endpoint: &crate::endpoint::ApprovedEndpoint,
     model: &str,
     bearer: Option<&str>,
 ) -> Option<u64> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .ok()?;
+    let client = crate::http::client(
+        endpoint,
+        std::time::Duration::from_secs(10),
+        Some(std::time::Duration::from_secs(10)),
+    )
+    .ok()?;
     let auth = |rb: reqwest::RequestBuilder| match bearer {
         Some(k) => rb.bearer_auth(k),
         None => rb,
     };
-    let base = base_url.trim_end_matches('/');
+    let base = endpoint.as_str();
     let root = base.strip_suffix("/v1").unwrap_or(base);
-    if let Ok(resp) = auth(client.get(format!("{base}/models"))).send().await
+    if let Ok(resp) = auth(client.get(format!("{base}/models")).ok()?)
+        .send()
+        .await
         && resp.status().is_success()
         && let Ok(v) = resp.json::<Value>().await
         && let Some(n) = context_from_models_listing(&v, model)
@@ -97,13 +100,14 @@ pub async fn probe_context_window(
         return Some(n);
     }
     let attempts = [
-        auth(client.get(format!("{root}/props"))),
+        auth(client.get(format!("{root}/props")).ok()?),
         auth(
             client
                 .post(format!("{root}/api/show"))
+                .ok()?
                 .json(&serde_json::json!({"model": model})),
         ),
-        auth(client.get(format!("{root}/api/v0/models/{model}"))),
+        auth(client.get(format!("{root}/api/v0/models/{model}")).ok()?),
     ];
     for rb in attempts {
         if let Ok(resp) = rb.send().await
@@ -283,6 +287,17 @@ pub async fn vision_probe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn approved(server: &crate::mock_http::MockServer) -> crate::endpoint::ApprovedEndpoint {
+        crate::endpoint::ApprovedEndpoint::new(
+            &server.base_url(),
+            &crate::Role::Local {
+                allowlist: Vec::new(),
+                allow_plaintext: false,
+            },
+        )
+        .unwrap()
+    }
     use serde_json::json;
 
     #[test]
@@ -341,14 +356,14 @@ mod tests {
             &[("location", &location)],
         );
         assert_eq!(
-            probe_context_window(&source.base_url(), "q", Some("k")).await,
+            probe_context_window(&approved(&source), "q", Some("k")).await,
             None
         );
         assert!(destination.seen().is_empty());
         assert_eq!(source.seen().len(), 4);
         let denied = MockServer::start(&[("GET /v1/models", 403, body)]);
         assert_eq!(
-            probe_context_window(&denied.base_url(), "q", None).await,
+            probe_context_window(&approved(&denied), "q", None).await,
             None
         );
     }
@@ -362,7 +377,7 @@ mod tests {
             r#"{"data":[{"id":"q","max_model_len":65536}]}"#,
         )]);
         assert_eq!(
-            probe_context_window(&vllm.base_url(), "q", None).await,
+            probe_context_window(&approved(&vllm), "q", None).await,
             Some(65536)
         );
         let ollama = MockServer::start(&[
@@ -374,13 +389,13 @@ mod tests {
             ),
         ]);
         assert_eq!(
-            probe_context_window(&ollama.base_url(), "q:8b", Some("k")).await,
+            probe_context_window(&approved(&ollama), "q:8b", Some("k")).await,
             Some(40960)
         );
         assert!(ollama.seen().iter().all(|r| r.bearer));
         let silent = MockServer::start(&[("GET /v1/models", 200, r#"{"data":[{"id":"m"}]}"#)]);
         assert_eq!(
-            probe_context_window(&silent.base_url(), "m", None).await,
+            probe_context_window(&approved(&silent), "m", None).await,
             None
         );
     }

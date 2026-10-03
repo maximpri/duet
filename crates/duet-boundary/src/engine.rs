@@ -333,8 +333,8 @@ pub struct Engine {
     state: Mutex<State>,
     /// Files created or changed by commands that could read sensitive data.
     derived: Mutex<std::collections::HashSet<std::path::PathBuf>>,
-    /// Where `derived` is persisted, so a resumed run keeps it.
-    derived_file: std::path::PathBuf,
+    /// Shared workspace classification store (run-local for isolated embeddings).
+    derived_store: crate::derived::Store,
     /// Where the operator's placeholders are persisted.
     operator_file: std::path::PathBuf,
     /// Where the digests of images routed to the frontier are persisted.
@@ -394,10 +394,51 @@ static OPERATOR_NUMBER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b\d(?:[ -]?\d){11,18}\b").expect("static regex"));
 
 impl Engine {
+    /// Run-scoped state for isolated callers and test fixtures. Workspace
+    /// integrations must use `open_for_workspace` so derived classifications
+    /// survive a new run ID and retention of individual run directories.
     pub fn open(
         run_dir: &Path,
         policy: Policy,
         local: Option<LocalReader>,
+    ) -> Result<Arc<Self>, FsError> {
+        let derived_file = run_dir.join("derived.json");
+        let derived = crate::derived::load(&derived_file)?;
+        Self::open_state(run_dir, policy, local, None, derived)
+    }
+
+    /// Opens a shipped workspace run. The caller holds its workspace lock.
+    /// Derived classifications outlive individual runs and run retention.
+    pub fn open_for_workspace(
+        workspace: &Path,
+        run_dir: &Path,
+        policy: Policy,
+        local: Option<LocalReader>,
+    ) -> Result<Arc<Self>, FsError> {
+        let derived = crate::derived::workspace_paths(workspace)?;
+        duet_fs::private::ensure_private_dir(&workspace.join(".duet"))?;
+        let store = crate::derived::Store::open(workspace, Path::new(".duet/derived.json"))?;
+        store.save(&derived)?;
+        Self::open_state(run_dir, policy, local, Some(store), derived)
+    }
+
+    /// Loads classification state for local inspection without modifying the
+    /// workspace. The caller supplies an isolated private scratch directory.
+    pub fn open_for_inspection(
+        workspace: &Path,
+        private_dir: &Path,
+        policy: Policy,
+    ) -> Result<Arc<Self>, FsError> {
+        let derived = crate::derived::workspace_paths(workspace)?;
+        Self::open_state(private_dir, policy, None, None, derived)
+    }
+
+    fn open_state(
+        run_dir: &Path,
+        policy: Policy,
+        local: Option<LocalReader>,
+        store: Option<crate::derived::Store>,
+        derived: std::collections::HashSet<std::path::PathBuf>,
     ) -> Result<Arc<Self>, FsError> {
         let detectors = Detectors {
             secrets: policy.detect_secrets,
@@ -438,6 +479,10 @@ impl Engine {
             structure: structure::StructureState::open(run_dir),
             explored: Default::default(),
         });
+        let derived_store = match store {
+            Some(store) => store,
+            None => crate::derived::Store::open(run_dir, Path::new("derived.json"))?,
+        };
         Ok(Arc::new_cyclic(|me| Self {
             me: me.clone(),
             policy,
@@ -446,13 +491,8 @@ impl Engine {
             local,
             digest_cache: Default::default(),
             review_second: Default::default(),
-            derived: Mutex::new(
-                std::fs::read(run_dir.join("derived.json"))
-                    .ok()
-                    .and_then(|b| serde_json::from_slice(&b).ok())
-                    .unwrap_or_default(),
-            ),
-            derived_file: run_dir.join("derived.json"),
+            derived: Mutex::new(derived),
+            derived_store,
             operator_file: run_dir.join("operator.json"),
             images_file: run_dir.join("frontier-images.json"),
             probes_file: run_dir.join("probes.json"),
@@ -2262,25 +2302,28 @@ impl Presenter for Engine {
         self.ip_implement(path, current, request)
     }
 
-    fn mark_sensitive(&self, workspace: &Path, paths: &[std::path::PathBuf]) {
+    fn begin_sensitive_command(&self) -> Result<(), FsError> {
+        self.derived_store.begin()
+    }
+
+    fn mark_sensitive(
+        &self,
+        workspace: &Path,
+        paths: &[std::path::PathBuf],
+    ) -> Result<(), FsError> {
         {
             let mut derived = self
                 .derived
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let before = derived.len();
             derived.extend(
                 paths
                     .iter()
                     .filter(|rel| !self.policy.is_sensitive_path(rel))
                     .cloned(),
             );
-            if derived.len() != before {
-                let _ = duet_fs::private::write_private(
-                    &self.derived_file,
-                    &serde_json::to_vec(&*derived).unwrap_or_default(),
-                );
-            }
+            self.derived_store.save(&derived)?;
+            self.derived_store.finish()?;
         }
         self.note_rewritten(paths);
         // Every file the command wrote is indexed now, whether it was
@@ -2293,6 +2336,7 @@ impl Presenter for Engine {
                 self.index_sensitive(&mut st, rel, &text);
             }
         }
+        Ok(())
     }
 
     fn extra_tools(&self) -> Vec<ToolSpec> {
@@ -4064,6 +4108,29 @@ mod prime_tests {
     }
 
     #[test]
+    fn derived_files_remain_sensitive_in_a_new_workspace_run() {
+        let (d, ws) = workspace(&[("export.txt", "The acquisition closes on Tuesday.\n")]);
+        let first = Engine::open_for_workspace(
+            &ws,
+            &d.path().join("run-one"),
+            super::tests::policy(),
+            None,
+        )
+        .unwrap();
+        first.begin_sensitive_command().unwrap();
+        first.mark_sensitive(&ws, &["export.txt".into()]).unwrap();
+        drop(first);
+        let second = Engine::open_for_workspace(
+            &ws,
+            &d.path().join("run-two"),
+            super::tests::policy(),
+            None,
+        )
+        .unwrap();
+        assert!(second.path_sensitive(Path::new("export.txt")));
+    }
+
+    #[test]
     fn files_a_sensitive_command_writes_are_indexed_even_when_already_sensitive() {
         let (d, ws) = workspace(&[("data/a.csv", "id,email\n1,kim.berg@mailbox-2.net\n")]);
         let e = Engine::open(&d.path().join("run"), super::tests::policy(), None).unwrap();
@@ -4081,7 +4148,8 @@ mod prime_tests {
             "OLU ADEYEMI 4012 8888 8888 1881\n",
         )
         .unwrap();
-        e.mark_sensitive(&ws, &["data/a.csv".into(), "target/export.txt".into()]);
+        e.mark_sensitive(&ws, &["data/a.csv".into(), "target/export.txt".into()])
+            .unwrap();
         assert!(
             e.lock().vault.contains("olu.adeyemi@mailbox-5.net"),
             "rewritten file re-indexed"

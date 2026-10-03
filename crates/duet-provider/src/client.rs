@@ -2,7 +2,7 @@
 //! HTTP client for every wire dialect: streaming, deadlines and retries.
 
 use crate::dialect::Dialect;
-use crate::endpoint::check_local_endpoint;
+use crate::endpoint::ApprovedEndpoint;
 use crate::error::{ErrorKind, ProviderError, is_context_overflow};
 use crate::live::{Differ, StreamEvent, StreamTap};
 use crate::retry::{backoff, parse_retry_after};
@@ -35,21 +35,13 @@ pub trait Transport: Send + Sync {
 }
 
 pub struct ReqwestTransport {
-    client: reqwest::Client,
+    client: crate::http::Client,
 }
 
 impl ReqwestTransport {
-    pub fn new(connect_timeout: Duration) -> Self {
+    pub fn new(endpoint: ApprovedEndpoint, connect_timeout: Duration) -> Self {
         Self {
-            client: reqwest::Client::builder()
-                .connect_timeout(connect_timeout)
-                // The configured endpoint is the approved data recipient.
-                // Environment/system proxies and redirects must not move
-                // prompts or credentials elsewhere, including loopback prompts.
-                .no_proxy()
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .expect("reqwest client"),
+            client: crate::http::client(&endpoint, connect_timeout, None).expect("reqwest client"),
         }
     }
 }
@@ -61,7 +53,10 @@ impl Transport for ReqwestTransport {
         headers: Vec<(String, String)>,
         body: Vec<u8>,
     ) -> BoxFuture<'static, Result<HttpReply, ProviderError>> {
-        let mut rb = self.client.post(url).body(body);
+        let mut rb = match self.client.post(&url) {
+            Ok(rb) => rb.body(body),
+            Err(error) => return Box::pin(async move { Err(error) }),
+        };
         for (k, v) in headers {
             rb = rb.header(k, v);
         }
@@ -207,20 +202,15 @@ impl ChatProvider {
         config: ProviderConfig,
         transport: Box<dyn Transport>,
     ) -> Result<Self, ProviderError> {
-        if let Role::Local {
-            allowlist,
-            allow_plaintext,
-        } = &config.role
-        {
-            check_local_endpoint(&config.base_url, allowlist, *allow_plaintext)?;
-        }
+        ApprovedEndpoint::new(&config.base_url, &config.role)?;
         Ok(Self { config, transport })
     }
 
     pub fn with_reqwest(config: ProviderConfig) -> Result<Self, ProviderError> {
+        let endpoint = ApprovedEndpoint::new(&config.base_url, &config.role)?;
         Self::new(
             config,
-            Box::new(ReqwestTransport::new(Duration::from_secs(20))),
+            Box::new(ReqwestTransport::new(endpoint, Duration::from_secs(20))),
         )
     }
 

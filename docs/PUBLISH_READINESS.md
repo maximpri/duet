@@ -1,4 +1,4 @@
-# Publication readiness — October 2, 2026
+# Publication readiness — October 3, 2026
 
 Duet is being prepared for publication as a **GPL-3.0-or-later development
 preview**. Its code, tests and recorded tasks support evaluation of frontier
@@ -10,6 +10,35 @@ This review covers the source changes committed with this document; the retained
 the checked files and logs. The older
 [acceptance ledger](ACCEPTANCE.md) preserves historical measurements and verdicts;
 its individual rows have not all been re-audited.
+
+## Current implementation review
+
+The follow-up adds six release and operations improvements:
+
+- A private model HTTP factory enforces approved destinations for inference,
+  discovery and probes. New proxy and recipient-change regressions accompany it.
+- Receiving-side adversarial tests cover repeated questions, cross-file values
+  and new-run derived files. The [independent-review brief](SECURITY_REVIEW_BRIEF.md)
+  also records a demonstrated semantic-disclosure limit. No review is commissioned.
+- A [bounded paired benchmark](BOUNDED_BENCHMARKS.md) uses a durable pre-request
+  reservation ledger and the owner's $50 frontier budget. Its fresh results are
+  pending; the comparison below remains historical evidence.
+- [Offline privacy preflight](PRIVACY_PREFLIGHT.md) reports file rules, destinations
+  and policy exceptions before the first terminal-session task.
+- A [verified binary installer](INSTALLATION.md) targets owner-published GitHub
+  Releases and retains matching GPL source and notices. Signing identity and
+  production artifacts remain the owner's release steps.
+- [Operational commands](OPERATIONS.md) provide metadata-only audit exports,
+  integrity alerts, retention review and purge previews. Sensitive derived-file
+  classifications survive new runs and purges.
+
+The combined current-source macOS gate passed **1,278 tests (22 ignored)**,
+formatting, Clippy, dependency/license policy and architecture checks. Its
+[retained record](evidence/release-hardening-2026-10-03/README.md) identifies the
+checked source. The current Linux x86-64 check remains in progress: a full guest
+kernel passes setup/doctor and network isolation, while a cancellation failure
+is being investigated. The verification table below remains the October 2
+baseline; it is not the new platform result.
 
 ## Goals and evidence
 

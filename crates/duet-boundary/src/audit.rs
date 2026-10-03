@@ -520,17 +520,18 @@ impl RunAnchors {
     /// then the earlier one under this workspace, then the earlier one under
     /// any workspace (a workspace moved since the run).
     fn find(&self, digests: &[String]) -> Found {
-        let current: Vec<PathBuf> = std::fs::read_dir(self.run_dir())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "json"))
-            .collect();
+        let mut budget = 100_000;
+        let current: Vec<PathBuf> = match anchor_entries(&self.root, &self.run_dir(), &mut budget) {
+            Ok(paths) => paths
+                .into_iter()
+                .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                .collect(),
+            Err(reason) => return Found::Unreadable(reason),
+        };
         if let Some(first) = digests.first() {
             let own = self.path_for(first);
             if current.contains(&own) {
-                return match read_anchor(&own) {
+                return match read_anchor(&self.root, &own) {
                     Ok(Some(a)) => Found::Anchor(own, a),
                     Ok(None) => Found::None,
                     Err(reason) => Found::Unreadable(reason),
@@ -547,17 +548,19 @@ impl RunAnchors {
         let name = format!("{}.json", self.run_id);
         let own_legacy = legacy_dir(&self.root, &self.workspace).join(&name);
         let mut legacy = vec![own_legacy.clone()];
+        let buckets = match anchor_entries(&self.root, &self.root, &mut budget) {
+            Ok(paths) => paths,
+            Err(reason) => return Found::Unreadable(reason),
+        };
         legacy.extend(
-            std::fs::read_dir(&self.root)
+            buckets
                 .into_iter()
-                .flatten()
-                .flatten()
-                .map(|e| e.path().join(&name))
+                .map(|p| p.join(&name))
                 .filter(|p| *p != own_legacy),
         );
         let mut fallback = None;
         for path in legacy {
-            match read_anchor(&path) {
+            match read_anchor(&self.root, &path) {
                 Ok(Some(a)) => {
                     // Several workspaces may have used this run id: prefer
                     // the anchor this log agrees with.
@@ -613,14 +616,93 @@ fn compare(anchor: &Anchor, digests: &[String]) -> AnchorCheck {
     }
 }
 
-fn read_anchor(path: &Path) -> Result<Option<Anchor>, String> {
-    match std::fs::read(path) {
-        Ok(b) => serde_json::from_slice(&b)
-            .map(Some)
-            .map_err(|e| format!("anchor {} is unreadable: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(format!("anchor {}: {e}", path.display())),
+const ANCHOR_DIR_FLAGS: rustix::fs::OFlags = rustix::fs::OFlags::RDONLY
+    .union(rustix::fs::OFlags::DIRECTORY)
+    .union(rustix::fs::OFlags::NOFOLLOW)
+    .union(rustix::fs::OFlags::CLOEXEC);
+
+// Owner state is the trusted root. Descendants are opened component by
+// component, so neither enumeration nor a later anchor read follows a link.
+fn anchor_directory(root: &Path, path: &Path) -> Result<Option<std::fs::File>, String> {
+    let state = root.parent().ok_or("anchor root has no parent")?;
+    let relative = path
+        .strip_prefix(state)
+        .map_err(|_| "anchor outside state root")?;
+    let mut dir: std::fs::File =
+        match rustix::fs::open(state, ANCHOR_DIR_FLAGS, rustix::fs::Mode::empty()) {
+            Ok(fd) => fd.into(),
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(e) => return Err(format!("cannot open anchor state root: {e}")),
+        };
+    for part in relative.components() {
+        let std::path::Component::Normal(name) = part else {
+            return Err("invalid anchor path".into());
+        };
+        dir = match rustix::fs::openat(&dir, name, ANCHOR_DIR_FLAGS, rustix::fs::Mode::empty()) {
+            Ok(fd) => fd.into(),
+            Err(rustix::io::Errno::NOENT) => return Ok(None),
+            Err(e) => {
+                return Err(format!(
+                    "cannot open anchor directory without following links: {e}"
+                ));
+            }
+        };
     }
+    Ok(Some(dir))
+}
+
+fn anchor_entries(root: &Path, path: &Path, budget: &mut usize) -> Result<Vec<PathBuf>, String> {
+    use std::os::unix::ffi::OsStrExt;
+    let Some(dir) = anchor_directory(root, path)? else {
+        return Ok(Vec::new());
+    };
+    let entries = rustix::fs::Dir::read_from(&dir).map_err(|e| e.to_string())?;
+    let mut paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_bytes();
+        if name == b"." || name == b".." {
+            continue;
+        }
+        *budget = budget
+            .checked_sub(1)
+            .ok_or("anchor inventory exceeds 100000 entries")?;
+        paths.push(path.join(std::ffi::OsStr::from_bytes(name)));
+    }
+    Ok(paths)
+}
+
+fn read_anchor(root: &Path, path: &Path) -> Result<Option<Anchor>, String> {
+    use rustix::fs::{Mode, OFlags};
+    use std::io::Read;
+    const LIMIT: u64 = 64 * 1024;
+    let Some(dir) = anchor_directory(root, path.parent().ok_or("anchor has no parent")?)? else {
+        return Ok(None);
+    };
+    let file: std::fs::File = match rustix::fs::openat(
+        &dir,
+        path.file_name().ok_or("anchor has no name")?,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(fd) => fd.into(),
+        Err(rustix::io::Errno::NOENT) => return Ok(None),
+        Err(e) => return Err(format!("cannot open anchor without following links: {e}")),
+    };
+    let stat = file.metadata().map_err(|e| e.to_string())?;
+    if !stat.is_file() || stat.len() > LIMIT {
+        return Err("anchor is not a regular file within 64 KiB".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > LIMIT {
+        return Err("anchor exceeds 64 KiB".into());
+    }
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "anchor is malformed".into())
 }
 
 /// Checks the log at `path` against its anchor.
@@ -638,12 +720,22 @@ fn check_found(
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(FsError::io("read", path, e)),
     };
+    Ok(check_text_found(&text, anchors))
+}
+
+/// Checks an immutable log snapshot against the owner's anchors. Consumers
+/// can verify and export the same bytes without reopening a changing log.
+pub fn check_anchor_text(text: &str, anchors: &RunAnchors) -> AnchorCheck {
+    check_text_found(text, anchors).0
+}
+
+fn check_text_found(text: &str, anchors: &RunAnchors) -> (AnchorCheck, Option<PathBuf>) {
     let digests: Vec<String> = text.lines().filter(|l| !l.is_empty()).map(digest).collect();
-    Ok(match anchors.find(&digests) {
+    match anchors.find(&digests) {
         Found::Anchor(file, a) => (compare(&a, &digests), Some(file)),
         Found::Other(reason) | Found::Unreadable(reason) => (AnchorCheck::Mismatch(reason), None),
         Found::None => (AnchorCheck::Missing, None),
-    })
+    }
 }
 
 /// Follows an audit log as it is written: a program that embeds Duet
@@ -1111,14 +1203,20 @@ pub enum Verification {
 /// Recomputes the chain.
 pub fn verify(path: &Path) -> Result<Verification, FsError> {
     let text = std::fs::read_to_string(path).map_err(|e| FsError::io("read", path, e))?;
+    Ok(verify_text(&text))
+}
+
+/// Recomputes the chain of an immutable snapshot, including request-body
+/// digests. Unknown or malformed records fail verification.
+pub fn verify_text(text: &str) -> Verification {
     let mut prev = GENESIS.to_owned();
     let mut expected_seq = 1;
     for line in text.lines().filter(|l| !l.is_empty()) {
         let Some(parsed) = parse_line(line) else {
-            return Ok(Verification::Broken {
+            return Verification::Broken {
                 at_seq: expected_seq,
                 reason: "unparseable record".into(),
-            });
+            };
         };
         let body_mismatch = match &parsed {
             Line::Request(r) => {
@@ -1140,17 +1238,17 @@ pub fn verify(path: &Path) -> Result<Verification, FsError> {
             None
         };
         if let Some(reason) = reason {
-            return Ok(Verification::Broken {
+            return Verification::Broken {
                 at_seq: expected_seq,
                 reason,
-            });
+            };
         }
         prev = digest(line);
         expected_seq += 1;
     }
-    Ok(Verification::Intact {
+    Verification::Intact {
         records: expected_seq - 1,
-    })
+    }
 }
 
 /// `unix_ms` as `YYYY-MM-DD HH:MM:SS` (UTC).
@@ -1405,6 +1503,35 @@ mod tests {
             .unwrap(),
             AnchorCheck::Missing
         );
+    }
+
+    #[test]
+    fn anchor_checks_refuse_symlink_directories_and_oversized_files() {
+        let d = tempfile::tempdir().unwrap();
+        let log = d.path().join("ws/.duet/audit/r1.jsonl");
+        let state = d.path().join("state");
+        let anchors = run_anchors(&state, &d.path().join("ws"), "r1");
+        write_run(&log, &anchors, 0);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let parent = state.join("audit-anchors");
+        let moved = state.join("moved");
+        std::fs::rename(&parent, &moved).unwrap();
+        std::os::unix::fs::symlink(&moved, &parent).unwrap();
+        assert!(matches!(
+            check_anchor_text(&text, &anchors),
+            AnchorCheck::Mismatch(_)
+        ));
+        std::fs::remove_file(&parent).unwrap();
+        std::fs::rename(&moved, &parent).unwrap();
+        let first = digest(text.lines().next().unwrap());
+        std::fs::File::create(anchors.path_for(&first))
+            .unwrap()
+            .set_len(65537)
+            .unwrap();
+        assert!(matches!(
+            check_anchor_text(&text, &anchors),
+            AnchorCheck::Mismatch(_)
+        ));
     }
 
     /// Keeps what it is told.

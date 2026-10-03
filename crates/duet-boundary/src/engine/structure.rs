@@ -1071,7 +1071,8 @@ mod tests {
     fn a_data_file_a_command_rewrote_gets_no_sample_or_outline() {
         let (_d, ws, e) = primed(views(Some(0)));
         std::fs::write(ws.join("data/customers.csv"), "M\n").unwrap();
-        e.mark_sensitive(&ws, &[PathBuf::from("data/customers.csv")]);
+        e.mark_sensitive(&ws, &[PathBuf::from("data/customers.csv")])
+            .unwrap();
         assert!(!e.task_notes().contains("data/customers.csv:"));
         // Its short content is a probe (budget 0: withheld).
         let view = read(&e, "data/customers.csv", "M\n");

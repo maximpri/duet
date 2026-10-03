@@ -305,7 +305,7 @@ sends (a risk the owner accepted)"
     let dir = std::env::temp_dir().join(format!("duet-doctor-{}", uuid::Uuid::new_v4()));
     let engine = match crate::policy(c).map_err(|e| e.to_string()).and_then(|p| {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-        duet_boundary::engine::Engine::open(&dir, p, None).map_err(|e| e.to_string())
+        duet_boundary::engine::Engine::open_for_inspection(ws, &dir, p).map_err(|e| e.to_string())
     }) {
         Ok(e) => e,
         Err(e) => {
@@ -1128,7 +1128,20 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
         ));
         return out;
     }
-    let listing = match backends::list_models(&url, key.as_deref(), ONLINE_TIMEOUT).await {
+    let endpoint = match duet_provider::endpoint::ApprovedEndpoint::new(
+        &url,
+        &Role::Local {
+            allowlist: allowlist.clone(),
+            allow_plaintext,
+        },
+    ) {
+        Ok(endpoint) => endpoint,
+        Err(error) => {
+            out.push(check("local server", Status::Fail, error.message));
+            return out;
+        }
+    };
+    let listing = match backends::list_models(&endpoint, key.as_deref(), ONLINE_TIMEOUT).await {
         Ok(l) => l,
         Err(e) => {
             out.push(
@@ -1142,7 +1155,7 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
             return out;
         }
     };
-    let backend = backends::identify(&url, &listing, key.as_deref(), ONLINE_TIMEOUT)
+    let backend = backends::identify(&endpoint, &listing, key.as_deref(), ONLINE_TIMEOUT)
         .await
         .unwrap_or("OpenAI-compatible server");
     let ids = backends::model_ids(&listing);
@@ -1169,7 +1182,7 @@ async fn local(c: &Config, online: bool) -> Vec<Check> {
         format!("{backend} at {url} lists {model}"),
     ));
     out.push(
-        match duet_provider::probe::probe_context_window(&url, &model, key.as_deref()).await {
+        match duet_provider::probe::probe_context_window(&endpoint, &model, key.as_deref()).await {
             Some(n) if n >= MIN_LOCAL_CONTEXT => check(
                 "local context",
                 Status::Pass,
@@ -1542,17 +1555,20 @@ fn audit(ws: &Path) -> Check {
 
 fn retention(ws: &Path, c: &Config) -> Check {
     let days = c.int("data.retention_days").unwrap_or(14).max(0) as u64;
-    let cutoff = std::time::SystemTime::now() - Duration::from_secs(days * 86_400);
-    let old = std::fs::read_dir(ws.join(".duet/runs"))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| {
-            e.metadata()
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| t < cutoff)
-        })
-        .count();
+    let old = match duet_agent::purge::try_candidates(
+        ws,
+        duet_agent::purge::Scope::OlderThan { days: days as i64 },
+    ) {
+        Ok(runs) => runs.len(),
+        Err(_) => {
+            return check(
+                "run data",
+                Status::Warn,
+                "raw run retention could not be inspected",
+            )
+            .fix("check access to .duet/runs; `duet audit retention` reports retention status");
+        }
+    };
     if old == 0 {
         check(
             "run data",
@@ -1565,7 +1581,7 @@ fn retention(ws: &Path, c: &Config) -> Check {
             Status::Warn,
             format!("{old} run(s) keep raw data past data.retention_days ({days})"),
         )
-        .fix("duet purge")
+        .fix("preview with `duet purge --dry-run`, then `duet purge`")
     }
 }
 

@@ -10,6 +10,7 @@ pub mod client;
 pub mod dialect;
 pub mod endpoint;
 pub mod error;
+mod http;
 pub mod image;
 pub mod live;
 pub mod meter;

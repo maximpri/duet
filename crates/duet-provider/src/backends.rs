@@ -7,6 +7,7 @@
 //! other hosts. It lists models (`GET /v1/models`) and tells servers apart by
 //! their documented native endpoints; it never calls a model.
 
+use crate::endpoint::ApprovedEndpoint;
 use serde::Serialize;
 use serde_json::Value;
 use std::time::Duration;
@@ -313,16 +314,13 @@ pub struct Server {
 
 const MAX_LISTING_BYTES: usize = 4 * 1024 * 1024;
 
-fn client(timeout: Duration) -> Option<reqwest::Client> {
-    reqwest::Client::builder()
-        .connect_timeout(timeout.min(Duration::from_millis(500)))
-        .timeout(timeout)
-        // Discovery carries endpoint credentials; only that endpoint may
-        // receive them, never an implicit environment/system proxy.
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .ok()
+fn client(endpoint: &ApprovedEndpoint, timeout: Duration) -> Option<crate::http::Client> {
+    crate::http::client(
+        endpoint,
+        timeout.min(Duration::from_millis(500)),
+        Some(timeout),
+    )
+    .ok()
 }
 
 fn root(base_url: &str) -> &str {
@@ -331,7 +329,7 @@ fn root(base_url: &str) -> &str {
 }
 
 async fn get_json(
-    client: &reqwest::Client,
+    client: &crate::http::Client,
     url: &str,
     bearer: Option<&str>,
 ) -> Result<Value, String> {
@@ -342,11 +340,11 @@ async fn get_json(
 }
 
 async fn get_json_with(
-    client: &reqwest::Client,
+    client: &crate::http::Client,
     url: &str,
     headers: &[(String, String)],
 ) -> Result<Value, String> {
-    let mut rb = client.get(url);
+    let mut rb = client.get(url).map_err(|e| e.to_string())?;
     for (k, v) in headers {
         rb = rb.header(k, v);
     }
@@ -487,11 +485,12 @@ pub fn model_vision_capability(listing: &Value, model: &str) -> Option<bool> {
 
 /// The models `base_url` lists (`GET <base_url>/models`), as the raw listing.
 pub async fn list_models(
-    base_url: &str,
+    endpoint: &ApprovedEndpoint,
     bearer: Option<&str>,
     timeout: Duration,
 ) -> Result<Value, String> {
-    let client = client(timeout).ok_or("cannot build an HTTP client")?;
+    let client = client(endpoint, timeout).ok_or("cannot build an HTTP client")?;
+    let base_url = endpoint.as_str();
     get_json(
         &client,
         &format!("{}/models", base_url.trim_end_matches('/')),
@@ -508,7 +507,9 @@ pub async fn list_frontier_models(
     key: Option<&str>,
     timeout: Duration,
 ) -> Result<Value, String> {
-    let client = client(timeout).ok_or("cannot build an HTTP client")?;
+    let endpoint =
+        ApprovedEndpoint::new(base_url, &crate::Role::Frontier).map_err(|e| e.message)?;
+    let client = client(&endpoint, timeout).ok_or("cannot build an HTTP client")?;
     let mut headers = dialect.fixed_headers();
     if let Some(k) = key {
         headers.extend(dialect.auth_headers(k));
@@ -539,7 +540,7 @@ pub async fn list_frontier_models(
 /// Which backend serves `base_url`, from its documented native endpoints
 /// (and the `/models` listing already fetched). `None`: a generic server.
 pub async fn identify(
-    base_url: &str,
+    endpoint: &ApprovedEndpoint,
     listing: &Value,
     bearer: Option<&str>,
     timeout: Duration,
@@ -554,8 +555,8 @@ pub async fn identify(
     if owned_by_vllm {
         return label("vllm");
     }
-    let client = client(timeout)?;
-    let root = root(base_url);
+    let client = client(endpoint, timeout)?;
+    let root = root(endpoint.as_str());
     if let Ok(v) = get_json(&client, &format!("{root}/api/version"), bearer).await
         && v.get("version").is_some()
     {
@@ -587,8 +588,16 @@ pub async fn discover_loopback(ports: &[u16], timeout: Duration) -> Vec<Server> 
         let key = api_key_env
             .and_then(|name| std::env::var(name).ok())
             .filter(|s| !s.is_empty());
-        let listing = list_models(&base_url, key.as_deref(), timeout).await.ok()?;
-        let backend = identify(&base_url, &listing, key.as_deref(), timeout).await;
+        let endpoint = ApprovedEndpoint::new(
+            &base_url,
+            &crate::Role::Local {
+                allowlist: Vec::new(),
+                allow_plaintext: false,
+            },
+        )
+        .ok()?;
+        let listing = list_models(&endpoint, key.as_deref(), timeout).await.ok()?;
+        let backend = identify(&endpoint, &listing, key.as_deref(), timeout).await;
         Some(Server {
             models: agent_model_ids(&listing),
             base_url,

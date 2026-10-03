@@ -286,13 +286,17 @@ impl Quote {
 
 /// Fixed public endpoint, no authentication, no redirects, bounded transfer.
 pub async fn fetch() -> Result<Catalog, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "pricing client failed")?;
+    let endpoint = crate::endpoint::ApprovedEndpoint::new(URL, &crate::Role::Frontier)
+        .map_err(|_| "invalid pricing endpoint")?;
+    let client = crate::http::client(
+        &endpoint,
+        Duration::from_secs(8),
+        Some(Duration::from_secs(8)),
+    )
+    .map_err(|_| "pricing client failed")?;
     let mut response = client
         .get(URL)
+        .map_err(|_| "pricing recipient refused")?
         .send()
         .await
         .map_err(|_| "OpenRouter pricing unavailable")?

@@ -1153,7 +1153,7 @@ pub const REGISTRY: &[Setting] = &[
         Owner,
         Any,
         false,
-        "Days to keep audit logs."
+        "Days before audit logs are due for retention review (`duet audit retention`). Audit logs and anchors are not deleted automatically."
     ),
     s!(
         "oversight.approve",

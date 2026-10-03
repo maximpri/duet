@@ -254,9 +254,19 @@ pub trait Presenter: Send + Sync {
     ) -> Option<Result<Implemented, String>> {
         None
     }
+    /// Persist a write-ahead marker before a command may read sensitive data.
+    fn begin_sensitive_command(&self) -> Result<(), duet_fs::FsError> {
+        Ok(())
+    }
     /// Files a sensitive command created or changed: they hold derived data from now on.
     /// `paths` are relative to `workspace`.
-    fn mark_sensitive(&self, _workspace: &std::path::Path, _paths: &[PathBuf]) {}
+    fn mark_sensitive(
+        &self,
+        _workspace: &std::path::Path,
+        _paths: &[PathBuf],
+    ) -> Result<(), duet_fs::FsError> {
+        Ok(())
+    }
     /// Text the frontier itself wrote into a file (`write_file` content, an
     /// edit's new text), before placeholders are resolved.
     fn note_authored(&self, _text: &str) {}
