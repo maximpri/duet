@@ -92,9 +92,16 @@ impl Fixture {
             assets,
             stem,
         };
+        #[cfg(target_os = "macos")]
+        checked(
+            Command::new("xattr")
+                .args(["-w", "org.duet.release-test", "metadata-fixture"])
+                .arg(f.payload.join("LICENSE")),
+        );
         f.sign_payload();
         checked(
             Command::new(tools().join("package-release.sh"))
+                .env_remove("COPYFILE_DISABLE")
                 .arg(&f.payload)
                 .arg("--key")
                 .arg(&f.key)
@@ -102,6 +109,17 @@ impl Fixture {
                 .arg(&f.signers)
                 .arg("--out")
                 .arg(&f.assets),
+        );
+        let listing = checked(
+            Command::new("tar")
+                .arg("-tzf")
+                .arg(f.assets.join(format!("{}.tar.gz", f.stem))),
+        );
+        assert!(
+            String::from_utf8_lossy(&listing.stdout)
+                .lines()
+                .all(|name| !name.split('/').any(|part| part.starts_with("._"))),
+            "release archive contains platform metadata"
         );
         let bin = f.root.join("transport");
         script(

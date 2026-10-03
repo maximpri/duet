@@ -4,6 +4,9 @@
 # upstream license/notice. Only tracked files at the release commit enter the source snapshot.
 # Usage: tools/source-release.sh <output.tar.gz>
 set -euo pipefail
+# macOS tar otherwise serializes local extended attributes as AppleDouble files.
+# GNU tar ignores this environment variable; source contents stay portable.
+export COPYFILE_DISABLE=1
 cd "$(dirname "$0")/.."
 
 [ "$#" -eq 1 ] || { echo "usage: tools/source-release.sh <output.tar.gz>" >&2; exit 2; }

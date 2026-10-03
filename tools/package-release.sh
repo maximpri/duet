@@ -4,6 +4,9 @@
 # Usage: tools/package-release.sh RELEASE_DIR --key KEY --signers FILE --out DIR
 # Uses the operator's existing SSH signing key; never creates a production key.
 set -euo pipefail
+# macOS tar otherwise serializes local extended attributes as AppleDouble files.
+# GNU tar ignores this environment variable; source contents stay portable.
+export COPYFILE_DISABLE=1
 umask 077
 fail() { printf 'package-release: %s\n' "$*" >&2; exit 1; }
 release_dir=""

@@ -340,6 +340,9 @@ metadata) printf '{"target_directory":"%s/target"}\n' "$PWD" ;;
 vendor)
     mkdir -p vendor/dependency-1.0
     echo 'upstream notice fixture' >vendor/dependency-1.0/LICENSE
+    if [ "$(uname -s)" = Darwin ]; then
+        xattr -w org.duet.release-test metadata-fixture vendor/dependency-1.0/LICENSE
+    fi
     printf '[source.crates-io]\nreplace-with = "vendored-sources"\n[source.vendored-sources]\ndirectory = "vendor"\n'
     ;;
 -V) echo 'cargo fixture' ;;
@@ -404,6 +407,7 @@ esac"#,
         .arg(&out_dir)
         .env("PATH", &path)
         .env_remove("DUET_RELEASE_KEY")
+        .env_remove("COPYFILE_DISABLE")
         .output()
         .unwrap();
     assert!(release.status.success(), "{}", text(&release));
@@ -417,6 +421,18 @@ esac"#,
         );
     }
     let source_archive = out_dir.join("duet-0.1.0-source.tar.gz");
+    let listing = Command::new("tar")
+        .arg("-tzf")
+        .arg(&source_archive)
+        .output()
+        .unwrap();
+    assert!(listing.status.success(), "{}", text(&listing));
+    assert!(
+        String::from_utf8_lossy(&listing.stdout)
+            .lines()
+            .all(|name| !name.split('/').any(|part| part.starts_with("._"))),
+        "source archive contains platform metadata"
+    );
     let unpacked = temp.path().join("unpacked");
     std::fs::create_dir(&unpacked).unwrap();
     let unpack = Command::new("tar")
