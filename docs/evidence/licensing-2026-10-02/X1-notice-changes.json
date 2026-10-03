@@ -1,0 +1,103 @@
+{
+  "date": "2026-10-02",
+  "kind": "licensing notices only; no executable source changes",
+  "upstream_sqlparser_commit": "f3f5de51e55cccdde9c10b4804cf790ccd532970",
+  "previous_seal": "X1-seal-before-notices.toml",
+  "files": [
+    {
+      "path": "starter/Cargo.toml",
+      "before_sha256": "0198af79cfde3952ea120dfe4ff236703c8152704b80a54b67c8b9f2fdcb45ac",
+      "after_sha256": "bd5cfb97585760a134175b8de4e14a0d2de6c6d8cfcf7f595a70eb9196085d0d"
+    },
+    {
+      "path": "starter/.gitignore",
+      "before_sha256": "cb9ebdd67239cfa1f8a47751e2e1baf578a643258c963b3085d965890efc6589",
+      "after_sha256": "af45158104ac1f317fa6b4c70d885ae2c566234a9a093405a12c3f6176b72533"
+    },
+    {
+      "path": "starter/tests/sqlparser_snowflake.rs",
+      "before_sha256": "a3b3736b368115e06a93ae731a896ddbdaa88e5441f1637b9e7efd3669c00da4",
+      "after_sha256": "fd136cd7f1937c362d82e307837b9828b931c43fe3328c0d4cdbe174ee66d42e"
+    },
+    {
+      "path": "starter/tests/sqlparser_databricks.rs",
+      "before_sha256": "d5942f1d1ed226c38f676dc6a939a0713373eafb6764c9bb7da6ff582acb2a46",
+      "after_sha256": "e5331cd039b8fbb5448417259e41fce393544e93a377bcd717fbd894e2faab38"
+    },
+    {
+      "path": "starter/tests/sqlparser_postgres.rs",
+      "before_sha256": "82f00a8b8b5acd1549bcbd2f460a6b8e98105c4a2287551dac2ac53e07919ef2",
+      "after_sha256": "e9345a8091ea42fab5c0f8ad62be164aa9d70ad5ad7bdd046779762d454ecb37"
+    },
+    {
+      "path": "starter/tests/sqlparser_common.rs",
+      "before_sha256": "76921cc9d6a4e627dc405f84b25bba1b27f558e3bd40a9027180c0d5d1188bbb",
+      "after_sha256": "6527a468cd81ea7b7aea0d9a63290a2e8bc72e667b3f002f3f831a45510d85bb"
+    },
+    {
+      "path": "starter/tests/sqlparser_mysql.rs",
+      "before_sha256": "aa636f585a5b1b702c932fee81c1f2a371824d2738968d46fd76f4334e0b8a70",
+      "after_sha256": "e8aea4d8c37c8c58efd5341351e30856f0cb59bcc1dfcb9b49aa3a50c0d71b83"
+    },
+    {
+      "path": "starter/examples/cli.rs",
+      "before_sha256": "e6f5cba0489d148f89245729380efcc3534193ec86d3f6e7e7a1e8332d347d68",
+      "after_sha256": "865e38aca6a93672c59271e39e1b463680db1602b789eb7382c527cf752fd68b"
+    },
+    {
+      "path": "starter/src/lib.rs",
+      "before_sha256": "070477d884e87946189386ef0fccf409d2d8d66e879a722a349b29d4b1b3bd9b",
+      "after_sha256": "5d1d84864160fa22d7e07eeca0cd754e02984d5fb7b4a83f4c3dfec96a31a6f8"
+    },
+    {
+      "path": "starter/src/test_utils.rs",
+      "before_sha256": "b0c963780a9e331c5e8f81c8fd82772d509616424e6082310d62cfec405eba00",
+      "after_sha256": "173c54cd77b638f731fcf05782bae4e23f444b097d50b11aaa5d45807b63de1e"
+    },
+    {
+      "path": "reference/tests/sqlparser_common.rs",
+      "before_sha256": "52a3de09099e0b5a1c8be9dfa57de0f6c7a4fe41b45f79fbb23d8c64d352a740",
+      "after_sha256": "ec97725c001bab376c10286fb8db450499220e827f12da5a9951ce49aea12df0"
+    },
+    {
+      "path": "reference/src/lib.rs",
+      "before_sha256": "3b89a9c96c4de155030d2ed20ce50fefbe80c7aa83ea4926010614c103578d82",
+      "after_sha256": "26fba9e7a11aa6326de6fd02be1a1bede5970f4aefabd6e0f220eeb17059f34d"
+    },
+    {
+      "path": "reference/src/tokenizer.rs",
+      "before_sha256": "3dca94b41dfed7e53957ee9e83d284ddae8431c3933432bc877f283c84042350",
+      "after_sha256": "24db869704d3cb76aa56bfa0bcbccc4b6955d883d042f6e9e9a032252f9fd6c9"
+    },
+    {
+      "path": "reference/src/parser/mod.rs",
+      "before_sha256": "8448cdb063465a317fc3d38e06ba7ca6b6a7c16657945e9daf7e110c6c4e0cb5",
+      "after_sha256": "b415bf9a3772d74c1c7cf3739780ee50c8be149e51ff5605659bbc547fa395e5"
+    },
+    {
+      "path": "reference/src/ast/query.rs",
+      "before_sha256": "c754ff7c358516c747c32651c3b33855e2a85bc31188f7ba9e9420f9847ac3a3",
+      "after_sha256": "b10b27f678d12d4f448cb8feab1c00ea2c234ce63ed2d878fe7357b30dce904e"
+    },
+    {
+      "path": "reference/src/ast/mod.rs",
+      "before_sha256": "5e7ea811bb84150b4ff5461cffcd73d911935e5a9150f0aad1151355fdcd83d1",
+      "after_sha256": "8412f45b63b5f4faf1f68ac43a50b5a783c8fc1c48fe2415487ecc9716fe616a"
+    },
+    {
+      "path": "reference/src/dialect/postgresql.rs",
+      "before_sha256": "8ef4e3b95c7513fe867a33ffc1a09c2cda02ba8c75473e91a657d7ed79898c01",
+      "after_sha256": "df31efc7e7cb54e93d4363f7c5e34d8e792d2e8b3d3e1f566badf07848e76544"
+    },
+    {
+      "path": "reference/src/dialect/mod.rs",
+      "before_sha256": "55d2623fbf90be3345b53ff8aac91ac1721a9882af512606b9945b68d6d86fc2",
+      "after_sha256": "c50f159022d42c78052da1fb667819a4ca68f6188e60701c077c618d123f22da"
+    },
+    {
+      "path": "starter/vendor/log/Cargo.toml",
+      "before_sha256": "03710f743f6c2374c21fa15cd0791bb8061c1fafdf540f9eb5d4b9aa890e5052",
+      "after_sha256": "d209865c82bd96b3b7e5e090892e7750bfdfbe61a91288c0eab59e98814040e9"
+    }
+  ]
+}

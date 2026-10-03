@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import select
 import signal
 import struct
 import termios
@@ -36,14 +37,22 @@ def main():
     command = a.command[1:] if a.command[:1] == ['--'] else a.command
     if not command:
         p.error('a command is required after --')
+    if not 1 <= a.cols <= 65535 or not 1 <= a.rows <= 65535:
+        p.error('--cols and --rows must be between 1 and 65535')
+    if not 1 <= a.port <= 65535:
+        p.error('--port must be between 1 and 65535')
     assets = {n: (a.xterm / n).read_bytes() for n in ['lib/xterm.js', 'css/xterm.css']}
     token = secrets.token_urlsafe(24)
     events = []
     lock = threading.Lock()
+    input_lock = threading.Lock()
+    stopped = threading.Event()
     started = time.monotonic()
     a.cast.parent.mkdir(parents=True, exist_ok=True)
-    cast = a.cast.open('x', encoding='utf-8')
-    os.chmod(a.cast, 0o600)
+    # Make private permissions part of creation, not a later chmod: a recording
+    # can include sensitive output, even while it is being written.
+    cast = os.fdopen(os.open(a.cast, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                     'w', encoding='utf-8')
     cast.write(json.dumps({'version': 2, 'width': a.cols, 'height': a.rows,
                           'timestamp': int(time.time()), 'env': {'TERM': 'xterm-256color'}}) + '\n')
     cast.flush()
@@ -58,8 +67,10 @@ def main():
 
     def read():
         decoder = codecs.getincrementaldecoder('utf-8')('replace')
-        while True:
+        while not stopped.is_set():
             try:
+                if not select.select([fd], [], [], 0.1)[0]:
+                    continue
                 data = os.read(fd, 65536)
             except OSError:
                 break
@@ -71,8 +82,13 @@ def main():
                 if text:
                     cast.write(json.dumps([round(time.monotonic() - started, 4), 'o', text]) + '\n')
                     cast.flush()
+        tail = decoder.decode(b'', final=True)
+        if tail:
+            cast.write(json.dumps([round(time.monotonic() - started, 4), 'o', tail]) + '\n')
+            cast.flush()
 
-    threading.Thread(target=read, daemon=True).start()
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
     page = '''<!doctype html><meta charset="utf-8"><title>Duet · live PTY</title>
 <link rel="stylesheet" href="css/xterm.css">
 <style>html,body{margin:0;background:#11151c}#terminal{padding:18px;display:inline-block}
@@ -133,25 +149,43 @@ window.screenText=()=>Array.from({length:term.rows},(_,i)=>term.buffer.active.ge
                 if not 0 < length <= 65536:
                     return self.reply(413, b'{}')
                 data = json.loads(self.rfile.read(length))['data'].encode()
-                os.write(fd, data)
-            except (KeyError, ValueError, AttributeError, OSError):
+                # PTY writes can be partial, and concurrent requests must not
+                # interleave the bytes of separate input events.
+                with input_lock:
+                    while data:
+                        written = os.write(fd, data)
+                        if written == 0:
+                            raise OSError('PTY closed during input')
+                        data = data[written:]
+            except (KeyError, ValueError, TypeError, AttributeError, OSError):
                 return self.reply(400, b'{}')
             self.reply(200, b'{}')
 
-    server = http.server.ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
-    print(f'http://127.0.0.1:{a.port}/{token}/', flush=True)
+    server = None
     try:
+        server = http.server.ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
+        print(f'http://127.0.0.1:{a.port}/{token}/', flush=True)
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        server.server_close()
+        if server is not None:
+            server.server_close()
         try:
             os.kill(pid, signal.SIGHUP)
         except ProcessLookupError:
             pass
+        stopped.set()
+        reader.join()
         os.close(fd)
         cast.close()
+        deadline = time.monotonic() + 1
+        while os.waitpid(pid, os.WNOHANG) == (0, 0):
+            if time.monotonic() >= deadline:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+                break
+            time.sleep(0.05)
 
 
 if __name__ == '__main__':

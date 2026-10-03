@@ -63,8 +63,8 @@ pub(crate) fn resolve_mode(
 pub(crate) fn mode_allowed(cfg: &Config, mode: Mode) -> Result<()> {
     if mode != Mode::TopClearance && top_clearance_required(cfg)? {
         bail!(
-            "--mode {} is not allowed here: clearance.required is top{} (only the local model \
-works, nothing leaves this machine); use --mode top-clearance, or leave --mode out",
+            "--mode {} is not allowed here: clearance.required is top{} (only the trusted local \
+model works); use --mode top-clearance, or leave --mode out",
             mode.as_str(),
             set_by(cfg, "clearance.required")
         );

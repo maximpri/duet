@@ -1,0 +1,27 @@
+{
+  "kind": "isolated current-product-source offline build; not a signed production release",
+  "base_commit": "f7eb3e894dcc54e662d20e9625a44c5e3e96fe23",
+  "snapshot_patch_sha256": "28d1bf9d7ca6d831a7bf14df0b40f6c1a4fdc23b2c005e43070bb4d3633e8b77",
+  "product_source_sha256": "92254698b3164e83bbab95051b44a6315b136dbb469c0331833ac8acbb43e216",
+  "cargo_lock_sha256": "787366403c3b69f018966aff3c450a58116033536fd42e50a28d07a46174000c",
+  "archive_sha256": "32c1928d2a0d2a748773403c31675025c3fc6bb87479e9387fa1aad5bf6d52cf",
+  "archive_bytes": 76074553,
+  "command": "DUET_RELEASE_BUILD=1 cargo build --release --frozen --jobs 2 -p duet-cli --bin duet",
+  "environment": {
+    "DEVELOPER_DIR": "/Library/Developer/CommandLineTools",
+    "SDKROOT": "/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk",
+    "CARGO_HOME": "fresh isolated directory with no cached registry/index crates",
+    "CARGO_TARGET_DIR": "reused isolated external release build cache"
+  },
+  "build_result": "Finished `release` profile [optimized] target(s) in 1m 53s",
+  "version": "duet 0.1.0",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14) (Homebrew)",
+  "host": "aarch64-apple-darwin",
+  "vendored_yoke_derive": "0.8.4",
+  "notes": [
+    "Includes finalized local-provider proxy fix and its regression test.",
+    "Product source files and Cargo manifests/lock were compared byte-for-byte with the current worktree after build.",
+    "First build attempt hit mixed Xcode/CLT SDK selection; child-only explicit matching developer directory and SDK resolved it. No global configuration changed."
+  ],
+  "product_digest_inputs": "All files beneath crates/ plus Cargo.toml and Cargo.lock, sorted by path; concatenate each repository-relative path, NUL, file bytes, NUL."
+}

@@ -16,6 +16,8 @@
 #
 # Every Docker object it creates is named duet-linux-check*; nothing else is touched.
 # The worktree is mounted read-only; builds go to the volume duet-linux-check-target.
+# DUET_LINUX_TARGET_DIR=/absolute/path uses a persistent host directory instead
+# (for example, a larger external disk). Cleanup never removes that directory.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 src=$(pwd)
@@ -23,6 +25,7 @@ src=$(pwd)
 prefix=duet-linux-check
 image=$prefix:local
 volume=$prefix-target
+target_dir=${DUET_LINUX_TARGET_DIR:-}
 base=${DUET_LINUX_BASE:-rust:1-bookworm}
 crates=(-p duet-sandbox -p duet-agent -p duet-boundary -p duet-egress)
 keep=false
@@ -38,12 +41,23 @@ for arg in "$@"; do
     esac
 done
 
+if [ -n "$target_dir" ]; then
+    case "$target_dir" in
+    /*) ;;
+    *) echo "DUET_LINUX_TARGET_DIR must be an absolute path" >&2; exit 2 ;;
+    esac
+    mkdir -p "$target_dir"
+    target_dir=$(cd "$target_dir" && pwd -P)
+fi
+
 cleanup() {
     for mode in privileged unprivileged root no-namespaces; do
         docker rm -f "$prefix-$mode" >/dev/null 2>&1 || true
     done
     if ! $keep; then
-        docker volume rm "$volume" >/dev/null 2>&1 || true
+        if [ -z "$target_dir" ]; then
+            docker volume rm "$volume" >/dev/null 2>&1 || true
+        fi
         docker rmi "$image" >/dev/null 2>&1 || true
         if $rmi_base && [ -z "$(docker ps -aq --filter "ancestor=$base")" ]; then
             docker rmi "$base" >/dev/null 2>&1 || true
@@ -58,7 +72,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap git 
     && rm -rf /var/lib/apt/lists/*
 RUN rustup component add clippy && useradd -m -u 1000 duet
 EOF
-docker volume create "$volume" >/dev/null
+if [ -n "$target_dir" ]; then
+    target_mount=(--mount "type=bind,source=$target_dir,target=/target")
+else
+    docker volume create "$volume" >/dev/null
+    target_mount=(--mount "type=volume,source=$volume,target=/target")
+fi
 
 # Runs `cargo $*` in container $mode (as root only in the root setup).
 run_mode() {
@@ -76,7 +95,7 @@ run_mode() {
     esac
     printf '\n== %s\n' "$mode"
     docker run --rm --name "$prefix-$mode" "${opts[@]}" -e "DUET_USER=$user" \
-        -v "$src:/src:ro" -v "$volume:/target" -w /src "$image" \
+        -v "$src:/src:ro" "${target_mount[@]}" -w /src "$image" \
         bash -c 'chown duet /target &&
             echo "kernel $(uname -r); $(bwrap --version); $(rustc --version)" &&
             exec runuser -u "$DUET_USER" -- env HOME=/home/duet PATH=/usr/local/cargo/bin:/usr/bin:/bin \

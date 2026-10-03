@@ -10,7 +10,7 @@
 # No key is generated, and a key inside this repository is refused.
 #
 # Steps: the full gate (tools/gate.sh); `cargo build --release --locked` for the
-# host target; the SBOM (tools/sbom.sh); BUILDINFO.txt (version, commit,
+# host target; licenses and vendored source; SBOM; BUILDINFO.txt (version, commit,
 # toolchain); SHA256SUMS over every file; SHA256SUMS.sig, a detached SSH
 # signature (`ssh-keygen -Y sign`, namespace duet-release). Output:
 # dist/duet-<version>/ unless --out is given. Check with tools/verify-release.sh.
@@ -72,7 +72,7 @@ case "$key_abs" in
 esac
 command -v ssh-keygen >/dev/null || die "ssh-keygen is required for signing"
 
-[ -z "$(git status --porcelain --untracked-files=no)" ] ||
+[ -z "$(git status --porcelain)" ] ||
     die "the working tree has uncommitted changes; release from a clean commit"
 commit=$(git rev-parse HEAD)
 
@@ -94,6 +94,8 @@ target_dir=$(cargo metadata --format-version 1 --no-deps --offline |
 export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 mkdir -p "$out"
+echo "== corresponding source"
+tools/source-release.sh "$out/duet-$version-source.tar.gz"
 binary="duet-$version-$target"
 cp "$target_dir/$target/release/duet" "$out/$binary"
 
@@ -110,6 +112,27 @@ source_date_epoch $SOURCE_DATE_EPOCH
 built with: DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet --target $target
 INFO
 
+echo "== licenses"
+cp LICENSE NOTICE LICENSES.md "$out/"
+cp crates/duet-boundary/rules/LICENSE.gitleaks "$out/LICENSE.gitleaks"
+cp crates/duet-boundary/rules/NOTICE "$out/NOTICE.gitleaks"
+cat >"$out/SOURCE.txt" <<INFO
+Corresponding Source for duet $version ($target)
+Commit: $commit
+Archive: duet-$version-source.tar.gz (distributed beside this binary)
+
+Extract the archive and enter duet-source/. It includes the locked Cargo
+workspace dependencies in vendor/, with their complete licenses and notices.
+Install the Rust toolchain recorded in BUILDINFO.txt and the platform's C/C++
+build tools, then build without downloading Cargo dependencies:
+
+  DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target $target
+
+The binary is target/$target/release/duet. See tools/install.sh for installation.
+Publish this source archive, LICENSE, NOTICE, LICENSES.md, LICENSE.gitleaks and
+NOTICE.gitleaks alongside the binary. Preserve their availability to recipients.
+INFO
+
 echo "== checksums and signature"
 if command -v shasum >/dev/null; then
     sha256() { shasum -a 256 "$@"; }
@@ -118,7 +141,8 @@ else
 fi
 (
     cd "$out"
-    sha256 "$binary" "duet-$version.cdx.json" BUILDINFO.txt >SHA256SUMS
+    sha256 "$binary" "duet-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md \
+        LICENSE.gitleaks NOTICE.gitleaks "duet-$version-source.tar.gz" SOURCE.txt >SHA256SUMS
 )
 ssh-keygen -Y sign -f "$key" -n duet-release "$out/SHA256SUMS"
 [ -s "$out/SHA256SUMS.sig" ] || die "signing produced no signature"

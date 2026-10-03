@@ -9,3 +9,4 @@
 !tasks/*/assets/.env
 !tasks/*/assets/.env.*
 /dist/
+/.wrangler/

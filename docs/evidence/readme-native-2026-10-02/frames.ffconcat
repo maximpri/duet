@@ -1,0 +1,10 @@
+ffconcat version 1.0
+file '../../assets/launch/duet-native-privacy.png'
+duration 5
+file '../../assets/launch/duet-native-outbound.png'
+duration 5
+file '../../assets/launch/duet-native-summary.png'
+duration 5
+file '../../assets/launch/duet-native-changes.png'
+duration 5
+file '../../assets/launch/duet-native-changes.png'

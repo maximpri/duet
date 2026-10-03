@@ -1,0 +1,49 @@
+{
+  "recorded_date": "2026-10-02",
+  "source_session": "20261002-031043-4ce452",
+  "capture_method": "Direct macOS screencapture -x -o -l 6066; native Terminal.app window, including window frame; PNGs are unmodified screencapture output.",
+  "terminal": {
+    "application": "Terminal.app",
+    "version": "2.15",
+    "profile": "Pro",
+    "font": "Menlo 16",
+    "NO_COLOR": "unset"
+  },
+  "binary_sha256": "44703f8c42fffa1b607420fd17b731c5166f74283a7b8721f6fda52992782e14",
+  "scope": "Inspection of a completed synthetic run in a disposable workspace copy. No new model requests. The original run evidence is unchanged.",
+  "media": {
+    "width": 1400,
+    "height": 880,
+    "frames": 4,
+    "seconds": 20,
+    "source_screenshots": 4,
+    "minimum_color_pixels_per_frame": 9752,
+    "loop": 0
+  },
+  "artifact_digests": {
+    "docs/assets/launch/duet-native-privacy.png": {
+      "sha256": "d9ff573c29602be5da84f323ba08713317b14bba7000ec663cc0736d94b8ca1c",
+      "bytes": 95739
+    },
+    "docs/assets/launch/duet-native-outbound.png": {
+      "sha256": "1da52d7021d08d1188b964b67ee7c4ec6459b4a9a31bf64eef450d10b79f12d2",
+      "bytes": 100721
+    },
+    "docs/assets/launch/duet-native-summary.png": {
+      "sha256": "585b59c9be4e9f492a462e4acc377faf152d92aa33f2c1fe9bde7e058220f4c3",
+      "bytes": 107016
+    },
+    "docs/assets/launch/duet-native-changes.png": {
+      "sha256": "f9caf27fb3c2d4f577b58336958357eba7aa6c0632c600149b3019d61a427c49",
+      "bytes": 85786
+    },
+    "docs/assets/launch/duet-security.gif": {
+      "sha256": "5d04d4d9ba8bea0bf204d9cff2f104e605036b12baa14d334c371e53d79015a4",
+      "bytes": 268613
+    },
+    "docs/evidence/readme-native-2026-10-02/frames.ffconcat": {
+      "sha256": "5ad6a8b0139e1ca66e5f84f15319fc0e7246e645ca6740c1f75aba94aeffd3ea",
+      "bytes": 321
+    }
+  }
+}

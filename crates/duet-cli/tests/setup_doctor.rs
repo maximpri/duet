@@ -240,6 +240,46 @@ fn doctor_fails_a_refused_local_endpoint_and_does_not_contact_it() {
 }
 
 #[test]
+fn setup_validates_an_existing_local_endpoint_before_sending_its_key() {
+    let e = env();
+    let proxy = MockServer::start(&[("GET http://192.0.2.1:9/v1/models", 200, LISTING)]);
+    let proxy_url = format!("http://127.0.0.1:{}", proxy.port);
+    for (policy, refusal) in [
+        ("", "neither loopback nor allowlisted"),
+        (
+            "allowlist = [\"192.0.2.1:9\"]\n",
+            "remote host over plain HTTP",
+        ),
+    ] {
+        let config = format!(
+            "[frontier]\nbase_url = {:?}\n[local]\nbase_url = \"http://192.0.2.1:9/v1\"\napi_key_env = \"DUET_SETUP_TEST_KEY\"\n{policy}",
+            proxy.base_url()
+        );
+        owner_config(&e, &config);
+        let output = duet_with(
+            &e,
+            &["setup", "--local-model", "coder", "--yes"],
+            &[
+                ("HTTP_PROXY", &proxy_url),
+                ("http_proxy", &proxy_url),
+                ("NO_PROXY", ""),
+                ("no_proxy", ""),
+                ("DUET_SETUP_TEST_KEY", "local-setup-key-must-not-leave"),
+            ],
+        );
+        assert!(!output.status.success(), "{}", text(&output));
+        assert!(text(&output).contains(refusal), "{}", text(&output));
+        assert!(!text(&output).contains("local-setup-key-must-not-leave"));
+        assert!(proxy.seen().is_empty(), "refused endpoint was contacted");
+        assert_eq!(
+            std::fs::read_to_string(e.home.join("config.toml")).unwrap(),
+            config,
+            "refused setup changed owner settings"
+        );
+    }
+}
+
+#[test]
 fn doctor_verifies_recent_audit_logs_and_anchors() {
     let e = env();
     let write = |id: &str, anchored: bool| {
@@ -871,6 +911,55 @@ fn online_doctor_asks_the_owners_searxng_for_json() {
     searx(&format!("http://127.0.0.1:{}/nojson", server.port));
     let (_, report) = doctor(&e, &["--online"], &[("ZAI_API_KEY", "k")]);
     assert_eq!(status(&report, "web search"), "warn", "{report}");
+}
+
+#[test]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn offline_doctor_does_not_start_stdio_servers_with_network() {
+    let e = env();
+    let frontier = MockServer::start(&[("GET /v1/models", 200, LISTING)]);
+    let mut config = format!(
+        "[frontier]\nbase_url = {:?}\n[local]\nenabled = false\n",
+        frontier.base_url()
+    );
+    for trust in ["public", "sensitive"] {
+        let script = format!(
+            "printf started > networked-{trust}-started\n{}",
+            duet_mcp::mock::SH_SERVER
+        );
+        config.push_str(&format!(
+            "[mcp.servers.{trust}]\ncommand = \"/bin/sh\"\nargs = [\"-c\", {}]\ntrust = \"{trust}\"\nnetwork = true\n",
+            toml::Value::String(script)
+        ));
+    }
+    owner_config(&e, &config);
+
+    for online in [false, true] {
+        let args: &[&str] = if online { &["--online"] } else { &[] };
+        let (_, report) = doctor(&e, args, &[]);
+        for trust in ["public", "sensitive"] {
+            assert_eq!(
+                e.ws.join(format!("networked-{trust}-started")).exists(),
+                online,
+                "network-enabled {trust} MCP process ran during offline doctor: {report}"
+            );
+            let expected = if online { "pass" } else { "skip" };
+            assert!(
+                report["checks"].as_array().unwrap().iter().any(|c| {
+                    c["name"] == "mcp"
+                        && c["status"] == expected
+                        && c["detail"]
+                            .as_str()
+                            .unwrap()
+                            .contains(&format!("server `{trust}` (stdio)"))
+                }),
+                "{report}"
+            );
+        }
+        if !online {
+            assert!(frontier.seen().is_empty(), "offline model request");
+        }
+    }
 }
 
 #[test]

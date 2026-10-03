@@ -44,7 +44,9 @@ impl ReqwestTransport {
             client: reqwest::Client::builder()
                 .connect_timeout(connect_timeout)
                 // The configured endpoint is the approved data recipient.
-                // A redirect must not move prompts or credentials elsewhere.
+                // Environment/system proxies and redirects must not move
+                // prompts or credentials elsewhere, including loopback prompts.
+                .no_proxy()
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .expect("reqwest client"),

@@ -1,0 +1,332 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+:root {
+  --paper: #f2f2e9;
+  --ink: #142d2a;
+  --muted: #576862;
+  --line: #cbd1c7;
+  --accent: #bbee7c;
+  font-synthesis: none;
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font:
+    17px/1.6 "Avenir Next",
+    Avenir,
+    "Trebuchet MS",
+    sans-serif;
+}
+a {
+  color: inherit;
+}
+a:focus-visible {
+  outline: 3px solid #287952;
+  outline-offset: 7px;
+}
+.page {
+  max-width: 1440px;
+  margin: auto;
+  padding: 0 6.25%;
+}
+.skip {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  padding: 8px 16px;
+  background: var(--ink);
+  color: var(--paper);
+  z-index: 2;
+  transform: translateY(-200%);
+}
+.skip:focus {
+  transform: none;
+}
+header {
+  height: 126px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  gap: 24px;
+}
+.wordmark {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  font-size: 35px;
+  font-weight: 650;
+  letter-spacing: -2px;
+}
+.wordmark svg {
+  width: 28px;
+  height: 32px;
+  margin-right: 13px;
+  fill: var(--ink);
+}
+.period {
+  color: #527c46;
+}
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font:
+    11px/1.5 Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #36784c;
+  box-shadow: 0 0 0 4px #e2e9d7;
+  flex: none;
+}
+.hero {
+  padding: 75px 0 92px;
+}
+.eyebrow,
+.section-label > span {
+  font:
+    11px/1.4 Menlo,
+    Consolas,
+    monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.eyebrow {
+  margin: 0 0 24px;
+}
+h1 {
+  font:
+    400 clamp(58px, 7.8vw, 112px)/0.99 "Iowan Old Style",
+    "Palatino Linotype",
+    "Book Antiqua",
+    Palatino,
+    Georgia,
+    serif;
+  letter-spacing: -0.055em;
+  margin: 0;
+  max-width: 1100px;
+}
+h1 span {
+  color: #52725a;
+}
+.intro {
+  display: flex;
+  gap: 30px;
+  margin: 37px 0 22px;
+  max-width: 590px;
+}
+.intro-mark {
+  font:
+    42px/1 Georgia,
+    serif;
+  padding-top: 7px;
+}
+.intro p {
+  margin: 0;
+  color: #3d5049;
+  font-size: 18px;
+  line-height: 1.65;
+}
+.text-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 35px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 6px;
+  margin-left: 58px;
+}
+.text-link:hover {
+  color: #366d43;
+}
+.approach {
+  border-top: 1px solid var(--line);
+  padding: 58px 0 62px;
+  display: grid;
+  grid-template-columns: 1fr 1.45fr;
+  gap: 72px;
+  scroll-margin-top: 35px;
+}
+h2 {
+  font:
+    400 43px/1.13 "Iowan Old Style",
+    Palatino,
+    Georgia,
+    serif;
+  letter-spacing: -0.025em;
+  margin: 21px 0 0;
+}
+.principles article {
+  display: flex;
+  gap: 26px;
+  padding: 23px 0;
+  border-bottom: 1px solid var(--line);
+}
+.principles article:first-child {
+  padding-top: 0;
+}
+.principles article:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.number {
+  font:
+    11px/2 Menlo,
+    Consolas,
+    monospace;
+  padding-top: 2px;
+  color: #6a7a70;
+}
+.principles h3 {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 0 0 8px;
+}
+.principles p {
+  font-size: 15px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 450px;
+}
+.release {
+  display: flex;
+  justify-content: space-between;
+  gap: 40px;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 34px 38px;
+  margin: 0 0 54px;
+}
+.release p {
+  max-width: 570px;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.5;
+}
+.release > span {
+  align-self: center;
+  flex: none;
+  color: var(--accent);
+  font:
+    11px/1.9 Menlo,
+    Consolas,
+    monospace;
+}
+footer {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding: 26px 0 34px;
+  gap: 20px;
+  font:
+    11px/1.6 Menlo,
+    Consolas,
+    monospace;
+  color: var(--muted);
+}
+footer a {
+  text-decoration: none;
+}
+footer a:hover {
+  text-decoration: underline;
+}
+@media (min-width: 1100px) {
+  .wide-break {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .page {
+    padding: 0 7%;
+  }
+  header {
+    height: 96px;
+    gap: 16px;
+  }
+  .wordmark {
+    font-size: 29px;
+  }
+  .wordmark svg {
+    width: 22px;
+    margin-right: 9px;
+  }
+  .status {
+    font-size: 9px;
+    max-width: 133px;
+    letter-spacing: 0.01em;
+  }
+  .hero {
+    padding: 54px 0 60px;
+  }
+  .eyebrow {
+    font-size: 9px;
+    letter-spacing: 0.11em;
+  }
+  h1 {
+    font-size: clamp(50px, 10.7vw, 74px);
+    line-height: 1.04;
+    letter-spacing: -0.05em;
+  }
+  .intro {
+    gap: 18px;
+    margin-top: 29px;
+  }
+  .intro p {
+    font-size: 16px;
+  }
+  .intro-mark {
+    font-size: 32px;
+  }
+  .text-link {
+    margin-left: 42px;
+    font-size: 13px;
+  }
+  .approach {
+    grid-template-columns: 1fr;
+    gap: 33px;
+    padding: 37px 0 42px;
+  }
+  h2 {
+    font-size: 35px;
+    margin-top: 15px;
+  }
+  .principles article {
+    gap: 20px;
+  }
+  .release {
+    flex-direction: column;
+    gap: 24px;
+    padding: 26px;
+    margin-bottom: 38px;
+  }
+  .release p {
+    font-size: 18px;
+  }
+  .release > span {
+    align-self: flex-start;
+  }
+  footer {
+    font-size: 10px;
+    padding-bottom: 28px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    scroll-behavior: auto;
+  }
+}

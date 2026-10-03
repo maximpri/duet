@@ -6,8 +6,9 @@ all-features = true
 yanked = "deny"
 
 [licenses]
-# Permissive licenses only: compatible with distributing Duet Core under
-# GPL-3.0-or-later, and with dual licensing it for Duet Enterprise (a
+# GPL-compatible licenses permitted for dependencies, including file-level
+# copyleft MPL-2.0 (not permissive). Preserve dependency source and notices.
+# This policy also supports dual licensing Duet Core for Duet Enterprise (a
 # third-party GPL/LGPL/AGPL-only crate would make that impossible, so none is
 # allowed). Duet's own crates are unpublished and exempt below.
 allow = [

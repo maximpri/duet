@@ -499,6 +499,12 @@ pub async fn auto(cfg: &mut Config, options: AutoOptions) -> Result<i32> {
         && let Some(model) = options.local_model.as_deref()
     {
         let url = cfg.str("local.base_url")?;
+        duet_provider::endpoint::check_local_endpoint(
+            &url,
+            &cfg.list("local.allowlist")?,
+            cfg.bool("local.allow_plaintext")?,
+        )
+        .map_err(|e| anyhow::anyhow!(e.message))?;
         let key_env = cfg.str("local.api_key_env")?;
         let key = (!key_env.is_empty())
             .then(|| std::env::var(&key_env).ok())

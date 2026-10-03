@@ -317,6 +317,9 @@ fn client(timeout: Duration) -> Option<reqwest::Client> {
     reqwest::Client::builder()
         .connect_timeout(timeout.min(Duration::from_millis(500)))
         .timeout(timeout)
+        // Discovery carries endpoint credentials; only that endpoint may
+        // receive them, never an implicit environment/system proxy.
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .ok()

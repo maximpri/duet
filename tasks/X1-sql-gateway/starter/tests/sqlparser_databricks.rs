@@ -1,3 +1,5 @@
+// Modified from upstream for Duet's X1 evaluation fixture; see the task's NOTES.md.
+// Modification notice added 2026-10-02; original license notices are retained.
 use sqlparser::ast::*;
 use sqlparser::dialect::{DatabricksDialect, GenericDialect};
 use sqlparser::parser::ParserError;

@@ -1,3 +1,5 @@
+// Modified from upstream for Duet's X1 evaluation fixture; see the task's NOTES.md.
+// Modification notice added 2026-10-02; original license notices are retained.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at

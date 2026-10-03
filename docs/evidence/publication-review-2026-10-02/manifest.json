@@ -1,0 +1,123 @@
+{
+  "review_date": "2026-10-02",
+  "base_commit": "f7eb3e894dcc54e662d20e9625a44c5e3e96fe23",
+  "scope": "Current source changes, not a signed production release or an independent security certification.",
+  "macos": {
+    "arch": "arm64",
+    "rustc": "1.97.1",
+    "bash": "3.2.57",
+    "command": "tools/gate.sh",
+    "passed": 1235,
+    "ignored": 22,
+    "result": "all checks passed"
+  },
+  "linux_sandbox": {
+    "arch": "aarch64",
+    "rustc": "1.99.0",
+    "bubblewrap": "0.8.0",
+    "command": "DUET_LINUX_TARGET_DIR=<external-cache> tools/linux-check.sh --keep",
+    "privileged": {
+      "passed": 476,
+      "ignored": 12
+    },
+    "unprivileged": {
+      "passed": 476,
+      "ignored": 12
+    },
+    "root": {
+      "passed": 476,
+      "ignored": 12
+    },
+    "registry_network": {
+      "privileged_passed": 1,
+      "unprivileged_passed": 1
+    },
+    "no_namespaces_passed": 3
+  },
+  "linux_final_regressions": {
+    "bash": "5.2.15",
+    "command": "cargo test --locked -p duet-cli --test provider_proxy --test setup_doctor && cargo test --locked -p duet-release --test release_scripts",
+    "passed": 21,
+    "ignored": 0,
+    "proxy_subprocess_cases": 12
+  },
+  "evals": {
+    "validate": "all 13 task packages and seals passed",
+    "selftest": "canaries, proxy, statistics and pricing passed"
+  },
+  "offline_source_build": "../licensing-2026-10-02/offline-source-validation.json",
+  "log_sanitization": "Only local workspace/user/cache paths replaced; no test outcomes changed. Original and retained hashes are recorded separately.",
+  "logs": {
+    "macos-gate.log.gz": {
+      "original_sha256": "371624e0e832e9c619a4ca07f44095389b52a9fa9d43745846d05d7d259d6dbc",
+      "decompressed_sha256": "3e51ee9dd648fdc357633ad81c5d3f0c5d23d72c9952b1bf3e91707cadb45c6f",
+      "gzip_sha256": "f93fa09f065e4871e32058079f35754ac9ef8766f9abee0c70af6a7da320ab58"
+    },
+    "linux-sandbox.log.gz": {
+      "original_sha256": "91c6157fddccaf6291ac23299091da30bf437543d57f2e37dc7b59a5218da2cc",
+      "decompressed_sha256": "91c6157fddccaf6291ac23299091da30bf437543d57f2e37dc7b59a5218da2cc",
+      "gzip_sha256": "d3b996e86e399697c2fda759ba961250152f657e84c59908269e989f9ae05c45"
+    },
+    "linux-regressions.log.gz": {
+      "original_sha256": "1e508aed077d9cfba678a3dcaa82ef59632e5dad264aed47fa6cb3b4e2a24961",
+      "decompressed_sha256": "1e508aed077d9cfba678a3dcaa82ef59632e5dad264aed47fa6cb3b4e2a24961",
+      "gzip_sha256": "14cea9bdb1c71a117c6e57c178fc938e6fabde3365fb8bdaaddc4a10ddc2e4fd"
+    },
+    "offline-build.log.gz": {
+      "original_sha256": "dc6b32daa8b82e482f8a2a92b05e6d7a1eded56e7d9ad17b7a49afaec5c9030f",
+      "decompressed_sha256": "2ac09e6cc2e706c463210ed989df409c79fbb3c713e83c5abd487b834dd0acf2",
+      "gzip_sha256": "c4d124948e2e1033d5f1e8797d03434665569fc30fb9516e5c294b82b51462dc"
+    }
+  },
+  "changed_source_files_sha256": {
+    "Cargo.lock": "787366403c3b69f018966aff3c450a58116033536fd42e50a28d07a46174000c",
+    "LICENSES.md": "ca63358152e421bcafb56560e7a1b1eead047bc6fbe924d8800eb165e8838056",
+    "NOTICE": "40c808f5a5bf6d843e3f9f6ece0db6e6c7048b34d80d500a7f351be234d5f009",
+    "crates/duet-agent/src/tools.rs": "40aa1e5c352dc004715d0c8f055159b80f1af3f7b26956002a9d237e017804c1",
+    "crates/duet-cli/src/doctor.rs": "68ec8721d29461390a5ca924b0f237f6e78076674d9ba0425d0adab45b34304e",
+    "crates/duet-cli/src/overrides.rs": "c6c37b5ea9768836eb09b4c5dc9fe0e138cbbae46fc688ebb86e0477f613d6c2",
+    "crates/duet-cli/src/setup.rs": "a5ce1c120332bb5780b472e46d65633c3b25f26149eee8da56d6c38479db9fa3",
+    "crates/duet-cli/tests/provider_proxy.rs": "f5c9e443403cd472897c8989b49dbd33771c2cdd48cdb18044e8f49703436b70",
+    "crates/duet-cli/tests/setup_doctor.rs": "bce83633f2c0a8f8eec9129f56be81824ce5321275bae00cd6e27b023e183798",
+    "crates/duet-provider/src/backends.rs": "e9cd7147e4273bfc9ada8930c55ebb3a18157f8176e9176a6d00b8ad6e906370",
+    "crates/duet-provider/src/client.rs": "5c78ea353068a03835197cd8154bae2d8a8447fe4ac9319c8f62a53fae1ed4ea",
+    "crates/duet-release/tests/release_scripts.rs": "e0c67355e8162713e4cacd700d609755789b93a70a0c4cd02de94aab522b2e09",
+    "deny.toml": "585f97fbf7d995a300e0fd4a54952f7cd7dd685350d115b4992ed078dda22fdd",
+    "site/public/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "site/public/NOTICE": "40c808f5a5bf6d843e3f9f6ece0db6e6c7048b34d80d500a7f351be234d5f009",
+    "site/public/_headers": "01897cc9a9ac2ea720cb8665b38910eb5c7d3e9233e9e5a913fa844e06bbd500",
+    "site/public/icon.svg": "d05242a7b8948bf1adae2b68facc14bcf4e796721c609326f8d8da60cb0dc239",
+    "site/public/index.html": "4d54d0a8b08ebbc3bc7488907783b0863d263a3a7e8c35dc5dc9c6ddf6b1c37b",
+    "site/public/robots.txt": "16ceb5ee3e0dc13aa9adf31a3ebbe45a1d965b8c2b9f72eaf84e5911e140ed95",
+    "site/public/style.css": "363999caa833f1e513a42a5e0c73bc2ea3d3d9ab174186210e740f2c943f9595",
+    "tasks/X1-sql-gateway/NOTES.md": "7a8cb1bd5287f263197ad3fe588feefb74eeb4670d244506d6c9f19db293fc09",
+    "tasks/X1-sql-gateway/reference/src/ast/mod.rs": "8412f45b63b5f4faf1f68ac43a50b5a783c8fc1c48fe2415487ecc9716fe616a",
+    "tasks/X1-sql-gateway/reference/src/ast/query.rs": "b10b27f678d12d4f448cb8feab1c00ea2c234ce63ed2d878fe7357b30dce904e",
+    "tasks/X1-sql-gateway/reference/src/dialect/mod.rs": "c50f159022d42c78052da1fb667819a4ca68f6188e60701c077c618d123f22da",
+    "tasks/X1-sql-gateway/reference/src/dialect/postgresql.rs": "df31efc7e7cb54e93d4363f7c5e34d8e792d2e8b3d3e1f566badf07848e76544",
+    "tasks/X1-sql-gateway/reference/src/lib.rs": "26fba9e7a11aa6326de6fd02be1a1bede5970f4aefabd6e0f220eeb17059f34d",
+    "tasks/X1-sql-gateway/reference/src/parser/mod.rs": "b415bf9a3772d74c1c7cf3739780ee50c8be149e51ff5605659bbc547fa395e5",
+    "tasks/X1-sql-gateway/reference/src/tokenizer.rs": "24db869704d3cb76aa56bfa0bcbccc4b6955d883d042f6e9e9a032252f9fd6c9",
+    "tasks/X1-sql-gateway/reference/tests/sqlparser_common.rs": "ec97725c001bab376c10286fb8db450499220e827f12da5a9951ce49aea12df0",
+    "tasks/X1-sql-gateway/seal.toml": "f60a6df0c9633701abce5cf66c8e5e6a46eef84d217fbf2c113b436595ec8cd9",
+    "tasks/X1-sql-gateway/starter/.gitignore": "af45158104ac1f317fa6b4c70d885ae2c566234a9a093405a12c3f6176b72533",
+    "tasks/X1-sql-gateway/starter/Cargo.toml": "bd5cfb97585760a134175b8de4e14a0d2de6c6d8cfcf7f595a70eb9196085d0d",
+    "tasks/X1-sql-gateway/starter/examples/cli.rs": "865e38aca6a93672c59271e39e1b463680db1602b789eb7382c527cf752fd68b",
+    "tasks/X1-sql-gateway/starter/src/lib.rs": "5d1d84864160fa22d7e07eeca0cd754e02984d5fb7b4a83f4c3dfec96a31a6f8",
+    "tasks/X1-sql-gateway/starter/src/test_utils.rs": "173c54cd77b638f731fcf05782bae4e23f444b097d50b11aaa5d45807b63de1e",
+    "tasks/X1-sql-gateway/starter/tests/sqlparser_common.rs": "6527a468cd81ea7b7aea0d9a63290a2e8bc72e667b3f002f3f831a45510d85bb",
+    "tasks/X1-sql-gateway/starter/tests/sqlparser_databricks.rs": "e5331cd039b8fbb5448417259e41fce393544e93a377bcd717fbd894e2faab38",
+    "tasks/X1-sql-gateway/starter/tests/sqlparser_mysql.rs": "e8aea4d8c37c8c58efd5341351e30856f0cb59bcc1dfcb9b49aa3a50c0d71b83",
+    "tasks/X1-sql-gateway/starter/tests/sqlparser_postgres.rs": "e9345a8091ea42fab5c0f8ad62be164aa9d70ad5ad7bdd046779762d454ecb37",
+    "tasks/X1-sql-gateway/starter/tests/sqlparser_snowflake.rs": "fd136cd7f1937c362d82e307837b9828b931c43fe3328c0d4cdbe174ee66d42e",
+    "tasks/X1-sql-gateway/starter/vendor/log/Cargo.toml": "d209865c82bd96b3b7e5e090892e7750bfdfbe61a91288c0eab59e98814040e9",
+    "tools/build-launch-reel.py": "2bf3341a005e6d642c8499bae91c5fafe5e531df56881d71f6d998957326c66b",
+    "tools/capture-tui.py": "5330c8f3039a5aee404407165d0790f5e450f5e235d19eb8f8ce20b72a3b19a6",
+    "tools/install.sh": "dfab0c96abe794e095be72babc2a06a3057af984114f27b85169fa4f42e79524",
+    "tools/linux-check.sh": "360c29b81d371b8ba946f7a344a043db379061a05f172d1f3635b8a003cd0036",
+    "tools/release.sh": "7ff6d163556b7a05d12e8d5441de6c2b67fdba29a0791e76aac38b64c5877388",
+    "tools/render-tui-cast.cjs": "832e4ab368f01699f0428a4ceeb83338e9ae89e1550e9fa859a6c4dac2e93ed0",
+    "tools/source-release.sh": "bbd405f71b29b521f675f937e0736f2a0e73b5fda44b9bf0c0cbf8846de44fdf",
+    "tools/verify-release.sh": "54540c37039fd6d49932c012b5b72b4bfe07193790dbd9f6a44d84d89f43be49"
+  }
+}

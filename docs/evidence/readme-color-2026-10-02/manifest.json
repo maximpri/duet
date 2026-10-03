@@ -7,7 +7,7 @@
     "COLORTERM": "truecolor",
     "NO_COLOR": "unset"
   },
-  "scope": "Review of a disposable copy of a completed synthetic session; no new model requests; original evidence unchanged.",
+  "scope": "Review of a disposable copy of a completed synthetic session; no new model requests; original evidence unchanged. Archived replay-rendered media; the README now uses direct Terminal window screenshots.",
   "media": {
     "width": 1288,
     "height": 792,
@@ -26,9 +26,10 @@
       "sha256": "f6788dfe095adab4acd0ac5b11069d21fda2825d31879366d9de28e6ae545990",
       "bytes": 951
     },
-    "docs/assets/launch/duet-security.gif": {
+    "docs/evidence/readme-color-2026-10-02/replay.gif": {
       "sha256": "d0e095d5d9ba551e0f59ffb251496f47ce266a4e6f7f68c770d41af12bdab916",
       "bytes": 240647
     }
-  }
+  },
+  "superseded_by": "docs/evidence/readme-native-2026-10-02/manifest.json"
 }

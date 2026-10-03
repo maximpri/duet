@@ -22,6 +22,20 @@ Packaging changes to upstream (so it builds and tests offline with no registry a
 - `Cargo.lock` is committed (removed from `.gitignore`);
 - added `docs/FINGERPRINT.md` (the feature spec, written for this task).
 
+## Licensing notices (2026-10-02)
+
+Modified upstream files now carry a prominent modification notice for Apache-2.0
+section 4(b). The notices cover the 18 files that differ from the pinned sqlparser
+upstream and the reduced vendored log manifest. Original copyright and license
+headers are retained. Only comment lines were added; executable source, task data
+and grading logic are unchanged.
+
+The comments change file hashes, so `seal.toml` was updated. The previous seal is
+preserved in [the licensing evidence](../../docs/evidence/licensing-2026-10-02/X1-seal-before-notices.toml),
+with [per-file before/after hashes](../../docs/evidence/licensing-2026-10-02/X1-notice-changes.json).
+Historical evaluation reports retain their original seal identity; this update
+does not turn those results into measurements of the new seal.
+
 ## Design
 
 The gateway context (PostgreSQL 16 warehouse, forwarding `Statement::to_string()`, audit records)

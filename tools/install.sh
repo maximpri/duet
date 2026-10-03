@@ -7,7 +7,7 @@ set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd -P)"
 cd "$repo"
 
-for tool in cargo rustc mktemp cp chmod mv mkdir; do
+for tool in cargo rustc mktemp cp chmod mv mkdir rm; do
     command -v "$tool" >/dev/null 2>&1 || {
         printf 'duet install: required command not found: %s\n' "$tool" >&2
         exit 1
@@ -19,6 +19,10 @@ case "$install_dir" in
     /*) ;;
     *) printf 'duet install: DUET_INSTALL_DIR must be an absolute path\n' >&2; exit 1 ;;
 esac
+[ ! -d "$install_dir/duet" ] || {
+    printf 'duet install: destination is a directory: %s/duet\n' "$install_dir" >&2
+    exit 1
+}
 
 target_dir="${CARGO_TARGET_DIR:-$repo/target}"
 case "$target_dir" in
@@ -26,14 +30,31 @@ case "$target_dir" in
     *) target_dir="$repo/$target_dir" ;;
 esac
 
-printf 'Building duet from this checkout with Cargo.lock...\n'
-cargo build --release --locked -p duet-cli --bin duet
-
-if [ -n "${CARGO_BUILD_TARGET:-}" ]; then
-    binary="$target_dir/$CARGO_BUILD_TARGET/release/duet"
-else
-    binary="$target_dir/release/duet"
+build_target="${CARGO_BUILD_TARGET:-}"
+if [ -z "$build_target" ]; then
+    # An installer builds for this machine even if Cargo config selects a
+    # different default target. Explicit paths also override target-dir config.
+    compiler_info="$(rustc -vV)"
+    while read -r key value; do
+        if [ "$key" = 'host:' ]; then
+            build_target="$value"
+            break
+        fi
+    done <<< "$compiler_info"
 fi
+[ -n "$build_target" ] || {
+    printf 'duet install: could not determine the Rust host target\n' >&2
+    exit 1
+}
+
+printf 'Building duet from this checkout with Cargo.lock...\n'
+cargo build --release --locked -p duet-cli --bin duet \
+    --target "$build_target" --target-dir "$target_dir"
+
+# Cargo names custom JSON-target output directories after the target file.
+target_name="${build_target##*/}"
+target_name="${target_name%.json}"
+binary="$target_dir/$target_name/release/duet"
 [ -f "$binary" ] || {
     printf 'duet install: built binary not found at %s\n' "$binary" >&2
     exit 1

@@ -227,8 +227,8 @@ pub async fn run(ws: &Path, online: bool, emb: &Embedding) -> Vec<Check> {
 }
 
 /// Configured MCP servers: stdio servers are started in the sandbox (with a
-/// run's hidden paths), HTTP servers only contacted with `--online`; each
-/// reports how many tools it offers, then is stopped.
+/// run's hidden paths). Servers with network access, including stdio servers,
+/// are only contacted with `--online`; each reports its tools, then is stopped.
 async fn mcp_servers(c: &Config, ws: &Path, online: bool) -> Vec<Check> {
     let configured = crate::mcp::configured(c);
     if configured.is_empty() {
@@ -273,11 +273,16 @@ sends (a risk the owner accepted)"
                 Status::Skip,
                 format!("server `{name}`: disabled"),
             )),
-            Ok((server, true)) if !online && server.transport_name() == "http" => out.push(check(
-                "mcp",
-                Status::Skip,
-                format!("server `{name}` (http): not contacted offline; --online connects"),
-            )),
+            Ok((server, true)) if !online && crate::mcp::reaches_network(&server) => {
+                out.push(check(
+                    "mcp",
+                    Status::Skip,
+                    format!(
+                        "server `{name}` ({}): not contacted offline; --online checks servers with network access",
+                        server.transport_name()
+                    ),
+                ))
+            }
             Ok((server, true)) => start.push(server),
         }
     }

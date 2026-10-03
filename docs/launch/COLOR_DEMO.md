@@ -1,26 +1,40 @@
-# Privacy review in color
+# Duet in Terminal
 
-![Native Duet colors while inspecting a completed billing task](../assets/launch/duet-security.gif)
+The README GIF is made from **direct macOS screenshots of Duet running in Terminal.app**, including the native window frame. The PNGs below are the original `screencapture` output. No browser renderer, terminal replay, generated screen or text replacement was used for these images.
 
-This 18-second clip reviews a copy of completed session `20261002-031043-4ce452`: the customer CSV's privacy decision, its outbound record, a credential-filtering record and the code diff. It makes no new model calls. The original task's **4/4 passing tests** and **zero matches for 13 planted values in five frontier requests** come from the [original recording and independent checks](FRESH_DOGFOOD.md).
+| Sensitive-file handling | Outbound record |
+| --- | --- |
+| ![Duet running in Terminal: sensitive-file handling](../assets/launch/duet-native-privacy.png) | ![Duet running in Terminal: outbound record](../assets/launch/duet-native-outbound.png) |
 
-The original capture inherited `NO_COLOR=1`. On October 2, 2026, the same capture binary was used to reopen a disposable copy of that synthetic workspace with `NO_COLOR` unset. The new recording contains Duet's native ANSI colors. No terminal text was recolored, synthesized or replaced. Selected states are held for readability; playback length is not task duration.
+| Filtered local answer | Code change |
+| --- | --- |
+| ![Duet running in Terminal: private amounts withheld from the local answer](../assets/launch/duet-native-summary.png) | ![Duet running in Terminal: billing code diff](../assets/launch/duet-native-changes.png) |
 
-[Original color PTY recording](../evidence/readme-color-2026-10-02/review.cast.gz) · [Frame selection](../evidence/readme-color-2026-10-02/reel-edit.json) · [Manifest](../evidence/readme-color-2026-10-02/manifest.json)
+Open a PNG to inspect the full-size screenshot. The GIF holds each of these four screenshots for five seconds, in order. It is a review of a completed session, not a recording of the time spent coding.
 
-The source run used an owner-allowlisted plaintext LAN model endpoint and fictional data. The recording retains its endpoint notice and the model's original prose, including its incorrect “reactivated” example; the fixture's bug concerns “inactive”. See the [original run's scope and checks](FRESH_DOGFOOD.md) for the evidence behind the result. Reopening a copied session adds lifecycle events to that copy; the published original audit remains unchanged.
+## Source
 
-## Rebuild
+Captured October 2, 2026 in Terminal.app 2.15, Pro profile, Menlo 16, with `NO_COLOR` unset. Duet reopened a disposable copy of session `20261002-031043-4ce452`. No new model requests were made. The capture binary's hash and each image's hash are in the [manifest](../evidence/readme-native-2026-10-02/manifest.json).
 
-Use the dependencies described in the [original media guide](FRESH_DOGFOOD.md#rebuild-the-media), then run from the repository root:
+The original task passed **4/4 tests**, with **zero matches for 13 planted values in five recorded frontier requests**. Those results come from the [original run and independent checks](FRESH_DOGFOOD.md), not from the model's on-screen explanation.
+
+The fixture contains fictional data. Its local model endpoint was an owner-allowlisted plaintext LAN server; the screenshot retains that notice. The model's original explanation also retains its incorrect “reactivated” example—the test fixture concerns “inactive”. The [source run documentation](FRESH_DOGFOOD.md) explains both. Reopening the disposable copy adds lifecycle events to that copy; the published original audit is unchanged.
+
+## Capture and rebuild
+
+With Duet running in a native Terminal window, capture that window directly:
 
 ```sh
-NODE_PATH=/path/to/capture/node_modules python3 tools/build-launch-reel.py \
-  --xterm /path/to/capture/node_modules/@xterm/xterm \
-  --chrome '/path/to/Google Chrome' \
-  --evidence docs/evidence/readme-color-2026-10-02 \
-  --name duet-security \
-  --output /tmp/duet-color-media
+screencapture -x -o -l <window-id> screenshot.png
 ```
 
-For future captures, run `tools/capture-tui.py` with `env -u NO_COLOR` so the child terminal can emit colors. The builder replays the recorded bytes with xterm.js and preserves their colors through GIF palette generation. Browser, font and encoder versions can change pixel hashes.
+The four committed PNGs are unchanged capture output. Rebuild the GIF from them with ffmpeg, from the repository root:
+
+```sh
+ffmpeg -hide_banner -y -safe 0 -f concat \
+  -i docs/evidence/readme-native-2026-10-02/frames.ffconcat \
+  -filter_complex '[0:v]split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=3' \
+  -fps_mode vfr -t 20 -final_delay 500 -loop 0 /tmp/duet-security.gif
+```
+
+The earlier xterm.js replay has been [archived separately](../evidence/readme-color-2026-10-02/manifest.json). It is not used by the README.

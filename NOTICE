@@ -1,0 +1,27 @@
+Duet Core
+Copyright (C) 2026 Duet contributors
+
+Duet Core is free software: you can redistribute it and/or modify it under
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version (SPDX-License-Identifier: GPL-3.0-or-later).
+
+Duet Core is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See LICENSE for the GNU General Public License.
+
+Third-party material retains its own copyright and license notices:
+
+* The embedded gitleaks v8.30.1 detection rules are MIT licensed. Their
+  provenance and complete license are in crates/duet-boundary/rules/NOTICE
+  and crates/duet-boundary/rules/LICENSE.gitleaks.
+* Rust dependencies retain the licenses distributed with each crate. Release
+  source archives include the complete dependency sources and their notices
+  under vendor/. The release SBOM identifies binary dependencies and versions.
+* The sqlparser and log evaluation fixtures under tasks/X1-sql-gateway/ and
+  the JSONata fixtures under tasks/X2-partner-exports/ retain their upstream
+  licenses. The starter license files also cover the upstream portions of
+  each reference overlay. Each task's NOTES.md records provenance and changes.
+
+The GPL grant for Duet does not relicense third-party material. See
+LICENSES.md for distribution instructions and links to the retained notices.

@@ -1,3 +1,5 @@
+# Modified from upstream for Duet's X1 evaluation fixture; see the task's NOTES.md.
+# Modification notice added 2026-10-02; original license notices are retained.
 # Vendored copy of the `log` crate 0.4.29 (crates.io, MIT OR Apache-2.0),
 # reduced to the manifest entries this repository needs so it builds offline.
 # The optional key-value features (and their dependencies) are not available.

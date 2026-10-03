@@ -1,6 +1,12 @@
 # Duet v2 — Acceptance and Requirements Traceability
 
-Status: audit of `main` at `234165b` (2026-09-24), before any release. It is read-only: no code was
+**Historical acceptance ledger.** For the October 2 publication review and its
+current verification status, see [Publication readiness](PUBLISH_READINESS.md).
+The audit below and its later row-specific updates describe their named builds;
+old “never run” statements and release verdicts are snapshots, not a fresh verdict
+on the current tree. Rows not explicitly updated have not been re-audited.
+
+Original audit: `main` at `234165b` (2026-09-24), before any release. It was read-only: no code was
 changed, and no models or evaluations were run. The evidence is the test suite (one full
 `tools/gate.sh` run), the measured batches under `results/` (EXT_DISK), the code, and the git history.
 The operator's standing decisions are in [PLAN.md](PLAN.md) §3. Rows and defects marked "after the audit" were

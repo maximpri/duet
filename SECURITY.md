@@ -63,6 +63,11 @@ in [the auditor report](docs/SECURITY-AUDITOR-2026-09-30.md).
   clearance will not start. Tested end to end with planted values in `crates/duet-cli/tests/no_local.rs`.
 - The frontier provider is treated as an honest-but-curious recipient: everything it receives may be
   retained.
+- Model requests and model discovery connect directly to their configured endpoints. They ignore
+  environment and system proxy settings (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and lowercase
+  variants) and do not follow redirects. This applies to both local and frontier endpoints: a proxy
+  must not silently become another recipient of prompts or credentials. To use an approved model
+  gateway, configure it as the endpoint; the local-role trust rules still apply.
 
 ### Frontier provider data handling
 
@@ -691,7 +696,7 @@ names what was by convention until the egress audit of 2026-09-26 (DUET-2026-025
 | Commands, `sandbox.network = "all"` | anyone | what an ordinary command can read | the sandbox's read rules; the command-text check | owner loosening (confirmed and audited) |
 | `sensitive_data` commands; checks that can read protected source | nobody | nothing | no network in any mode | structural (sandbox) |
 | Language servers | nobody | nothing | sandboxed, network off | structural |
-| Local model (the engine's local roles, the explorer, compaction, image descriptions, the vision probe) | the owner's local model server: loopback, or an allowlisted LAN host over TLS (plain HTTP only with `local.allow_plaintext`) | raw sensitive content, by design | the endpoint trust rule, checked when the provider is built; the explorer's `LocalAgent` refuses any provider not in the local role | structural, owner-trusted |
+| Local model (the engine's local roles, the explorer, compaction, image descriptions, the vision probe) | the owner's local model server: loopback, or an allowlisted LAN host over TLS (plain HTTP only with `local.allow_plaintext`) | raw sensitive content, by design | the endpoint trust rule, checked when the provider is built; no implicit proxy or redirects; the explorer's `LocalAgent` refuses any provider not in the local role | structural, owner-trusted |
 | Images | the frontier (by a named rule) or the local model | pixels | `route_image`; the gate refuses any image not routed to the frontier | structural |
 | git | nobody | nothing | the hardened runner: `protocol.allow=never`, no hooks, no push | structural |
 | `duet doctor --online`, `duet setup` discovery, context-window and cache probes | the configured frontier and local endpoints; the owner's SearXNG | fixed test prompts and images, model names, the owner's keys to their own endpoints; SearXNG gets the fixed query `duet` | no run content exists there; the owner starts them | fixed content (by construction of the probes) |
@@ -1516,6 +1521,16 @@ fixed before the first public release, all found by Duet's own canary measuremen
 
 | DUET-2026-032 | Short structured values copied by a local summary | CWE-200 Exposure of Sensitive Information | After the diagnostic preview fix, the live local reader still quoted exact amounts. Short scalar values were below the copied-span window and did not match secret/PII detectors | Check local output against structured values from its sensitive input even when structure display is off; preserve already-public words, and check recognized encoded runs too. Regression: `local_digest_cannot_quote_short_structured_values`. [Retained intermediate audit and rerun](docs/launch/DEMO.md#what-the-first-run-found). This does not eliminate semantic or fragment leakage |
 
+| DUET-2026-033 | Interrupted sensitive commands left public output files | CWE-754 Improper Check for Unusual or Exceptional Conditions (consequence CWE-201) | A `sensitive_data` command could write a copy or transformation of protected data before being interrupted. Its error returned before derived-file classification, leaving those files available to ordinary commands and file tools, including after resume. Found in code review, not observed in a live model run | Classify and persist changed files and record the sensitive-command audit event before propagating any sandbox error. Regression: `interrupted_sensitive_commands_keep_their_written_files_private_on_resume` |
+
+| DUET-2026-034 | Local model requests routed through environment proxies | CWE-923 Improper Restriction of Communication Channel to Intended Endpoints | Model and discovery clients inherited environment proxy settings after checking only the configured endpoint URL. A synthetic top-clearance reproduction sent a fictional private prompt for a loopback endpoint to an HTTP proxy. Local credentials and discovery credentials could follow the same path | Disable implicit proxies in the model and discovery clients for both local and frontier endpoints. Isolated subprocess regression `model_requests_and_discovery_ignore_environment_proxies` exercises HTTP and HTTPS destinations with each uppercase/lowercase HTTP, HTTPS and ALL proxy setting, checks that the trap receives nothing, and verifies direct HTTP model/discovery requests still carry their credentials |
+
+| DUET-2026-035 | Setup sent a local key before validating the configured endpoint | CWE-923 Improper Restriction of Communication Channel to Intended Endpoints | `duet setup --local-model` reused a configured `local.base_url` and sent its model-listing request with the local API key before checking the local endpoint trust rules. An unallowlisted host, or an allowlisted plaintext remote host without the opt-in, could receive that key. Found in review; no private model prompt was involved | Validate the existing endpoint before reading its key or starting discovery, as the explicit `--local-url` path already does. Regression: `setup_validates_an_existing_local_endpoint_before_sending_its_key`, using a subprocess proxy trap and checking that refused setup leaves configuration unchanged |
+
+Related hardening: offline `duet doctor` now skips network-enabled stdio MCP servers as well as
+HTTP MCP servers; `--online` is required to start either. This closes an unexpected network path
+in an offline diagnostic, not an observed prompt disclosure.
+
 Related hardening, not an observed leak: a placeholder for a value the operator typed is a handle
 for `ask_local` (`492898c`); the end state of `duet run` shows the operator their own values
 (`c8b5164`); a name in local-model output is a person only if the model took it from what it read,
@@ -1523,8 +1538,12 @@ after "No Luhn validation" in a summary made "Luhn" a vaulted name (`782e5cc`); 
 
 ## Reporting a vulnerability
 
-**Contact:** `security@<domain>` <!-- TODO(operator): set the real address here and in docs/security.txt -->.
-Do not open a public issue for a suspected disclosure path. Include the Duet version or commit, the
+**Private reporting is not configured yet.** A working private reporting route will be published
+here before release. The project website does not currently accept vulnerability reports, and
+the `security.txt` file below is an undeployed template.
+
+Do not open a public issue or post sensitive reproductions. When the private route is available,
+include the Duet version or commit, the
 mode, what crossed (a canary is ideal; please do not send real secrets), and the steps or audit log
 excerpt (`duet audit show <run> --raw`) that reproduce it.
 
@@ -1545,6 +1564,6 @@ affected versions, the CWE root cause, the fix and credit, unless you prefer not
 within this policy: test only on installations and accounts you own or are authorised to test, use
 canaries rather than real personal data, do not access, keep or disclose other people's data, do not
 degrade services you do not own (including the model providers), and give us reasonable time to fix
-before disclosure. If in doubt, ask first at the contact above.
+before disclosure. If in doubt, wait for the private reporting route before sharing a reproduction.
 
 A [`security.txt`](docs/security.txt) template (RFC 9116) is provided for the project's website.

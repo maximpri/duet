@@ -850,7 +850,11 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
     } else {
         Access::Ordinary
     };
-    let o = sandboxed(ctx, command, timeout, access).await?;
+    // A stopped or failed command can already have written sensitive data.
+    // Persist those classifications before returning its error, so resuming
+    // the run cannot expose partial output as an ordinary public file.
+    let result = sandboxed(ctx, command, timeout, access).await;
+    let exit_code = result.as_ref().ok().and_then(|o| o.exit_code);
     let source = if let Some(before) = before {
         let after = snapshot(ctx.workspace);
         let mut changed: Vec<PathBuf> = after
@@ -862,19 +866,20 @@ async fn run_command(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Result<Str
         ctx.presenter.mark_sensitive(ctx.workspace, &changed);
         ctx.record(AuditEvent::SensitiveCommand {
             command: command.to_owned(),
-            exit_code: o.exit_code,
+            exit_code,
             derived_files: changed.iter().map(|p| p.display().to_string()).collect(),
         });
         Source::SensitiveCommand {
             command: command.to_owned(),
-            exit_code: o.exit_code,
+            exit_code,
         }
     } else {
         Source::Command {
             command: command.to_owned(),
-            exit_code: o.exit_code,
+            exit_code,
         }
     };
+    let o = result?;
     let mut shown = ctx.presenter.present(&source, &render_output(&o));
     // Never reveal even a failure category from a local-only command.
     if !sensitive_data {
@@ -1424,6 +1429,74 @@ mod sensitive_command_tests {
             ["sandbox_denial", "sensitive_command", "sandbox_denial"]
         );
         assert!(log.contains("\"derived_files\":[\"totals.txt\"]"), "{log}");
+    }
+
+    #[tokio::test]
+    async fn interrupted_sensitive_commands_keep_their_written_files_private_on_resume() {
+        let d = tempfile::tempdir().unwrap();
+        let ws = d.path().canonicalize().unwrap().join("ws");
+        let run = ws.join(".duet/runs").join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(ws.join("data")).unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(ws.join("data/input.txt"), "confidential source\n").unwrap();
+        let policy = Policy {
+            sensitive_globs: vec!["data/**".into()],
+            ..Policy::default()
+        };
+        let engine = Engine::open(&run, policy.clone(), None).unwrap();
+        let git = Git::locate().unwrap();
+        let mut journal = WriteJournal::open(&run).unwrap();
+        let interrupted = AtomicBool::new(false);
+        let mut ctx = Ctx {
+            workspace: &ws,
+            run_dir: &run,
+            sandbox: duet_sandbox::detect().unwrap(),
+            git: &git,
+            presenter: engine.as_ref(),
+            journal: &mut journal,
+            command_timeout: Duration::from_secs(10),
+            network: &crate::egress::Network::Off,
+            checks: &[],
+            audit: None,
+            interrupted: Some(&interrupted),
+            web: None,
+            git_tools: None,
+            lsp: None,
+        };
+        let stop_after_write = async {
+            let until_written = async {
+                while !ws.join("copied.txt").is_file() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            };
+            tokio::time::timeout(Duration::from_secs(5), until_written)
+                .await
+                .expect("the command must write before it is interrupted");
+            interrupted.store(true, std::sync::atomic::Ordering::SeqCst);
+        };
+        let (shown, ()) = tokio::join!(
+            call(
+                &mut ctx,
+                "run_command",
+                json!({"command": "cp data/input.txt copied.txt; sleep 30", "sensitive_data": true}),
+            ),
+            stop_after_write,
+        );
+        assert!(shown.contains("interrupted"), "{shown}");
+        assert!(
+            engine
+                .hidden_from_commands(&ws)
+                .contains(&ws.join("copied.txt")),
+            "files written before interruption must be withheld"
+        );
+        let resumed = Engine::open(&run, policy, None).unwrap();
+        assert!(
+            resumed
+                .hidden_from_commands(&ws)
+                .contains(&ws.join("copied.txt")),
+            "the derived classification must survive resume"
+        );
+        let _ = std::fs::remove_dir_all(sensitive_scratch(&run));
     }
 
     #[tokio::test]
