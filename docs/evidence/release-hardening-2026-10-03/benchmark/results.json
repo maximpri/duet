@@ -1,0 +1,532 @@
+{
+  "schema_version": 1,
+  "source_commit": "b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4",
+  "binary_sha256": {
+    "duet": "74c741d5132eed6e33ce211aec95b30933cfdcd2cb824aeeb1b0d905d086749b",
+    "duet-eval": "f5ddc78ded6356e8ebf690b242e920228c7fa424f75820a5d50c1268fe79968b"
+  },
+  "source_archive_sha256": "38a1763e2bc21d2331403eea49b251b8174a410ee9f0132b81f7764c8041265d",
+  "planned_runs": 54,
+  "status_counts": {
+    "graded": 4,
+    "budget_halted": 1,
+    "not_started": 49
+  },
+  "quality": "unscored; no API or CLI judge calls",
+  "runs": [
+    {
+      "task": "S1",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "graded",
+      "record_sha256": "738b017b2f83a410a4dcafacbb0c4e303c20fdf37058ed8465728f88bc06ba79",
+      "timed_out": false,
+      "wall_seconds": 199.316733792,
+      "frontier_requests": 13,
+      "unreported_requests": 0,
+      "synthetic_canary_observations": 0,
+      "canary_traffic_fully_measured": true,
+      "frontier_cost_usd": 0.00985068,
+      "electricity_usd": 0.0001906444921654,
+      "total_cost_usd": 0.010041324492165401,
+      "hidden_tests_passed": 9,
+      "hidden_tests_expected": 9,
+      "counted_hidden_pass_rate": 1.0,
+      "mechanical_success": true,
+      "secret_sink_violations": 0
+    },
+    {
+      "task": "S1",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "graded",
+      "record_sha256": "dc6bbbb4a439d252b4fdc6001aa5d380bf4cb8e63820cf12349f351136e81aee",
+      "timed_out": false,
+      "wall_seconds": 114.34874775,
+      "frontier_requests": 10,
+      "unreported_requests": 0,
+      "synthetic_canary_observations": 24,
+      "canary_traffic_fully_measured": true,
+      "frontier_cost_usd": 0.00522937,
+      "electricity_usd": 0.0,
+      "total_cost_usd": 0.00522937,
+      "hidden_tests_passed": 9,
+      "hidden_tests_expected": 9,
+      "counted_hidden_pass_rate": 1.0,
+      "mechanical_success": true,
+      "secret_sink_violations": 0
+    },
+    {
+      "task": "S2",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "graded",
+      "record_sha256": "92d0e01eb34fe3a28b72cf0034f0d58fa81e3c53b99c60a11ac981e22b4aa222",
+      "timed_out": false,
+      "wall_seconds": 678.980319709,
+      "frontier_requests": 22,
+      "unreported_requests": 0,
+      "synthetic_canary_observations": 0,
+      "canary_traffic_fully_measured": true,
+      "frontier_cost_usd": 0.024023569999999998,
+      "electricity_usd": 0.0019101814792606006,
+      "total_cost_usd": 0.025933751479260598,
+      "hidden_tests_passed": 9,
+      "hidden_tests_expected": 10,
+      "counted_hidden_pass_rate": 0.9,
+      "mechanical_success": false,
+      "secret_sink_violations": 0
+    },
+    {
+      "task": "S2",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "graded",
+      "record_sha256": "38a1389505cb376cdc4f1fbdaba267ccd282f72eb32ec22373e3c4abe66667e8",
+      "timed_out": false,
+      "wall_seconds": 261.198023625,
+      "frontier_requests": 10,
+      "unreported_requests": 0,
+      "synthetic_canary_observations": 144,
+      "canary_traffic_fully_measured": true,
+      "frontier_cost_usd": 0.012855160000000001,
+      "electricity_usd": 0.0,
+      "total_cost_usd": 0.012855160000000001,
+      "hidden_tests_passed": 9,
+      "hidden_tests_expected": 10,
+      "counted_hidden_pass_rate": 0.9,
+      "mechanical_success": false,
+      "secret_sink_violations": 0
+    },
+    {
+      "task": "M1",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "budget_halted",
+      "record_sha256": "c65367de8b59a1c461c5348606dc3b365195caffcfce97d2c907e3cefe8463e2",
+      "timed_out": false,
+      "wall_seconds": 1265.222448333,
+      "frontier_requests": 32,
+      "unreported_requests": 0,
+      "synthetic_canary_observations": 0,
+      "canary_traffic_fully_measured": true,
+      "frontier_cost_usd": 0.037838239999999995,
+      "electricity_usd": 0.0022551307435080665,
+      "total_cost_usd": 0.040093370743508064,
+      "hidden_tests_passed": 12,
+      "hidden_tests_expected": 12,
+      "secret_sink_violations": 0,
+      "completion": "interrupted after accounting halt; partial workspace graded",
+      "partial_hidden_pass_rate": 1.0,
+      "partial_mechanical_success": true,
+      "frontier_cost_estimate_complete": false
+    },
+    {
+      "task": "M1",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 1,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 1,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S1",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S1",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S2",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S2",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M1",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M1",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 2,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 2,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S1",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S1",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S2",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "S2",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M1",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M1",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M2",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "M3",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L1",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "L2",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X1",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 3,
+      "lane": "duet-hybrid",
+      "quality": "unscored",
+      "status": "not_started"
+    },
+    {
+      "task": "X2",
+      "seed": 3,
+      "lane": "duet-passthrough",
+      "quality": "unscored",
+      "status": "not_started"
+    }
+  ],
+  "models": {
+    "frontier_id": "glm-5.3-flash",
+    "local_id": "omlx-coding",
+    "local_weights": "not independently verified or pinned; configured alias only"
+  },
+  "frozen_inputs_sha256": {
+    "lanes_toml": "2f9ac66df42183640ba7f8edbf08d42fe8d9605a49813045061b8344982e4397",
+    "pricing_toml": "03445b69477f25c1ddb91956a3911a58a45e0280b4a4a8fd0e999822afc89d72",
+    "task_seals": {
+      "L1": "812e03b65ade6e2ae48f0eba1ad1c7b0ad57cec20313af15ec7e426befb9a30e",
+      "L2": "e4cddf7f14d8b487af7d6ce189b9e94d2ecf80fef83225d227672c625b118ee5",
+      "M1": "673e141b217d2c6d6b049f66e8896c8c843ecd816e5827098df527553a2e6058",
+      "M2": "0cddd360e0d76c9e2df7c2cca77eff65c6468cd2c14cd7cde6a2f8c5241ce57f",
+      "M3": "cef26a392d6852ccb74f1cc3b7b741f3adebbaffb93e4e3449dab4870f0a5e0c",
+      "S1": "a4def6c57d5d2dfd5260a2edbc085f8acb52dac35dd51af3c6355bc7576fe74b",
+      "S2": "44af93edd6d6e7dae1fb3f0ef8cb9704b0531b3b03634b3a4adcb83a3a452633",
+      "X1": "f60a6df0c9633701abce5cf66c8e5e6a46eef84d217fbf2c113b436595ec8cd9",
+      "X2": "202c1d4e438c7d168902432c983f5a763a5c3a641fe5c232b16efb3057465784"
+    }
+  },
+  "method_limits": [
+    "Mechanical held-out tests and planted-canary observations only; no fresh quality judges.",
+    "Zero observed planted-canary exposure does not establish absence of semantic or inferential disclosure.",
+    "Hosted model ID and local alias do not pin immutable model weights.",
+    "The budget ledger charges cached input at full input list price; provider invoices or coding-plan quota are not measured."
+  ],
+  "budget": {
+    "cap_usd": 50.0,
+    "settled_requests": 87,
+    "retained_requests": 1,
+    "settled_conservative_list_price_usd": 0.2563839,
+    "retained_upper_bound_usd": 0.2228224,
+    "total_upper_bound_usd": 0.4792063,
+    "halt_reasons": [
+      "unknown_or_interrupted_usage"
+    ],
+    "accounting": "undiscounted input and published output list prices, not a provider invoice"
+  },
+  "execution": {
+    "state": "exited",
+    "started_utc": "2026-10-03T16:01:09.138094+00:00",
+    "ended_utc": "2026-10-03T16:43:18.150931+00:00",
+    "exit_code": 1,
+    "planned_runs": 54
+  },
+  "completed_pairs": 2,
+  "cost_estimate_complete": false,
+  "captured_usage_frontier_estimate_usd": 0.08979702,
+  "recorded_local_electricity_estimate_usd": 0.004355956714934067,
+  "halt": {
+    "reason": "unknown_or_interrupted_usage",
+    "reservation_id": 88,
+    "response_usage": "not captured",
+    "underlying_cause": "not established",
+    "action": "current Duet child received SIGINT after accounting halt so harness could grade partial work and exit; no further provider request was admitted",
+    "omitted_cases_retried": false
+  },
+  "private_trace_inventory_sha256": "15a7b47518ea7da2025dc3bafdb583e2eeea2903791275745216ca7188d94e38",
+  "private_trace_files_hashed": 225
+}

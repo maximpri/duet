@@ -1,0 +1,23 @@
+{
+  "scope": "documentation and sanitized benchmark metadata only",
+  "base_commit": "05be2e11104cebf882bc668a499d83027c68348d",
+  "checks": {
+    "planned_cases_and_order": 54,
+    "unique_cases": 54,
+    "settled_request_count": 87,
+    "retained_unknown_reservation_ids": [
+      88
+    ],
+    "final_upper_bound_nano_usd": 479206300,
+    "original_run_record_hashes": 5,
+    "local_links_and_anchors": 61,
+    "credential_values": "absent from published files",
+    "local_paths_endpoints_usernames": "absent from published files",
+    "git_diff_check": "passed",
+    "tools_gate_fast": "passed"
+  },
+  "application_changes": false,
+  "full_gate_reference": "../final-macos-manifest.json",
+  "full_gate_passed": 1278,
+  "full_gate_ignored": 22
+}

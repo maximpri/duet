@@ -22,8 +22,11 @@ The follow-up adds six release and operations improvements:
   and new-run derived files. The [independent-review brief](SECURITY_REVIEW_BRIEF.md)
   also records a demonstrated semantic-disclosure limit. No review is commissioned.
 - A [bounded paired benchmark](BOUNDED_BENCHMARKS.md) uses a durable pre-request
-  reservation ledger and the owner's $50 frontier budget. Its fresh results are
-  pending; the comparison below remains historical evidence.
+  reservation ledger and the owner's $50 frontier budget. The [fresh attempt](evidence/release-hardening-2026-10-03/benchmark/README.md)
+  completed two pairs before missing response usage stopped the batch: four
+  completed runs, one interrupted partial run and 49 unstarted cases. Its final
+  conservative upper bound is $0.4792063; quality remains unscored. The earlier
+  judged comparison below remains historical evidence.
 - [Offline privacy preflight](PRIVACY_PREFLIGHT.md) reports file rules, destinations
   and policy exceptions before the first terminal-session task.
 - A [verified binary installer](INSTALLATION.md) targets owner-published GitHub
@@ -46,7 +49,7 @@ translation. Physical x86 hardware has not been tested in this review.
 
 | Goal | Evidence available | What remains |
 | --- | --- | --- |
-| Frontier-level coding results | The project's paired small-to-large benchmark reported 98.3% hidden-test success for hybrid versus 97.5% for passthrough, with its quality gate passed. [Results and methodology](VALUE_EVIDENCE.md) | A fresh representative benchmark on the final release build, both judge families, protected-code tasks and reproducible public results. Later fixes and unpaired reruns do not establish universal parity. |
+| Frontier-level coding results | The earlier paired small-to-large benchmark reported 98.3% hidden-test success for hybrid versus 97.5% for passthrough, with its quality gate passed. [Historical methodology](VALUE_EVIDENCE.md). The [fresh bounded attempt](evidence/release-hardening-2026-10-03/benchmark/README.md) completed S1 and S2 seed 1 with matching 9/9 and 9/10 results before an accounting halt; all 54 planned statuses are published. | Complete a fresh representative comparison, including protected-code tasks and both judge families, after reconciling the retained reservation and authorizing another bounded batch. Underlying local weights were not independently verified or pinned. Two completed pairs and an unpaired partial run do not establish broad parity. |
 | Sensitive content handled locally | Classified files use local processing, placeholders and structure views; outbound requests are filtered and checked. Recorded synthetic tasks include zero-canary outcomes and retained failures. [Security design](SECURE_BY_DESIGN.md), [launch evidence](launch/DEMO.md) | Independent adversarial assessment and validation of each deployment's data types. Classification limits, semantic inference and probing remain in the [threat model](../SECURITY.md). Hybrid intentionally sends permitted code and checked context to the frontier. |
 | Local-only operation | Top-clearance tests exercise a local endpoint, frontier trap, disabled web/command networking and restricted MCP startup. [Tests](../crates/duet-cli/tests/top_clearance.rs) | Validate the approved endpoint and its transport. An owner-allowlisted remote local model receives sensitive data; this mode alone does not establish an air gap. |
 | Tool isolation and policy enforcement | OS sandbox, owner/project policy separation, reserved-path protection and gated egress have automated coverage. The publication work fixed **DUET-2026-033–039**, including proxy routing, persistent derived classifications and cancellation. Offline diagnostics skip network-enabled MCP servers. Linux runtime evidence covers ARM64 and a complete emulated x86-64 kernel with seccomp enabled. | Reassess configured extensions and local endpoint trust in the deployment environment; validate its exact OS and hardware. |
@@ -61,7 +64,7 @@ translation. Physical x86 hardware has not been tested in this review.
 | Linux x86-64 sandbox | **Passed:** original 29 sandbox and six network tests in a complete Debian 6.1 x86 guest; 17 setup/doctor tests also passed. A single-thread TCG rerun passed without the multi-thread emulator's memory-ordering warning. Logs retain the original cancellation failure and both passing runs. |
 | Rust 1.90 Linux x86-64 build | **Passed:** optimized application build at `b9eb511`, evaluation harness compilation, version/help checks and all 11 release tests. Operations/privacy/proxy tests passed on the preceding implementation; their sources did not change. [Platform record](evidence/release-hardening-2026-10-03/linux-x86/README.md) |
 | GPL corresponding source | **Passed:** archive at `1e4f2e4`, all tracked entries and 320 vendored dependency packages verified, no macOS metadata or external links. All build inputs match the successful optimized frozen build from `ae66b4a`, performed with an initially empty Cargo home. [Build and equivalence record](evidence/release-hardening-2026-10-03/offline-source/README.md). No production release is signed or published by this review. |
-| Fresh bounded benchmark | 54 cases planned across nine tasks, three seeds and two lanes, with a $50 aggregate frontier allowance. In progress; fresh quality-judge scores are unscored. |
+| Fresh bounded benchmark | **Incomplete; accounting guard stopped safely:** four completed runs/two pairs, one interrupted M1 partial run, 49 unstarted cases. $0.08979702 is the cache-aware estimate for reported usage; the conservative ledger retains unknown request 88 and totals $0.4792063 against the $50 allowance. [All statuses, hashes and methodology](evidence/release-hardening-2026-10-03/benchmark/README.md). No fresh quality judges or quality-gate verdict; no ledger reset or automatic restart. |
 
 ## Retained October 2 baseline
 

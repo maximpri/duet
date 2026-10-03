@@ -1,0 +1,39 @@
+{
+  "commit": "b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4",
+  "dirty": false,
+  "source_archive_sha256": "38a1763e2bc21d2331403eea49b251b8174a410ee9f0132b81f7764c8041265d",
+  "status": "final frozen benchmark candidate",
+  "planned_runs": 54,
+  "cap_usd": 50,
+  "binary_sha256": {
+    "duet": "74c741d5132eed6e33ce211aec95b30933cfdcd2cb824aeeb1b0d905d086749b",
+    "duet-eval": "f5ddc78ded6356e8ebf690b242e920228c7fa424f75820a5d50c1268fe79968b"
+  },
+  "frozen_utc": "2026-10-03T16:00:57.018811+00:00",
+  "build_command": "cargo build --locked --release -p duet-cli -p duet-evals",
+  "platform": "macOS ARM64",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14) (Homebrew)",
+  "frozen_inputs_sha256": {
+    "lanes_toml": "2f9ac66df42183640ba7f8edbf08d42fe8d9605a49813045061b8344982e4397",
+    "pricing_toml": "03445b69477f25c1ddb91956a3911a58a45e0280b4a4a8fd0e999822afc89d72",
+    "task_seals": {
+      "L1": "812e03b65ade6e2ae48f0eba1ad1c7b0ad57cec20313af15ec7e426befb9a30e",
+      "L2": "e4cddf7f14d8b487af7d6ce189b9e94d2ecf80fef83225d227672c625b118ee5",
+      "M1": "673e141b217d2c6d6b049f66e8896c8c843ecd816e5827098df527553a2e6058",
+      "M2": "0cddd360e0d76c9e2df7c2cca77eff65c6468cd2c14cd7cde6a2f8c5241ce57f",
+      "M3": "cef26a392d6852ccb74f1cc3b7b741f3adebbaffb93e4e3449dab4870f0a5e0c",
+      "S1": "a4def6c57d5d2dfd5260a2edbc085f8acb52dac35dd51af3c6355bc7576fe74b",
+      "S2": "44af93edd6d6e7dae1fb3f0ef8cb9704b0531b3b03634b3a4adcb83a3a452633",
+      "X1": "f60a6df0c9633701abce5cf66c8e5e6a46eef84d217fbf2c113b436595ec8cd9",
+      "X2": "202c1d4e438c7d168902432c983f5a763a5c3a641fe5c232b16efb3057465784"
+    }
+  },
+  "models": {
+    "frontier_id": "glm-5.3-flash",
+    "local_id": "omlx-coding",
+    "local_weights": "not independently verified or pinned; configured alias only"
+  },
+  "private_trace_inventory_sha256": "15a7b47518ea7da2025dc3bafdb583e2eeea2903791275745216ca7188d94e38",
+  "private_trace_files_hashed": 225,
+  "raw_traces_published": false
+}

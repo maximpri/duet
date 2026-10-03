@@ -25,5 +25,11 @@ The [offline source record](offline-source/README.md) verifies the final
 inputs and vendored dependencies are identical. The final archive also removes
 the tracked link to local experiment storage.
 
-The paid benchmark is running from the frozen `b9eb511` application. See
-[publication readiness](../../PUBLISH_READINESS.md) for its current scope.
+The [bounded benchmark attempt](benchmark/README.md) ran from the frozen
+`b9eb511` application. Four cases completed, M1 hybrid was interrupted after
+missing response usage halted the accounting guard, and 49 cases did not start.
+The final conservative frontier upper bound is $0.4792063 against the $50
+allowance. All 54 planned statuses, binary/input hashes and the content-free
+budget journal are retained; fresh quality scores remain unscored. The older
+judged comparison is separate evidence. See [publication readiness](../../PUBLISH_READINESS.md)
+for remaining work.

@@ -22,7 +22,9 @@ The two models have different jobs. The frontier does the coding. The local mode
 - **Check the policy before you start.** `duet privacy` previews file rules, model destinations and policy exceptions offline.
 - **You can inspect the result.** Review the patch in **Changes** and what was prepared for the frontier in **Privacy**. Saved audits can be checked for tampering.
 
-In our recorded six-task comparison, with 18 runs per lane, Duet passed **98.3% of hidden tests**, versus **97.5%** with the same frontier model and the privacy boundary disabled. No planted private values appeared in the hybrid lane's captured outbound traffic. [Results and methodology](docs/VALUE_EVIDENCE.md)
+In an earlier six-task comparison, with 18 runs per lane, Duet passed **98.3% of hidden tests**, versus **97.5%** with the same frontier model and the privacy boundary disabled. No planted private values appeared in the hybrid lane's captured outbound traffic. [Results and methodology](docs/VALUE_EVIDENCE.md)
+
+A [newer bounded benchmark attempt](docs/evidence/release-hardening-2026-10-03/benchmark/README.md) records two completed pairs and the remaining cases after an accounting stop. No fresh quality judges were run.
 
 Hybrid mode sends permitted code and checked answers to the frontier. Choose `duet --mode top-clearance` when source data and conclusions must stay with your own model: it disables frontier calls, web tools and command networking. Use a model on your machine or a trusted self-hosted endpoint.
 
