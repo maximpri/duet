@@ -10,7 +10,7 @@ use crate::local::{Answer, CallStats, Digest, LocalReader};
 use serde::Serialize;
 use std::time::Instant;
 
-/// Pass thresholds for choosing a local model (docs/PLAN.md, "Local model selection").
+/// Pass thresholds for the local model's answer and digest evaluations.
 pub const MIN_ACCURACY: f64 = 0.90;
 pub const MIN_DIGEST_RECALL: f64 = 0.95;
 pub const MIN_SCHEMA_VALID: f64 = 0.99;

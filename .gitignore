@@ -11,3 +11,7 @@
 !tasks/*/assets/.env.*
 /dist/
 /.wrangler/
+
+# Local Python tooling caches.
+__pycache__/
+*.py[cod]

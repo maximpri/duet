@@ -8,7 +8,7 @@ judgments never suppress findings or control enforcement.
 
 ## Revision 3 behavior
 
-See [Usage](USAGE.md#security-review-and-repository-scans) for commands and owner configuration.
+See [Usage](../../USAGE.md#security-review-and-repository-scans) for commands and owner configuration.
 `duet scan --rules-only` uses no models or language servers. `--background` starts a detached
 worker; `--status <id>` returns its state, starting commit/dirty state and report location.
 `--fail-on-high` exits 2 only for narrowly rule-confirmed high findings. Both entry points use
@@ -405,7 +405,7 @@ possible encoding or disclosure. Existing boundary/gate tests cover hostile copi
 and encoded output separately; no frontier second opinion was used here.
 The rejected date case's explanation retained a shortened form of the protected function name
 without its canary suffix. The exact-match checker does not count that fragment. This illustrates
-the existing [protected-code fragment/paraphrase limits](../SECURITY.md#protected-source-ip-levels);
+the existing [protected-code fragment/paraphrase limits](../../../SECURITY.md#protected-source-ip-levels);
 these results must not be described as proving zero source disclosure.
 
 On the three recorded X1 diffs, revision 2 again produced zero new candidates and zero incomplete

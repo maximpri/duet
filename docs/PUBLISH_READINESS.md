@@ -5,11 +5,11 @@ preview**. Its code, tests and recorded tasks support evaluation of frontier
 coding with local handling of sensitive content. They do not establish that all
 product goals are met or approve a deployment for confidential institutional data.
 
-The current implementation is commit
+The benchmarked application revision is commit
 `b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4`. The retained
 [verification record](evidence/release-hardening-2026-10-03/README.md) identifies
 the checked source and environments. The older
-[acceptance ledger](ACCEPTANCE.md) preserves historical measurements and verdicts;
+[acceptance ledger](https://github.com/maximpri/duet/blob/9b0ac104ba6947e338ca3baacfd31de2c2823e83/docs/ACCEPTANCE.md) preserves historical measurements and verdicts;
 its individual rows have not all been re-audited.
 
 ## Current implementation review
@@ -30,7 +30,7 @@ The follow-up adds six release and operations improvements:
   unknown usage. No fresh quality judges were run. The
   [original stopped attempt](evidence/release-hardening-2026-10-03/benchmark/README.md)
   remains unchanged.
-- [Offline privacy preflight](PRIVACY_PREFLIGHT.md) reports file rules, destinations
+- [Offline privacy preflight](OPERATIONS.md#preview-privacy-before-starting) reports file rules, destinations
   and policy exceptions before the first terminal-session task.
 - A [verified binary installer](INSTALLATION.md) targets owner-published GitHub
   Releases and retains matching GPL source and notices. Signing identity and
@@ -87,7 +87,7 @@ record rather than asserting that every platform was rerun after every change.
 
 ## Publication and adoption
 
-Before making the source preview public:
+Outstanding publication items recorded in this review:
 
 - Configure and test a private vulnerability-reporting route. The website is a
   placeholder; it does not accept reports. `docs/security.txt` is an undeployed
@@ -98,16 +98,16 @@ Before making the source preview public:
   records with it. For a binary release, follow [LICENSES.md](../LICENSES.md) and
   distribute the matching vendored source and notices alongside the binary.
 
-The placeholder is deployed on [Cloudflare Pages](https://duet-site-9oe.pages.dev).
-`duet.priezjev.com` is registered with Pages but still requires a proxied CNAME:
-`duet` → `duet-site-9oe.pages.dev`. The deployment login has no DNS-write permission.
+At the time of this review, the placeholder was deployed on [Cloudflare Pages](https://duet-site-9oe.pages.dev).
+`duet.priezjev.com` was registered with Pages but still required a proxied CNAME:
+`duet` → `duet-site-9oe.pages.dev`. The reviewed deployment login had no DNS-write permission. See [site deployment](../site/README.md) for the maintained procedure; this dated record does not verify current DNS state.
 
 The October 2 baseline used Rust 1.97.1 on macOS and 1.99 on Linux. The current
 Linux check additionally builds with the declared Rust 1.90 minimum.
 
-Before real-data adoption in a bank or government team, evaluate representative
+Before using real private data, evaluate representative
 tasks and threat scenarios, approve local and frontier endpoints, and establish
 policy administration, audit custody and incident response. The
-[institutional evaluation guide](INSTITUTIONAL_EVALUATION.md) sets out that work.
+[deployment evaluation guide](SECURE_BY_DESIGN.md#evaluate-your-deployment) sets out that work.
 These are deployment decisions; neither the project name “top clearance” nor a
 passed test suite is a security accreditation.

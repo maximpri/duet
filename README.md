@@ -44,7 +44,7 @@ Every selected result counts, including one stopped Duet run that received zero.
 
 ![Actual Duet session in macOS Terminal: inspecting a sensitive file, its outbound record and the code change.](docs/assets/launch/duet-security.gif)
 
-*Actual color Terminal captures from a completed task with fictional data. Four tests passed; an independent check found none of 13 planted private values in five recorded frontier requests. This demo is separate from the benchmark above. [Screenshots](docs/launch/COLOR_DEMO.md) · [Run and verification](docs/launch/FRESH_DOGFOOD.md)*
+*Actual color Terminal captures from a completed task with fictional data. Four tests passed; an independent check found none of 13 planted private values in five recorded frontier requests. This demo is separate from the benchmark above. [Screenshots](docs/launch/DEMO.md#native-screenshots) · [Run and verification](docs/launch/DEMO.md#verified-billing-run)*
 
 ## Install on macOS or Linux
 
@@ -85,6 +85,6 @@ Try the [fictional billing example](docs/launch/DEMO.md#reproduce-the-task), or 
 
 Duet is a development preview. Start with the included example, use `duet privacy` to check your settings, and review the [security documentation](SECURITY.md) to understand what Duet protects. The [publication review](docs/PUBLISH_READINESS.md) records verified checks and remaining work.
 
-[Privacy preview](docs/PRIVACY_PREFLIGHT.md) · [Audit and retention](docs/OPERATIONS.md) · [Independent review brief](docs/SECURITY_REVIEW_BRIEF.md)
+[Privacy preview](docs/OPERATIONS.md#preview-privacy-before-starting) · [Audit and retention](docs/OPERATIONS.md) · [Independent review brief](docs/SECURITY_REVIEW_BRIEF.md)
 
-[Contributing](CONTRIBUTING.md) · [Extensions](docs/EXTENSIONS.md) · [GPL-3.0-or-later](LICENSE) · [Third-party notices](LICENSES.md)
+[Documentation](docs/README.md) · [Contributing](CONTRIBUTING.md) · [Extensions](docs/EXTENSIONS.md) · [GPL-3.0-or-later](LICENSE) · [Third-party notices](LICENSES.md)

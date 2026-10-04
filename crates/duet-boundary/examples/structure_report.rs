@@ -14,7 +14,7 @@
 //!
 //! `<state dir>` receives the engine's run state (vault, handles); it must
 //! be outside the workspace. Used to measure how many of the questions a
-//! run put to `ask_local` the views answer (docs/PLAN.md M5.2 item 4).
+//! run put to `ask_local` the views answer (ARCHITECTURE.md, "Structure views, synthetic samples, masked output").
 
 use duet_boundary::engine::Engine;
 use duet_boundary::policy::{Policy, StructureSettings};

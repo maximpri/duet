@@ -3,7 +3,7 @@
 Duet's security claim is narrow and testable: **content Duet classifies as sensitive or protected
 is not disclosed to the cloud frontier model provider.** This document states what that covers,
 what it does not, and how the claim is verified. Design details: [ARCHITECTURE.md](ARCHITECTURE.md)
-§5 and [docs/TARGET_STATE.md](docs/TARGET_STATE.md) §6.
+§5 and the [security design guide](docs/SECURE_BY_DESIGN.md).
 
 ## What is protected
 
@@ -29,7 +29,7 @@ stay local. Neither reviewer can suppress findings or create blockers. Installed
 run against read-only snapshots with no network; their raw JSON stays in private run artifacts,
 and only checked locations and advisory severity enter the filtered report. This does not
 establish that code is secure after deployment. Coverage, caps and measurements are documented
-in [the auditor report](docs/SECURITY-AUDITOR-2026-09-30.md).
+in [the auditor report](docs/evidence/reviews/security-auditor-2026-09-30.md).
 
 - **Source code left Open** (the default for code). It is sent to the frontier so it can do
   frontier-quality work. Mark paths Interface-only or Sealed to withhold them.
@@ -612,8 +612,8 @@ processes Duet did not start are never touched, whatever they use.
 - **Linux (bubblewrap)**: tested with `tools/linux-check.sh` (Docker; not part of the gate, run it
   before releases) in four setups: privileged, unprivileged user namespaces (no added
   capabilities, the usual desktop case), Duet run as root, and a container that forbids
-  namespaces. The last run and its environment are recorded in
-  [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) (P7, SD4). How it enforces the same rules: the root is
+  namespaces. The historical run and its environment are recorded in
+  [the acceptance ledger](https://github.com/maximpri/duet/blob/9b0ac104ba6947e338ca3baacfd31de2c2823e83/docs/ACCEPTANCE.md) (P7, SD4). How it enforces the same rules: the root is
   mounted read-only with empty read-only `/tmp` and `/run`; the workspace and the scratch directory
   are mounted writable, every existing `.git` read-only again and every existing `.duet` covered
   by the unreadable stand-in below; each denied path is

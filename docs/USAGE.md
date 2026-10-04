@@ -2,7 +2,12 @@
 
 How to run Duet, code with it in sessions, and configure its tools, models and settings. Why Duet
 exists and how it keeps sensitive information local: [README](../README.md). The threat model and
-every security rule in detail: [SECURITY.md](../SECURITY.md).
+every security rule in detail: [SECURITY.md](../SECURITY.md). For a shorter control
+overview and evaluation procedure, see [the security guide](SECURE_BY_DESIGN.md).
+
+[Commands](#commands) · [Goals](#goals-and-history) · [Modes](#modes-and-acceptance-checks) ·
+[Workspace](#coding-with-duet-the-workspace) · [Tools and privacy](#tools-and-privacy-controls) ·
+[Models](#models) · [Pricing](#costs-and-pricing) · [Configuration](#configuration)
 
 ## Commands
 
@@ -49,7 +54,7 @@ duet scan --background          # return a scan id; inspect with duet scan --sta
 duet purge                      # delete raw run data older than the retention period
 ```
 
-[Privacy preview](PRIVACY_PREFLIGHT.md) explains the offline report and its exit codes.
+[Privacy preview](OPERATIONS.md#preview-privacy-before-starting) explains the offline report and its exit codes.
 [Operations](OPERATIONS.md) covers audit export, monitoring and retention.
 
 ## Goals and history
@@ -88,10 +93,14 @@ that may still be receiving writes. Goal state and progress are private files be
 session transcript in `.duet/runs/<id>/`; `duet purge` retention applies to both. Goals enter
 the same privacy boundary as ordinary messages.
 
+## Modes and acceptance checks
+
 `duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
 evaluation baseline). A repository can forbid it, for new and resumed runs and sessions alike:
 `duet config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
 with `--confirm`).
+
+### Acceptance checks
 
 **Acceptance checks.** Repeat `--check COMMAND` to add task-specific checks to the project's
 `checks.commands`. Duet runs them in its command sandbox when the agent calls `finish`; a failing
@@ -103,6 +112,8 @@ headless browser. A parse check alone does not establish that the game meets its
 checks use local command time and the run's finish-attempt budget without a separate model reviewer;
 failures can add frontier repair turns and cost.
 
+### Top clearance
+
 **Top clearance.** For work whose content may not reach a frontier provider, `--mode
 top-clearance` (in a session, `/mode top-clearance`) has the local model do everything: it reads,
 decides and writes the code. Requests go to the configured local endpoint, which may be a
@@ -113,7 +124,7 @@ There is no frontier; the web tools are not offered; commands get no network wha
 disk); MCP servers reached over HTTP or with `network = true` are not started; sub-agents use the
 local model. The header shows TOP CLEARANCE, and the audit log records every request to the local
 model, so what left can be checked (`duet audit show`). The work is only as good as the local
-model: expect far less than hybrid mode on hard tasks. In a session, `/mode top-clearance` leaves the
+model. Evaluate the configured model on your tasks. In a session, `/mode top-clearance` leaves the
 current session open (`duet --resume` continues it) and starts a new one in top clearance, fresh:
 nothing said in it ever reaches the frontier. It cannot be left again within that session, because
 its conversation holds what only the local model may see; `/close` it and start another session.
@@ -122,6 +133,8 @@ its conversation holds what only the local model may see; `/close` it and start 
 clearance without `--mode`, and every other mode is refused (lifting it is the owner's, confirmed).
 `--mode local-only` is the same mode under its old name. Details: [SECURITY.md](../SECURITY.md)
 (Top clearance).
+
+## Repository instructions and extensions
 
 **Project instructions.** Duet reads `AGENTS.md` (or `AGENTS.override.md`), `CLAUDE.md`,
 `GEMINI.md`, root `.github/copilot-instructions.md`, then `DUET.md`. More specific directories
@@ -227,7 +240,7 @@ Raw tool JSON is private at `security-scanners/<index>-{before,after}.json`; unt
 do not enter model prompts. Only locations inside the snapshot become advisory findings.
 
 Defaults remain off for finish review, blocking and frontier opinions. The
-[auditor report](SECURITY-AUDITOR-2026-09-30.md) records coverage, measurements and known limits.
+[auditor report](evidence/reviews/security-auditor-2026-09-30.md) records coverage, measurements and known limits.
 
 ## Coding with duet: the workspace
 
@@ -423,6 +436,8 @@ runs now); otherwise one plain line per step with placeholders kept as the front
 a line every 30 seconds while nothing else happens. Standard output holds only the summary, as
 before; `--quiet` turns the progress off.
 
+### Workspace settings
+
 **Settings, inside the workspace.** F2 or `/settings` (or `/models`, `/sensitivity`, `/ip`,
 `/limits`, `/data`, `/audit`, `/runs` for one screen) opens seven screens over the conversation;
 Esc (or `q`) comes back. Models (frontier and local settings, with `duet doctor` offline; `o` adds
@@ -444,6 +459,10 @@ change that loosens privacy shows its diff and needs `y`, `p` switches edits to 
 (which only tightens and never takes owner-only keys), and every applied change is recorded in the
 owner's config audit log. Changes apply from the next session.
 
+## Tools and privacy controls
+
+### Sensitive-content detection
+
 **What the detectors find.** Duet's own secret and personal-data detectors, the gitleaks rule set
 (221 rules for specific services' credentials, used as data: pinned in
 `crates/duet-boundary/rules/`, updated with `tools/update-rules.sh <version>`), international
@@ -459,11 +478,15 @@ only you know are sensitive (customer ids, internal host names): every match bec
 placeholder, in sensitive and public text alike. A project may add patterns; removing one loosens
 privacy and needs confirmation.
 
+### Operator approval
+
 **Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Duet
 asks y/N on the terminal before a `sensitive_data` command, a protected edit, or a write to anything
 other than an ordinary source or test file; with `all`, before every command and write. A refusal
 is returned to the model as a tool error, and every decision is in the run's audit log. A run with
 approval on and no terminal refuses to start. Details: [SECURITY.md](../SECURITY.md) (Oversight).
+
+### Command networking and troubleshooting
 
 **Network for commands** (`sandbox.network`; default `registries`): commands reach the package
 registries in `sandbox.registries` through Duet's egress proxy, so `npm install`, `cargo add`,
@@ -511,6 +534,8 @@ should report that limit. A refused image read creates no content handle: `ask_l
 inspect a filename or an invented ID. Configure a local vision model, or explicitly attach a
 non-sensitive image with `/image --public PATH` when the frontier supports vision. Sensitive
 and protected paths keep their existing restrictions. See Images below.
+
+### Web tools and search
 
 **Web tools** (`web.*` settings; on by default): the frontier gets `web_fetch` (a public page
 as text; HTML is converted with links kept; `start_line`/`end_line` read part of a long page) and
@@ -612,6 +637,8 @@ holds is public: nothing on it is withheld or blocks a later request). Every cal
 (host, bytes, outcome; a native search one per source asked). Native sources are held to the same
 address rules as `web_fetch`. Details: [SECURITY.md](../SECURITY.md) (Web tools).
 
+### Git tools
+
 **Git tools** (when the workspace is a git repository; see Without git above): `git_status`, `git_log {path?, rev?,
 max_count?}` (hash, date, author, subject; at most 100), `git_show {rev, path?}` (a commit's
 message, files and per-file diffs, or a file as it was at `rev`) and `git_blame {path, start_line?,
@@ -639,6 +666,8 @@ session it is asked in the workspace (files and message, answer `y`) even with a
 where nobody can be asked (`duet run` with approval off, a session without a terminal) `git_commit` is
 not offered. The read-only git tools always are. Details: [SECURITY.md](../SECURITY.md) (Git
 tools).
+
+### MCP servers
 
 **MCP servers** (`[mcp.servers.<name>]` in the owner config, or declared by a
 [native plugin](EXTENSIONS.md#optional-mcp-tool-servers)): Duet's
@@ -676,6 +705,8 @@ Settings are owner-only and changes that start programs or reach servers need `-
 `duet config set mcp.servers.fs.command '"my-mcp-server"' --confirm`. Details:
 [SECURITY.md](../SECURITY.md) (MCP servers).
 
+### Language servers
+
 **Language servers** (`lsp.*` settings; on by default when a server is installed): the frontier
 gets `code_nav` (`definition`, `references`, `hover`, `symbols`, `workspace_symbols`,
 `diagnostics`; answers are `path:line:col  text` lines, lines and character columns counted from 1
@@ -704,6 +735,8 @@ Servers read the workspace like checks do: protected source yes, sensitive files
 `.duet` never. In hybrid mode an answer that points into a sensitive or sealed file shows only its
 location, an interface-only file shows declarations only, and `rename` refuses to touch any of
 them. Details: [SECURITY.md](../SECURITY.md) (Language servers).
+
+### Sub-agents
 
 **Sub-agents** (`subagents.*` settings; on by default): the frontier gets `delegate {task, mode,
 paths?, budget?}`, which hands a sub-task to a sub-agent: a fresh loop that knows only the task
@@ -741,6 +774,8 @@ placeholders, never sensitive content); every request it makes passes the same o
 is in the same audit log, with `subagent_start` and `subagent_end` events (the task's hash, never
 its text). Details: [SECURITY.md](../SECURITY.md) (Sub-agents).
 
+### Local explorer
+
 **Local explorer** (`explore.*` settings; off by default until measured): with a local model
 enabled, the frontier gets `explore {question, paths?, depth?}`. The local model answers a
 where/what/how question ("where is the retry policy applied?", "how does an order reach the
@@ -771,6 +806,8 @@ report is shown as written: the explorer is only a cost tool there. Each call is
 audit event (the question's hash, steps, bytes, local seconds; never content), its local time is
 in `summary.json` (`stats.ledger.explore`), and the Runs screen (`/runs`) shows each call's
 outcome and counts. Details: [SECURITY.md](../SECURITY.md) (Local explorer).
+
+### Images
 
 **Images** (PNG, JPEG, GIF, WebP): `read_file` on an image in the workspace, `duet run --image
 <path>` (repeatable), and `/image <path>` in a session (attached to your
@@ -803,6 +840,8 @@ duet config set frontier.vision true --confirm         # the frontier model acce
 duet config set --project images.to_frontier '"never"' # default; "public" also sends non-sensitive workspace images
 ```
 
+### Local-model setup
+
 **Getting a local model.** `duet setup` probes the local preset ports on `127.0.0.1`, reads
 `/v1/models`, and offers the served text/chat models. Its defaults cover Ollama (11434), LM Studio
 (1234), llama.cpp, LocalAI and MLX (8080), vLLM and oMLX (8000), Jan Desktop (1337), Jan CLI
@@ -818,6 +857,8 @@ offer (saying so, and recording it in the run). With several, or none, it prints
 `duet config set` commands and stops. It never writes configuration: `duet config preset <name>`
 does that, through the same `--confirm` and audit path as any endpoint change.
 
+### Privacy without a local model
+
 **Privacy mode without a local model.** `duet config set local.enabled false` (a repository's own
 config may set it too) runs hybrid mode with no local model: nothing is probed or contacted, no
 model reads sensitive content, and the frontier sees it only as handles (their error lines with
@@ -826,6 +867,8 @@ the frontier so. Top clearance, and `sensitivity.local_pii_pass` (which would ot
 without a word), refuse to start. Turning it back on lets a local model read sensitive content
 again, so it needs `--confirm`. The work is harder for the frontier without answers about the
 data; the evaluation lane `duet-hybrid-nolocal` measures by how much.
+
+### Structure views and masked output
 
 **Structure of sensitive data** (`sensitivity.structure_views`, on by default; hybrid mode). The
 frontier is told how sensitive data is laid out without seeing it, computed here without a model:
@@ -857,6 +900,8 @@ project may lower all of these; raising them, or turning views on again, needs `
 `cargo run -p duet-boundary --example structure_report -- <workspace> <task file> <state dir>`
 prints what the frontier would be shown of a workspace's sensitive files.
 
+### Condensed command output
+
 **Condensed command output.** In hybrid mode, test, build and install output the frontier may see
 is shown condensed (`context.condense_output`, on by default): failing tests with their assertion
 messages, the first compiler or type error of each kind whole and later ones by location and label,
@@ -876,6 +921,8 @@ command output is sensitive). Pass-through mode shows command output as it is. O
 and X1/X2 runs the condensed outputs shrank by 48%, but only 43 of 1,635 command outputs qualified
 (the models already cut test output with `| tail`, and most command output is file reading):
 0.26% of the hybrid lane's input tokens.
+
+### Diagnostics
 
 **`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never

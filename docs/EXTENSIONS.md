@@ -14,7 +14,7 @@ below describe Duet's implementation, rather than every feature of another agent
 
 ## Try the review example
 
-From this checkout, after [installing Duet](../README.md#getting-started):
+From this checkout, after [installing Duet](INSTALLATION.md):
 
 ```sh
 duet plugins inspect examples/plugins/quality-kit

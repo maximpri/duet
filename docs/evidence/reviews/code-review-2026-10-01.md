@@ -60,7 +60,7 @@ cargo test -p duet-tui benchmark_cached_transcript_viewport -- --ignored --nocap
 
 The checked-in overlap benchmark exercises the same workload through Cargo; the
 recorded overlap measurements used an isolated optimized driver. Measurements and
-raw review/overlap samples are also in [the evidence JSON](evidence/benchmarks/refactor-2026-10-01.json).
+raw review/overlap samples are also in [the evidence JSON](../benchmarks/refactor-2026-10-01.json).
 
 ## Verification and limits
 

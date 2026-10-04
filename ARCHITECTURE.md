@@ -1,9 +1,11 @@
-# Duet v2 Architecture
+# Duet architecture
 
-Status: implemented through milestone M4.5, M5.2, experimental M5.3, SbD-1 and the SbD-2 tests, plus M5 preparation and
-parts of M6 ([docs/PLAN.md](docs/PLAN.md) §10), except where marked *planned*. `duet-tui` (M6) is
-built. Goals and success criteria:
-[docs/TARGET_STATE.md](docs/TARGET_STATE.md).
+This reference describes the implementation, component boundaries and extension
+interfaces. Start with the [documentation index](docs/README.md) for user guides,
+[security design](docs/SECURE_BY_DESIGN.md) for the protection mechanisms, and
+[publication readiness](docs/PUBLISH_READINESS.md) for measured coverage and remaining
+work. [Historical goals and reviews](docs/evidence/README.md) retain the original
+criteria and earlier findings.
 
 ## 1. Shape of the system
 
@@ -56,7 +58,7 @@ filtered as exploration of every source consulted. Count-only audit events recor
 cost after resume without adding reviewer prompts to the working conversation. `Ledger::review`
 is a breakdown of spend already included in the total. Local review uses the existing local
 usage counters. The defaults and measured limits are in the
-[auditor report](docs/SECURITY-AUDITOR-2026-09-30.md).
+[auditor report](docs/evidence/reviews/security-auditor-2026-09-30.md).
 
 ## 2. Crates and dependencies
 
@@ -95,7 +97,7 @@ duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet cra
 
 | Crate | Owns | Must never |
 |---|---|---|
-| `duet-review` | Bounded syntax rules, same-file context, host/guard inventory and before/after comparison shared by the auditor and repository scanner ([scope and measurements](docs/SECURITY-AUDITOR-2026-09-30.md)) | Perform I/O, execute source, contact a model, or turn a model opinion into a blocking decision |
+| `duet-review` | Bounded syntax rules, same-file context, host/guard inventory and before/after comparison shared by the auditor and repository scanner ([scope and measurements](docs/evidence/reviews/security-auditor-2026-09-30.md)) | Perform I/O, execute source, contact a model, or turn a model opinion into a blocking decision |
 | `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
 | `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
 | `duet-governor` | Memory limits for a process tree: follows the tree from its root (id plus start time), reads the physical footprint, stops a process above the per-process limit, the largest above the tree limit or under critical machine pressure, and every member left when the watch ends; the configured limits (`set_limits`) | Signal a process outside the tree it watches |

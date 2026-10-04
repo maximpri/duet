@@ -1,6 +1,6 @@
 # X1 follow-up: grader correction and retry cost, 2026-09-30
 
-The next steps in [the hand-off](HANDOFF-2026-09-29.md) were to trace X1's ANY/ALL failures and
+The next steps in [the hand-off](https://github.com/maximpri/duet/blob/9b0ac104ba6947e338ca3baacfd31de2c2823e83/docs/HANDOFF-2026-09-29.md) were to trace X1's ANY/ALL failures and
 check whether the chunk retry raised its cost. The five-test cluster is a grader defect. Correcting
 it gives default hybrid 49/49/48 of 50 (97.3%) and passthrough 48/49 (97.0%) on the saved artifacts.
 No frontier prompt, privacy rule or agent-generated solution was changed.

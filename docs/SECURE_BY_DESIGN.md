@@ -12,7 +12,7 @@ Duet's design goal is to keep content classified as sensitive or protected out o
 | --- | --- | --- |
 | [Gate implementation](../crates/duet-boundary/src/gate.rs) | Where requests are checked and recorded | That classification recognizes every sensitive value |
 | [Adversarial transport tests](../crates/duet-cli/tests/privacy_scenarios.rs) | What a scripted frontier actually receives under specific attacks | Every possible model behavior or side channel |
-| [Frozen paired development benchmark](VALUE_EVIDENCE.md) | Observed privacy, quality, cost and latency on a specified suite | Universal frontier parity, cost savings or an independent assessment |
+| [Frozen paired development benchmark](VALUE_EVIDENCE.md) | Measured disclosure and coding outcomes; separately dated historical quality, cost and timing results | Universal frontier parity, cost savings or an independent assessment |
 | [New live dogfood and original audit](launch/DEMO.md) | Actual model execution, the code change, acceptance tests and recorded outbound content | Provider receipt, exhaustive traffic capture or production readiness |
 | [Failed dogfood and its regression](evidence/launch-2026-10-01/regression-before.txt) | A concrete disclosure path, found and reproduced before the fix | That fixing it eliminates all disclosure paths |
 
@@ -75,20 +75,58 @@ duet audit disclosure <run-id>
 - New observation: [live verification and deliberate corruption of a copy](launch/DEMO.md).
 - Limits: the record is not an acknowledgement from the provider. Someone controlling both log and anchor can rewrite both. Local transcripts/handles can contain sensitive content; top-clearance audit bodies can contain raw requests to the local model. A disclosure bug can also leave sensitive content in a hybrid audit. Protect storage, backups and access. Tamper evidence is not encryption or an immutable external archive. A session's disclosure report can lack per-result counts when no run `summary.json` exists; do not mistake that for a zero.
 
-See the [detailed institutional evaluation guide](INSTITUTIONAL_EVALUATION.md) for actual audit fields, a synthetic pilot and a control-to-evidence map.
+For metadata-only exports, retention, integrity alerts and preview commands, see
+[operations](OPERATIONS.md). Full request logs can contain sensitive content;
+metadata exports do not replace the original evidence or independent custody.
 
-## An institutional evaluation path
+## Evaluate your deployment
 
-These are engineering evaluation suggestions, not a compliance determination. Canadian banking guidance makes classification, protection and security logging useful evaluation dimensions; it does not approve Duet. See [OSFI B-13](https://www.osfi-bsif.gc.ca/en/guidance/guidance-library/technology-cyber-risk-management). The Cyber Centre recommends avoiding sensitive corporate information in generative-AI prompts and managing deployment risks; see [ITSAP.00.041](https://www.cyber.gc.ca/en/guidance/generative-artificial-intelligence-ai-itsap00041). The [NIST Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) provides a broader risk-management reference, not a product certification.
+Start with an isolated project and invented data. Duet is a development preview;
+passing a synthetic task does not approve private production data or certify a
+deployment. The host, owner configuration and approved model infrastructure remain
+part of the trust decision.
 
-| Evaluate before production | Available foundation | Work still required |
+| Data flow | What to evaluate |
+| --- | --- |
+| Hybrid with a workstation model | Sensitive-file classification, inferred facts in summaries, frontier provider retention, and tool egress |
+| Hybrid with a self-hosted local endpoint | The same checks plus server access, logging, backups, transport and data residency |
+| Top clearance with an approved local endpoint | Local coding results, endpoint trust, pre-staged dependencies and host-level network observation; no frontier, web tools or command networking |
+
+“Local” does not by itself establish same-device processing or encryption. The
+[launch demo](launch/DEMO.md) used fictional data on an explicitly allowed plaintext
+LAN connection; it demonstrates neither production transport nor endpoint trust.
+
+1. **Record the environment.** Keep source/binary hashes, OS, policy, endpoints,
+   model identifiers and dependency versions. Identify who owns the setup and
+   reviews the results.
+2. **Run a task with acceptance tests.** Reproduce the
+   [billing fixture](launch/DEMO.md#reproduce-the-task), inspect its patch and
+   preserve failures as well as successful attempts.
+3. **Observe disclosure independently.** Compare captured requests with the
+   [planted-value checker](../tools/check-launch-canaries.py), and inspect summaries
+   for private meaning beyond literal matches. Exercise hostile instructions,
+   encoded values, derived files and repeated questions with the
+   [privacy scenarios](../crates/duet-cli/tests/privacy_scenarios.rs) and
+   [egress tests](../crates/duet-cli/tests/egress_oracle.rs).
+4. **Check audit custody and recovery.** Tamper with a copy and verify rejection
+   against a preserved anchor. Test missing logs and retention behavior. The
+   recorded timestamp comes from the host, not a trusted external clock; a person
+   controlling both log and anchor can replace both. Protect full logs and backups.
+5. **Repeat without the frontier.** Use top clearance with a receiving trap and
+   host network observation. Check unavailable-local-endpoint behavior and assess
+   its coding results separately.
+6. **Decide for this setup.** Record allowed flows, failures, residual risks,
+   operating costs and exclusions. Evaluate the real workloads and OS/extensions
+   you intend to use; do not generalize from a synthetic success.
+
+| Decision | Available evidence | Work for your deployment |
 | --- | --- | --- |
-| Data boundary | Hybrid filtering, protected source, top clearance | Your classification policy, endpoint approval and observed network testing |
-| Ownership and access | Owner/project separation; policy interface | Managed installation, operator identity, privilege separation, policy distribution |
-| Audit custody | JSONL requests/events; external local anchor | Access controls, approved retention, encrypted storage and off-host immutable collection |
-| Incident handling | Published advisories and regressions | Replace the placeholder security contact; tested private reporting and response process |
-| Software supply chain | Source and lockfile; release tooling | Reviewed signed artifacts, SBOM, provenance, vulnerability process and deployment validation |
-| Security assurance | Tests and development canaries | Independent review/red team, endpoint and OS coverage, new attack classes |
-| Quality and economics | Paired development evidence | Fresh paired runs on representative workloads, real usage charges and local operating costs |
+| Disclosure and tool isolation | Boundary mechanisms above; retained [failed and fixed runs](launch/DEMO.md) | Classification coverage, semantic inference, endpoint/OS checks and independent adversarial assessment |
+| Policy ownership | Owner/project separation and configuration audit | Protect and distribute policy; Core does not supply fleet identity or a policy-signing service |
+| Investigation and retention | Request/event records, anchors and [operational checks](OPERATIONS.md) | Access controls, encryption, retention, backups, alert routing and custody outside the workspace |
+| Trusted installation and response | Source, lockfile, [release procedure](INSTALLATION.md) and [advisories](../SECURITY.md#advisories-and-fixed-leak-classes) | Verify signing identity and provenance, plan updates/rollback, establish a working private reporting route and incident response |
+| Useful coding results | [54-outcome mechanical comparison](evidence/benchmark-54-2026-10-04/README.md), real TUI dogfood and separately dated [historical judged results](VALUE_EVIDENCE.md) | Representative acceptance tasks, human review and actual latency/cost; no fresh quality judges or controlled timing comparison in the current benchmark |
 
-Start with invented records and adversarial canaries in an isolated repository. Verify allowed and denied flows independently. Only then evaluate a narrowly scoped deployment under the organization's own approvals. A bank or public-sector team can assess these controls; this repository does not claim to have passed their approval process.
+The earlier institution-specific research references and their October 1 source
+check remain in the [pre-consolidation evaluation guide](https://github.com/maximpri/duet/blob/9b0ac104ba6947e338ca3baacfd31de2c2823e83/docs/INSTITUTIONAL_EVALUATION.md).
+They are historical evaluation context, not certification or an endorsement.

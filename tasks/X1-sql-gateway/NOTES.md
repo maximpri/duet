@@ -75,7 +75,7 @@ test so the denominator stays 50. Starter remains 3/50; reference remains 50/50.
 `task.toml` records the grader revision and `seal.toml` covers the changed tests and helper.
 Agent-visible inputs are unchanged. Earlier scores belong to revision 1 and must not be mixed
 with revision 2. Twenty archived artifacts were regraded into a separate result directory;
-the original runs were retained. See [the audit](../../docs/X1-GRADER-AUDIT-2026-09-30.md).
+the original runs were retained. See [the audit](../../docs/evidence/reviews/x1-grader-audit-2026-09-30.md).
 
 Sensitive assets: 1,887-line audit log (269 statements; customer names, e-mails and phones in
 constants and comments, analysts' e-mails, a business number, an injection attempt in a support-note

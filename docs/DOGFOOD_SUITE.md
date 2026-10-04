@@ -2,7 +2,7 @@
 
 Status: tiers S and M and L1 built in M0, L2 in M4.5, L3 and L4 after Gate 2, L5, X1 and X2 for M5
 (not yet calibrated live). Every built task passes `duet-eval check`.
-Referenced by [PLAN.md](PLAN.md) and [TARGET_STATE.md](TARGET_STATE.md).
+[Current results](VALUE_EVIDENCE.md) · [Bounded execution](BOUNDED_BENCHMARKS.md) · [Original goals and historical records](evidence/README.md).
 
 ## 1. Purpose
 

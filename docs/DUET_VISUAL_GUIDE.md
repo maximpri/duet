@@ -28,7 +28,7 @@ The value is access to frontier coding with an explicit, inspectable data bounda
 
 Hybrid is for tasks where permitted code and checked context may reach the chosen frontier provider. Top clearance keeps model processing with the approved local endpoint, including the coding agent's conclusions. A local endpoint may run on your workstation or on a trusted self-hosted server; that server and its network path are part of your trusted environment. Top clearance does not establish an air gap or disable all networking on the host.
 
-Use `duet privacy` to inspect policy and destinations before a session. The [deployment evaluation guide](INSTITUTIONAL_EVALUATION.md) describes how to assess both flows with synthetic data.
+Use `duet privacy` to inspect policy and destinations before a session. The [deployment evaluation guide](SECURE_BY_DESIGN.md#evaluate-your-deployment) describes how to assess both flows with synthetic data.
 
 ## Coding results and disclosure
 
@@ -72,4 +72,4 @@ The four featured PNGs were redesigned with the built-in GPT image tool and chec
 
 The original data-driven SVG and PNG figures remain available as reference downloads, with their renderer and reproducibility instructions. The tables above provide accessible text for the results. The documentation, prompts and figures are distributed under the project’s GPL-3.0-or-later license; generated images cannot be reproduced byte for byte from a prompt.
 
-These are explanatory diagrams and charts. For actual Duet screenshots and the color Terminal recording, see the [capture guide](launch/COLOR_DEMO.md) and [verified demo](launch/FRESH_DOGFOOD.md).
+These are explanatory diagrams and charts. For actual Duet screenshots and the color Terminal recording, see the [capture guide](launch/DEMO.md#native-screenshots) and [verified demo](launch/DEMO.md#verified-billing-run).
