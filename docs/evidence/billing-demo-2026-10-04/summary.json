@@ -1,0 +1,90 @@
+{
+  "run_id": "20261004-152905-6020a9",
+  "terminal": {
+    "state": "open",
+    "reason": "session left open; continue it with `duet --resume`"
+  },
+  "stats": {
+    "turns": 4,
+    "usage": {
+      "input": 5772,
+      "cache_read": 15296,
+      "cache_write": 0,
+      "output": 454,
+      "reasoning": 101,
+      "status": "reported"
+    },
+    "cost_usd": 0.00155168,
+    "local_cost_usd": 0.0,
+    "tool_calls": 6,
+    "masked_results": 0,
+    "wall_seconds": 33.136798833,
+    "ledger": {
+      "by_class": {
+        "raw": {
+          "results": 5,
+          "added_tokens": 440,
+          "carried_tokens": 1080,
+          "input_usd": 0.0001067971334726784
+        },
+        "handle_summary": {
+          "results": 1,
+          "added_tokens": 566,
+          "carried_tokens": 1698,
+          "input_usd": 0.0001679088265153777
+        }
+      },
+      "request_tokens": 13396,
+      "ask_local_calls": 0,
+      "ask_local_questions": 0,
+      "sensitive_data_commands": 0,
+      "sandbox_denials": 0,
+      "input_usd": 0.00132468,
+      "output_usd": 0.000227,
+      "local": {
+        "calls": 1,
+        "input_tokens": 567,
+        "cached_tokens": 0,
+        "output_tokens": 231,
+        "seconds": 8.459955625,
+        "request_time_complete": true,
+        "answer_retries": 0,
+        "answer_retry_seconds": 0.0,
+        "malformed_retries": 0
+      }
+    }
+  },
+  "disclosure": {
+    "boundary": true,
+    "requests": 4,
+    "requests_filtered": 4,
+    "placeholders": {
+      "secret": 1
+    },
+    "copied_spans_redacted": 0,
+    "protected_handles": 0,
+    "protected_lines_withheld": 0,
+    "blocked_sends": {},
+    "sandbox_denials": 0,
+    "sensitive_data_runs": 0,
+    "derived_files": 0,
+    "protected_edits": 0,
+    "approvals": {
+      "asked": 0,
+      "approved": 0,
+      "denied": 0
+    },
+    "ask_local_calls": 0,
+    "local_probes": 0,
+    "local_pieces_withheld": 0,
+    "synthetic_samples": 1,
+    "views": {
+      "handle_summary": 1,
+      "tokenized": 0,
+      "local_answers": 0,
+      "protected": 0,
+      "bulky": 0,
+      "raw": 5
+    }
+  }
+}

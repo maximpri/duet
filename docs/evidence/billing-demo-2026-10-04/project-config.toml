@@ -1,0 +1,10 @@
+[sandbox]
+network = "off"
+[web]
+enabled = false
+[subagents]
+enabled = false
+[limits]
+frontier_usd = 0.30
+[session]
+frontier_usd = 0.60

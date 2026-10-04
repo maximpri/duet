@@ -1,6 +1,8 @@
 # Duet in Terminal: screenshots, task results and audit checks
 
-The README's color GIF uses actual macOS screenshots of Duet. The source billing run passed **4/4 tests**, with **zero matches for 13 complete planted values in five recorded frontier requests**. Earlier disclosure failures remain available below. These synthetic demonstrations are historical evidence, not a paired benchmark or a guarantee of privacy.
+The README now shows a [fresh October 4 billing session](../evidence/billing-demo-2026-10-04/README.md): four live TUI screenshots, **4/4 passing tests**, and **zero matches for 13 complete planted values in four recorded frontier requests**.
+
+The earlier color GIF below uses actual macOS screenshots of Duet. Its source billing run passed **4/4 tests**, with **zero matches for 13 complete planted values in five recorded frontier requests**. Earlier disclosure failures remain available below. These synthetic demonstrations are historical evidence, not a paired benchmark or a guarantee of privacy.
 
 ## Native screenshots
 
@@ -12,7 +14,7 @@ The README's color GIF uses actual macOS screenshots of Duet. The source billing
 | --- | --- |
 | ![Duet running in Terminal: private amounts withheld](../assets/launch/duet-native-summary.png) | ![Duet running in Terminal: billing code diff](../assets/launch/duet-native-changes.png) |
 
-The [README GIF](../assets/launch/duet-security.gif) holds these four screenshots for five seconds each. The PNGs are unchanged `screencapture` output, including the Terminal.app window frame: no browser replay, generated screen or text replacement. Playback length does not measure coding time.
+The [earlier demo GIF](../assets/launch/duet-security.gif) holds these four screenshots for five seconds each. The PNGs are unchanged `screencapture` output, including the Terminal.app window frame: no browser replay, generated screen or text replacement. Playback length does not measure coding time.
 
 Captured October 2, 2026 in Terminal.app 2.15, Pro profile, Menlo 16, with `NO_COLOR` unset. Duet reopened a disposable copy of session `20261002-031043-4ce452`; no new model requests were made. Reopening added lifecycle events only to that copy. The published original audit is unchanged. The [native-capture manifest](../evidence/readme-native-2026-10-02/manifest.json) binds the capture binary and all five media files.
 
@@ -136,7 +138,7 @@ From the Duet checkout, run the canary checker against the new workspace's `.due
 
 ## Capture and rebuild
 
-Capture Duet's native Terminal window directly with `screencapture -x -o -l <window-id> screenshot.png`. Rebuild the README GIF from the four unchanged committed PNGs, from the repository root:
+Capture Duet's native Terminal window directly with `screencapture -x -o -l <window-id> screenshot.png`. Rebuild the earlier demo GIF from the four unchanged committed PNGs, from the repository root:
 
 ```sh
 ffmpeg -hide_banner -y -safe 0 -f concat \

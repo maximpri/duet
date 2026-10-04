@@ -1,0 +1,17 @@
+Privacy · hybrid · 8 paths
+Path-policy preview, including ignored files. Workspace file contents are not scanned; local classification and plugin metadata are read. No network requests are made. Content checks run when Duet uses a file. Excluded directories are not inventoried.
+local: http://192.168.50.132:8080 · enabled · allowlisted-plaintext-opted-in
+frontier: https://api.z.ai · enabled · frontier provider
+Commands: off network · web tools: disabled
+Web fetch: disabled
+Exception: local.allow_plaintext (Owner)
+Attention: Sensitive model traffic uses an owner-approved remote endpoint over plain HTTP.
+Excluded directories: .git, .duet, target, node_modules, .venv, venv, __pycache__
+.env · sensitive · sensitivity.globs: .env*
+.gitignore · content-checks · runtime content checks apply
+README.md · content-checks · runtime content checks apply
+billing.py · content-checks · runtime content checks apply
+data/customers.csv · sensitive · sensitivity.globs: data/**
+env.example · content-checks · runtime content checks apply
+prompt.txt · content-checks · runtime content checks apply
+test_billing.py · content-checks · runtime content checks apply

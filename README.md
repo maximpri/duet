@@ -8,9 +8,36 @@ In our benchmark, Duet averaged **89% on automated coding tests**, close to the 
 
 Build a personal project. Work on private source code. Debug logs that contain personal information. Choose which files the frontier can see, keep sensitive content with your own model, and inspect what leaves your environment.
 
-![Duet's architecture: sensitive files are handled locally; a separate application gate checks context before it reaches the frontier coding model.](docs/assets/infographics/duet-boundary-gpt.png)
+## Fix a billing bug without exposing customer records
+
+*Actual Duet session using fictional customer data.*
+
+![Actual Duet TUI after the billing repair: four passing tests, completed checks and billing.py in the Changes panel.](docs/assets/billing-demo/04-completed.jpg)
+
+**Review the fix and its tests.** Duet replaced a substring check with an exact status comparison. Inactive accounts are excluded, and all four tests pass.
+
+![Actual Duet Privacy panel with the sensitive data/customers.csv read selected, showing how its filtered view was handled.](docs/assets/billing-demo/02-privacy.jpg)
+
+**See how sensitive content is handled.** The recorded frontier requests contain a structure view, a generated sample and a filtered local-model summary. An independent check found **zero matches for 13 complete planted private values across four recorded frontier requests**. This checks recorded content; it does not establish that summaries reveal no private facts.
+
+<details>
+<summary>Task in progress and expanded outbound record</summary>
+
+![Actual Duet TUI working on the supplied billing task in hybrid mode, with the sensitive CSV read in progress.](docs/assets/billing-demo/01-working.jpg)
+
+**Work with private data.** Follow the task and sensitive-file handling in hybrid mode.
+
+![Actual Duet Privacy panel expanded with Ctrl-O: the CSV handling decision, audit record 6, frontier model and start of the recorded outbound text.](docs/assets/billing-demo/03-outbound.jpg)
+
+**Inspect what goes to the frontier.** Select a Privacy event and press `Ctrl-O` to inspect its outbound text and audit details.
+
+</details>
+
+These October 4 screenshots capture the running application's 140-column TUI in a live xterm.js terminal viewer. The configured local model ran on an owner-approved LAN endpoint. [Run, outbound content and verification](docs/evidence/billing-demo-2026-10-04/README.md) · [Try the demo](docs/launch/DEMO.md#reproduce-the-task) · [Earlier native Terminal captures](docs/launch/DEMO.md#native-screenshots)
 
 ## Your code, your sharing rules
+
+![Duet's architecture: sensitive files are handled locally; a separate application gate checks context before it reaches the frontier coding model.](docs/assets/infographics/duet-boundary-gpt.png)
 
 - **Keep sensitive files inside your trusted environment.** The local model reads them; the frontier works with references, structure views and checked answers.
 - **Choose what code to share.** Give the frontier ordinary source, expose a private module's interface, or keep its implementation sealed.
@@ -39,12 +66,6 @@ We compared **nine coding problems**, with three scored runs per problem both wi
 Every selected result counts, including one stopped Duet run that received zero. Each scored run has equal weight in the average. Zero detected copies is the result of this benchmark, not a guarantee of 100% privacy: a summary could still reveal a private fact without copying its original words.
 
 [Every task, visualized](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Verified results and how we tested](docs/evidence/benchmark-54-2026-10-04/README.md) · [Full evidence history](docs/VALUE_EVIDENCE.md)
-
-## See Duet work
-
-![Actual Duet session in macOS Terminal: inspecting a sensitive file, its outbound record and the code change.](docs/assets/launch/duet-security.gif)
-
-*Actual color Terminal captures from a completed task with fictional data. Four tests passed; an independent check found none of 13 planted private values in five recorded frontier requests. This demo is separate from the benchmark above. [Screenshots](docs/launch/DEMO.md#native-screenshots) · [Run and verification](docs/launch/DEMO.md#verified-billing-run)*
 
 ## Install on macOS or Linux
 

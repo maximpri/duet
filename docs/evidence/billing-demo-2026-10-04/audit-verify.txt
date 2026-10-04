@@ -1,0 +1,2 @@
+chain intact: 9 records
+anchor matches (/Users/maximp/.local/state/duet/audit-anchors/runs/20261004-152905-6020a9/aa7da43a884a8618.json)

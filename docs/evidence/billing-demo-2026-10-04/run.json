@@ -1,0 +1,12 @@
+{
+  "run_id": "20261004-152905-6020a9",
+  "mode": "hybrid",
+  "objective": "Our billing export incorrectly includes inactive accounts in the active total. Read data/customers.csv to understand its structure, keeping customer values private. Inspect billing.py and test_billing.py, fix the bug, and run the tests. Keep the change small. Explain the correction without quoting customer records.",
+  "checks": [
+    "python3 -m unittest -v"
+  ],
+  "frontier_url": "https://api.z.ai/api/coding/paas/v4",
+  "frontier_model": "glm-5.3-flash",
+  "frontier_dialect": "chat",
+  "session": true
+}

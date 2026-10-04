@@ -1,0 +1,176 @@
+{
+  "run_id": "20261004-152905-6020a9",
+  "captured_date": "2026-10-04",
+  "timezone": "America/Toronto",
+  "checkout_commit": "f379f2c03dd504980242f3e22b32a3d23c72f8f2",
+  "binary": {
+    "path": "target/release/duet",
+    "sha256": "74c741d5132eed6e33ce211aec95b30933cfdcd2cb824aeeb1b0d905d086749b",
+    "version": "duet 0.1.0",
+    "provenance": "Existing locally built release binary; recorded by hash, not rebuilt for this documentation change."
+  },
+  "host": {
+    "os": "Darwin",
+    "release": "27.0.0",
+    "architecture": "arm64"
+  },
+  "capture": {
+    "method": "Live application PTY rendered in xterm.js; actual browser screenshots via Codex in-app browser",
+    "terminal_cols": 140,
+    "terminal_rows": 44,
+    "xterm_version": "5.5.0",
+    "font": "Menlo 16",
+    "line_height": 1.15,
+    "viewport": {
+      "width": 1440,
+      "height": 990
+    },
+    "application_text_modified": false,
+    "images_modified": false,
+    "replay_used_for_screenshots": false,
+    "recording": "session.cast.gz"
+  },
+  "checks": {
+    "before_tests_passed": 3,
+    "before_tests_failed": 1,
+    "after_tests_passed": 4,
+    "frontier_requests": 4,
+    "local_digest_requests": 1,
+    "audit_records_after_exit": 9,
+    "complete_canaries": 13,
+    "matches": 0
+  },
+  "local_endpoint_scope": "Owner-approved plaintext LAN service; raw fictional data was sent to this configured local endpoint. Not same-device processing.",
+  "screenshots": [
+    {
+      "path": "docs/assets/billing-demo/01-working.jpg",
+      "width": 1440,
+      "height": 990,
+      "captured_at_utc": "2026-10-04T15:29:15.007128+00:00",
+      "sha256": "326990fcaa05a966bc8a1cd6ad0271ccc31c353860e95cf600ff12cbba416b01",
+      "format": "JPEG"
+    },
+    {
+      "path": "docs/assets/billing-demo/02-privacy.jpg",
+      "width": 1440,
+      "height": 990,
+      "captured_at_utc": "2026-10-04T15:30:19.169457+00:00",
+      "sha256": "aaa53ee90744672a553f583f417a7a6e7fdaf8320ae2a58f9553ba80c399dce6",
+      "format": "JPEG"
+    },
+    {
+      "path": "docs/assets/billing-demo/03-outbound.jpg",
+      "width": 1440,
+      "height": 990,
+      "captured_at_utc": "2026-10-04T15:30:52.902564+00:00",
+      "sha256": "2e55da02dea30ad3218b648b81983efa8649c87c10a6676eb25fd87f8aa92d22",
+      "format": "JPEG"
+    },
+    {
+      "path": "docs/assets/billing-demo/04-completed.jpg",
+      "width": 1440,
+      "height": 990,
+      "captured_at_utc": "2026-10-04T15:32:26.735915+00:00",
+      "sha256": "5aeddecd2458522b0199e833f182c6fbed307510898307c8dcb7d0b56ecb0dd7",
+      "format": "JPEG"
+    }
+  ],
+  "artifact_digests": {
+    "docs/assets/billing-demo/01-working.jpg": {
+      "sha256": "326990fcaa05a966bc8a1cd6ad0271ccc31c353860e95cf600ff12cbba416b01",
+      "bytes": 104274
+    },
+    "docs/assets/billing-demo/02-privacy.jpg": {
+      "sha256": "aaa53ee90744672a553f583f417a7a6e7fdaf8320ae2a58f9553ba80c399dce6",
+      "bytes": 144763
+    },
+    "docs/assets/billing-demo/03-outbound.jpg": {
+      "sha256": "2e55da02dea30ad3218b648b81983efa8649c87c10a6676eb25fd87f8aa92d22",
+      "bytes": 161289
+    },
+    "docs/assets/billing-demo/04-completed.jpg": {
+      "sha256": "5aeddecd2458522b0199e833f182c6fbed307510898307c8dcb7d0b56ecb0dd7",
+      "bytes": 116394
+    },
+    "docs/evidence/billing-demo-2026-10-04/README.md": {
+      "sha256": "6aed990cd38826d7616ad49186f52a8fd45d2e80d995a3e87cbe255216739a64",
+      "bytes": 5209
+    },
+    "docs/evidence/billing-demo-2026-10-04/after-tests.txt": {
+      "sha256": "052ebbcfd920da08d1b83aeb094852ae26ad7b00f383691c9aa52e94862933c1",
+      "bytes": 320
+    },
+    "docs/evidence/billing-demo-2026-10-04/anchor.json": {
+      "sha256": "1df1ce37477b75522a3f0c80b9dd8959897c7ecd65020895b9a79616a271ac07",
+      "bytes": 317
+    },
+    "docs/evidence/billing-demo-2026-10-04/audit-check.json": {
+      "sha256": "d9f4d00e18fcda25a77aaf55de9e557b91553894cc5eca578627f709dfc8e530",
+      "bytes": 281
+    },
+    "docs/evidence/billing-demo-2026-10-04/audit-show.txt": {
+      "sha256": "3b3989b940169b077c215bbb4355c3d6b1c45e5137986e9d55a44ce87104898b",
+      "bytes": 940
+    },
+    "docs/evidence/billing-demo-2026-10-04/audit-verify.txt": {
+      "sha256": "16d1215f0a5942ddc7e1483706be3735ddbac81eaefc0abfc3ab8bc551a0e07f",
+      "bytes": 137
+    },
+    "docs/evidence/billing-demo-2026-10-04/audit.jsonl": {
+      "sha256": "f3fe7a6c038c24dc5157055ec4f322903ee389463e1c3e9c896251b8dca80b73",
+      "bytes": 94008
+    },
+    "docs/evidence/billing-demo-2026-10-04/before-tests.txt": {
+      "sha256": "6f6b4c3c1ecb9ed408fcc07532e7bfab779c58da088f3dd9ffa6ae0e103e07c9",
+      "bytes": 892
+    },
+    "docs/evidence/billing-demo-2026-10-04/billing-fix.patch": {
+      "sha256": "64849d2a412add600cad9ee6c5bf0d990805e4192433222c3732c755c0436e06",
+      "bytes": 402
+    },
+    "docs/evidence/billing-demo-2026-10-04/canary-check.json": {
+      "sha256": "8423f6d46da4a684a58b24ddcb26cf33a90e9213e1a7b103fa68a9ca17c4266c",
+      "bytes": 2348
+    },
+    "docs/evidence/billing-demo-2026-10-04/csv-outbound.txt": {
+      "sha256": "0f039124b1c11831aa829e51828a31df7571e6500500bf8a696b20893de2796a",
+      "bytes": 1951
+    },
+    "docs/evidence/billing-demo-2026-10-04/disclosure.txt": {
+      "sha256": "e09473264ef15e0f7236ac1995c971b52bbfd83953f5df39bbcdc82b84c6ff58",
+      "bytes": 1129
+    },
+    "docs/evidence/billing-demo-2026-10-04/economics.json": {
+      "sha256": "5ed049a31393888495683831478e486ed12d0dcb4e4bd330eae679b2db4456a5",
+      "bytes": 532
+    },
+    "docs/evidence/billing-demo-2026-10-04/privacy.txt": {
+      "sha256": "7d370da9666ba2b91e0c369b3791a8445ac01827a90ac58e9bd0158eaf1cee4e",
+      "bytes": 1177
+    },
+    "docs/evidence/billing-demo-2026-10-04/project-config.toml": {
+      "sha256": "0f3b6308d94e498b896566f8b78469f5741cc09de8ebdda8334a433d79edeac0",
+      "bytes": 135
+    },
+    "docs/evidence/billing-demo-2026-10-04/run.json": {
+      "sha256": "6bf892e43c2eb7d6343b7b91f48da9a35eebe833a67e3fdde4c9fdc279affb30",
+      "bytes": 586
+    },
+    "docs/evidence/billing-demo-2026-10-04/session.cast.gz": {
+      "sha256": "7deb217cdcf506e1c84048cb1f49d51639a3501a86bdaec354dc8c4b6563c48c",
+      "bytes": 39965
+    },
+    "docs/evidence/billing-demo-2026-10-04/summary.json": {
+      "sha256": "4d2097fc592c9cc062e0e38b2c8a51261d4356bdd1a087a581aed22b8fb3b599",
+      "bytes": 2094
+    },
+    "docs/evidence/billing-demo-2026-10-04/transcript.jsonl": {
+      "sha256": "881fbf3e6304121ebfab79613ce2f96f38aea6d7d4757466748b5f8604ea1fe1",
+      "bytes": 14334
+    },
+    "tools/capture-tui.py": {
+      "sha256": "5330c8f3039a5aee404407165d0790f5e450f5e235d19eb8f8ce20b72a3b19a6",
+      "bytes": 8212
+    }
+  }
+}

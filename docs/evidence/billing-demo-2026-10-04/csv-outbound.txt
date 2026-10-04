@@ -1,0 +1,22 @@
+data/customers.csv (lines 1-4 of 4)
+h1 (data/customers.csv): 4 lines, 305 bytes, 3 line(s) mention errors. Raw content is withheld from the frontier; ask questions with ask_local(handle="h1", question=...).
+Structure (CSV, read here without a model; counts and shapes only, no values; letters as A/a, digits as 9):
+  CSV: 3 rows of 5 fields after a header row; no field quoted
+  field — type; present; distinct; length; shapes
+  customer_id — string; 3; all distinct; len 17-18; shapes A-A-A ×3
+  name — string; 3; all distinct; len 15-16; shapes Aa Aa ×3; looks like name ×3
+  email — string; 3; all distinct; len 35; shapes a.a@a-a.a ×3
+  status — string; 3; 2-5 distinct; len 6-8; shapes aaaaaa ×2, aaaaaaaa ×1
+  amount — string; 3; all distinct; len 5-6; shapes 999.99 ×2, 99.99 ×1; looks like decimal text ×3
+Synthetic sample (record 1 of 3; every value generated from its shape, not real data, not sensitive; synthetic_sample(handle="h1", rows=…) gives up to 20 records as a test fixture):
+customer_id,name,email,status,amount
+MOBA-DGERAB-IZONEK,Umih Ererihuzopo,opmb.morato@alosibv-sehotet.oberber,opirir,112.50
+Summary by the local model: The file is a CSV with 4 lines: 1 header and 3 data rows. Columns are customer_id, name, email, status, amount. All rows are well-formed with 5 fields. Status values are 'active' or 'inactive'. Amounts are numeric. No missing values or malformed rows detected.
+- Header row defines 5 columns: customer_id, name, email, status, amount
+- 3 data rows present, all with exactly 5 comma-separated fields
+- customer_id values follow pattern CUST-CANARY-<WORD>
+- status column contains only 'active' or 'inactive' values
+- amount column contains decimal numeric values (e.g., ⟨withheld:data-value⟩, ⟨withheld:data-value⟩, ⟨withheld:data-value⟩)
+- No duplicate customer_id values detected
+- No empty or null fields in any row
+- File ends with a newline after the last data row
