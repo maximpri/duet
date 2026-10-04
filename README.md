@@ -1,8 +1,10 @@
 # Duet
 
-**Frontier coding. Private context under your control.**
+**Frontier coding power. Private data under your control.**
 
-Duet is an AI coding assistant for anyone who cares about privacy and security. A frontier model plans, writes and fixes code. A local model handles sensitive content. Duet checks what reaches the frontier, giving you control over what you share.
+Duet is an AI coding assistant for anyone who cares about privacy and security. A frontier model plans, writes and fixes code. Your local model handles sensitive content, and Duet checks what reaches the cloud.
+
+In our benchmark, Duet averaged **89% on automated coding tests**, close to the same frontier model’s **97% with privacy protections disabled**. **None of the planted private values appeared in Duet’s 1,124 recorded calls to the cloud model.**
 
 Build a personal project. Work on private source code. Debug logs that contain personal information. Choose which files the frontier can see, keep sensitive content with your own model, and inspect what leaves your environment.
 
@@ -18,13 +20,25 @@ Build a personal project. Work on private source code. Debug logs that contain p
 
 “Local” can be your workstation or an approved self-hosted endpoint. In hybrid mode, permitted code and checked context reach the frontier; summaries can still reveal meaning. [See the two modes](docs/DUET_VISUAL_GUIDE.md#choose-the-data-flow) and the [security design](docs/SECURE_BY_DESIGN.md).
 
-## Measured results
+## Near-frontier test scores. Zero observed leaks of planted private values.
 
 ![54-outcome benchmark: Duet hybrid scored 89.26% versus 96.54% for the same frontier with the boundary disabled. Hybrid had zero planted-value matches in 1,124 captured requests.](docs/assets/infographics/duet-results-2026-10-04.svg)
 
-Across **nine tasks and three paired seeds**, Duet hybrid achieved an **89.26% mean per-case hidden-test score**, compared with **96.54%** for the same frontier model with the boundary disabled. Its **1,124 captured frontier requests contained zero literal planted-value matches**; the comparison lane contained 35,809 occurrences in 1,328 requests.
+We compared **nine coding problems**, with three scored runs per problem both with and without Duet’s privacy protections: **54 scored results**. Automated evaluation tests checked whether the resulting code worked. Those tests were hidden from the coding agents.
 
-All 54 outcomes count, including an externally stopped hybrid case scored zero. These are mechanical coding scores and literal-value checks; they do not establish quality parity or semantic secrecy. [Every task, visualized](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Verified report and methodology](docs/evidence/benchmark-54-2026-10-04/README.md) · [Full evidence history](docs/VALUE_EVIDENCE.md)
+| What we measured | Duet with privacy protections | Same frontier, protections disabled |
+| --- | ---: | ---: |
+| Average automated-test score | **89.26%** | **96.54%** |
+| Copies of planted private values in recorded cloud calls | **0** | **35,809** |
+| Recorded cloud calls checked | 1,124 | 1,328 |
+
+**Coding quality:** Duet’s average test score was within about **7.28 percentage points** of the frontier without privacy protections. Duet earned a **100% score on four of the nine problems** in all three scored runs. These scores measure how well the code met the tests; they are not a complete assessment of software quality.
+
+**Privacy:** We put fake private information in the test data, then checked the contents of recorded calls to the cloud model. Duet exposed **none of those values verbatim**. With privacy protections disabled, they appeared 35,809 times; repeated appearances of the same value count separately.
+
+Every selected result counts, including one stopped Duet run that received zero. Each scored run has equal weight in the average. Zero detected copies is the result of this benchmark, not a guarantee of 100% privacy: a summary could still reveal a private fact without copying its original words.
+
+[Every task, visualized](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Verified results and how we tested](docs/evidence/benchmark-54-2026-10-04/README.md) · [Full evidence history](docs/VALUE_EVIDENCE.md)
 
 ## See Duet work
 
