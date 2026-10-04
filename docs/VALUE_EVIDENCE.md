@@ -4,7 +4,7 @@ Duet lets a frontier model make coding decisions while a local model handles sen
 
 ## Current comparison: 54 outcomes, October 4
 
-![Current comparison: 89.26% hybrid and 96.54% boundary-disabled mean per-case hidden-test scores; zero literal planted-value matches in 1,124 hybrid requests.](assets/infographics/duet-results-2026-10-04.svg)
+![Current comparison: 89.26% hybrid and 96.54% boundary-disabled mean per-case hidden-test scores; zero literal planted-value matches in 1,124 hybrid requests.](assets/infographics/duet-results-2026-10-04-gpt.png)
 
 The [54-case evidence packet](evidence/benchmark-54-2026-10-04/README.md) compares nine tasks with three seeds in each lane: 27 paired cases. Both lanes use the same `glm-5.3-flash` frontier and frozen Duet application revision `b9eb511`; hybrid uses the `omlx-coding` local-model alias, while passthrough disables the privacy boundary. Two matching final verification passes checked the full outcome matrix, captures, accounting and process/lease quiescence before the publication verdict was written.
 
@@ -27,9 +27,9 @@ No fresh quality judges ran. Literal-canary and sink checks do not establish sem
 
 ### Every task in the current comparison
 
-![Mean hidden-test scores for all nine tasks, showing all three seeds in each lane and retaining zero-score outcomes.](assets/infographics/duet-task-results-2026-10-04.svg)
+![Mean hidden-test scores for all nine tasks, showing all three seeds in each lane and retaining zero-score outcomes.](assets/infographics/duet-task-results-2026-10-04-gpt.png)
 
-[Accessible results table and interpretation](DUET_VISUAL_GUIDE.md#results-by-task) · [Download or reproduce the figures](assets/infographics/README.md). The charts read the frozen report directly; no new model runs or grading were used to create them.
+[Accessible results table and interpretation](DUET_VISUAL_GUIDE.md#results-by-task) · [Figure downloads, prompts and data-driven originals](assets/infographics/README.md). The featured figures were designed with GPT image generation and checked against the frozen report. No new benchmark runs or grading were used; the original plotted figures remain reproducible from the report.
 
 ## Historical comparison: September 30
 

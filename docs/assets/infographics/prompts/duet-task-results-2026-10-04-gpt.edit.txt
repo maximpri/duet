@@ -1,0 +1,17 @@
+Use case: precise-object-edit / infographic-diagram.
+Image 1 is the edit target: the Duet nine-task scorecard just generated.
+Make one focused correction: REMOVE ALL horizontal data bars and their gray background tracks from both numeric columns. Keep the two columns as a beautifully aligned TEXT-ONLY score table, with the exact numbers below in large readable type. Removing bars avoids implying precise geometry from a generated image. Do not replace the bars with dots, rings, progress indicators or any other visual encoding of quantity.
+Preserve the title, subtitle, mint 100% callout, overall portrait layout, forest/teal/copper/paper palette, task labels, separators, column headings, footer notes and brand. Keep the same row order. You may tighten column widths to center the numbers neatly; give labels room. No other changes or added claims.
+Column labels: "Duet with privacy" and "Same frontier, privacy off".
+Every row must contain EXACTLY these two scores:
+S1 Configuration: 100.00% | 100.00%
+S2 Crash diagnosis: 90.00% | 93.33%
+M1 Billing export †: 66.67% | 97.22%
+M2 Data-subject export: 100.00% | 100.00%
+M3 Hostile logs: 100.00% | 100.00%
+L1 Ledger reconciliation: 91.67% | 95.00%
+L2 Protected pricing: 100.00% | 100.00%
+X1 SQL gateway *: 64.67% | 96.00%
+X2 Partner exports: 90.30% | 87.27%
+Retain full readable footnotes, especially "All three selected runs count, including failures.", the stopped X1 zero, the M1 compilation failure with no observed hidden-test results, and source/date.
+Opaque background. Output one complete finished image with no crop or cut-off text.

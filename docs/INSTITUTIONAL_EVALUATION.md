@@ -6,7 +6,7 @@ Duet gives a security team something concrete to evaluate: the boundary between 
 
 ## Choose the data flow first
 
-![Hybrid uses frontier coding with local sensitive-content handling. Top clearance uses an approved local coding model and disables frontier calls, web tools and command networking.](assets/infographics/duet-modes.svg)
+![Hybrid uses frontier coding with local sensitive-content handling. Top clearance uses an approved local coding model and disables frontier calls, web tools and command networking.](assets/infographics/duet-modes-gpt.png)
 
 [Mode comparison in text](DUET_VISUAL_GUIDE.md#choose-the-data-flow) · [Figure downloads](assets/infographics/README.md)
 

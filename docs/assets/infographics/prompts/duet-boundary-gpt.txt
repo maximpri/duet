@@ -1,0 +1,20 @@
+Use case: infographic-diagram.
+Asset type: polished editorial infographic for the Duet open-source README and documentation.
+Input image 1 is the existing figure to redesign. Keep its correct facts and palette, but improve its hierarchy, typography and clarity using the replacement copy below.
+Audience: anyone who values privacy and security; no references to banks, government, enterprises or certifications.
+Style: sophisticated editorial information design, generous spacing, crisp flat shapes, beautiful large serif headline and exceptionally readable sans-serif labels. Deep forest ink #142D29, warm paper #F4F1E8, teal #087F74, mint #7DE1BF, restrained copper #B75E2E. Match the existing Duet two-bar wordmark. Very subtle depth is acceptable, but no 3D gimmicks, gradient blobs, stock shield imagery, fake UI, device mockups, or photographs.
+Typography: all required text must be legible, exact, properly aligned and uncropped; preserve all numeric values. This is an explanatory infographic, never an application screenshot.
+Do not invent facts, icons suggesting certification, claims of 100% privacy, or additional numbers. Never imply that zero literal matches proves no semantic disclosure.
+Opaque background. Produce a single finished high-resolution image, not a sheet of variants.
+Format: landscape, about 3:2, dark forest background.
+Title (verbatim, two lines): "Frontier coding power." / "Private data under your control."
+Subtitle: "Your local model handles sensitive content. Duet checks what reaches the cloud."
+Central diagram: put private files, local handling and a DISTINCT application gate inside one clearly outlined area labeled "YOUR COMPUTER OR APPROVED SERVER". The frontier model is outside that area. No direct path from private files or the local model to the cloud: every outgoing arrow passes the host gate.
+Block 1: "Private files", with "Personal data", "Private code", "Logs".
+Block 2: "Local handling", with "Answers specific questions" and "Structure + synthetic examples". A local-reader pictogram and schema motif may make this clearer; do not imply all structure requires an AI call.
+Block 3, visually prominent: "Duet checks", with "Filter", "Check", "Record". Label above "APPLICATION GATE".
+Arrow leaving the gate: "Permitted code + checked context".
+Outside block: "Frontier model", with "Plan", "Code", "Test + repair".
+Bottom three simple benefit captions, evenly spaced: "Choose what to share" / "Rules enforced outside the models" / "Inspect what leaves".
+Readable footer: "Local may mean a trusted self-hosted endpoint. Checked answers can still reveal private facts."
+Retain exact distinctions between the application gate and both models. No numerical privacy/result claims in this architecture image.

@@ -4,7 +4,7 @@ Duet lets a frontier model plan, write and repair code while a local model handl
 
 ## How the boundary works
 
-![Sensitive files pass through local handling and a host policy gate before permitted code and checked context reach the frontier model.](assets/infographics/duet-boundary.svg)
+![Sensitive files pass through local handling and a host policy gate before permitted code and checked context reach the frontier model.](assets/infographics/duet-boundary-gpt.png)
 
 1. **Set the policy.** Classify sensitive files, choose how much source code the frontier can see and approve the model endpoints. For example, keep customer rows private while making a reporting function available for repair.
 2. **Handle sensitive content locally.** The local reader answers specific questions. Structure views expose shapes, schemas and synthetic examples that help the frontier reason about the code. Structure views do not always require a model call.
@@ -15,7 +15,7 @@ The value is access to frontier coding with an explicit, inspectable data bounda
 
 ## Choose the data flow
 
-![Comparison of hybrid and top-clearance modes, including their coding agents, frontier disclosure and network controls.](assets/infographics/duet-modes.svg)
+![Comparison of hybrid and top-clearance modes, including their coding agents, frontier disclosure and network controls.](assets/infographics/duet-modes-gpt.png)
 
 | Decision | Hybrid | Top clearance |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Use `duet privacy` to inspect policy and destinations before a session. The [dep
 
 ## Coding results and disclosure
 
-![Overall benchmark: 89.26% hybrid score versus 96.54% with the boundary disabled; zero planted-value matches in hybrid captures versus 35,809 in the comparison lane.](assets/infographics/duet-results-2026-10-04.svg)
+![Overall benchmark: 89.26% hybrid score versus 96.54% with the boundary disabled; zero planted-value matches in hybrid captures versus 35,809 in the comparison lane.](assets/infographics/duet-results-2026-10-04-gpt.png)
 
 The October 4 comparison contains **54 outcomes: nine tasks × three seeds × two lanes**. Both lanes used `glm-5.3-flash` and Duet revision `b9eb511`. Hybrid used the `omlx-coding` local-model alias; passthrough used the same frontier with the privacy boundary disabled.
 
@@ -48,7 +48,7 @@ Duet completed useful coding work while keeping the planted values out of the ca
 
 ## Results by task
 
-![Grouped bars show all nine tasks on the same zero-to-100-percent scale, with three counted seeds in every mean.](assets/infographics/duet-task-results-2026-10-04.svg)
+![A score table compares all nine problems, with three scored runs in each average and all zero-score outcomes retained.](assets/infographics/duet-task-results-2026-10-04-gpt.png)
 
 | Task | Duet hybrid | Same frontier, boundary disabled |
 | --- | ---: | ---: |
@@ -68,6 +68,8 @@ These are project-run mechanical evaluations. No fresh quality judges ran, model
 
 ## Use and reproduce the figures
 
-All four figures are available as scalable SVGs and high-resolution PNGs under GPL-3.0-or-later. The [asset index](assets/infographics/README.md) includes downloads, the renderer and reproduction instructions. Benchmark charts are generated directly from the verified report, with a hash manifest linking assets to their inputs. The SVGs include accessible titles and descriptions; the tables above provide the numerical data in text.
+The four featured PNGs were redesigned with the built-in GPT image tool and checked against the verified report. The [asset index](assets/infographics/README.md) includes the images, exact prompts and a provenance manifest. The tool does not expose a model-version identifier. These image generations are not new benchmark results.
+
+The original data-driven SVG and PNG figures remain available as reference downloads, with their renderer and reproducibility instructions. The tables above provide accessible text for the results. The documentation, prompts and figures are distributed under the project’s GPL-3.0-or-later license; generated images cannot be reproduced byte for byte from a prompt.
 
 These are explanatory diagrams and charts. For actual Duet screenshots and the color Terminal recording, see the [capture guide](launch/COLOR_DEMO.md) and [verified demo](launch/FRESH_DOGFOOD.md).

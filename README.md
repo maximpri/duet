@@ -8,7 +8,7 @@ In our benchmark, Duet averaged **89% on automated coding tests**, close to the 
 
 Build a personal project. Work on private source code. Debug logs that contain personal information. Choose which files the frontier can see, keep sensitive content with your own model, and inspect what leaves your environment.
 
-![Duet's architecture: sensitive files are handled locally; a separate application gate checks context before it reaches the frontier coding model.](docs/assets/infographics/duet-boundary.svg)
+![Duet's architecture: sensitive files are handled locally; a separate application gate checks context before it reaches the frontier coding model.](docs/assets/infographics/duet-boundary-gpt.png)
 
 ## Your code, your sharing rules
 
@@ -22,7 +22,7 @@ Build a personal project. Work on private source code. Debug logs that contain p
 
 ## Near-frontier test scores. Zero observed leaks of planted private values.
 
-![54-outcome benchmark: Duet hybrid scored 89.26% versus 96.54% for the same frontier with the boundary disabled. Hybrid had zero planted-value matches in 1,124 captured requests.](docs/assets/infographics/duet-results-2026-10-04.svg)
+![54-outcome benchmark: Duet hybrid scored 89.26% versus 96.54% for the same frontier with the boundary disabled. Hybrid had zero planted-value matches in 1,124 captured requests.](docs/assets/infographics/duet-results-2026-10-04-gpt.png)
 
 We compared **nine coding problems**, with three scored runs per problem both with and without Duet’s privacy protections: **54 scored results**. Automated evaluation tests checked whether the resulting code worked. Those tests were hidden from the coding agents.
 

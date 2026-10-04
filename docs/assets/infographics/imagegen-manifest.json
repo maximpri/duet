@@ -1,0 +1,73 @@
+{
+  "created_date": "2026-10-04",
+  "figures": {
+    "duet-boundary-gpt.png": {
+      "description": "Architecture diagram: sensitive files and local handling stay inside the approved trusted environment. A separate host policy gate filters, checks and records outbound context before permitted code and checked context reach the frontier model. Local can mean a workstation or self-hosted endpoint; checks do not guarantee semantic secrecy.",
+      "height": 1024,
+      "prompts_sha256": {
+        "prompts/duet-boundary-gpt.txt": "fe2489c2056fbd1799fa4baa78c280d06abe739882f417b58e34bfb8a3347927"
+      },
+      "reference_image": "duet-boundary.png",
+      "reference_sha256": "ac183b3c811b838af6a8a4a4198fd96759ff9706e5f087767e2dc27ae2d3a766",
+      "sha256": "84bdfc42ab018a6ffccf6167cf4b1b08d000a9c2c54cc99912649cef614cfd4f",
+      "width": 1536
+    },
+    "duet-modes-gpt.png": {
+      "description": "Hybrid uses a frontier coding agent and local sensitive-content processing; permitted code and checked context can reach the frontier. Top clearance uses the approved local model as the coding agent, with no frontier calls, web tools, command networking or networked MCP servers. Local may be a workstation or self-hosted endpoint; it is not an air-gap guarantee.",
+      "height": 1024,
+      "prompts_sha256": {
+        "prompts/duet-modes-gpt.txt": "74e1554f0ab9a578c29965bbc7078f16e7d6e9ff56b0e1699cc9348459d78cdc"
+      },
+      "reference_image": "duet-modes.png",
+      "reference_sha256": "481585065a64a703854db9575809c5e115ac1d3186006648a54b808f0d20a327",
+      "sha256": "39f0dcb6dc8c984386fd509a061c82067d9a7db3dfd33a7987ba564d2fbcbbf0",
+      "width": 1536
+    },
+    "duet-results-2026-10-04-gpt.png": {
+      "description": "Mean counted per-case hidden-test scores: Duet hybrid 89.26%, same frontier with boundary disabled 96.54%. Hybrid had 0 planted-value matches in 1,124 captured requests, versus 35,809 in 1,328 passthrough requests. All 54 outcomes count, including one external failure scored zero. There are 53 native grader records; no fresh quality judges ran.",
+      "height": 1024,
+      "prompts_sha256": {
+        "prompts/duet-results-2026-10-04-gpt.txt": "55d90d56eb5627fe4a4ba9c8d2023ac321d2faab4fc4bc7138581c6a05d92524"
+      },
+      "reference_image": "duet-results-2026-10-04.png",
+      "reference_sha256": "3ac630f1b370ff83b4127e9e94a3fe3fb683d76353b00425783e65d4a49446ab",
+      "sha256": "d5db859dd99c33659d2bc3deb4a1632bd6f416b66410ac1b254e9c21d909984b",
+      "width": 1536
+    },
+    "duet-task-results-2026-10-04-gpt.png": {
+      "description": "Each task uses all three seeds in each lane, including zero-score outcomes. S1: hybrid 100.00%, boundary disabled 100.00%; S2: hybrid 90.00%, boundary disabled 93.33%; M1: hybrid 66.67%, boundary disabled 97.22%; M2: hybrid 100.00%, boundary disabled 100.00%; M3: hybrid 100.00%, boundary disabled 100.00%; L1: hybrid 91.67%, boundary disabled 95.00%; L2: hybrid 100.00%, boundary disabled 100.00%; X1: hybrid 64.67%, boundary disabled 96.00%; X2: hybrid 90.30%, boundary disabled 87.27%. X1 hybrid includes one external deadline failure. M1 hybrid includes a compilation failure with no observed hidden results.",
+      "height": 1328,
+      "prompts_sha256": {
+        "prompts/duet-task-results-2026-10-04-gpt.edit.txt": "f043a6d4a0ccae796705fb70783ece568eeccaaf723dcd47d96d88fae61c07b6",
+        "prompts/duet-task-results-2026-10-04-gpt.txt": "54e71f7142f1f8b7886f9e8cea605122fab60f8592f13fe061375dfcdc9f71f1"
+      },
+      "reference_image": "duet-task-results-2026-10-04.png",
+      "reference_sha256": "1414158b6e27847037e61c9b4b08807bb1be88de47cae0c1f7a67255473fc63f",
+      "sha256": "16da517271a14b6574ae9b1c008276ad2888f395f9bdd13d096534c245f893b2",
+      "width": 1184
+    }
+  },
+  "license": "GPL-3.0-or-later",
+  "mode": "built-in image generation and editing",
+  "model_identifier": null,
+  "model_identifier_note": "The built-in tool did not expose an underlying model identifier.",
+  "original_manifest_sha256": "b13e7a407a58d28e9761a6df4f72b94d110b110c45fd590a8769765a8ba330c4",
+  "report": "docs/evidence/benchmark-54-2026-10-04/report.json",
+  "report_sha256": "de5774df15609795ae0a23d214b63b61858e9ddd2b8b613d1b4130cf168556de",
+  "reproduction": "Original figures are reproduced by tools/render-infographics.py. GPT images use the recorded prompts and references; generation is nondeterministic and new outputs require review.",
+  "review": {
+    "method": "Visual inspection by the primary agent and a separate review agent; numeric labels checked against the frozen report.",
+    "not_a_new_benchmark": true,
+    "scope": [
+      "overall and per-task scores",
+      "captured request and literal occurrence counts",
+      "four tasks with perfect scores across three selected runs",
+      "failure footnotes",
+      "architecture gate and mode distinctions",
+      "visible privacy caveats"
+    ]
+  },
+  "schema_version": 1,
+  "tool": "image_gen.imagegen",
+  "verdict_sha256": "587c2a4837a6e3bb03f60ebd7b23431c1b84cce601919a83e2915e35f06ef574"
+}
