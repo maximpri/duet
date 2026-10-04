@@ -6,6 +6,10 @@ Duet gives a security team something concrete to evaluate: the boundary between 
 
 ## Choose the data flow first
 
+![Hybrid uses frontier coding with local sensitive-content handling. Top clearance uses an approved local coding model and disables frontier calls, web tools and command networking.](assets/infographics/duet-modes.svg)
+
+[Mode comparison in text](DUET_VISUAL_GUIDE.md#choose-the-data-flow) · [Figure downloads](assets/infographics/README.md)
+
 | Deployment | Processing and disclosure | Evaluate |
 | --- | --- | --- |
 | Hybrid + loopback local model | Sensitive inputs are handled on the workstation; open code and checked context can reach the chosen frontier | Classification coverage, inference from summaries, cloud contractual/retention terms, tool egress |

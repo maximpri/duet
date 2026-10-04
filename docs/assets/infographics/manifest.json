@@ -1,0 +1,87 @@
+{
+  "assets_sha256": {
+    "duet-boundary.png": "ac183b3c811b838af6a8a4a4198fd96759ff9706e5f087767e2dc27ae2d3a766",
+    "duet-boundary.svg": "abb92ba88a0dbcf32dbe0a9c57326bcc7b7e3372aa78200b39d6fc6387a7fb73",
+    "duet-modes.png": "481585065a64a703854db9575809c5e115ac1d3186006648a54b808f0d20a327",
+    "duet-modes.svg": "ef93ba78f2bd5a7ed8cabf9dd30533258601abc169cd7c876d1553cfae3b0cb6",
+    "duet-results-2026-10-04.png": "3ac630f1b370ff83b4127e9e94a3fe3fb683d76353b00425783e65d4a49446ab",
+    "duet-results-2026-10-04.svg": "2947a342558cfc98ed70e90273e4788bdf1246e695952013368e5ef28f3abd93",
+    "duet-task-results-2026-10-04.png": "1414158b6e27847037e61c9b4b08807bb1be88de47cae0c1f7a67255473fc63f",
+    "duet-task-results-2026-10-04.svg": "30601f0fb3b39f7a9f929f880371759852c5def117a7a670ea6e8d244f8c2475"
+  },
+  "figures": {
+    "duet-boundary": {
+      "description": "Architecture diagram: sensitive files and local handling stay inside the approved trusted environment. A separate host policy gate filters, checks and records outbound context before permitted code and checked context reach the frontier model. Local can mean a workstation or self-hosted endpoint; checks do not guarantee semantic secrecy.",
+      "height": 860,
+      "png_scale": 2,
+      "title": "How Duet uses frontier models with private context",
+      "width": 1280
+    },
+    "duet-modes": {
+      "description": "Hybrid uses a frontier coding agent and local sensitive-content processing; permitted code and checked context can reach the frontier. Top clearance uses the approved local model as the coding agent, with no frontier calls, web tools, command networking or networked MCP servers. Local may be a workstation or self-hosted endpoint; it is not an air-gap guarantee.",
+      "height": 970,
+      "png_scale": 2,
+      "title": "Choose between hybrid and top-clearance mode",
+      "width": 1280
+    },
+    "duet-results-2026-10-04": {
+      "description": "Mean counted per-case hidden-test scores: Duet hybrid 89.26%, same frontier with boundary disabled 96.54%. Hybrid had 0 planted-value matches in 1,124 captured requests, versus 35,809 in 1,328 passthrough requests. All 54 outcomes count, including one external failure scored zero. There are 53 native grader records; no fresh quality judges ran.",
+      "height": 960,
+      "png_scale": 2,
+      "title": "Duet's verified 54-case coding and disclosure results",
+      "width": 1280
+    },
+    "duet-task-results-2026-10-04": {
+      "description": "Each task uses all three seeds in each lane, including zero-score outcomes. S1: hybrid 100.00%, boundary disabled 100.00%; S2: hybrid 90.00%, boundary disabled 93.33%; M1: hybrid 66.67%, boundary disabled 97.22%; M2: hybrid 100.00%, boundary disabled 100.00%; M3: hybrid 100.00%, boundary disabled 100.00%; L1: hybrid 91.67%, boundary disabled 95.00%; L2: hybrid 100.00%, boundary disabled 100.00%; X1: hybrid 64.67%, boundary disabled 96.00%; X2: hybrid 90.30%, boundary disabled 87.27%. X1 hybrid includes one external deadline failure. M1 hybrid includes a compilation failure with no observed hidden results.",
+      "height": 1190,
+      "png_scale": 2,
+      "title": "Duet hidden-test scores for every benchmark task",
+      "width": 1280
+    }
+  },
+  "generator_sha256": "9e41c255aa107c415699e6cd281f3ce8c41d995a16fdb58cf7735756e2b9690d",
+  "license": "GPL-3.0-or-later",
+  "matplotlib_version": "3.11.2",
+  "report": "docs/evidence/benchmark-54-2026-10-04/report.json",
+  "report_sha256": "de5774df15609795ae0a23d214b63b61858e9ddd2b8b613d1b4130cf168556de",
+  "schema_version": 1,
+  "task_means": {
+    "L1": {
+      "duet-hybrid": 0.9166666666666666,
+      "duet-passthrough": 0.9499999999999998
+    },
+    "L2": {
+      "duet-hybrid": 1.0,
+      "duet-passthrough": 1.0
+    },
+    "M1": {
+      "duet-hybrid": 0.6666666666666666,
+      "duet-passthrough": 0.9722222222222222
+    },
+    "M2": {
+      "duet-hybrid": 1.0,
+      "duet-passthrough": 1.0
+    },
+    "M3": {
+      "duet-hybrid": 1.0,
+      "duet-passthrough": 1.0
+    },
+    "S1": {
+      "duet-hybrid": 1.0,
+      "duet-passthrough": 1.0
+    },
+    "S2": {
+      "duet-hybrid": 0.9,
+      "duet-passthrough": 0.9333333333333332
+    },
+    "X1": {
+      "duet-hybrid": 0.6466666666666666,
+      "duet-passthrough": 0.96
+    },
+    "X2": {
+      "duet-hybrid": 0.903030303030303,
+      "duet-passthrough": 0.8727272727272727
+    }
+  },
+  "verdict_sha256": "587c2a4837a6e3bb03f60ebd7b23431c1b84cce601919a83e2915e35f06ef574"
+}

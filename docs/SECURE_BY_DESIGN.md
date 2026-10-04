@@ -2,6 +2,10 @@
 
 Duet's design goal is to keep content classified as sensitive or protected out of the cloud frontier's context. The enforcement belongs to the host application and OS, outside the model's instructions. This document links the claim to inspectable mechanisms and tests; it is not a formal proof of security.
 
+![Duet's data flow: local handling and a separate host policy gate precede the frontier model.](assets/infographics/duet-boundary.svg)
+
+[Read the diagram step by step](DUET_VISUAL_GUIDE.md#how-the-boundary-works). The gate is part of the host application; neither model can authorize disclosure. An approved self-hosted local endpoint and its network path belong inside the trusted environment.
+
 ## Evidence you can check
 
 | Evidence | What it establishes | What it cannot establish |

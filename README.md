@@ -1,32 +1,36 @@
 # Duet
 
-**Frontier coding for private work.**
+**Frontier coding. Private context under your control.**
 
-Duet brings frontier models to confidential software work. It is designed for banks, government security teams and organizations building systems around data they cannot share with a model provider.
+Duet is an AI coding assistant for anyone who cares about privacy and security. A frontier model plans, writes and fixes code. A local model handles sensitive content. Duet checks what reaches the frontier, giving you control over what you share.
 
-The frontier model plans the work, writes code and fixes failing tests. A local model handles sensitive files. Duet checks what passes between them, so the frontier can use a file's structure and checked answers while its raw contents stay inside your trusted environment.
+Build a personal project. Work on private source code. Debug logs that contain personal information. Choose which files the frontier can see, keep sensitive content with your own model, and inspect what leaves your environment.
 
-Fix a financial reporting pipeline. Debug against confidential logs. Work with a proprietary algorithm through its interface. Keep control of the data behind the code.
+![Duet's architecture: sensitive files are handled locally; a separate application gate checks context before it reaches the frontier coding model.](docs/assets/infographics/duet-boundary.svg)
 
-![Duet running in macOS Terminal: inspecting a sensitive file, its outbound record and the code change](docs/assets/launch/duet-security.gif)
+## Your code, your sharing rules
 
-*Actual Terminal window captures from a completed task with fictional data. Four tests passed; an independent check found none of 13 planted private values in five recorded frontier requests. [Screenshots](docs/launch/COLOR_DEMO.md) · [Run and verification](docs/launch/FRESH_DOGFOOD.md)*
+- **Keep sensitive files inside your trusted environment.** The local model reads them; the frontier works with references, structure views and checked answers.
+- **Choose what code to share.** Give the frontier ordinary source, expose a private module's interface, or keep its implementation sealed.
+- **Enforce policy outside the models.** The application checks outbound requests and the OS isolates commands. Repository instructions cannot grant themselves broader permissions.
+- **See what changed and what was shared.** Review the patch in **Changes**, prepared frontier context in **Privacy**, and saved audit records with built-in verification.
+- **Use your own model for the whole task.** Top-clearance mode runs the coding agent at your approved local endpoint, with frontier calls, web tools and command networking disabled.
 
-## Frontier results, private context
+“Local” can be your workstation or an approved self-hosted endpoint. In hybrid mode, permitted code and checked context reach the frontier; summaries can still reveal meaning. [See the two modes](docs/DUET_VISUAL_GUIDE.md#choose-the-data-flow) and the [security design](docs/SECURE_BY_DESIGN.md).
 
-The two models have different jobs. The frontier does the coding. The local model reads sensitive content and answers questions about it. Duet checks those answers before they enter the frontier's context.
+## Measured results
 
-- **Raw sensitive files stay behind the boundary.** Files classified as sensitive are represented by references, schemas and synthetic examples. Detected credentials become placeholders.
-- **You decide how much code to share.** Keep ordinary code available to the frontier, expose only the interface of a private module, or seal its contents.
-- **The application enforces the rules.** Sandboxed commands and outbound checks apply regardless of what a model or repository instruction asks for.
-- **Check the policy before you start.** `duet privacy` previews file rules, model destinations and policy exceptions offline.
-- **You can inspect the result.** Review the patch in **Changes** and what was prepared for the frontier in **Privacy**. Saved audits can be checked for tampering.
+![54-outcome benchmark: Duet hybrid scored 89.26% versus 96.54% for the same frontier with the boundary disabled. Hybrid had zero planted-value matches in 1,124 captured requests.](docs/assets/infographics/duet-results-2026-10-04.svg)
 
-In a nine-task comparison with three paired seeds, Duet achieved an **89.26% mean per-case hidden-test score**, versus **96.54%** with the same frontier model and the privacy boundary disabled. The comparison includes all 54 outcomes. The hybrid lane's **1,124 captured frontier requests contained no planted private-value matches**. [Results and methodology](docs/evidence/benchmark-54-2026-10-04/README.md)
+Across **nine tasks and three paired seeds**, Duet hybrid achieved an **89.26% mean per-case hidden-test score**, compared with **96.54%** for the same frontier model with the boundary disabled. Its **1,124 captured frontier requests contained zero literal planted-value matches**; the comparison lane contained 35,809 occurrences in 1,328 requests.
 
-Hybrid mode sends permitted code and checked answers to the frontier. Choose `duet --mode top-clearance` when source data and conclusions must stay with your own model: it disables frontier calls, web tools and command networking. Use a model on your machine or a trusted self-hosted endpoint.
+All 54 outcomes count, including an externally stopped hybrid case scored zero. These are mechanical coding scores and literal-value checks; they do not establish quality parity or semantic secrecy. [Every task, visualized](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Verified report and methodology](docs/evidence/benchmark-54-2026-10-04/README.md) · [Full evidence history](docs/VALUE_EVIDENCE.md)
 
-[Security design](docs/SECURE_BY_DESIGN.md) · [Threat model](SECURITY.md) · [Measured results](docs/VALUE_EVIDENCE.md)
+## See Duet work
+
+![Actual Duet session in macOS Terminal: inspecting a sensitive file, its outbound record and the code change.](docs/assets/launch/duet-security.gif)
+
+*Actual color Terminal captures from a completed task with fictional data. Four tests passed; an independent check found none of 13 planted private values in five recorded frontier requests. This demo is separate from the benchmark above. [Screenshots](docs/launch/COLOR_DEMO.md) · [Run and verification](docs/launch/FRESH_DOGFOOD.md)*
 
 ## Install on macOS or Linux
 
@@ -65,7 +69,7 @@ duet --check 'python3 -m unittest -v'
 
 Try the [fictional billing example](docs/launch/DEMO.md#reproduce-the-task), or read the [usage guide](docs/USAGE.md) for configuration, audit commands and local-only work.
 
-Evaluating Duet for your organization? The [deployment evaluation guide](docs/INSTITUTIONAL_EVALUATION.md) maps controls to evidence and walks through a pilot with synthetic data. Duet is a development preview; the [publication review](docs/PUBLISH_READINESS.md) records verified checks and remaining work, and the [security documentation](SECURITY.md) defines its trust assumptions and protection scope.
+Duet is a development preview. Start with the included example, use `duet privacy` to check your settings, and review the [security documentation](SECURITY.md) to understand what Duet protects. The [publication review](docs/PUBLISH_READINESS.md) records verified checks and remaining work.
 
 [Privacy preview](docs/PRIVACY_PREFLIGHT.md) · [Audit and retention](docs/OPERATIONS.md) · [Independent review brief](docs/SECURITY_REVIEW_BRIEF.md)
 

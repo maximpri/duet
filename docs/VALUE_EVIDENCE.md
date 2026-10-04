@@ -4,6 +4,8 @@ Duet lets a frontier model make coding decisions while a local model handles sen
 
 ## Current comparison: 54 outcomes, October 4
 
+![Current comparison: 89.26% hybrid and 96.54% boundary-disabled mean per-case hidden-test scores; zero literal planted-value matches in 1,124 hybrid requests.](assets/infographics/duet-results-2026-10-04.svg)
+
 The [54-case evidence packet](evidence/benchmark-54-2026-10-04/README.md) compares nine tasks with three seeds in each lane: 27 paired cases. Both lanes use the same `glm-5.3-flash` frontier and frozen Duet application revision `b9eb511`; hybrid uses the `omlx-coding` local-model alias, while passthrough disables the privacy boundary. Two matching final verification passes checked the full outcome matrix, captures, accounting and process/lease quiescence before the publication verdict was written.
 
 | Measure, 27 counted cases per lane | Duet hybrid | Duet passthrough |
@@ -22,6 +24,12 @@ The percentages are macro averages of 27 per-case scores, not the fraction of al
 Conservative accounting for **all attempts** totals **$23.55011430**: $23.10446950 from 2,483 settled requests plus $0.44564480 retained for two unknown reservations, original request 88 and X1 hybrid seed 3 request 39. Historical interrupted attempts remain charged. These amounts are recorded-usage estimates and retained allowances, not a provider invoice, measured electricity or a cost-saving result.
 
 No fresh quality judges ran. Literal-canary and sink checks do not establish semantic secrecy; the current scores do not establish frontier-quality parity. Model aliases do not independently pin local weights. Serial, concurrent and recovery execution make these timings unsuitable for a controlled latency comparison. Earlier recovered attempts retain their disclosed non-parent wait and missing descendant-history limitations. The [earlier stopped batch](evidence/release-hardening-2026-10-03/benchmark/README.md) remains unchanged.
+
+### Every task in the current comparison
+
+![Mean hidden-test scores for all nine tasks, showing all three seeds in each lane and retaining zero-score outcomes.](assets/infographics/duet-task-results-2026-10-04.svg)
+
+[Accessible results table and interpretation](DUET_VISUAL_GUIDE.md#results-by-task) · [Download or reproduce the figures](assets/infographics/README.md). The charts read the frozen report directly; no new model runs or grading were used to create them.
 
 ## Historical comparison: September 30
 
