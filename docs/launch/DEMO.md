@@ -1,6 +1,6 @@
 # Duet in Terminal: screenshots, task results and audit checks
 
-The README now shows a [fresh October 4 billing session](../evidence/billing-demo-2026-10-04/README.md): four live TUI screenshots, **4/4 passing tests**, and **zero matches for 13 complete planted values in four recorded frontier requests**.
+The README shows the completed [October 4 billing session](../evidence/billing-demo-2026-10-04/README.md). Its evidence page retains all four live TUI screenshots, **4/4 passing tests**, and **zero matches for 13 complete planted values in four recorded frontier requests**.
 
 The earlier color GIF below uses actual macOS screenshots of Duet. Its source billing run passed **4/4 tests**, with **zero matches for 13 complete planted values in five recorded frontier requests**. Earlier disclosure failures remain available below. These synthetic demonstrations are historical evidence, not a paired benchmark or a guarantee of privacy.
 
