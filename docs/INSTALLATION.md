@@ -55,6 +55,48 @@ The installer requires Bash, curl, OpenSSH with `ssh-keygen -Y`, tar, and either
 `shasum` or `sha256sum`. Its accompanying `verify-release.sh` must come from the
 same trusted checkout. Linux binary assets target glibc (`*-unknown-linux-gnu`).
 
+## Build unsigned release candidates
+
+From the repository root, run the local validation gate with:
+
+```sh
+./cicd.sh check
+```
+
+To build macOS and GNU/Linux candidates for ARM64 and x86-64 from one clean,
+committed source revision:
+
+```sh
+./cicd.sh build --targets all --out /absolute/path/duet-candidates \
+  --cache-dir /absolute/path/duet-build-cache
+```
+
+`--targets host` is the default when `--targets` is omitted. Keep the output and
+cache directories outside the checkout. The full matrix requires a Mac with
+Apple's command-line tools for macOS builds and Docker for Linux builds; Linux
+uses Rust 1.90 on Debian Bookworm. Cross-architecture version/help checks may use
+Rosetta or Docker emulation, which must be available for those targets.
+Install both macOS target standard libraries in the same Rust toolchain used by
+`cargo` and `rustc`; a target added through rustup is not available to a separate
+Homebrew Rust installation. `--targets` also accepts a comma-separated list of
+the target triples shown by `./cicd.sh --help`. On Linux, `--targets all` builds
+the two Linux targets.
+
+The build runs the full host gate, creates a corresponding-source archive with
+locked vendored dependencies, and builds every target from that extracted source.
+Each target receives its binary, SBOM, build information, source archive, GPL and
+third-party notices, and `SHA256SUMS`. Candidate archives end in
+`-unsigned.tar.gz` and have outer checksums; build information records their
+unsigned status. Version/help smoke checks are recorded separately from the host
+gate. They do not establish full sandbox compatibility on another architecture.
+
+These checksums detect changed bytes but do not authenticate a publisher. The
+verified installer rejects unsigned candidates. Once the owner supplies a signing
+identity, sign the candidate directory's inner `SHA256SUMS`, verify it with
+`tools/verify-release.sh`, then use `tools/package-release.sh` below to produce
+signed installer-compatible assets. Keep the matching source and notices with
+those assets. Candidate builds neither create signing keys nor publish releases.
+
 ## Preparing GitHub release assets
 
 Use an existing owner-controlled signing key and independently maintained

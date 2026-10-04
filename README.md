@@ -84,7 +84,7 @@ duet doctor
 duet privacy
 ```
 
-[Model setup](docs/USAGE.md#models) · [Verified GitHub release installation](docs/INSTALLATION.md#install-a-verified-binary)
+[Model setup](docs/USAGE.md#models) · [Verified GitHub release installation](docs/INSTALLATION.md#install-a-verified-binary) · [Build release artifacts](docs/INSTALLATION.md#build-unsigned-release-candidates)
 
 Binary installation is ready for owner-published releases on macOS and Linux, on ARM64 and x86-64. It verifies the release against a signing identity you trust and retains the matching GPL source and notices.
 
