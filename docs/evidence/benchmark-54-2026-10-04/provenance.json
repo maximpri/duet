@@ -1,0 +1,50 @@
+{
+  "all_attempt_accounting": {
+    "active_allocated_nano_usd": 0,
+    "all_attempt_debit_nano_usd": 23550114300,
+    "invoice_or_quota_measured": false,
+    "limit_nano_usd": 50000000000,
+    "original_unknown_request_retained_nano_usd": 222822400,
+    "retained_requests": 2,
+    "retained_usage_nano_usd": 445644800,
+    "settled_requests": 2483,
+    "settled_usage_nano_usd": 23104469500
+  },
+  "artifact_manifest_sha256": "aa874d32de62542d6527a56e27d9d362a305bd400f8f708c6f2fb02cb9e229a1",
+  "auxiliary_manifest_sha256": "67947cc2c1001730f648dbba3b12c97f8008f8ec5a158e1e4be9e985c7409839",
+  "binary_sha256": {
+    "duet": "74c741d5132eed6e33ce211aec95b30933cfdcd2cb824aeeb1b0d905d086749b",
+    "duet-eval": "f5ddc78ded6356e8ebf690b242e920228c7fa424f75820a5d50c1268fe79968b"
+  },
+  "closing_independent_audit_sha256": "a90e5bfa0af026859d92af6387835ac1ff1b2eea1ae1393ab3334a0e76864608",
+  "coverage": {
+    "expected_hidden_tests_across_full_matrix": 1140,
+    "native_graded_runs": 53,
+    "native_records": 53,
+    "planned_cases": 54,
+    "selected_cases": 54,
+    "selected_pairs": 27
+  },
+  "evidence_binding_sha256": "0d4fb9444d4f842fa2fbe30f9b206217499de8100b51919b5febd4066b035d09",
+  "external_security_review_commissioned": false,
+  "final_case_journal_sha256": "094fa5e2bb1134e07a8b771a20f2aabd1c072c67cbdafd26e8b71468abcf0da2",
+  "final_case_record_sha256": "68de673ed1cead52f11bd9861f26efa0904a9c0ac768fb6b93439329f1938a08",
+  "final_single_case_runner_sha256": "b8ad7da2475b8ce60026b90ce83b6c0ada5eaec16f42d838f6bbee1c77c8cf6e",
+  "independent_adapter_sha256": "6c0ed185eec52d0582b8f369178e9ef90ff18d2f01afb12661f2666fbc2be0ff",
+  "independent_audit_sha256": "28e513994ec324890672f4dcd86bcb77397f0b101b2bae61983d5f75b8fc14a1",
+  "input_manifest_sha256": "14550a9795cb9b598d8a6dca5cebdb27e29822be13e0b7461fa1f926f6254f1a",
+  "license": "GPL-3.0-or-later",
+  "macos_sdk_version": "26.5",
+  "model_weights_immutably_pinned": false,
+  "private_artifacts_exported": false,
+  "publication_verdict_sha256": "587c2a4837a6e3bb03f60ebd7b23431c1b84cce601919a83e2915e35f06ef574",
+  "purpose": "sanitized_frozen_benchmark_provenance",
+  "quality_scored": false,
+  "report_adapter_sha256": "c3198c80792fa86c86d139a7ed435e528e7d4be29d6b7feb64fe46086c490dc4",
+  "report_json_sha256": "de5774df15609795ae0a23d214b63b61858e9ddd2b8b613d1b4130cf168556de",
+  "report_markdown_sha256": "48bb87aeb4d0527740261cdd27b08ca90ddfab159e511b93a8294537c23941ba",
+  "schema_version": 1,
+  "source_archive_sha256": "38a1763e2bc21d2331403eea49b251b8174a410ee9f0132b81f7764c8041265d",
+  "source_commit": "b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4",
+  "verified_at_utc": "2026-10-04T08:54:21.075667+00:00"
+}

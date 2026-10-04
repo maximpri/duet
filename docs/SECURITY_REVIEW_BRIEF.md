@@ -69,6 +69,14 @@ the original regression passes unchanged afterward. The
 source snapshots, toolchains and limitations; [publication readiness](PUBLISH_READINESS.md)
 separates these results from historical checks and live benchmark evidence.
 
+## Current live comparison and deadline incident
+
+The [October 4 evidence packet](evidence/benchmark-54-2026-10-04/README.md) contains 54 counted outcomes across 27 paired cases, with 53 native records and grader records. Hybrid's mean per-case hidden-test score was 89.26%, versus 96.54% for passthrough. Independent capture checks found zero literal planted-value occurrences in 1,124 hybrid frontier requests; all 27 hybrid cases had sink rescans with zero measured violations. These observations do not establish semantic secrecy or constitute an external security review.
+
+X1 hybrid seed 3 remained live after a frontier response reported HTTP 200 while its captured body stayed empty. A separately reviewed procedure used a recorded post-construction monotonic anchor, the original native time budget and a conservative grace period before an external deadline intervention. Scheduling was frozen; the same attempt was ended and counted as a zero-score product failure without rerunning it. No native run record, summary or grade was manufactured, and the outcome is not labeled as a native-reported timeout. Final verification checked process, writer and lease quiescence and retained unknown usage. This evaluation procedure is not a shipped automatic recovery feature.
+
+The stall's cause remains unresolved. Review the frozen HTTP/SSE body handling, scheduling and whole-run cancellation paths, then seek a bounded offline reproduction that independently observes deadline progress, task cancellation and descendant cleanup. The observation alone does not identify a dependency bug or prove a timer fix. No fresh quality judges or commissioned external reviewers participated in this comparison.
+
 ## Demonstrated limit: semantic disclosure
 
 The socket-observed test

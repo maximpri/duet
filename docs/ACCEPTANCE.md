@@ -1,10 +1,16 @@
 # Duet v2 — Acceptance and Requirements Traceability
 
-**Historical acceptance ledger.** For the October 2 publication review and its
-current verification status, see [Publication readiness](PUBLISH_READINESS.md).
-The audit below and its later row-specific updates describe their named builds;
-old “never run” statements and release verdicts are snapshots, not a fresh verdict
-on the current tree. Rows not explicitly updated have not been re-audited.
+**Historical acceptance ledger.** [Publication readiness](PUBLISH_READINESS.md)
+records the current implementation review. The
+[October 2026 frozen comparison](evidence/benchmark-54-2026-10-04/README.md) adds
+54 outcomes and 27 pairs, with 53 native records and grader records plus one
+external zero-score disposition. It supplies mechanical results and
+captured-traffic checks, not fresh quality judgments or a re-audit of the rows
+below.
+
+The original audit and later row-specific updates describe their named builds.
+Old “never run” statements, measurements and release verdicts are historical
+snapshots. Rows not explicitly updated have not been re-audited.
 
 Original audit: `main` at `234165b` (2026-09-24), before any release. It was read-only: no code was
 changed, and no models or evaluations were run. The evidence is the test suite (one full

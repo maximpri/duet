@@ -39,9 +39,11 @@ unstarted if accounting becomes unknown or the allowance is exhausted.
 The journal is single-use. A restart refuses an existing journal rather than
 silently resetting charges or guessing what an interrupted provider request cost.
 Keep the entire batch, including unsuccessful runs and its journal. Do not delete
-the journal to resume a paid batch; reconcile retained reservations and obtain a
-new allowance first. On a coding-plan subscription these are list-price token
-estimates, not a prediction of an additional API invoice or subscription quota.
+the journal to resume a paid batch. A separately authorized continuation must
+preserve every prior charge and retained reservation and allocate only the
+remaining aggregate allowance. On a coding-plan subscription these are list-price
+token estimates, not a prediction of an additional API invoice or subscription
+quota.
 
 Example (put the batch and frozen binaries on a disk with enough room):
 
@@ -56,3 +58,22 @@ Freeze `duet` beside `duet-eval`, record both binary hashes, the source revision
 and uncommitted source snapshot, lane definitions, pricing file and task seals.
 The harness resolves the adjacent Duet binary. Preserve the planned task/seed/lane
 matrix so omitted or interrupted runs cannot disappear from the reported sample.
+
+## Recorded October 2026 continuation
+
+The [54-outcome comparison](evidence/benchmark-54-2026-10-04/README.md) used
+separately reviewed external controllers and a fixed final single-case
+continuation. This was an evaluation procedure, not a shipped automatic-resume
+feature. The original journal and all attempts remain preserved; conservative
+accounting totals $23.55011430, including $0.44564480 retained for unknown usage.
+
+Collection combined serial execution with at most one hybrid and two passthrough
+workers. A naturally completed orphaned case was recovered without rerunning it;
+its unavailable parent wait status and incomplete earlier descendant history
+remain disclosed. X1 hybrid seed 3 received a separately documented external
+deadline disposition, counts zero and was not rerun. No native timeout, terminal
+or grade was fabricated.
+
+Final verification reconciles all attempt journals and captures and checks
+process, writer and lease quiescence. Mixed scheduling makes these timings
+unsuitable for a controlled lane-latency comparison.

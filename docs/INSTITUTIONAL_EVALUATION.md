@@ -57,7 +57,7 @@ Treat logs as sensitive. Local request bodies, transcripts, handles and a failed
 | Can a repository loosen controls? | [Owner/project separation](SECURE_BY_DESIGN.md#3-the-repository-cannot-promote-its-own-permissions) | Protect/distribute owner policy; Core does not supply fleet IAM or a policy-signing service |
 | Can we investigate an incident? | Request/event JSONL, local anchor, verification CLI | Central collection, access controls, retention, backup, alert routing and response ownership |
 | Can we trust the installed build? | Source, lockfile, tests and release tooling | Reviewed signed artifacts, SBOM/provenance validation, update and rollback process |
-| Can developers complete real work? | [Paired quality/cost results](VALUE_EVIDENCE.md), real TUI dogfood | Representative internal tasks, human review, p95 latency and cost per accepted task |
+| Can developers complete real work? | [Current 54-outcome mechanical comparison](evidence/benchmark-54-2026-10-04/README.md): 89.26% hybrid versus 96.54% passthrough mean per-case hidden-test scores; 53 native/grader records, one externally enforced zero-score failure; real TUI dogfood | Representative internal tasks, human review, deployment latency and cost per accepted task; no fresh quality judges or controlled timing comparison |
 
 ## Research basis
 
@@ -71,6 +71,6 @@ Sources rechecked 2026-10-01, America/Toronto. Jurisdiction and institutional po
 
 ## Priorities before real-data adoption
 
-First close disclosure findings, establish a working private vulnerability-reporting route, verify installation provenance and commission independent assessment. Then validate managed policy, endpoint security and external audit custody in the intended deployment. Publish fresh representative quality/cost results alongside those controls.
+First close disclosure findings, establish a working private vulnerability-reporting route, verify installation provenance and commission independent assessment. Then validate managed policy, endpoint security and external audit custody in the intended deployment. Use the [current mechanical results](evidence/benchmark-54-2026-10-04/README.md) as a starting point, retain the [historical judged evidence](VALUE_EVIDENCE.md#historical-comparison-september-30) separately, and publish representative acceptance results for the intended deployment alongside those controls.
 
 These are the steps toward becoming a tool a regulated team can trust. The README should invite that evaluation rather than imply it has already happened.

@@ -33,3 +33,17 @@ allowance. All 54 planned statuses, binary/input hashes and the content-free
 budget journal are retained; fresh quality scores remain unscored. The older
 judged comparison is separate evidence. See [publication readiness](../../PUBLISH_READINESS.md)
 for remaining work.
+
+## Later continuation evidence
+
+The [October 4 final comparison](../benchmark-54-2026-10-04/README.md) carries
+this stopped attempt into a complete record of 54 outcomes and 27 pairs. It
+preserves the original valid cases, interrupted attempt, retained charge and
+subsequent history. The record contains 53 native records and grader records,
+plus one externally adjudicated zero-score product failure without native
+terminal artifacts.
+
+The benchmark application remains `b9eb511d9e96c2d4fbb9a816ba6b6b0470c8dfa4`.
+The additive packet records its own final verification, accounting and execution
+limitations; it neither replaces this historical packet nor supplies fresh
+quality judgments.

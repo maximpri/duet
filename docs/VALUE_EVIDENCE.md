@@ -1,8 +1,31 @@
 # Duet's value, measured on development tasks
 
-_2026-09-30. Duet Core is in development; these are the project's own runs, not an independent audit or a release benchmark._
+Duet lets a frontier model make coding decisions while a local model handles sensitive files. The current evidence measures coding outcomes and planted-value disclosure separately. These are project-run evaluations, not institutional approval or an external security audit.
 
-Duet lets a frontier model make coding decisions while a local model handles sensitive files. The measured benefit is **less sensitive content sent to the frontier while retaining similar results on the small-to-large test suite**. The measured tradeoff is **more money and time**, so Duet has not yet met the goal of frontier-level quality at a fraction of the cost.
+## Current comparison: 54 outcomes, October 4
+
+The [54-case evidence packet](evidence/benchmark-54-2026-10-04/README.md) compares nine tasks with three seeds in each lane: 27 paired cases. Both lanes use the same `glm-5.3-flash` frontier and frozen Duet application revision `b9eb511`; hybrid uses the `omlx-coding` local-model alias, while passthrough disables the privacy boundary. Two matching final verification passes checked the full outcome matrix, captures, accounting and process/lease quiescence before the publication verdict was written.
+
+| Measure, 27 counted cases per lane | Duet hybrid | Duet passthrough |
+| --- | ---: | ---: |
+| Mean per-case hidden-test score | **89.26%** | **96.54%** |
+| Successful native terminals | 26 | 27 |
+| Mechanical successes | 14 | 15 |
+| Product-failure outcomes | 1 | 0 |
+| Native records / grader records | 26 / 26 | 27 / 27 |
+| Literal planted-value occurrences in captured frontier requests | **0** | 35,809 |
+| Captured frontier requests | 1,124 | 1,328 |
+| Cases with sink rescans / measured violations | 27 / 0 | 27 / 0 |
+
+The percentages are macro averages of 27 per-case scores, not the fraction of all individual hidden tests passed. All 54 outcomes count. X1 hybrid seed 3 required an externally enforced deadline intervention and counts as a zero-score failure without a rerun. It has no native run record, summary or grade; it is not a native-reported timeout. The final X2 hybrid case completed normally with 48/55 hidden tests passed. Across the suite there are **53 native records and 53 grader records**; a grader record does not establish that every hidden suite compiled or executed.
+
+Conservative accounting for **all attempts** totals **$23.55011430**: $23.10446950 from 2,483 settled requests plus $0.44564480 retained for two unknown reservations, original request 88 and X1 hybrid seed 3 request 39. Historical interrupted attempts remain charged. These amounts are recorded-usage estimates and retained allowances, not a provider invoice, measured electricity or a cost-saving result.
+
+No fresh quality judges ran. Literal-canary and sink checks do not establish semantic secrecy; the current scores do not establish frontier-quality parity. Model aliases do not independently pin local weights. Serial, concurrent and recovery execution make these timings unsuitable for a controlled latency comparison. Earlier recovered attempts retain their disclosed non-parent wait and missing descendant-history limitations. The [earlier stopped batch](evidence/release-hardening-2026-10-03/benchmark/README.md) remains unchanged.
+
+## Historical comparison: September 30
+
+_The following chart and results preserve the earlier development batches. They are not the October 4 comparison._
 
 ![Four charts comparing canary occurrences, hidden-test pass rate, mean total cost, and wall time for Duet hybrid and passthrough modes](assets/duet-value-2026-09-30.svg)
 
@@ -65,7 +88,7 @@ A later live billing task passed its coding tests while disclosing planted custo
 
 The [original audits, failed regression, live TUI recordings and final proof packet](launch/DEMO.md) preserve the observations. This does not change the historical benchmark measurements or prove all disclosure classes are covered. It shows why their zero-canary result must remain scoped to that frozen suite. The new task is a dogfood observation, not a new paired quality/cost benchmark.
 
-## Where cost work stands
+## Historical cost experiments
 
 The [October 1 debug-log review](evidence/captain-comic-debug-review-2026-10-01.md)
 identified repeated tool misuse, misleading session failures and simulated screenshots
@@ -75,4 +98,4 @@ the agent prompt; no paired quality/cost benchmark was rerun for that revision.
 
 The large tasks spend most frontier dollars on input context carried across many requests. Three measured ideas did not produce a safe saving: removing old tool results saved only 0–2% in offline replays; delegating fix loops had little eligible work; and dropping the frontier's earlier reasoning caused repeated work, higher cost, and wall-clock stops in live X2 runs. Local compaction reduced token spend on some runs but lost X2 quality on two seeds and collapsed one X1 run. The local explorer was almost never called. [The experiment table](HANDOFF-2026-09-29.md#25-reducing-frontier-cost-with-the-local-model-ac93ba2-c081890) gives the measurements.
 
-The current product claim is therefore privacy with measured small-to-large quality retention, **at a price premium**. Reaching a fraction of the frontier's cost requires a new method that cuts frontier work while preserving the security boundary and hidden-test performance, followed by paired runs on the final build. M5's broader public benchmark, a fresh red-team pass, and an independent audit are still pending; [the acceptance ledger](ACCEPTANCE.md) lists each gate and its open work.
+The current product claim is frontier coding with local handling of sensitive context and inspectable disclosure controls. The October 4 comparison records zero literal planted-value matches in the hybrid lane alongside its lower mean hidden-test score; it supports neither universal secrecy nor quality parity or cost savings. Representative deployment acceptance, fresh adversarial evaluation and an independent security review remain separate work. See [publication readiness](PUBLISH_READINESS.md) and the [historical acceptance ledger](ACCEPTANCE.md).
