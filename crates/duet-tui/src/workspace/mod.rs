@@ -23,6 +23,8 @@ mod ansi;
 mod cells;
 mod interaction;
 mod panel;
+mod plan;
+pub use plan::{PlanAction, PlanIdentity, PlanQuestion, PlanSnapshot, PlanStepProgress};
 mod privacy;
 mod terminal;
 mod view;
@@ -112,6 +114,8 @@ pub const COMMANDS: &[&str] = &[
 
 /// What the workspace reports to the session.
 pub struct Hooks {
+    /// A revision-bound operator action; never interpreted as chat text.
+    pub plan_action: Box<dyn Fn(PlanAction) + Send>,
     /// An explicitly pasted image, queued for the next message after validation.
     pub paste_image: Arc<dyn Fn(Vec<u8>) -> Result<String, String> + Send + Sync>,
     /// A line the operator sent (continuation lines joined).
@@ -132,6 +136,11 @@ pub struct AttachmentChip {
 }
 
 enum Msg {
+    Plan(Option<Box<PlanSnapshot>>),
+    OpenPlan(bool),
+    PlanError(String),
+    PlanSaved(Box<PlanSnapshot>),
+    PlanQuestion(Option<PlanQuestion>),
     Attachments(Vec<AttachmentChip>),
     RecoverDraft(String),
     Lines(Vec<String>),
@@ -169,6 +178,21 @@ pub struct Workspace {
 }
 
 impl Workspace {
+    pub fn plan(&self, snapshot: Option<PlanSnapshot>) {
+        self.send(Msg::Plan(snapshot.map(Box::new)));
+    }
+    pub fn plan_error(&self, error: String) {
+        self.send(Msg::PlanError(error));
+    }
+    pub fn plan_saved(&self, snapshot: PlanSnapshot) {
+        self.send(Msg::PlanSaved(Box::new(snapshot)));
+    }
+    pub fn open_plan(&self, edit: bool) {
+        self.send(Msg::OpenPlan(edit));
+    }
+    pub fn plan_question(&self, question: Option<PlanQuestion>) {
+        self.send(Msg::PlanQuestion(question));
+    }
     /// Restore an unsent message after an attachment failed, preserving new input.
     pub fn recover_draft(&self, text: String) {
         self.send(Msg::RecoverDraft(text));
@@ -513,6 +537,7 @@ pub(crate) struct State {
     help: bool,
     help_scroll: u16,
     panel: panel::Panel,
+    plan: plan::Panel,
     /// Completions shown above the input until the next key.
     choices: Vec<String>,
     /// The palette's selected command; hidden after Esc until the input changes.
@@ -575,6 +600,7 @@ impl State {
             help: false,
             help_scroll: 0,
             panel: panel::Panel::default(),
+            plan: plan::Panel::default(),
             choices: Vec::new(),
             palette: 0,
             palette_start: 0,
@@ -849,6 +875,32 @@ impl State {
 
     fn message(&mut self, m: Msg) {
         match m {
+            Msg::Plan(snapshot) => self.plan.snapshot(snapshot.map(|s| *s)),
+            Msg::PlanError(error) => self.plan.error(error),
+            Msg::PlanSaved(snapshot) => {
+                self.input_epoch = self.input_epoch.wrapping_add(1);
+                self.plan.saved(*snapshot);
+            }
+            Msg::OpenPlan(edit) => {
+                self.input_epoch = self.input_epoch.wrapping_add(1);
+                self.overlay = false;
+                self.help = false;
+                self.find.open = false;
+                self.plan.show(edit);
+            }
+            Msg::PlanQuestion(question) => {
+                let was_open = self.plan.question_active();
+                let new_question = self.plan.question(question);
+                if new_question || was_open != self.plan.question_active() {
+                    // Cancel a clipboard read only when its target actually changes.
+                    self.input_epoch = self.input_epoch.wrapping_add(1);
+                }
+                if new_question {
+                    self.overlay = false;
+                    self.help = false;
+                    self.find.open = false;
+                }
+            }
             Msg::Attachments(chips) => self.attachments = chips,
             Msg::RecoverDraft(text) => {
                 if self.editor.buffer().is_empty() {
@@ -920,6 +972,55 @@ impl State {
 
     fn event(&mut self, ev: Event, tty: &mut File) {
         self.dirty = true;
+        // Permission questions take precedence over all review/edit overlays.
+        if self.answering {
+            let Event::Key(k) = ev else {
+                return;
+            };
+            if k.kind == KeyEventKind::Release {
+                return;
+            }
+            self.input_epoch = self.input_epoch.wrapping_add(1);
+            let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+            // The approval dialog: No is the default; Enter answers.
+            match k.code {
+                KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
+                    self.approve = !self.approve;
+                }
+                KeyCode::Char('y' | 'Y') if !ctrl => self.approve = true,
+                KeyCode::Char('n' | 'N') if !ctrl => self.approve = false,
+                KeyCode::Enter => {
+                    let answer = if self.approve { "y" } else { "n" };
+                    self.approve = false;
+                    (self.hooks.line)(answer.to_owned());
+                }
+                KeyCode::Esc => {
+                    self.approve = false;
+                    (self.hooks.line)("n".to_owned());
+                }
+                _ if ctrl && matches!(k.code, KeyCode::Char('c' | 'C')) => {
+                    let outcome = self.editor.key(k);
+                    self.outcome(outcome, tty);
+                }
+                _ => {}
+            }
+            return;
+        }
+        if self.plan.active() {
+            self.input_epoch = self.input_epoch.wrapping_add(1);
+            match self.plan.event(ev) {
+                plan::Effect::None => {}
+                plan::Effect::Action(action) => (self.hooks.plan_action)(action),
+                plan::Effect::Copy(text) => self.copy_text(text),
+                plan::Effect::Paste => self.paste(),
+                plan::Effect::Interrupt => {
+                    if let Some(text) = (self.hooks.interrupt)() {
+                        self.notice(&text);
+                    }
+                }
+            }
+            return;
+        }
         if self.overlay {
             self.input_epoch = self.input_epoch.wrapping_add(1);
             match ev {
@@ -986,31 +1087,6 @@ impl State {
             }
             return;
         }
-        if self.answering {
-            // The approval dialog: No is the default; Enter answers.
-            match k.code {
-                KeyCode::Up | KeyCode::Down | KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
-                    self.approve = !self.approve;
-                }
-                KeyCode::Char('y' | 'Y') if !ctrl => self.approve = true,
-                KeyCode::Char('n' | 'N') if !ctrl => self.approve = false,
-                KeyCode::Enter => {
-                    let answer = if self.approve { "y" } else { "n" };
-                    self.approve = false;
-                    (self.hooks.line)(answer.to_owned());
-                }
-                KeyCode::Esc => {
-                    self.approve = false;
-                    (self.hooks.line)("n".to_owned());
-                }
-                _ if ctrl && matches!(k.code, KeyCode::Char('c' | 'C')) => {
-                    let outcome = self.editor.key(k);
-                    self.outcome(outcome, tty);
-                }
-                _ => {}
-            }
-            return;
-        }
         if ctrl && matches!(k.code, KeyCode::Char('c' | 'C')) {
             if let Some(text) = self.selected_text() {
                 self.copy_text(text);
@@ -1030,6 +1106,14 @@ impl State {
                 || shift && k.code == KeyCode::Delete)
         {
             self.notice("Clipboard busy; selection kept, try cutting again in a moment");
+            return;
+        }
+        if k.code == KeyCode::F(5) {
+            self.plan.show(false);
+            return;
+        }
+        if k.code == KeyCode::F(6) {
+            self.plan.reopen_question();
             return;
         }
         if k.code == KeyCode::F(3) {
@@ -1373,6 +1457,7 @@ mod tests {
 
     fn hooks(answering: Arc<AtomicBool>, sent: Arc<Mutex<Vec<String>>>) -> Hooks {
         Hooks {
+            plan_action: Box::new(|_| {}),
             paste_image: Arc::new(|_| Err("clipboard unavailable in tests".into())),
             line: Box::new(move |l| sent.lock().unwrap().push(l)),
             eof: Box::new(|| {}),
@@ -1390,6 +1475,109 @@ mod tests {
             &["/help", "/stop", "/status", "/image", "/quit"],
         );
         (s, answering, sent)
+    }
+
+    #[test]
+    fn question_refresh_does_not_close_other_overlays_or_cancel_unrelated_paste() {
+        let (mut s, _, _) = state();
+        s.help = true;
+        s.overlay = true;
+        s.find.open = true;
+        let epoch = s.input_epoch;
+        s.message(Msg::PlanQuestion(None));
+        assert!(s.help && s.overlay && s.find.open);
+        assert_eq!(s.input_epoch, epoch);
+        let question = PlanQuestion {
+            id: "q1".into(),
+            identity: None,
+            question: "Choose?".into(),
+            options: duet_agent::questions::QuestionOptions {
+                id: "q1".into(),
+                choices: vec![],
+                allow_freeform: true,
+                recommended: None,
+            },
+        };
+        s.message(Msg::PlanQuestion(Some(question.clone())));
+        assert!(!s.help && !s.overlay && !s.find.open);
+        let mut tty = File::options()
+            .read(true)
+            .write(true)
+            .open("/dev/null")
+            .unwrap();
+        s.event(key(KeyCode::Esc), &mut tty);
+        assert!(!s.plan.question_active());
+        s.help = true;
+        s.overlay = true;
+        s.find.open = true;
+        let epoch = s.input_epoch;
+        s.message(Msg::PlanQuestion(Some(question)));
+        assert!(!s.plan.question_active());
+        assert!(s.help && s.overlay && s.find.open);
+        assert_eq!(s.input_epoch, epoch);
+        s.plan.reopen_question();
+        let epoch = s.input_epoch;
+        s.message(Msg::PlanQuestion(None));
+        assert!(!s.plan.question_active());
+        assert!(s.help && s.overlay && s.find.open);
+        assert_eq!(s.input_epoch, epoch.wrapping_add(1));
+    }
+
+    #[test]
+    fn plan_overlay_preserves_composer_and_permission_modal_has_priority() {
+        let (mut s, _, sent) = state();
+        let actions = Arc::new(Mutex::new(Vec::new()));
+        let target = actions.clone();
+        s.hooks.plan_action = Box::new(move |action| target.lock().unwrap().push(action));
+        s.editor.insert("Keep this unsent message");
+        let identity = PlanIdentity {
+            revision: "r1".into(),
+            digest: "a".repeat(64),
+        };
+        s.message(Msg::Plan(Some(Box::new(PlanSnapshot {
+            identity: identity.clone(),
+            draft: duet_agent::plans::Draft {
+                title: "Saved plan".into(),
+                ..Default::default()
+            },
+            location: "plans/r1.md".into(),
+            changes: None,
+            verification: vec![],
+            questions: vec![],
+            status: "Draft".into(),
+            approved: false,
+            can_implement: true,
+            can_resume: false,
+            steps: vec![],
+        }))));
+        s.message(Msg::OpenPlan(true));
+        let mut tty = File::options()
+            .read(true)
+            .write(true)
+            .open("/dev/null")
+            .unwrap();
+        s.event(Event::Paste(" edit".into()), &mut tty);
+        s.answering = true;
+        s.question = Some("Allow tool?".into());
+        let rendered = screen(&mut s, 80, 24);
+        assert!(rendered.contains("approval"));
+        s.event(key(KeyCode::Enter), &mut tty);
+        assert_eq!(&*sent.lock().unwrap(), &["n"]);
+        assert!(actions.lock().unwrap().is_empty());
+        s.answering = false;
+        s.event(ctrl('s'), &mut tty);
+        assert!(
+            matches!(&actions.lock().unwrap()[0], PlanAction::Save { identity: saved, draft } if saved==&identity && draft.title=="Saved plan edit")
+        );
+        assert_eq!(s.editor.buffer(), "Keep this unsent message");
+        assert_eq!(&*sent.lock().unwrap(), &["n"]);
+        s.message(Msg::PlanError("Test rejected save".into()));
+        s.event(key(KeyCode::Esc), &mut tty);
+        s.event(key(KeyCode::Esc), &mut tty);
+        s.event(key(KeyCode::F(5)), &mut tty);
+        s.event(key(KeyCode::Enter), &mut tty);
+        assert_eq!(actions.lock().unwrap().len(), 1);
+        assert_eq!(s.editor.buffer(), "Keep this unsent message");
     }
 
     fn screen(s: &mut State, w: u16, h: u16) -> String {

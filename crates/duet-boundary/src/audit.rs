@@ -79,6 +79,18 @@ pub enum AuditEvent {
     /// A review could not finish. The caller supplies only a fixed host
     /// reason, never a provider error or source content.
     SecurityReviewAborted { reason: String },
+    /// A host-observed plan transition. Callers use fixed action names and
+    /// validated revision/step/check IDs; never titles, commands, answers,
+    /// notes or output. The digest binds the canonical private revision.
+    Plan {
+        action: String,
+        revision: String,
+        digest: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check_id: Option<String>,
+    },
     /// The run started; `boundary` is false in passthrough mode.
     RunStart { mode: String, boundary: bool },
     /// The run reached a terminal state.
@@ -348,6 +360,7 @@ impl AuditEvent {
         match self {
             AuditEvent::SecurityReview { .. } => "security_review",
             AuditEvent::SecurityReviewAborted { .. } => "security_review_aborted",
+            AuditEvent::Plan { .. } => "plan",
             AuditEvent::RunStart { .. } => "run_start",
             AuditEvent::RunEnd { .. } => "run_end",
             AuditEvent::EndpointTrust { .. } => "endpoint_trust",
@@ -1397,6 +1410,30 @@ mod tests {
         }
         std::fs::write(&p, text).unwrap();
         assert_eq!(verify(&p).unwrap(), Verification::Intact { records: 2 });
+    }
+
+    #[test]
+    fn plan_events_round_trip_only_revision_metadata_in_the_chain() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("audit/plan.jsonl");
+        let event = AuditEvent::Plan {
+            action: "verification_passed".into(),
+            revision: "r2".into(),
+            digest: "a".repeat(64),
+            step_id: Some("s1".into()),
+            check_id: Some("c1".into()),
+        };
+        let expected = json!({"kind":"plan","action":"verification_passed","revision":"r2","digest":"a".repeat(64),"step_id":"s1","check_id":"c1"});
+        assert_eq!(serde_json::to_value(&event).unwrap(), expected);
+        let mut log = AuditLog::open(&path).unwrap();
+        log.event(event.clone()).unwrap();
+        assert_eq!(verify(&path).unwrap(), Verification::Intact { records: 1 });
+        let rows = read(&path).unwrap();
+        assert!(
+            matches!(&rows[0], Line::Event(row) if row.event == event && row.event.kind() == "plan")
+        );
+        let metadata: AuditEvent = serde_json::from_value(expected).unwrap();
+        assert_eq!(metadata, event);
     }
 
     #[test]

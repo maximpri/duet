@@ -401,7 +401,7 @@ impl Feed {
                     );
                 }
             }
-            TurnEnd::Asked { question } => {
+            TurnEnd::Asked { question, .. } => {
                 match streamed.and_then(|s| after(question, &s)) {
                     Some(rest) if rest.trim().is_empty() => {}
                     Some(rest) => out.extend(self.markdown(indent()).render(rest.trim())),
@@ -594,6 +594,7 @@ mod tests {
         });
         lines.extend(f.stream(&Streamed::End));
         lines.extend(f.end(&TurnEnd::Asked {
+            options: None,
             question: "Should b return a value?\noptions: unit / u32".into(),
         }));
         assert_eq!(

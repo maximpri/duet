@@ -594,7 +594,7 @@ fn feeds_from(
 pub(crate) fn conversation_end(end: &TurnEnd) -> (String, String) {
     match end {
         TurnEnd::Replied { message } => ("duet: ".into(), message.clone()),
-        TurnEnd::Asked { question } => ("duet asks: ".into(), question.clone()),
+        TurnEnd::Asked { question, .. } => ("duet asks: ".into(), question.clone()),
         TurnEnd::Completed { summary } => ("duet finished: ".into(), summary.clone()),
         TurnEnd::Failed { reason } => ("turn failed: ".into(), reason.clone()),
         TurnEnd::BudgetStopped { which } => ("turn stopped: ".into(), format!("{which} reached")),

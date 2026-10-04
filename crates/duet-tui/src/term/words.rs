@@ -15,10 +15,54 @@ pub fn describe_end(end: &TurnEnd) -> String {
     let indent = |text: &str| text.trim().replace('\n', "\n      ");
     match end {
         TurnEnd::Replied { message } => format!("duet: {}", indent(message)),
-        TurnEnd::Asked { question } => format!(
-            "duet asks: {}\n      (your next message is the answer)",
-            indent(question)
-        ),
+        TurnEnd::Asked { question, options } => {
+            let mut text = format!("duet asks: {}", indent(question));
+            if let Some(options) = options {
+                text.push_str(&format!("\n      question: {}", indent(&options.id)));
+                if !options.choices.is_empty() {
+                    text.push_str(&format!(
+                        "\n      options: {}",
+                        options
+                            .choices
+                            .iter()
+                            .map(|c| indent(&c.label))
+                            .collect::<Vec<_>>()
+                            .join(" / ")
+                    ));
+                }
+                for (i, choice) in options.choices.iter().enumerate() {
+                    let recommended = if options.recommended.as_ref() == Some(&choice.id) {
+                        " (recommended)"
+                    } else {
+                        ""
+                    };
+                    text.push_str(&format!(
+                        "\n      {}. {}{}",
+                        i + 1,
+                        indent(&choice.label),
+                        recommended
+                    ));
+                    if let Some(description) = &choice.description {
+                        text.push_str(&format!("\n         {}", indent(description)));
+                    }
+                }
+                if !options.choices.is_empty() {
+                    text.push_str(&format!(
+                        "\n      /answer {} N selects option N",
+                        options.id
+                    ));
+                }
+                if options.allow_freeform {
+                    text.push_str(&format!(
+                        "\n      /answer {} --text <answer> supplies your own answer",
+                        options.id
+                    ));
+                }
+            } else {
+                text.push_str("\n      (your next message is the answer)");
+            }
+            text
+        }
         TurnEnd::Completed { summary } => format!("duet finished: {}", indent(summary)),
         TurnEnd::Failed { reason } => format!(
             "this turn failed: {reason}\n      (the session is still open; your next message continues it)"
@@ -175,6 +219,68 @@ mod tests {
     use super::*;
     use duet_boundary::model::ToolCall;
     use serde_json::json;
+
+    #[test]
+    fn structured_question_text_has_explicit_id_choices_and_freeform_commands() {
+        use duet_agent::questions::{QuestionOption, QuestionOptions};
+        let options = QuestionOptions {
+            id: "q7".into(),
+            choices: vec![
+                QuestionOption {
+                    id: "unit".into(),
+                    label: "unit".into(),
+                    description: Some("No returned value".into()),
+                },
+                QuestionOption {
+                    id: "u32".into(),
+                    label: "u32".into(),
+                    description: None,
+                },
+            ],
+            allow_freeform: true,
+            recommended: Some("unit".into()),
+        };
+        let text = describe_end(&TurnEnd::Asked {
+            question: "Return type?".into(),
+            options: Some(options.clone()),
+        });
+        for expected in [
+            "question: q7",
+            "options: unit / u32",
+            "1. unit (recommended)",
+            "No returned value",
+            "2. u32",
+            "/answer q7 N",
+            "/answer q7 --text <answer>",
+        ] {
+            assert!(text.contains(expected), "missing {expected}");
+        }
+        let text = describe_end(&TurnEnd::Asked {
+            question: "Explain?".into(),
+            options: Some(QuestionOptions {
+                choices: vec![],
+                recommended: None,
+                ..options.clone()
+            }),
+        });
+        assert!(text.contains("/answer q7 --text"));
+        assert!(!text.contains("selects option"));
+        let text = describe_end(&TurnEnd::Asked {
+            question: "Choose?".into(),
+            options: Some(QuestionOptions {
+                allow_freeform: false,
+                ..options
+            }),
+        });
+        assert!(!text.contains("--text"));
+        assert!(
+            describe_end(&TurnEnd::Asked {
+                question: "Explain?".into(),
+                options: None
+            })
+            .contains("next message is the answer")
+        );
+    }
 
     #[test]
     fn progress_shows_a_sub_agents_steps_under_its_id() {

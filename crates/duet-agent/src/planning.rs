@@ -5,7 +5,9 @@
 pub(crate) fn allows(tool: &str) -> bool {
     matches!(
         tool,
-        "read_file"
+        "propose_plan"
+            | "read_plan"
+            | "read_file"
             | "list_files"
             | "search"
             | "diff"

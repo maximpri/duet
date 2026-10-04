@@ -171,9 +171,16 @@ impl State {
                         if text.len() > 256 * 1024 {
                             self.notice("Clipboard text exceeds 256 KiB; attach it as a file with /attach PATH");
                         } else {
-                            self.insert_paste(&text);
+                            if self.plan.active() {
+                                self.plan.paste(&text);
+                            } else {
+                                self.insert_paste(&text);
+                            }
                             self.input_epoch = self.input_epoch.wrapping_add(1);
                         }
+                    }
+                    Ok(Content::Image { .. }) if self.plan.active() => {
+                        self.notice("Plan fields accept text; attach images in the conversation");
                     }
                     Ok(Content::Image { bytes, .. }) => {
                         let hook = self.hooks.paste_image.clone();
@@ -385,6 +392,7 @@ mod tests {
         let lines = sent.clone();
         let interrupts = interrupted.clone();
         let hooks = Hooks {
+            plan_action: Box::new(|_| {}),
             line: Box::new(move |line| lines.lock().unwrap().push(line)),
             eof: Box::new(|| {}),
             interrupt: Box::new(move || {

@@ -55,12 +55,15 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 mod attachment_queue;
+mod plan_controls;
+use plan_controls::{PlanAction, plan_action};
 
 /// The session's arguments (`duet` without a command).
 pub(crate) struct ChatArgs {
     pub message: Option<String>,
     pub goal: Option<String>,
     pub goal_turns: Option<u64>,
+    pub plan_turns: Option<u64>,
     pub mode: Option<Mode>,
     pub frontier_url: Option<String>,
     pub frontier_model: Option<String>,
@@ -87,6 +90,16 @@ struct Queue {
     closed: bool,
     /// An approval question waits for the operator's answer.
     answering: bool,
+    /// Typed UI actions share the operator input sequence, never a text encoding.
+    plan_actions: VecDeque<(Option<u64>, duet_tui::workspace::PlanAction)>,
+    question_after: Option<u64>,
+    question_id: Option<String>,
+    question_held: Vec<String>,
+}
+
+enum OperatorInput {
+    Line(Option<u64>, String),
+    Plan(duet_tui::workspace::PlanAction),
 }
 
 impl Inbox {
@@ -146,7 +159,108 @@ impl Inbox {
     }
 
     fn pop(&self) -> Option<String> {
-        self.lock().lines.pop_front().map(|(_, l)| l)
+        self.pop_tagged().map(|(_, line)| line)
+    }
+
+    fn pop_tagged(&self) -> Option<(Option<u64>, String)> {
+        let mut q = self.lock();
+        if Self::action_ready(&q) {
+            return None;
+        }
+        q.lines.pop_front()
+    }
+
+    fn action_ready(q: &Queue) -> bool {
+        q.plan_actions.front().is_some_and(|(seq, _)| {
+            seq.is_none()
+                || q.lines.front().is_none_or(|(line_seq, _)| {
+                    line_seq.is_some_and(|n| seq.is_some_and(|s| s < n))
+                })
+        })
+    }
+
+    fn push_plan_action(&self, action: duet_tui::workspace::PlanAction) {
+        let mut q = self.lock();
+        let seq = q.next;
+        q.next += 1;
+        q.plan_actions.push_back((Some(seq), action));
+        self.ready.notify_all();
+    }
+
+    /// Replay an already selected control before later input after a runtime handoff.
+    fn requeue_plan_action(&self, action: duet_tui::workspace::PlanAction) {
+        self.lock().plan_actions.push_front((None, action));
+        self.ready.notify_all();
+    }
+
+    fn pop_input(&self) -> Option<OperatorInput> {
+        let mut q = self.lock();
+        if Self::action_ready(&q) {
+            q.plan_actions
+                .pop_front()
+                .map(|(_, action)| OperatorInput::Plan(action))
+        } else {
+            q.lines
+                .pop_front()
+                .map(|(seq, line)| OperatorInput::Line(seq, line))
+        }
+    }
+
+    fn plan_action_ready(&self) -> bool {
+        Self::action_ready(&self.lock())
+    }
+
+    fn reject_dependent_plan_action(&self) -> bool {
+        let mut q = self.lock();
+        if Self::action_ready(&q)
+            && q.plan_actions
+                .front()
+                .is_some_and(|(_, action)| attachment_queue::plan_requests_turn(action))
+        {
+            q.plan_actions.pop_front();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn question_mark(&self, id: &str) {
+        let mut q = self.lock();
+        if q.question_id.as_deref() == Some(id) {
+            return;
+        }
+        q.question_after = Some(q.next);
+        q.question_id = Some(id.to_owned());
+    }
+
+    fn fresh_answer(&self, seq: Option<u64>) -> bool {
+        let q = self.lock();
+        seq.zip(q.question_after)
+            .is_some_and(|(seq, mark)| seq >= mark)
+    }
+
+    fn hold_for_question(&self, line: String) {
+        self.lock().question_held.push(line);
+    }
+
+    fn release_question_input(&self) {
+        let mut q = self.lock();
+        q.question_after = None;
+        q.question_id = None;
+        let held = std::mem::take(&mut q.question_held);
+        for line in held.into_iter().rev() {
+            q.lines.push_front((None, line));
+        }
+    }
+
+    fn discard_stale_question(&self, id: Option<&str>) -> Vec<String> {
+        let mut q = self.lock();
+        if q.question_id.as_deref().is_none_or(|old| Some(old) == id) {
+            return Vec::new();
+        }
+        q.question_id = None;
+        q.question_after = None;
+        std::mem::take(&mut q.question_held)
     }
 
     /// The input ended (the workspace's Ctrl-D, or its terminal is gone).
@@ -163,7 +277,7 @@ impl Inbox {
     /// Takes the next line unless an approval question is waiting for it.
     fn pop_unless_answering(&self) -> Option<String> {
         let mut q = self.lock();
-        if q.answering {
+        if q.answering || Self::action_ready(&q) {
             return None;
         }
         q.lines.pop_front().map(|(_, l)| l)
@@ -180,7 +294,7 @@ impl Inbox {
     /// Whether the input ended and every line was taken.
     fn drained(&self) -> bool {
         let q = self.lock();
-        q.closed && q.lines.is_empty()
+        q.closed && q.lines.is_empty() && q.plan_actions.is_empty()
     }
 
     /// The sequence number the next line will get; from now on lines are
@@ -197,6 +311,11 @@ impl Inbox {
     fn answer_after(&self, mark: u64, stop: &AtomicBool) -> Option<String> {
         let mut q = self.lock();
         loop {
+            if !q.plan_actions.is_empty() {
+                stop.store(true, Ordering::SeqCst);
+                q.answering = false;
+                return None;
+            }
             if let Some(i) = q
                 .lines
                 .iter()
@@ -207,7 +326,7 @@ impl Inbox {
                     // Keep the approval barrier until both the execution stop
                     // and the queued control are visible. Otherwise the turn
                     // driver could steer following input ahead of this switch.
-                    if !matches!(plan_action(&raw), PlanAction::Status) {
+                    if !plan_action(&raw).inspect_only() {
                         stop.store(true, Ordering::SeqCst);
                     }
                     q.lines.push_front((None, line.clone()));
@@ -277,6 +396,7 @@ pub(crate) enum Command {
     PluginPrompt(String),
     Goal(String),
     Plan(String),
+    Answer(String),
     History(Option<String>),
     /// End the running turn after its current step.
     Stop,
@@ -311,6 +431,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "/exit",
     "/goal",
     "/plan",
+    "/answer",
     "/help",
     "/history",
     "/image",
@@ -357,6 +478,7 @@ pub(crate) fn parse(line: &str) -> Command {
         ("skill", Command::Skill as fn(String) -> Command),
         ("command", Command::PluginPrompt),
         ("plan", Command::Plan),
+        ("answer", Command::Answer),
     ] {
         if let Some(rest) = word.strip_prefix(prefix)
             && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -430,7 +552,13 @@ Workspace commands (task text and loaded guidance use the session privacy bounda
   /plugins               list installed extension packages
   /command plugin:name [arguments]  use a packaged command
   /plan [task]           plan with read-only tools; pause automatic goals
-  /plan status|off       inspect mode or leave planning (does not execute the plan)
+  /plan review|edit      review or edit the saved plan
+  /plan revise <text>    request a new plan revision
+  /plan approve rN       approve the displayed revision without executing
+  /plan implement rN     approve and run all steps within the session budgets
+  /plan pause|resume rN  pause or explicitly resume plan execution
+  /plan status|off       inspect mode or leave planning without executing
+  /answer QID 1          select a question option; --text <answer> supplies text
   /goal <objective>       work automatically; default 20 turns and session budgets
   /goal                  show progress and remaining turns
   /goal pause|resume     pause work or continue an unfinished goal
@@ -749,6 +877,8 @@ async fn first_message(
                     PlanAction::Status => {},
                     PlanAction::Off => planning = false,
                     PlanAction::On | PlanAction::Task(_) => planning = true,
+                    PlanAction::Invalid(error) => { screen.line(error); continue; },
+                    _ => { screen.line("There is no saved plan yet. Start with /plan <task>."); continue; },
                 }
                 screen.line(plan_status(planning));
                 if let Some(w) = screen.workspace() { w.planning(planning); }
@@ -860,11 +990,13 @@ Add --no-privacy to confirm, or use --mode hybrid."
         _clipboard: clipboard,
     };
     let goal_turns = args.goal_turns.unwrap_or(crate::goals::DEFAULT_MAX_TURNS);
+    let plan_turns = args.plan_turns.unwrap_or(crate::goals::DEFAULT_MAX_TURNS);
     let mut start_goal = args.goal.is_some();
     let mut message = args.goal.or(args.message);
     let mut resume = args.resume;
     let mut start_planning = false;
     let mut pending_attachments = PendingAttachments::default();
+    let mut runtime_restart = false;
     // One session per pass; `/mode top-clearance` ends the pass with the
     // session left open and starts the next in top clearance.
     loop {
@@ -996,6 +1128,23 @@ Add --no-privacy to confirm, or use --mode hybrid."
         let run_dir = ws.join(".duet/runs").join(&manifest.run_id);
         duet_fs::private::ensure_private_dir(&run_dir)?;
         duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
+        if resuming && !runtime_restart {
+            let mut plans = duet_agent::plans::Store::load(&run_dir).map_err(anyhow::Error::msg)?;
+            let unfinished = plans.snapshot().execution.as_ref().is_some_and(|e| {
+                matches!(
+                    e.status,
+                    duet_agent::plans::ExecutionStatus::Active
+                        | duet_agent::plans::ExecutionStatus::Waiting
+                        | duet_agent::plans::ExecutionStatus::Paused
+                )
+            });
+            plans.recover().map_err(anyhow::Error::msg)?;
+            if unfinished {
+                // Restore the restriction before recovery or optional services can run.
+                duet_agent::transcript::Transcript::open(&run_dir)?
+                    .append(&Entry::PlanMode { enabled: true })?;
+            }
+        }
         if !resuming {
             if start_planning {
                 // Publish the permission restriction before the resumable manifest.
@@ -1033,6 +1182,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
             start_planning && !resuming,
             &mut pending_attachments,
             goal_turns,
+            plan_turns,
         ))
         .catch_unwind()
         .await;
@@ -1081,12 +1231,14 @@ Add --no-privacy to confirm, or use --mode hybrid."
         drop(lock);
         let id = &manifest.run_id;
         if matches!(switch, Some(SessionChange::Planning)) {
+            runtime_restart = true;
             resume = Some(Some(id.clone()));
             start_goal = false;
             start_planning = Session::persisted_planning(&run_dir).map_err(anyhow::Error::msg)?;
             continue;
         }
         if let Some(next) = switch {
+            runtime_restart = false;
             screen.line(&format!(
                 "session {id} ({}) left open (${:.4} so far); continue it with: duet --resume {id}",
                 mode_name(mode),
@@ -1169,6 +1321,10 @@ fn open_screen(
                 inbox.push_deferred(format!("/image {}", crate::attachments::quoted(&path)));
                 Ok("Image queued · sent with your next message".to_owned())
             })
+        },
+        plan_action: {
+            let inbox = inbox.clone();
+            Box::new(move |action| inbox.push_plan_action(action))
         },
         line: {
             let inbox = inbox.clone();
@@ -1267,6 +1423,7 @@ async fn converse(
     start_planning: bool,
     pending_attachments: &mut PendingAttachments,
     goal_turns: u64,
+    plan_turns: u64,
 ) -> Result<(Terminal, RunStats, Option<SessionChange>)> {
     let planning = if resume {
         Session::persisted_planning(run_dir).map_err(anyhow::Error::msg)?
@@ -1348,7 +1505,9 @@ async fn converse(
         ws,
         git: &git,
         presenter,
+        audit: frontier.audit(),
         files: &files,
+        plan_turns,
     };
     if let Some(w) = io.screen.workspace() {
         // The side panel follows the files this session changes, holding
@@ -1424,11 +1583,27 @@ async fn conduct(
         ..
     } = *ctx;
     if session.is_planning() {
-        goals.pause(
+        plan_controls::pause_goal(
+            goals,
             "Planning mode pauses automatic goals. Use /plan off, then /goal resume to continue.",
         )?;
         io.screen.line(plan_status(true));
     }
+    if resume
+        && let Some(TurnEnd::Asked {
+            options: Some(options),
+            ..
+        }) = session.history().last().and_then(|turn| turn.end.as_ref())
+    {
+        // This question predates this invocation; new stdin may intentionally answer it.
+        let mut queue = io.inbox.lock();
+        if queue.question_id.as_deref() != Some(&options.id) {
+            queue.question_id = Some(options.id.clone());
+            queue.question_after = Some(0);
+        }
+    }
+    plan_controls::publish(ctx)?;
+    plan_controls::publish_question(session, ctx)?;
     show_status(io, session, manifest, cfg, goals);
     if resume {
         if !session.is_planning() {
@@ -1480,9 +1655,18 @@ async fn conduct(
             if io.leave.load(Ordering::SeqCst) {
                 break None;
             }
-            match io.inbox.pop() {
-                Some(l) => break Some(l),
+            match io.inbox.pop_input() {
+                Some(input) => break Some(input),
                 None if io.tty && io.inbox.drained() => break None,
+                None if !session.is_planning() && plan_controls::active(run_dir)? => {
+                    let next = plan_controls::prompt(run_dir)?
+                        .context("Active plan has no continuation prompt")?;
+                    turns(session, next, ctx, goals).await?;
+                    show_status(io, session, manifest, cfg, goals);
+                    if session.spent().is_some() {
+                        break None;
+                    }
+                }
                 None if goals.active() && !session.is_planning() => {
                     let next = goals.prompt().expect("active goal has a prompt");
                     turns(session, next, ctx, goals).await?;
@@ -1495,11 +1679,30 @@ async fn conduct(
                 None => tokio::time::sleep(Duration::from_millis(50)).await,
             }
         };
-        let Some(line) = line else {
+        let Some(input) = line else {
             if matches!(io.screen, Screen::Plain { tty: true }) {
                 println!();
             }
             break (false, None);
+        };
+        let (sequence, line) = match input {
+            OperatorInput::Line(sequence, line) => (sequence, line),
+            OperatorInput::Plan(action) => {
+                let before = session.is_planning();
+                let saving = matches!(&action, duet_tui::workspace::PlanAction::Save { .. });
+                let effect = plan_controls::ui_action(action, session, ctx, goals).await;
+                if saving
+                    && let Err(error) = &effect
+                    && let Some(workspace) = io.screen.workspace()
+                {
+                    workspace.plan_error(duet_tui::term::safe(&format!("{error:#}")));
+                }
+                if apply_plan_effect(effect, before, session, ctx, goals).await? {
+                    break (false, Some(SessionChange::Planning));
+                }
+                show_status(io, session, manifest, cfg, goals);
+                continue;
+            }
         };
         let say = |text: &str| io.screen.line(text);
         match parse(&line) {
@@ -1537,41 +1740,30 @@ async fn conduct(
                 true,
             ),
             Command::Plan(raw) => {
-                let action = plan_action(&raw);
-                let was_planning = session.is_planning();
-                if !matches!(action, PlanAction::Status) {
-                    let planning = !matches!(action, PlanAction::Off);
-                    if planning {
-                        goals.pause("Planning mode pauses automatic goals. Use /plan off, then /goal resume to continue.")?;
-                    }
-                    if let Err(error) = session.set_planning(planning) {
-                        say(&format!("Plan: {error}"));
-                        continue;
-                    }
-                }
-                if was_planning != session.is_planning() {
-                    say(if session.is_planning() {
-                        "Switching to planning; stopping runtime services before continuing."
-                    } else {
-                        "Leaving planning; restoring runtime services without starting work."
-                    });
-                    if let PlanAction::Task(task) = action {
-                        io.inbox.requeue(vec![if task.starts_with('/') {
-                            format!("/{task}")
-                        } else {
-                            task.to_owned()
-                        }]);
-                    }
+                let before = session.is_planning();
+                let effect = plan_controls::text_action(&raw, session, ctx, goals).await;
+                if apply_plan_effect(effect, before, session, ctx, goals).await? {
                     break (false, Some(SessionChange::Planning));
                 }
-                say(plan_status(session.is_planning()));
                 show_status(io, session, manifest, cfg, goals);
-                if let PlanAction::Task(task) = action {
-                    turns(session, task.to_owned(), ctx, goals).await?;
-                    show_status(io, session, manifest, cfg, goals);
+            }
+            Command::Answer(raw) => {
+                let before = session.is_planning();
+                let effect = plan_controls::answer_text(&raw, session, ctx, goals).await;
+                if apply_plan_effect(effect, before, session, ctx, goals).await? {
+                    break (false, Some(SessionChange::Planning));
                 }
+                show_status(io, session, manifest, cfg, goals);
             }
             Command::Goal(raw) => {
+                if matches!(goal_action(&raw), GoalAction::Start(_) | GoalAction::Resume)
+                    && !session.is_planning()
+                {
+                    plan_controls::pause(
+                        ctx,
+                        "Plan paused while the goal runs. Use /plan resume rN to return.",
+                    )?;
+                }
                 let result = match goal_action(&raw) {
                     GoalAction::Start(_) | GoalAction::Resume if session.is_planning() => {
                         Err(anyhow::anyhow!(
@@ -1622,7 +1814,8 @@ async fn conduct(
                 Err(e) => say(&format!("undo: {e}")),
             },
             Command::Stop => {
-                goals.pause("Stopped by you. Use /goal resume to continue.")?;
+                plan_controls::pause(ctx, "Stopped by you. Use /plan resume rN to continue.")?;
+                plan_controls::pause_goal(goals, "Stopped by you. Use /goal resume to continue.")?;
                 say("Work paused.");
             }
             Command::Unknown(c) => say(&format!("unknown command /{c}; /help lists the commands")),
@@ -1682,6 +1875,23 @@ async fn conduct(
                 }
             }
             Command::Message(m) => {
+                if plan_controls::has_question(session, run_dir)? {
+                    if !io.inbox.fresh_answer(sequence) {
+                        io.inbox.hold_for_question(line);
+                        say("Earlier queued text is held until you answer the current question.");
+                        continue;
+                    }
+                    if !io.tty {
+                        say(&format!("you> {}", m.replace('\n', "\n     ")));
+                    }
+                    let before = session.is_planning();
+                    let effect = plan_controls::answer_freeform(&m, session, ctx, goals).await;
+                    if apply_plan_effect(effect, before, session, ctx, goals).await? {
+                        break (false, Some(SessionChange::Planning));
+                    }
+                    show_status(io, session, manifest, cfg, goals);
+                    continue;
+                }
                 if !session.is_planning()
                     && goals
                         .current()
@@ -1700,6 +1910,12 @@ async fn conduct(
             }
         }
     };
+    if !matches!(switch, Some(SessionChange::Planning)) {
+        plan_controls::pause(
+            ctx,
+            "Session left open. Review the plan, then explicitly resume it.",
+        )?;
+    }
     if closed {
         goals.cancel()?;
     } else if goals.active() {
@@ -1709,6 +1925,43 @@ async fn conduct(
 }
 
 /// What a turn needs besides the session.
+async fn apply_plan_effect(
+    effect: Result<plan_controls::Effect>,
+    before: bool,
+    session: &mut Session<'_>,
+    ctx: &TurnCtx<'_>,
+    goals: &mut crate::goals::Store,
+) -> Result<bool> {
+    let mut restart = before != session.is_planning();
+    match effect {
+        Ok(plan_controls::Effect::Restart) => restart = true,
+        Ok(plan_controls::Effect::Prompt(message)) => {
+            if restart {
+                ctx.io.inbox.requeue(vec![if message.starts_with('/') {
+                    format!("/{message}")
+                } else {
+                    message
+                }]);
+            } else {
+                turns(session, message, ctx, goals).await?;
+            }
+        }
+        Ok(plan_controls::Effect::Done) => {}
+        Err(error) => {
+            let error = duet_tui::term::safe(&format!("Plan: {error:#}"));
+            ctx.io.screen.line(&error);
+        }
+    }
+    plan_controls::publish(ctx)?;
+    plan_controls::publish_question(session, ctx)?;
+    if restart {
+        ctx.io
+            .screen
+            .line("Restoring runtime services for the selected mode before continuing.");
+    }
+    Ok(restart)
+}
+
 struct TurnCtx<'a> {
     cfg: &'a duet_config::Config,
     mode: Mode,
@@ -1719,7 +1972,9 @@ struct TurnCtx<'a> {
     ws: &'a Path,
     git: &'a duet_git::Git,
     presenter: &'a dyn Presenter,
+    audit: &'a AuditHandle,
     files: &'a Mutex<Vec<crate::attachments::Attachment>>,
+    plan_turns: u64,
 }
 
 /// Runs a turn for `message`; a message that arrived as a turn ended (too
@@ -1730,12 +1985,32 @@ async fn turns(
     t: &TurnCtx<'_>,
     goals: &mut crate::goals::Store,
 ) -> Result<()> {
+    let plan_active = !session.is_planning() && plan_controls::active(t.run_dir)?;
+    ensure!(
+        !(plan_active && goals.active()),
+        "Both a goal and a plan are active; pause one before continuing."
+    );
     let active = goals.active() && !session.is_planning();
+    if plan_active {
+        plan_controls::begin_turn(t.run_dir)?;
+    }
     if active {
         goals.begin_turn()?;
     }
     let m = crate::attachments::message(message, &mut t.files.lock().unwrap(), t.ws, t.presenter);
-    let (end, late, stopped) = take_turn(session, &m, t, active).await;
+    let (end, late, stopped) = take_turn(session, &m, t, active || plan_active).await;
+    if plan_active {
+        plan_controls::finish_turn(t, &end)?;
+        if stopped {
+            plan_controls::pause(t, "Stopped by you. Use /plan resume rN to continue.")?;
+        }
+        t.io.screen
+            .line(&duet_tui::term::safe(&(t.shown)(&plan_controls::describe(
+                t.run_dir,
+            )?)));
+    }
+    plan_controls::publish(t)?;
+    plan_controls::publish_question(session, t)?;
     if active {
         goals.finish_turn(&end)?;
         if stopped {
@@ -1758,7 +2033,7 @@ async fn turns(
         // Append behind held commands: /quit and /goal pause take precedence.
         // Escape slash prefixes so steering text cannot become a command.
         let message = late.join("\n\n");
-        t.io.inbox.push(if message.starts_with('/') {
+        t.io.inbox.push_deferred(if message.starts_with('/') {
             format!("/{message}")
         } else {
             message
@@ -1798,6 +2073,7 @@ async fn take_turn(
     let mut hold_messages = false;
     let mut plan_switch_queued = false;
     let mut attachments_committed = false;
+    let mut last_plan_refresh = std::time::Instant::now();
     let mut stopped = false;
     attachment_queue::publish(&io.screen, Vec::new());
     io.working.store(true, Ordering::SeqCst);
@@ -1822,9 +2098,23 @@ async fn take_turn(
             tokio::select! {
                 end = &mut turn => break end,
                 () = tokio::time::sleep(Duration::from_millis(50)) => {
+                    if last_plan_refresh.elapsed() >= Duration::from_millis(500) {
+                        if let Err(error) = plan_controls::publish(t) {
+                            say(&duet_tui::term::safe(&format!("Plan state: {error:#}")));
+                            stopped = true;
+                            steering.stop();
+                        }
+                        last_plan_refresh = std::time::Instant::now();
+                    }
                     if goal_active && io.tty && io.inbox.drained() {
                         stopped = true;
                         steering.stop();
+                    }
+                    if io.inbox.plan_action_ready() && !plan_switch_queued {
+                        stopped = true;
+                        steering.stop();
+                        plan_switch_queued = true;
+                        say("Plan action queued after the current step; following input will wait.");
                     }
                     while let Some(line) = io.inbox.pop_unless_answering() {
                         if plan_switch_queued {
@@ -1833,14 +2123,27 @@ async fn take_turn(
                         }
                         match parse(&line) {
                             Command::Plan(raw) => {
-                                if !matches!(plan_action(&raw), PlanAction::Status) {
-                                    stopped = true;
-                                    steering.stop();
-                                    plan_switch_queued = true;
-                                    say("Planning change queued after the current step; following input will wait.");
+                                match plan_action(&raw) {
+                                    PlanAction::Review(revision) => {
+                                        if let Err(error) = plan_controls::review(t, revision, false) { say(&duet_tui::term::safe(&format!("Plan: {error:#}"))); }
+                                    }
+                                    PlanAction::Status => {
+                                        match plan_controls::describe(t.run_dir) {
+                                            Ok(status) => say(&duet_tui::term::safe(&(t.shown)(&status))),
+                                            Err(error) => say(&duet_tui::term::safe(&format!("Plan: {error:#}"))),
+                                        }
+                                    }
+                                    PlanAction::Invalid(error) => say(error),
+                                    _ => {
+                                        stopped = true;
+                                        steering.stop();
+                                        plan_switch_queued = true;
+                                        say("Planning change queued after the current step; following input will wait.");
+                                        held.push(line);
+                                    }
                                 }
-                                held.push(line);
                             }
+                            Command::Answer(_) => { held.push(line); }
                             Command::Message(m) => {
                                 if hold_messages {
                                     say("Message queued with your attachments for the next turn.");
@@ -1982,6 +2285,10 @@ async fn take_turn(
                     "Your request is preserved above. Attach the image and send it again when ready.",
                 );
             }
+        } else if io.inbox.reject_dependent_plan_action() {
+            say(
+                "The queued plan action was not run because its image could not be attached. Attach the image and select the action again when ready.",
+            );
         }
     }
     attachment_queue::publish(
@@ -1996,26 +2303,18 @@ async fn take_turn(
     );
     done.store(true, Ordering::SeqCst);
     let _ = follower.await;
+    if let TurnEnd::Asked {
+        options: Some(options),
+        ..
+    } = &end
+    {
+        // Establish freshness before displaying the question, so a prompt reply
+        // cannot be mistaken for input queued before the operator saw it.
+        io.inbox.question_mark(&options.id);
+    }
     io.screen.end(&end);
     io.inbox.requeue(held);
     (end, steering.take(), stopped)
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum PlanAction<'a> {
-    On,
-    Off,
-    Status,
-    Task(&'a str),
-}
-
-fn plan_action(raw: &str) -> PlanAction<'_> {
-    match raw.trim() {
-        "" | "on" => PlanAction::On,
-        "off" => PlanAction::Off,
-        "status" => PlanAction::Status,
-        task => PlanAction::Task(task),
-    }
 }
 
 fn plan_status(planning: bool) -> &'static str {
@@ -2708,5 +3007,48 @@ mod tests {
         inbox.close();
         assert_eq!(inbox.answer_after(mark, &AtomicBool::new(false)), None);
         assert_eq!(inbox.pop().as_deref(), Some("/image 'another.png'"));
+    }
+
+    #[test]
+    fn typed_plan_actions_preserve_fifo_and_never_approve_tools() {
+        use duet_tui::workspace::{PlanAction, PlanIdentity};
+        let inbox = Inbox::default();
+        let identity = PlanIdentity {
+            revision: "r1".into(),
+            digest: "digest".into(),
+        };
+        inbox.push("earlier message".into());
+        inbox.push_plan_action(PlanAction::Approve { identity });
+        inbox.push("later message".into());
+        assert_eq!(inbox.pop().as_deref(), Some("earlier message"));
+        assert!(inbox.pop().is_none());
+        let mark = inbox.mark();
+        let stopped = AtomicBool::new(false);
+        assert!(inbox.answer_after(mark, &stopped).is_none());
+        assert!(stopped.load(Ordering::SeqCst));
+        assert!(matches!(
+            inbox.pop_input(),
+            Some(OperatorInput::Plan(PlanAction::Approve { .. }))
+        ));
+        assert_eq!(inbox.pop().as_deref(), Some("later message"));
+    }
+
+    #[test]
+    fn superseded_question_returns_held_text_without_sending_it_to_a_later_question() {
+        let inbox = Inbox::default();
+        inbox.question_mark("old-question");
+        inbox.hold_for_question("held text".into());
+        assert!(
+            inbox
+                .discard_stale_question(Some("old-question"))
+                .is_empty()
+        );
+        assert_eq!(
+            inbox.discard_stale_question(Some("new-question")),
+            vec!["held text"]
+        );
+        inbox.question_mark("new-question");
+        inbox.release_question_input();
+        assert!(inbox.pop().is_none());
     }
 }

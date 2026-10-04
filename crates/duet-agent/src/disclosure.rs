@@ -255,7 +255,8 @@ impl Disclosure {
                     | AuditEvent::Explore { .. }
                     | AuditEvent::HookFailed { .. }
                     | AuditEvent::SecurityReview { .. }
-                    | AuditEvent::SecurityReviewAborted { .. } => {}
+                    | AuditEvent::SecurityReviewAborted { .. }
+                    | AuditEvent::Plan { .. } => {}
                 },
             }
         }

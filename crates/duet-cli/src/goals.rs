@@ -271,7 +271,7 @@ impl Store {
                             Some("The goal reached its turn limit before completion.".into());
                     }
                 }
-                TurnEnd::Asked { question } => {
+                TurnEnd::Asked { question, .. } => {
                     goal.state = State::Waiting;
                     goal.reason = Some(bounded(question));
                 }
@@ -506,6 +506,7 @@ mod tests {
         store
             .finish_turn(&TurnEnd::Asked {
                 question: "Which format?".into(),
+                options: None,
             })
             .unwrap();
         assert_eq!(store.current().unwrap().state, State::Waiting);

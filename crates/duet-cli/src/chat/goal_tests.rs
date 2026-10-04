@@ -229,7 +229,9 @@ impl Fixture {
             ws: &self.run.workspace,
             git: &self.git,
             presenter: self.engine.as_ref(),
+            audit: self.gated.audit(),
             files: &files,
+            plan_turns: 20,
         };
         let limit = goals
             .current()
@@ -702,4 +704,341 @@ async fn planning_rejects_goal_start_and_resume_and_leaving_does_not_resume() {
     assert_eq!(goals.current().unwrap().objective, "Original objective");
     assert_eq!(goals.current().unwrap().state, State::Paused);
     assert_eq!(inbox.pop().as_deref(), Some("implement"));
+}
+
+fn saved_plan(fixture: &Fixture, steps: usize) -> duet_agent::plans::Revision {
+    use duet_agent::plans::{Draft, Step as PlanStep, Store as Plans};
+    Plans::load(&fixture.run.run_dir)
+        .unwrap()
+        .revise(
+            None,
+            Draft {
+                title: "Parser plan".into(),
+                objective: "Improve the parser in ordered steps".into(),
+                steps: (1..=steps)
+                    .map(|n| PlanStep {
+                        title: format!("Step {n}"),
+                        description: "Implement the scoped change".into(),
+                        acceptance: vec!["Review the result".into()],
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+}
+
+#[tokio::test]
+async fn plan_approve_only_has_no_provider_calls_and_preserves_a_paused_goal() {
+    let f = Fixture::new("An unrelated goal", vec![]);
+    let revision = saved_plan(&f, 1);
+    let mut goals = f.goal(7);
+    goals.begin_turn().unwrap();
+    goals
+        .finish_turn(&TurnEnd::Replied {
+            message: "Earlier progress".into(),
+        })
+        .unwrap();
+    goals.pause("Keep this objective for later").unwrap();
+    let before = goals.current().unwrap().clone();
+    let mut session = f.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    f.conduct(
+        &mut session,
+        &mut goals,
+        closed_inbox(&["/plan approve r0", "/plan approve r1", "/quit"]),
+        true,
+        false,
+    )
+    .await;
+    let plan = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    assert_eq!(
+        plan.snapshot().approval.as_ref().unwrap().digest,
+        revision.digest
+    );
+    assert!(plan.snapshot().execution.is_none());
+    assert!(session.is_planning());
+    assert_eq!(f.requests(), 0);
+    assert_eq!(goals.current(), Some(&before));
+}
+
+#[tokio::test]
+async fn implementation_survives_runtime_handoff_and_runs_all_steps_with_one_session_budget() {
+    let progress = |id: &str| Step {
+        tool: "update_plan_step",
+        args: json!({"revision":"r1","step_id":id,"status":"done_unverified","note":"Implementation reported complete"}),
+        release: None,
+    };
+    let f = Fixture::new(
+        "Keep the earlier objective",
+        vec![
+            progress("s1"),
+            Step::reply("First step done."),
+            progress("s2"),
+            Step::finish(),
+        ],
+    );
+    saved_plan(&f, 2);
+    let mut goals = f.goal(9);
+    goals.pause("Return to this later").unwrap();
+    let old_goal = goals.current().unwrap().clone();
+    let mut session = f.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    let (_, change) = f
+        .conduct(
+            &mut session,
+            &mut goals,
+            closed_inbox(&["/plan implement r1"]),
+            true,
+            false,
+        )
+        .await;
+    assert_eq!(change, Some(SessionChange::Planning));
+    assert!(!session.is_planning());
+    assert_eq!(f.requests(), 0, "execution waits for the runtime restart");
+    session.end(false);
+    let mut session = f.session(true, 10.0);
+    f.conduct(&mut session, &mut goals, closed_inbox(&[]), true, false)
+        .await;
+    let plan = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    let execution = plan.snapshot().execution.as_ref().unwrap();
+    assert_eq!(
+        execution.status,
+        duet_agent::plans::ExecutionStatus::Completed
+    );
+    assert_eq!(execution.turns, 2);
+    assert!(
+        execution
+            .steps
+            .iter()
+            .all(|s| s.status == duet_agent::plans::StepStatus::DoneUnverified)
+    );
+    assert_eq!(f.requests(), 4);
+    assert_eq!(session.stats().cost_usd, 0.5);
+    assert_eq!(session.turns(), 2);
+    assert_eq!(goals.current(), Some(&old_goal));
+}
+
+#[tokio::test]
+async fn plan_turn_exhaustion_cannot_be_reset_by_resume_or_revision() {
+    let f = Fixture::new(
+        "Bounded implementation",
+        vec![Step::reply("Partial progress")],
+    );
+    let revision = saved_plan(&f, 1);
+    let mut plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    plans.implement(&revision.id, &revision.digest, 1).unwrap();
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    f.conduct(&mut session, &mut goals, closed_inbox(&[]), true, false)
+        .await;
+    plans.refresh().unwrap();
+    assert_eq!(plans.snapshot().execution.as_ref().unwrap().turns, 1);
+    assert_eq!(
+        plans.snapshot().execution.as_ref().unwrap().status,
+        duet_agent::plans::ExecutionStatus::Exhausted
+    );
+    f.conduct(
+        &mut session,
+        &mut goals,
+        closed_inbox(&["/plan resume r1", "/quit"]),
+        true,
+        false,
+    )
+    .await;
+    assert_eq!(f.requests(), 1);
+    assert!(plans.resume(&revision.id, &revision.digest).is_err());
+    let revised = plans.revise(Some(&revision.id), revision.draft).unwrap();
+    assert!(plans.implement(&revised.id, &revised.digest, 100).is_err());
+}
+
+#[tokio::test]
+async fn input_queued_before_a_new_question_cannot_answer_it() {
+    let f = Fixture::new(
+        "Clarify before implementing",
+        vec![Step::ask("Which output format?")],
+    );
+    saved_plan(&f, 1);
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    let inbox = closed_inbox(&["EARLIER_QUEUED_MESSAGE", "/quit"]);
+    f.conduct(&mut session, &mut goals, inbox.clone(), false, false)
+        .await;
+    assert_eq!(f.requests(), 1);
+    let plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    assert!(plans.snapshot().questions.last().unwrap().answer.is_none());
+    assert_eq!(inbox.lock().question_held, vec!["EARLIER_QUEUED_MESSAGE"]);
+}
+
+#[tokio::test]
+async fn idle_stop_pauses_a_plan_before_the_next_automatic_turn() {
+    let f = Fixture::new("Bounded implementation", vec![]);
+    let revision = saved_plan(&f, 1);
+    let mut plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    plans.implement(&revision.id, &revision.digest, 20).unwrap();
+    let mut goals = f.goal(7);
+    goals.pause("Keep the earlier goal for later").unwrap();
+    let earlier_goal = goals.current().unwrap().clone();
+    let mut session = f.session(false, 10.0);
+    f.conduct(
+        &mut session,
+        &mut goals,
+        closed_inbox(&["/stop"]),
+        true,
+        false,
+    )
+    .await;
+    plans.refresh().unwrap();
+    assert_eq!(
+        plans.snapshot().execution.as_ref().unwrap().status,
+        duet_agent::plans::ExecutionStatus::Paused
+    );
+    assert_eq!(plans.snapshot().execution.as_ref().unwrap().turns, 0);
+    assert_eq!(goals.current(), Some(&earlier_goal));
+    assert_eq!(f.requests(), 0);
+}
+
+#[tokio::test]
+async fn typed_edit_keeps_its_place_before_later_controls_during_restart() {
+    let f = Fixture::new("Review the approach", vec![]);
+    let revision = saved_plan(&f, 1);
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    let inbox = Arc::new(Inbox::default());
+    inbox.push_plan_action(duet_tui::workspace::PlanAction::Edit {
+        identity: duet_tui::workspace::PlanIdentity {
+            revision: revision.id,
+            digest: revision.digest,
+        },
+    });
+    inbox.push("/plan off".into());
+    inbox.close();
+    let (_, change) = f
+        .conduct(&mut session, &mut goals, inbox.clone(), true, false)
+        .await;
+    assert_eq!(change, Some(SessionChange::Planning));
+    assert!(session.is_planning());
+    assert!(
+        inbox.plan_action_ready(),
+        "the selected Edit must precede later input"
+    );
+    session.end(false);
+    let mut session = f.session(true, 10.0);
+    let (_, change) = f
+        .conduct(&mut session, &mut goals, inbox.clone(), true, false)
+        .await;
+    assert_eq!(change, Some(SessionChange::Planning));
+    assert!(
+        !session.is_planning(),
+        "the later off control must remain last"
+    );
+    assert!(inbox.drained());
+    assert_eq!(f.requests(), 0);
+}
+
+#[tokio::test]
+async fn runtime_handoff_cannot_make_old_input_answer_a_new_question() {
+    let f = Fixture::new(
+        "Clarify the approach",
+        vec![Step::ask("Which output format?")],
+    );
+    saved_plan(&f, 1);
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    let inbox = closed_inbox(&["/plan off", "QUEUED_BEFORE_THE_QUESTION", "/quit"]);
+    let (_, change) = f
+        .conduct(&mut session, &mut goals, inbox.clone(), false, false)
+        .await;
+    assert_eq!(change, Some(SessionChange::Planning));
+    session.end(false);
+    let mut session = f.session(true, 10.0);
+    f.conduct(&mut session, &mut goals, inbox.clone(), true, false)
+        .await;
+    let plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    assert!(plans.snapshot().questions.last().unwrap().answer.is_none());
+    assert_eq!(
+        inbox.lock().question_held,
+        vec!["QUEUED_BEFORE_THE_QUESTION"]
+    );
+    assert_eq!(f.requests(), 1);
+}
+
+#[tokio::test]
+async fn stale_ui_save_and_implementation_cannot_replace_or_approve_a_newer_plan() {
+    use duet_tui::workspace::{PlanAction, PlanIdentity};
+    let f = Fixture::new("Review the approach", vec![]);
+    let old = saved_plan(&f, 1);
+    let mut plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    let mut updated = old.draft.clone();
+    updated.objective = "The revised objective".into();
+    let current = plans.revise(Some(&old.id), updated).unwrap();
+    let identity = PlanIdentity {
+        revision: old.id,
+        digest: old.digest,
+    };
+    let inbox = Arc::new(Inbox::default());
+    inbox.push_plan_action(PlanAction::Save {
+        identity: identity.clone(),
+        draft: old.draft,
+    });
+    inbox.push_plan_action(PlanAction::Implement { identity });
+    inbox.close();
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    f.conduct(&mut session, &mut goals, inbox, true, false)
+        .await;
+    plans.refresh().unwrap();
+    assert_eq!(plans.current(), Some(&current));
+    assert!(plans.snapshot().approval.is_none());
+    assert!(plans.snapshot().execution.is_none());
+    assert_eq!(f.requests(), 0);
+}
+
+#[tokio::test]
+async fn a_failed_busy_image_cannot_start_a_queued_ui_implementation() {
+    let release = Arc::new(Notify::new());
+    let mut first = Step::reply("Inspection complete.");
+    first.release = Some(release.clone());
+    let mut f = Fixture::new("Inspect the project", vec![first]);
+    f.cfg
+        .set_owner("frontier.vision", toml::Value::Boolean(true))
+        .unwrap();
+    f.run.images.frontier_vision = true;
+    let revision = saved_plan(&f, 1);
+    let invalid = f.run.workspace.join("invalid.png");
+    std::fs::write(&invalid, b"not an image").unwrap();
+    let mut goals = Store::load(&f.run.run_dir).unwrap();
+    let mut session = f.session(false, 10.0);
+    let inbox = Arc::new(Inbox::default());
+    let feed = inbox.clone();
+    let started = f.frontier.started.clone();
+    let controller = tokio::spawn(async move {
+        started.notified().await;
+        feed.push(format!(
+            "/image --public {}",
+            crate::attachments::quoted(&invalid)
+        ));
+        feed.push_plan_action(duet_tui::workspace::PlanAction::Implement {
+            identity: duet_tui::workspace::PlanIdentity {
+                revision: revision.id,
+                digest: revision.digest,
+            },
+        });
+        while !feed.lock().lines.is_empty() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        feed.close();
+        release.notify_one();
+    });
+    f.conduct(&mut session, &mut goals, inbox, false, false)
+        .await;
+    controller.await.unwrap();
+    let plans = duet_agent::plans::Store::load(&f.run.run_dir).unwrap();
+    assert!(plans.snapshot().execution.is_none());
+    assert!(session.attached().is_empty());
+    assert_eq!(f.requests(), 1);
 }

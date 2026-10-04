@@ -58,6 +58,8 @@ pub enum TurnEnd {
     /// The frontier asked the operator a question and waits for the answer.
     Asked {
         question: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        options: Option<crate::questions::QuestionOptions>,
     },
     /// `finish` was called and every check passed.
     Completed {
@@ -207,8 +209,15 @@ their answer arrives as the next message."
                 .into(),
             parameters: json!({"type": "object", "properties": {
                 "question": {"type": "string"},
-                "options": {"type": "array", "items": {"type": "string"},
-                    "description": "Answers to choose from, when there are a few clear ones."}
+                "options": {"description":"Optional choices; IDs identify answers, never execution permission.", "oneOf":[
+                    {"type":"array","items":{"type":"string"},"minItems":2,"maxItems":6},
+                    {"type":"object","properties":{
+                        "choices":{"type":"array","minItems":2,"maxItems":6,"items":{"type":"object","properties":{
+                            "id":{"type":"string"},"label":{"type":"string"},"description":{"type":"string"}
+                        },"required":["id","label"],"additionalProperties":false}},
+                        "allow_freeform":{"type":"boolean"},"recommended":{"type":"string"}
+                    },"required":["choices"],"additionalProperties":false}
+                ]}
             }, "required": ["question"]}),
         },
         ToolSpec {
@@ -225,10 +234,12 @@ or your answer. Their next message continues the conversation."
 
 /// A call of `reply` or `ask_operator`: the text for the operator and whether
 /// it is a question. `None` for any other tool.
+pub(crate) type OperatorReply = (String, bool, Option<crate::questions::QuestionOptions>);
+
 pub(crate) fn to_operator(
     name: &str,
     args: &Map<String, Value>,
-) -> Option<Result<(String, bool), String>> {
+) -> Option<Result<OperatorReply, String>> {
     let text = |key: &str| {
         args.get(key)
             .and_then(Value::as_str)
@@ -238,18 +249,13 @@ pub(crate) fn to_operator(
             .ok_or_else(|| format!("`{key}` is required"))
     };
     match name {
-        "reply" => Some(text("message").map(|m| (m, false))),
-        "ask_operator" => Some(text("question").map(|q| {
-            let options: Vec<&str> = args
-                .get("options")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_str).collect())
-                .unwrap_or_default();
-            if options.is_empty() {
-                (q, true)
-            } else {
-                (format!("{q}\noptions: {}", options.join(" / ")), true)
+        "reply" => Some(text("message").map(|m| (m, false, None))),
+        "ask_operator" => Some(text("question").and_then(|q| {
+            if q.len() > 16 * 1024 {
+                return Err("question exceeds 16 KiB".into());
             }
+            let options = crate::questions::parse(args.get("options"))?;
+            Ok((q, true, options))
         })),
         _ => None,
     }
@@ -507,6 +513,10 @@ impl<'a> Session<'a> {
         }
         if enabled {
             self.ensure_no_pending_recovery()?;
+            crate::plan_tools::invalidate(
+                &self.cfg.run_dir,
+                "planning pauses verification freshness",
+            )?;
         }
         let wait = Arc::new(HostPolicy::finishing());
         Transcript::open_waiting(&self.cfg.run_dir, Some(wait))
@@ -696,10 +706,23 @@ impl<'a> Session<'a> {
         let end = match stop {
             Err(reason) => TurnEnd::Failed { reason },
             Ok(Stop::Stopped) => TurnEnd::Stopped,
-            Ok(Stop::Reply { text, question }) => {
+            Ok(Stop::Reply {
+                text,
+                question,
+                mut options,
+            }) => {
                 let text = self.local(&text);
                 if question {
-                    TurnEnd::Asked { question: text }
+                    if let Some(ref mut choices) = options {
+                        for choice in &mut choices.choices {
+                            choice.label = self.local(&choice.label);
+                            choice.description = choice.description.as_ref().map(|s| self.local(s));
+                        }
+                    }
+                    TurnEnd::Asked {
+                        question: text,
+                        options,
+                    }
                 } else {
                     TurnEnd::Replied { message: text }
                 }
@@ -759,6 +782,10 @@ impl<'a> Session<'a> {
         if self.is_planning() {
             self.ensure_no_pending_recovery()?;
         } else {
+            crate::plan_tools::invalidate(
+                &self.cfg.run_dir,
+                "new execution turn; prior checks are historical",
+            )?;
             duet_fs::host::persist(Some(wait.as_ref()), || {
                 WriteJournal::recover(&self.cfg.run_dir, &self.cfg.workspace)
             })
@@ -855,6 +882,7 @@ impl<'a> Session<'a> {
         };
         let run_dir = &self.cfg.run_dir;
         let ws = &self.cfg.workspace;
+        crate::plan_tools::invalidate(run_dir, "undo may change checked files")?;
         WriteJournal::recover(run_dir, ws).map_err(|e| e.to_string())?;
         let files = journal::written_since(run_dir, from);
         let mut paths = Vec::new();

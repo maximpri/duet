@@ -629,7 +629,11 @@ pub(crate) enum Stop {
     Terminal(Terminal),
     /// (Session) the frontier replied to the operator, or asked them a
     /// question, and waits for their next message.
-    Reply { text: String, question: bool },
+    Reply {
+        text: String,
+        question: bool,
+        options: Option<crate::questions::QuestionOptions>,
+    },
     /// (Session) the operator asked to stop after the current step.
     Stopped,
 }
@@ -893,6 +897,7 @@ pub(crate) fn tool_specs(
     git_tools: Option<&crate::git_tools::GitTools>,
 ) -> Vec<ToolSpec> {
     let mut extra = presenter.extra_tools();
+    extra.extend(crate::plan_tools::specs());
     extra.extend(crate::skills::specs(&cfg.skills));
     extra.extend(
         cfg.web
@@ -1212,6 +1217,7 @@ pub(crate) async fn work(
                 return Ok(Stop::Reply {
                     text: response.text.clone(),
                     question: false,
+                    options: None,
                 });
             }
             text_only += 1;
@@ -1239,7 +1245,7 @@ pub(crate) async fn work(
         text_only = 0;
 
         let mut finished = None;
-        let mut replied: Option<(String, bool)> = None;
+        let mut replied: Option<crate::session::OperatorReply> = None;
         let mut scoped_given = false;
         delegated.clear();
         for (i, call) in response.tool_calls.iter().enumerate() {
@@ -1320,9 +1326,40 @@ pub(crate) async fn work(
                 && let Some(to_operator) = crate::session::to_operator(&call.name, &call.arguments)
             {
                 match to_operator {
-                    Ok((text, question)) => {
-                        replied = Some((text, question));
-                        crate::session::DELIVERED.to_owned()
+                    Ok((text, question, mut options)) => {
+                        let saved = if question {
+                            let id = format!(
+                                "q{}-{}",
+                                conv.exchange,
+                                duet_fs::sha256_hex(call.id.as_bytes())
+                            );
+                            let choices =
+                                options.get_or_insert(crate::questions::QuestionOptions {
+                                    id: String::new(),
+                                    choices: Vec::new(),
+                                    allow_freeform: true,
+                                    recommended: None,
+                                });
+                            choices.id = id.clone();
+                            (|| -> Result<(), String> {
+                                let mut plans = crate::plans::Store::load(&cfg.run_dir)?;
+                                if (conv.planning || plans.active())
+                                    && let Some(revision) = plans.current().map(|p| p.id.clone())
+                                {
+                                    plans.record_question(&revision, &id, &text)?;
+                                }
+                                Ok(())
+                            })()
+                        } else {
+                            Ok(())
+                        };
+                        match saved {
+                            Ok(()) => {
+                                replied = Some((text, question, options));
+                                crate::session::DELIVERED.to_owned()
+                            }
+                            Err(error) => format!("error: cannot persist question: {error}"),
+                        }
                     }
                     Err(e) => format!("error: {e}"),
                 }
@@ -1341,8 +1378,39 @@ pub(crate) async fn work(
                 ),
             } {
                 format!("error: {e}")
+            } else if crate::plan_tools::may_mutate(&call.name)
+                && let Err(error) = crate::plan_tools::invalidate(
+                    &cfg.run_dir,
+                    "a potentially mutating tool was invoked",
+                )
+            {
+                format!("error: {error}")
             } else {
-                let outcome = if crate::skills::owns(&call.name) {
+                let outcome = if crate::plan_tools::owns(&call.name) {
+                    if conv.child.is_some() {
+                        Outcome::Error("subagents cannot manage the operator's plan".into())
+                    } else {
+                        crate::plan_tools::call(
+                            &mut ctx,
+                            &cfg.oversight,
+                            conv.planning,
+                            &call.name,
+                            &call.arguments,
+                            Some(deadline),
+                        )
+                        .await
+                    }
+                } else if call.name == "finish" && conv.child.is_none() {
+                    match crate::plan_tools::before_finish(&ctx, &cfg.oversight, Some(deadline))
+                        .await
+                    {
+                        Ok(()) => {
+                            tools::finish_with_deadline(&mut ctx, &call.arguments, Some(deadline))
+                                .await
+                        }
+                        Err(error) => Outcome::ChecksFailed(error),
+                    }
+                } else if crate::skills::owns(&call.name) {
                     match crate::skills::call(
                         cfg,
                         presenter,
@@ -1590,8 +1658,12 @@ pub(crate) async fn work(
         if let Some(summary) = finished {
             return Ok(Terminal::Completed { summary }.into());
         }
-        if let Some((text, question)) = replied {
-            return Ok(Stop::Reply { text, question });
+        if let Some((text, question, options)) = replied {
+            return Ok(Stop::Reply {
+                text,
+                question,
+                options,
+            });
         }
     }
 }

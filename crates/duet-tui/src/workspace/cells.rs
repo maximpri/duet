@@ -815,7 +815,7 @@ impl Cells {
                     self.push(cell);
                 }
             }
-            TurnEnd::Asked { question } => {
+            TurnEnd::Asked { question, .. } => {
                 if !streamed.is_some_and(|s| same(&s, question)) {
                     let mut cell = Cell::new(Kind::Asks, "duet asks");
                     cell.body = Body::Markdown(question.trim().to_owned());

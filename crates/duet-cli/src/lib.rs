@@ -96,6 +96,9 @@ struct SessionArgs {
     /// Maximum turns for a new goal [default: 20]; session dollar and time budgets also apply.
     #[arg(long, value_parser = clap::value_parser!(u64).range(1..=1000))]
     goal_turns: Option<u64>,
+    /// Maximum turns for a plan execution [default: 20]; session budgets also apply.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..=1000))]
+    plan_turns: Option<u64>,
     /// The mode [default: hybrid; top-clearance where clearance.required is top].
     #[arg(long, value_enum)]
     mode: Option<Mode>,
@@ -1293,6 +1296,7 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
             message,
             goal,
             goal_turns,
+            plan_turns,
             mode,
             frontier_url,
             frontier_model,
@@ -1304,6 +1308,7 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
             message,
             goal,
             goal_turns,
+            plan_turns,
             mode,
             frontier_url,
             frontier_model,
@@ -1318,13 +1323,14 @@ async fn dispatch(args: Vec<OsString>, emb: &Embedding) -> Result<i32> {
         session.message.is_none()
             && session.goal.is_none()
             && session.goal_turns.is_none()
+            && session.plan_turns.is_none()
             && session.mode.is_none()
             && session.frontier_url.is_none()
             && session.frontier_model.is_none()
             && !session.no_privacy
             && session.check.is_empty()
             && session.resume.is_none(),
-        "a message, --goal, --goal-turns, --mode, --frontier-url, --frontier-model, --no-privacy, --check and --resume before a \
+        "a message, --goal, --goal-turns, --plan-turns, --mode, --frontier-url, --frontier-model, --no-privacy, --check and --resume before a \
 command are for a session (`duet` alone); give a command its own options after its name"
     );
     match command {

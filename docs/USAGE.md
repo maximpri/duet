@@ -59,29 +59,94 @@ duet purge                      # delete raw run data older than the retention p
 
 ## Plan before implementing
 
-Use `/plan` or `/plan on` to inspect the workspace and discuss an approach with
-read-only tools. `/plan <task>` enters planning and sends the task in one step:
+Use `/plan <task>` to inspect the repository, clarify decisions, and save an
+implementation plan before changing project files. Duet saves revisions with the
+objective, assumptions, decisions, affected files, ordered steps, and checks.
 
 ```text
 /plan Review the billing export and propose a migration
-/plan status
-/plan off
-Implement the migration we discussed, then run the tests.
+/plan review
+/plan edit
+/plan approve r1
+/plan implement r1
 ```
 
-Planning works before the first message and survives `duet --resume`. During
-active work, the switch waits for the current step to finish and holds subsequent
-input for the new mode. `/plan off` leaves planning without executing the plan;
-send an implementation request when ready. Ordinary messages never exit planning.
+Use the revision shown in your session; saving an edit creates a new revision.
+**Approve only** records your decision and stays in planning. **Implement** approves
+that exact revision and starts all its steps within your existing session budgets.
+You can choose Implement directly, without approving twice. Saving an edited
+revision clears its approval. Ordinary messages such as “looks good” never start
+implementation.
 
-The `PLAN` indicator remains visible in the workspace and `/status`. Duet enforces
-an allowlist of planning tools: repository reads and searches, local analysis,
-and conversation tools. It blocks edits, shell commands, undo, browser/web tools,
-MCP/LSP services and delegated agents while planning. Session and audit records
-are still written locally, and model calls still follow the selected privacy mode
-and consume its budgets. Planning pauses automatic goals; `/goal` start and resume
-are refused until you leave planning. Leaving does not resume a paused goal:
-use `/goal resume` separately if that is what you want.
+In the terminal UI, **F5** opens the plan review. It shows changes from the previous
+revision, questions, progress, and recorded check results. Use Tab to select an
+action and Enter to activate it. Edit works section by section: Tab selects fields,
+F7 adds a step, F8 adds a check, F9 removes the selected step or check, and
+Ctrl-Up/Down reorders steps. Enter inserts a newline; Ctrl-S saves. Canceling keeps
+the last saved revision. A failed save keeps your draft available to correct.
+
+| Command | What it does |
+|---|---|
+| `/plan`, `/plan on` | Enter planning without sending a task. |
+| `/plan <task>` | Enter planning and investigate the task. |
+| `/plan task <text>` | Send a task that begins with a reserved command word. |
+| `/plan review [rN]` | Review the current plan or a saved revision; no model call. |
+| `/plan edit` | Open the built-in editor; plain interactive terminals use section names and step numbers. |
+| `/plan revise <feedback>` | Ask for a new revision through the session privacy boundary. |
+| `/plan approve rN` | Approve the exact revision without executing it. |
+| `/plan implement rN` | Approve the exact revision and run its steps. |
+| `/plan pause` | Pause after the current safe step. Ctrl-C interrupts immediately. |
+| `/plan resume rN` | Explicitly continue the approved plan with its remaining allowance. |
+| `/plan status` | Show mode, revision, approval, progress, and remaining turns. |
+| `/plan off` | Leave planning without starting or resuming work. |
+
+Structured questions show choices and allow a custom answer when available. Select
+an option explicitly, or use the question ID printed in your session:
+
+```text
+/answer QUESTION_ID 1
+/answer QUESTION_ID --text Keep the current public API.
+```
+
+Use arrows or a number to select a choice, then Enter to submit it. Press F for a
+custom answer and Ctrl-S to submit; Esc defers the question. F6 reopens a deferred
+question in the terminal UI. Answering a question never approves implementation.
+Input queued before a new question is held until you answer it. If a revision
+supersedes that question, Duet shows the held text for you to send again.
+
+Implementation continues after progress replies. It stops for your answer, an
+error, an interruption, or a limit. A plan receives 20 turns by default; set
+`duet --plan-turns 40` for a larger allowance for new plan executions. Revisions and
+resume retain the allowance already used. Session cost and time limits apply
+across planning and implementation. An earlier goal stays paused; completing a
+plan does not complete or resume that goal.
+
+A step can be **Completed — unverified** when it has no automated check. **Checks
+passed** means Duet actually ran the saved checks and recorded their outcomes.
+Before completing a plan, Duet reruns required plan checks and the session's
+configured acceptance checks, then applies its configured security-review gate.
+Failed, timed-out, or interrupted checks do not pass. Check history records when
+results were observed; later work can make earlier results stale.
+
+Planning survives `duet --resume`. Restarting an unfinished plan restores it for
+review without automatically continuing. Use `/plan resume rN` when ready.
+During active work, mode changes wait for the current safe step and preserve
+subsequent input and attachments.
+
+The `PLAN` indicator remains visible in the workspace and `/status`. Planning
+allows repository inspection, local analysis, questions, and saving private plan
+state. It blocks project edits, shell commands, checks, undo, browser/web tools,
+MCP/LSP services, and delegated agents. Approval does not widen tool permissions,
+network access, or privacy policy. Proposed check commands use ordinary command
+permissions; owner-configured acceptance checks retain their existing access.
+
+Plans and their check evidence stay in the private session directory under
+`.duet/runs/`. `plan.json` holds authoritative state; `plan.md` is a generated view.
+Edit through Duet rather than changing these files. Model-facing plan context,
+answers, and resumed work pass through the selected privacy boundary. Model calls
+still consume the session's budgets. Planning pauses automatic goals; leaving
+planning does not resume them. Use `/goal resume` separately to return to an
+unfinished goal, which pauses any active plan execution.
 
 ## Goals and history
 

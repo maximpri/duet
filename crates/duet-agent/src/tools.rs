@@ -977,17 +977,102 @@ fn snapshot(workspace: &Path) -> std::io::Result<std::collections::BTreeMap<Path
 }
 
 async fn finish(ctx: &mut Ctx<'_>, args: &Map<String, Value>) -> Outcome {
+    finish_with_deadline(ctx, args, None).await
+}
+
+pub(crate) async fn finish_with_deadline(
+    ctx: &mut Ctx<'_>,
+    args: &Map<String, Value>,
+    deadline: Option<tokio::time::Instant>,
+) -> Outcome {
     let summary = args
         .get("summary")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    let (failed, report) = run_checks(ctx, ctx.checks).await;
-    if failed {
+    let (failed, report) = run_finish_checks(ctx, deadline).await;
+    if failed || deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
         Outcome::ChecksFailed(ctx.presenter.present(&Source::Checks, &report))
     } else {
         Outcome::Finished { summary }
     }
+}
+
+/// Owner-configured checks keep their existing access; record typed evidence for an active plan.
+async fn run_finish_checks(
+    ctx: &Ctx<'_>,
+    deadline: Option<tokio::time::Instant>,
+) -> (bool, Vec<u8>) {
+    let mut plans = match crate::plans::Store::load(ctx.run_dir) {
+        Ok(store) => store,
+        Err(error) => return (true, format!("cannot load plan: {error}").into_bytes()),
+    };
+    let revision = plans
+        .snapshot()
+        .execution
+        .as_ref()
+        .filter(|_| plans.active())
+        .map(|e| e.revision.clone());
+    let mut report = Vec::new();
+    let mut failed = false;
+    for (index, command) in ctx.checks.iter().enumerate() {
+        let interrupted = || {
+            ctx.interrupted
+                .is_some_and(|i| i.load(std::sync::atomic::Ordering::SeqCst))
+        };
+        if interrupted() || deadline.is_some_and(|d| tokio::time::Instant::now() >= d) {
+            return (
+                true,
+                b"acceptance checks interrupted or session time exhausted".to_vec(),
+            );
+        }
+        let timeout = deadline.map_or(ctx.command_timeout, |d| {
+            ctx.command_timeout
+                .min(d.saturating_duration_since(tokio::time::Instant::now()))
+        });
+        let result = sandboxed(ctx, command, timeout, Access::Checks).await;
+        let (exit, timed_out, output) = match result {
+            Ok(out) => (out.exit_code, out.timed_out, render_output(&out)),
+            Err(error) => (None, false, format!("could not run: {error}").into_bytes()),
+        };
+        let stopped = interrupted();
+        failed |= exit != Some(0) || timed_out || stopped;
+        let saved = if let Some(revision) = &revision {
+            let output_path = match crate::plan_tools::save_output(ctx.run_dir, &output) {
+                Ok(path) => path,
+                Err(error) => {
+                    return (
+                        true,
+                        format!("cannot retain check output: {error}").into_bytes(),
+                    );
+                }
+            };
+            plans.record_configured_check_with_output(
+                revision,
+                &format!("configured-{}", index + 1),
+                command,
+                exit,
+                timed_out,
+                stopped,
+                Some(&duet_fs::sha256_hex(&output)),
+                Some(&output_path),
+            )
+        } else {
+            Ok(())
+        };
+        if let Err(error) = saved {
+            return (
+                true,
+                format!("cannot record acceptance check: {error}").into_bytes(),
+            );
+        }
+        report.extend_from_slice(format!("$ {command}\n").as_bytes());
+        report.extend(output);
+        if stopped {
+            break;
+        }
+    }
+    (failed, report)
 }
 
 /// Runs `commands` as checks; returns whether any failed, and the report.

@@ -312,12 +312,23 @@ async fn turns_end_on_replies_questions_and_finish_and_keep_the_context() {
         }
     );
     let end = s.turn("Now add a function c.").await;
+    let TurnEnd::Asked {
+        question,
+        options: Some(options),
+    } = end
+    else {
+        panic!("expected a structured question")
+    };
+    assert_eq!(question, "Should c be public?");
     assert_eq!(
-        end,
-        TurnEnd::Asked {
-            question: "Should c be public?\noptions: public / private".into()
-        }
+        options
+            .choices
+            .iter()
+            .map(|c| c.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["public", "private"]
     );
+    assert!(!options.id.is_empty());
     assert_eq!(
         s.turn("public").await,
         TurnEnd::Completed {

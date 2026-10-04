@@ -18,9 +18,19 @@ pub(super) enum Selection {
 pub(super) fn requests_turn(command: &Command) -> bool {
     matches!(
         command,
-        Command::Message(_) | Command::Skill(_) | Command::PluginPrompt(_)
-    ) || matches!(command, Command::Plan(raw) if matches!(super::plan_action(raw), super::PlanAction::Task(_)))
+        Command::Message(_) | Command::Skill(_) | Command::PluginPrompt(_) | Command::Answer(_)
+    ) || matches!(command, Command::Plan(raw) if matches!(super::plan_action(raw), super::PlanAction::Task(_) | super::PlanAction::Revise(_) | super::PlanAction::Implement(_) | super::PlanAction::Resume(_)))
         || matches!(command, Command::Goal(raw) if matches!(super::goal_action(raw), GoalAction::Start(_) | GoalAction::Resume))
+}
+
+pub(super) fn plan_requests_turn(action: &duet_tui::workspace::PlanAction) -> bool {
+    matches!(
+        action,
+        duet_tui::workspace::PlanAction::Implement { .. }
+            | duet_tui::workspace::PlanAction::Resume { .. }
+            | duet_tui::workspace::PlanAction::Revise { .. }
+            | duet_tui::workspace::PlanAction::Answer { .. }
+    )
 }
 
 /// Keep a queued request for operator review if its preceding image failed.

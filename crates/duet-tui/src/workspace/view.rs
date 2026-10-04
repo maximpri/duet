@@ -71,9 +71,6 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     } else {
         popups(f, s, input_area);
     }
-    if s.answering {
-        approval(f, s, area);
-    }
     if s.help {
         help(f, s, area);
     }
@@ -88,6 +85,10 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
         };
         f.render_widget(Clear, over);
         crate::ui::draw_in(f, app, over);
+    }
+    s.plan.draw(f, area);
+    if s.answering {
+        approval(f, s, area);
     }
 }
 
@@ -453,7 +454,7 @@ fn composer(
     } else {
         f.render_widget(Paragraph::new(rows), inner);
     }
-    if s.overlay || s.help || s.answering || s.find.open {
+    if s.overlay || s.help || s.answering || s.plan.active() || s.find.open {
         return;
     }
     f.set_cursor_position(Position {
@@ -485,6 +486,9 @@ fn status_line(f: &mut Frame<'_>, s: &State, area: Rect, now: Instant) {
     let mut facts = Vec::new();
     if st.planning {
         facts.push("PLAN · read-only".to_owned());
+    }
+    if let Some(plan) = s.plan.summary() {
+        facts.push(crate::term::safe(&plan));
     }
     if st.session.is_empty() {
         facts.push("new session".to_owned());
@@ -538,7 +542,7 @@ fn compact(n: u64) -> String {
 
 /// The command palette, the `@` picker, or completions, above the input.
 fn popups(f: &mut Frame<'_>, s: &mut State, input: Rect) {
-    if s.overlay || s.help || s.answering {
+    if s.overlay || s.help || s.answering || s.plan.active() {
         return;
     }
     let palette_items = s.palette_items();
@@ -804,6 +808,16 @@ fn help(f: &mut Frame<'_>, s: &mut State, area: Rect) {
         ])
     };
     let lines = vec![
+        head("PLAN"),
+        row("F5 / F6", "review saved plan / reopen clarification"),
+        row(
+            "Plan: Tab then Enter",
+            "select action; Close is the default",
+        ),
+        row(
+            "Plan editor: Ctrl-S",
+            "save a revision; Enter inserts a line",
+        ),
         head("MESSAGE"),
         row(
             "Enter",

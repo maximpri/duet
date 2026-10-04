@@ -4,6 +4,8 @@
 
 Duet is an AI coding assistant for your terminal. A frontier model plans, writes and fixes code. Your local model handles sensitive files, and Duet checks the context sent to the cloud.
 
+Its focus on privacy and control is informed by my experience working at major regulated financial institutions.
+
 [Install](#install) · [Get started](#get-started) · [How it works](#how-the-agent-works) · [Results](#results) · [Documentation](docs/README.md) · [Downloads](https://github.com/maximpri/duet/releases/latest)
 
 - **Choose what the frontier sees.** Share ordinary code, expose a private module's interface, or keep its implementation sealed.
@@ -56,8 +58,9 @@ To use only your approved local model:
 duet --mode top-clearance
 ```
 
-Use `/plan <task>` in the workspace to review an approach with read-only tools.
-Then use `/plan off` and ask Duet to implement it. [Planning controls](docs/USAGE.md#plan-before-implementing).
+Use `/plan <task>` to investigate a change and save a plan. Review or edit its steps,
+then choose **Implement** to carry them out within your session limits. Progress and
+check results stay with the plan when you resume. [Planning controls](docs/USAGE.md#plan-before-implementing).
 
 ## How the agent works
 
