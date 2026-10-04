@@ -1540,12 +1540,11 @@ after "No Luhn validation" in a summary made "Luhn" a vaulted name (`782e5cc`); 
 
 ## Reporting a vulnerability
 
-**Private reporting is not configured yet.** A working private reporting route will be published
-here before release. The project website does not currently accept vulnerability reports, and
-the `security.txt` file below is an undeployed template.
+Report vulnerabilities through [GitHub's private reporting form](https://github.com/maximpri/duet/security/advisories/new).
+Reports go privately to the repository maintainers. A GitHub account is required.
+The project website does not accept vulnerability reports directly.
 
-Do not open a public issue or post sensitive reproductions. When the private route is available,
-include the Duet version or commit, the
+Do not open a public issue or post sensitive reproductions. Include the Duet version or commit, the
 mode, what crossed (a canary is ideal; please do not send real secrets), and the steps or audit log
 excerpt (`duet audit show <run> --raw`) that reproduce it.
 
@@ -1566,6 +1565,6 @@ affected versions, the CWE root cause, the fix and credit, unless you prefer not
 within this policy: test only on installations and accounts you own or are authorised to test, use
 canaries rather than real personal data, do not access, keep or disclose other people's data, do not
 degrade services you do not own (including the model providers), and give us reasonable time to fix
-before disclosure. If in doubt, wait for the private reporting route before sharing a reproduction.
+before disclosure. Use the private reporting form for questions about a potential vulnerability.
 
 A [`security.txt`](docs/security.txt) template (RFC 9116) is provided for the project's website.

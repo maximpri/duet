@@ -36,7 +36,7 @@ The follow-up adds six release and operations improvements:
   release for the host and retains matching GPL source and notices. Unsigned
   previews require `--allow-unsigned`; optional SSH verification uses a separately
   trusted signer. macOS candidates also have disk images with an offline installer.
-  Publishing the release assets remains the owner's step.
+  The first unsigned release is [v0.1.0](https://github.com/maximpri/duet/releases/tag/v0.1.0).
 - [Operational commands](OPERATIONS.md) provide metadata-only audit exports,
   integrity alerts, retention review and purge previews. Sensitive derived-file
   classifications survive new runs and purges.
@@ -90,16 +90,24 @@ record rather than asserting that every platform was rerun after every change.
 
 ## Publication and adoption
 
-Outstanding publication items recorded in this review:
+The repository and unsigned `v0.1.0` release are public. Binary artifacts and
+their matching source are from `9aa25892f2c8e3b545dbeaee466d2178cf21d73c`;
+the disk-image installer and packaging scripts are from `2a8fb6a`.
+All six downloads retain their corresponding source and license notices.
+The macOS images are not Apple-signed or notarized. A dedicated SSH public key is
+documented in the [installation guide](INSTALLATION.md#optional-ssh-signatures)
+for future signed releases; it does not authenticate these unsigned artifacts.
 
-- Configure and test a private vulnerability-reporting route. The website is a
-  placeholder; it does not accept reports. `docs/security.txt` is an undeployed
-  template until a working contact is supplied.
-- Publish the CLA required by the existing [contribution policy](../CONTRIBUTING.md).
-  Outside code contributions remain closed until then.
-- Record the published revision and keep its license, provenance and verification
-  records with it. For a binary release, follow [LICENSES.md](../LICENSES.md) and
-  distribute the matching vendored source and notices alongside the binary.
+Publication follow-up:
+
+- GitHub private vulnerability reporting is enabled. The
+  [reporting form](https://github.com/maximpri/duet/security/advisories/new) sends
+  reports to repository maintainers. The website does not accept reports;
+  `docs/security.txt` remains an undeployed template with the GitHub contact.
+- Outside code contributions remain closed until the CLA required by the
+  [contribution policy](../CONTRIBUTING.md) is published.
+- Retain source and notices alongside every binary release, following
+  [LICENSES.md](../LICENSES.md).
 
 At the time of this review, the placeholder was deployed on [Cloudflare Pages](https://duet-site-9oe.pages.dev).
 `duet.priezjev.com` was registered with Pages but still required a proxied CNAME:

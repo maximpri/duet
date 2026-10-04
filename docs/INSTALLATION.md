@@ -22,10 +22,9 @@ macOS or GNU/Linux, on ARM64 or x86-64. Preview releases are unsigned:
 curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
 ```
 
-The repository is currently private and there are no published GitHub releases.
-This public installer requires the repository to be public and the release assets
-to be uploaded; until then, use an authenticated checkout with the source installer
-above, or a local candidate. Re-running it installs the then-latest release. To pin a version, add
+The [GitHub downloads](https://github.com/maximpri/duet/releases/latest) include
+macOS and Linux archives plus macOS disk images. Re-running the command installs
+the then-latest release. To pin a version, add
 `0.1.0` after `--allow-unsigned`.
 
 `--allow-unsigned` explicitly selects the `-unsigned` assets. The installer checks
@@ -164,6 +163,17 @@ platform. Signing is optional and is described next.
 A dedicated Ed25519 release key can be generated locally; it does not require an
 Apple account or certificate. Keep the private key outside the repository. Only
 the public key, fingerprint and allowed-signers identity should be distributed.
+
+The [Duet release public key](duet-release.pub) is available for future signed
+releases. Its identity is `duet-release` and its fingerprint is:
+
+```text
+SHA256:sNU36mHF7ZWVl1UKd0nS1PnY07hDy/mRNC0U/aaMEqU
+```
+
+Confirm that fingerprint through a channel you trust before adding the key to
+your allowed-signers file. Publishing a key does not sign earlier releases;
+`v0.1.0` remains unsigned.
 
 Use an existing owner-controlled signing key and independently maintained
 allowed-signers file. Run the release gate and build on each supported host;

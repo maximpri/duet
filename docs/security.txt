@@ -1,9 +1,8 @@
 # security.txt template (RFC 9116) for Duet. Serve it at
-# https://duet.priezjev.com/.well-known/security.txt after verifying a private reporting route.
-# TODO(operator): replace Contact, refresh Expires (at most one year ahead), and
-# sign the file (OpenPGP clear-sign) if a project key exists.
-Contact: <verified-private-reporting-URL-or-mailto-address>
-Expires: 2027-09-24T00:00:00.000Z
+# https://duet.priezjev.com/.well-known/security.txt when website deployment is configured.
+# Refresh Expires before deployment; this template is not yet served by the website.
+Contact: https://github.com/maximpri/duet/security/advisories/new
+Expires: 2027-10-01T00:00:00.000Z
 Preferred-Languages: en
 Policy: https://github.com/maximpri/duet/security/policy
 Canonical: https://duet.priezjev.com/.well-known/security.txt
