@@ -1,129 +1,194 @@
+<div align="center">
+
+<img src="site/public/icon.svg" alt="Duet logo" width="88">
+
 # Duet
 
-**Frontier coding. Local privacy controls.**
+**Let a cloud model write your code. Keep your secrets on your machine.**
 
-Duet is an AI coding assistant for your terminal. A frontier model plans, writes and fixes code. Your local model handles sensitive files, and Duet checks the context sent to the cloud.
+A terminal coding agent where a frontier model does the coding<br>
+and your **local model** reads the sensitive files.
 
-Its focus on privacy and control is informed by my experience working at major regulated financial institutions.
+[![Latest release](https://img.shields.io/github/v/release/maximpri/duet?include_prereleases&label=release&color=2ea043)](https://github.com/maximpri/duet/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](docs/INSTALLATION.md)
+[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-dea584?logo=rust)](ARCHITECTURE.md)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success)](Cargo.toml)
 
-[Install](#install) · [Get started](#get-started) · [How it works](#how-the-agent-works) · [Results](#results) · [Documentation](docs/README.md) · [Downloads](https://github.com/maximpri/duet/releases/latest)
+[Quickstart](#quickstart) · [Features](#features) · [How it works](#how-it-works) · [Results](#results) · [FAQ](#faq) · [Docs](docs/README.md)
 
-- **Choose what the frontier sees.** Share ordinary code, expose a private module's interface, or keep its implementation sealed.
-- **Inspect the work and the disclosure.** Review patches in **Changes**, outbound context in **Privacy**, and saved audit records.
-- **Use your own model for the whole task.** Local-only mode disables frontier calls, web tools and command networking.
+<img src="docs/assets/demo/duet-demo.gif" alt="A real Duet session: the task is typed, the agent reads the code while the customer file stays local, fixes the bug and passes the tests; the Privacy panel then shows the customer file was classified sensitive and a password was replaced with a placeholder before the request went out." width="900">
 
-![Actual Duet session fixing a billing bug: the code change appears beside four passing tests.](docs/assets/billing-demo/04-completed.jpg)
+<sub>A real session on fictional customer data, screen text unaltered: tests go from 1 failing to 4 passing, and checks found none of the 13 planted secrets in the 5 cloud requests. Agent work plays at 6× speed. <a href="docs/evidence/recorder-billing-2026-10-04/README.md">Recording and evidence</a> · <a href="docs/assets/demo/duet-demo.mp4">MP4</a></sub>
 
-*A real Duet session with fictional customer data: one of four tests fails before the fix; all four pass afterward. Checks found none of the 13 complete planted private values in four recorded frontier requests.* [Try the example](docs/launch/DEMO.md#reproduce-the-task) · [Patch, tests and request checks](docs/evidence/billing-demo-2026-10-04/README.md)
+</div>
 
-## Install
+## Why Duet?
 
-**macOS and Linux · Apple Silicon/ARM64 and Intel/x86-64**
+Coding agents send whatever they read to the cloud: your `.env`, customer CSVs, production logs, the pricing module you'd rather keep private. Running everything locally avoids that, but local models still can't match frontier models at coding.
+
+Duet splits the job:
+
+- 🧠 **The frontier model** (Claude, GPT, Gemini, GLM, …) plans the work and writes the code.
+- 🔒 **Your local model** (Ollama, LM Studio, llama.cpp, …) reads the sensitive files and answers the frontier's questions about them.
+- 🛂 **Duet** checks every request before it leaves your machine and logs exactly what was sent.
+
+On nine coding tasks, Duet scored **89%** on hidden tests vs. **97%** for the same frontier model with no protection. Checks found **zero** planted secrets in its 1,124 cloud requests, vs. 35,809 copies without Duet. [See the results →](#results)
+
+> Built by an engineer who has worked at major regulated financial institutions, where "just paste it into the AI" is not an option.
+
+## Quickstart
+
+**1. Install** (macOS and Linux, ARM64 and x86-64, no `sudo` or Rust needed):
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
+curl -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash
 ```
 
-The installer selects the latest release, checks its files and installs to `~/.local/bin`. It retains the matching GPL source and licenses. No Rust compiler or administrator access is needed.
-
-Preview releases are **unsigned**. Checksums detect changed files; they do not authenticate the publisher. This command trusts GitHub over HTTPS. Signing is optional.
-
-[macOS disk images and Linux archives](https://github.com/maximpri/duet/releases/latest) · [Inspect the installer, verify signatures or build from source](docs/INSTALLATION.md)
-
-Linux requires glibc, bubblewrap, user namespaces and seccomp support for command isolation. macOS disk images are not Apple-signed or notarized.
-
-## Get started
-
-For hybrid mode, start a compatible local model server and set your frontier provider's API-key environment variable. [Model setup](docs/USAGE.md#models) covers supported providers and local endpoints. `duet setup` discovers available models; it does not download them.
-
-From your project directory:
+**2. Run it** in a new terminal, from your project:
 
 ```sh
-export PATH="$HOME/.local/bin:$PATH"
-duet setup
-duet doctor
-duet privacy
 duet
 ```
 
-Describe what you want to build or fix. To require passing tests before Duet finishes, give it your project's test command:
+On first run, Duet finds your cloud API key and a running local model server, shows what it will save, and asks once. If something is missing, it prints the exact command to fix it.
 
-```sh
-duet --check 'python3 -m unittest -v' "Fix the failing billing tests"
+> **No local model yet?** Install [Ollama](https://ollama.com) and pull one, for example `ollama pull qwen3:8b`. `duet doctor --online` checks that its context window is large enough.
+
+**3. Describe the task:**
+
+```text
+you> the billing export double-counts reactivated customers, fix it
 ```
-
-To use only your approved local model:
-
-```sh
-duet --mode top-clearance
-```
-
-Use `/plan <task>` to investigate a change and save a plan. Review or edit its steps,
-then choose **Implement** to carry them out within your session limits. Progress and
-check results stay with the plan when you resume. [Planning controls](docs/USAGE.md#plan-before-implementing).
-
-## How the agent works
-
-The frontier model is the coding agent: it plans the work, requests tools and writes fixes. Your local model reads sensitive content when needed. Duet controls file access, tool execution and what reaches the frontier.
-
-![Private files pass through local handling and Duet's application checks before permitted code and checked context reach the frontier model.](docs/assets/infographics/duet-boundary-gpt.png)
-
-1. **You set the task and privacy rules.** Choose which files the frontier may see, which need local handling, and which model endpoints to trust.
-2. **The frontier asks for what it needs.** Duet supplies permitted code, file structure or synthetic examples. For sensitive content, the local reader can answer a specific question without giving the frontier the raw file.
-3. **Duet checks what leaves.** Local answers and other outbound context are filtered, checked and recorded by the application. The local reader cannot approve its own answer for disclosure.
-4. **The agent makes changes and runs tests.** Duet runs commands in an operating-system sandbox. With `--check`, failed acceptance checks return filtered feedback for another repair attempt, within the run's limits. Duet marks the task complete only after those checks pass.
-5. **You inspect the result.** Review the patch in **Changes**, the prepared frontier context in **Privacy**, and the saved audit records.
-
-For example, a billing fix can use column names, status labels and synthetic rows to reason about a bug while the original customer records stay under local handling. The screenshot above shows that task completed with passing tests.
-
-“Local” means your workstation or an approved self-hosted endpoint. Hybrid mode sends permitted code and checked context to the frontier; summaries can still reveal private facts. Use `duet privacy` to inspect your policy and destinations. In top-clearance mode, your approved local model takes over the coding-agent role, with frontier calls, web tools and command networking disabled.
-
-[Architecture and modes](docs/DUET_VISUAL_GUIDE.md) · [Security design and implementation](docs/SECURE_BY_DESIGN.md) · [Audit and retention](docs/OPERATIONS.md)
-
-## Results
-
-**Near-frontier automated-test scores, with zero observed copies of planted private values.**
-
-We ran nine coding tasks three times in each mode: **54 scored outcomes**, using the same frontier model (`glm-5.3-flash`). Hidden tests checked whether the resulting code met each task's requirements.
-
-![Benchmark results: Duet hybrid averaged 89.26% versus 96.54% with the privacy boundary disabled. Checks found zero literal planted-value matches in 1,124 hybrid requests, versus 35,809 occurrences in 1,328 comparison requests.](docs/assets/infographics/duet-results-2026-10-04-gpt.png)
-
-| Measurement | Duet hybrid | Frontier with privacy boundary disabled |
-| --- | ---: | ---: |
-| Mean automated-test score | **89.26%** | **96.54%** |
-| Literal planted-value matches in recorded requests | **0** | **35,809** |
-| Recorded frontier requests checked | 1,124 | 1,328 |
-
-Duet scored within **7.28 percentage points** of the frontier baseline while keeping the planted private values out of the recorded frontier requests. Each run has equal weight in the average; repeated copies of a value count separately in the disclosure check.
-
-### Across all nine tasks
-
-Duet scored **100% in all three runs on four tasks**: configuration, data-subject export, hostile logs and protected pricing. Billing export and the SQL gateway account for most of the overall score gap.
-
-![All nine tasks, averaged across three runs each. Duet reaches 100% on four tasks; billing export averages 66.67% and SQL gateway 64.67%, with zero-score outcomes included. The linked text table lists every score.](docs/assets/infographics/duet-task-results-2026-10-04-gpt.png)
-
-All selected outcomes count, including a compilation failure and an externally stopped hybrid run scored zero. These project-run coding tests measure specific requirements, not every aspect of quality. Zero literal matches do not rule out disclosure through summaries or inference.
-
-[Every task's scores as text](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Method and complete evidence](docs/evidence/benchmark-54-2026-10-04/README.md) · [Machine-readable results](docs/evidence/benchmark-54-2026-10-04/report.json)
 
 <details>
-<summary>Watch the privacy controls in Duet's terminal</summary>
+<summary>More ways to install</summary>
 
-![Color walkthrough made from actual native Terminal screenshots of Duet's privacy, outbound-context and code-change views.](docs/assets/launch/duet-security.gif)
+- **Disk images and archives:** [latest release](https://github.com/maximpri/duet/releases/latest)
+- **From source:** `git clone https://github.com/maximpri/duet && cd duet && tools/install.sh` (Rust 1.90+)
+- **Inspect first:** download [`install.sh`](install.sh), read it, run `bash install.sh`
+- **Skip the PATH change:** `… | bash -s -- --no-modify-path`
 
-This earlier walkthrough uses unchanged native screenshots, held for five seconds each. Playback length does not represent task duration. [Capture details and verification](docs/launch/DEMO.md#native-screenshots).
+Preview releases are **unsigned**: checksums detect changed files but don't authenticate the publisher. Signature verification, Linux requirements (glibc, bubblewrap) and more: [Installation guide](docs/INSTALLATION.md).
 
 </details>
 
-## Documentation and feedback
+## Features
 
-Duet is a development preview. Start with the included example and share what worked or got in your way.
+- 🔒 **Private by default.** `.env*`, keys, `data/**`, `*.csv`, databases and logs are handled locally out of the box. Built-in detectors replace secrets, personal data and high-entropy strings in everything else with placeholders like `⟨secret:URL_PASSWORD#1⟩`.
+- 🧩 **Share code at the level you choose.** Mark a module **interface-only** (the frontier sees signatures, not bodies) or **sealed** (it only knows the file exists).
+- 🔍 **See exactly what left your machine.** The **Privacy** panel shows every outbound request and what was filtered. Audit logs are hash-chained, and you can check them with `duet audit verify`.
+- 🏠 **Fully local mode.** `duet --mode local-only` hands the whole task to your local model, with no cloud calls, no web tools and no network for commands.
+- ✅ **Finish only when tests pass.** `duet --check 'npm test' "…"` keeps the agent working until your checks pass, within its budget.
+- 🗺️ **Plan before you change.** `/plan <task>` investigates and saves a plan you can review, edit and approve before anything is written.
+- 📦 **Sandboxed commands.** Commands run under Seatbelt (macOS) or bubblewrap (Linux). Network access is limited to package registries.
+- 💸 **Budgets.** Per-session dollar limits, with live token and cost tracking.
+- 🔌 **Extensible.** MCP servers, language servers (LSP), web search, portable `SKILL.md` skills and plugins, all behind the same privacy checks.
 
-- [Usage and configuration](docs/USAGE.md) · [Extensions](docs/EXTENSIONS.md) · [All documentation](docs/README.md)
-- [Report a bug or suggest an improvement](https://github.com/maximpri/duet/issues)
-- [Report a vulnerability privately](https://github.com/maximpri/duet/security/advisories/new) · [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md): outside code contributions are closed until the CLA is published. Bug reports and feedback are welcome.
+## How it works
+
+<div align="center">
+<img src="docs/assets/infographics/duet-boundary-gpt.png" alt="Private files go to local handling, then through Duet's checks; only permitted code and checked context reach the frontier model." width="820">
+</div>
+
+1. **The frontier asks for what it needs.** Ordinary code is shared as-is. For a sensitive file, it gets the structure (column names, status values, synthetic rows) and can ask your local model specific questions.
+2. **Duet checks what leaves.** Local answers and all other outbound context are filtered and checked against the private values Duet has seen in the run. The local model can't approve its own answers.
+3. **The agent edits and tests** in a sandbox. With `--check`, failures go back to the agent until your checks pass.
+4. **You review** the patch in **Changes**, the outbound context in **Privacy**, and the saved audit log.
+
+The design is enforced in code: the agent can't construct a model client, and its only path to the frontier goes through the checked gate. [Architecture](ARCHITECTURE.md) · [Security design](docs/SECURE_BY_DESIGN.md) · [Visual guide](docs/DUET_VISUAL_GUIDE.md)
+
+## Results
+
+Nine coding tasks with planted private data (customer records, credentials, logs, proprietary pricing), each run three times per mode with the same frontier model (`glm-5.3-flash`), and scored by hidden tests.
+
+| | Duet | Same model, no protection |
+| --- | ---: | ---: |
+| Mean hidden-test score | **89.3%** | 96.5% |
+| Planted values found in cloud requests | **0** | 35,809 |
+| Cloud requests checked | 1,124 | 1,328 |
+
+Duet scored **100% in all three runs on four tasks**. Most of the gap comes from two tasks: billing export and the SQL gateway.
+
+<div align="center">
+<img src="docs/assets/infographics/duet-task-results-2026-10-04-gpt.png" alt="Per-task results averaged across three runs: Duet reaches 100% on four tasks; billing export averages 66.67% and SQL gateway 64.67%." width="820">
+</div>
+
+**Fine print:** every outcome counts, including one compile failure and one stopped run scored zero. The check looks for literal planted values in recorded requests, so it can't rule out leaks through summaries or inference. [Method and full evidence](docs/evidence/benchmark-54-2026-10-04/README.md) · [Per-task scores](docs/DUET_VISUAL_GUIDE.md#results-by-task) · [Raw JSON](docs/evidence/benchmark-54-2026-10-04/report.json)
+
+## Usage
+
+```sh
+duet                                   # interactive session (hybrid mode)
+duet "fix the failing export"          # start with a task
+duet --check 'cargo test' "fix it"     # done only when the check passes
+duet --mode local-only                 # nothing leaves this machine
+duet --resume                          # continue the last session
+duet run "fix the export"              # one-shot, non-interactive
+duet privacy                           # what's sensitive and where requests go (offline)
+duet audit show <run>                  # every request sent to the cloud
+duet doctor                            # diagnose setup, with a fix for each problem
+```
+
+Mark private code in `.duet/config.toml`:
+
+```toml
+[sensitivity]
+protected_paths = ["src/billing/**"]    # source read only by the local model
+
+[ip]
+interface_only = ["src/pricing/**"]     # frontier sees signatures only
+sealed = ["src/risk_model/**"]          # frontier knows it exists, nothing more
+```
+
+Inside a session: `/plan`, `/privacy`, `/mode top-clearance`, `/help`, and F2 for settings. [Full usage guide](docs/USAGE.md)
+
+## Supported models
+
+| Cloud (frontier) | Local |
+| --- | --- |
+| Anthropic · OpenAI · Google Gemini · OpenRouter · z.ai GLM · DeepSeek · xAI · Mistral · Groq · Cerebras · Together · Fireworks · Qwen | Ollama · LM Studio · llama.cpp · vLLM · oMLX · MLX · Jan · GPT4All · KoboldCpp · LocalAI · LiteLLM |
+
+Any OpenAI-compatible endpoint works too. Live benchmark runs so far used z.ai `glm-5.3-flash` with Qwen on oMLX. The other backends pass protocol and discovery tests; please [report](https://github.com/maximpri/duet/issues) how they work for you. [Model setup](docs/USAGE.md#models)
+
+## FAQ
+
+<details>
+<summary><b>Does Duet guarantee nothing private reaches the cloud?</b></summary>
+
+No. It guarantees that requests pass through checks that filter and block known private values, and it records what was sent so you can verify. A summary from your local model can still reveal facts ("3 customers are overdue"). Read [what is and isn't covered](docs/SECURE_BY_DESIGN.md) before using it with real regulated data.
+</details>
+
+<details>
+<summary><b>How is this different from Claude Code, Codex or Aider?</b></summary>
+
+With a cloud model, those agents send the files they read to the provider. Duet adds a second, local model that reads the sensitive files, plus an enforced outbound gate with an audit log. You keep a frontier model for the actual coding.
+</details>
+
+<details>
+<summary><b>What hardware do I need?</b></summary>
+
+Enough to serve a local model with a context window of about 40K tokens. In the default hybrid mode the local model only reads and answers questions, so it doesn't need to be a strong coder. In local-only mode it does all the coding.
+</details>
+
+<details>
+<summary><b>Can I try it without a local model?</b></summary>
+
+Yes, with protection off: `duet --mode passthrough --no-privacy` sends everything to the frontier unfiltered, like a regular coding agent. Use it to try the workflow on non-sensitive code.
+</details>
+
+<details>
+<summary><b>Is it production-ready?</b></summary>
+
+It's a development preview: 1,300+ tests, fuzzing, and `unsafe` forbidden across 165K lines of Rust, but no external audit yet and unsigned releases. Feedback and bug reports are very welcome.
+</details>
+
+## Contributing
+
+Bug reports, feature ideas and "it didn't work on my setup" reports are the most helpful contributions right now: [open an issue](https://github.com/maximpri/duet/issues). Code contributions open once the CLA is published ([details](CONTRIBUTING.md)). To report a vulnerability, use a [private advisory](https://github.com/maximpri/duet/security/advisories/new) ([policy](SECURITY.md)).
+
+If Duet is useful to you, a ⭐ helps others find it.
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Release archives include corresponding source and third-party notices. See [licensing and distribution](LICENSES.md).
+[GPL-3.0-or-later](LICENSE). Release archives include the corresponding source and third-party notices ([licensing](LICENSES.md)).
