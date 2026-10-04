@@ -4,9 +4,10 @@
 #![cfg(unix)]
 
 use sha2::{Digest, Sha256};
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn tools() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools")
@@ -127,22 +128,45 @@ impl Fixture {
             "case \"$1\" in -s) echo \"$DUET_TEST_OS\" ;; -m) echo \"$DUET_TEST_ARCH\" ;; *) exit 2 ;; esac",
         );
         script(
+            &bin.join("sysctl"),
+            "printf '%s\\n' \"${DUET_TEST_TRANSLATED:-0}\"",
+        );
+        for forbidden in ["python", "python3", "rustc", "cargo"] {
+            script(
+                &bin.join(forbidden),
+                "printf 'forbidden dependency\\n' >>\"$DUET_TEST_FORBIDDEN\"; exit 99",
+            );
+        }
+        script(
             &bin.join("curl"),
             r#"destination=''
+lookup=false
+writeout=''
 secure=false
 secure_redirect=false
 while [ $# -gt 0 ]; do
     case "$1" in
     --output) destination="$2"; shift 2 ;;
+    --head) lookup=true; shift ;;
+    --write-out) writeout="$2"; shift 2 ;;
     --proto) [ "$2" = '=https' ]; secure=true; shift 2 ;;
     --proto-redir) [ "$2" = '=https' ]; secure_redirect=true; shift 2 ;;
     --tlsv1.2 | --fail | --silent | --show-error | --location) shift ;;
     --max-redirs | --connect-timeout | --max-time) shift 2 ;;
     https://github.com/maximpri/duet/releases/download/v0.1.0/*) url="$1"; shift ;;
+    https://github.com/maximpri/duet/releases/latest) url="$1"; shift ;;
     *) exit 2 ;;
     esac
 done
 $secure && $secure_redirect
+printf '%s\n' "$url" >> "$DUET_TEST_DOWNLOADS"
+if $lookup; then
+    [ "$url" = https://github.com/maximpri/duet/releases/latest ]
+    [ "$destination" = /dev/null ] && [ "$writeout" = '%{url_effective}' ]
+    [ "${DUET_TEST_LATEST_FAILURE:-false}" != true ] || exit 22
+    printf '%s' "${DUET_TEST_LATEST_URL:-https://github.com/maximpri/duet/releases/tag/v0.1.0}"
+    exit 0
+fi
 name=${url##*/}
 [ "$name" != "${DUET_TEST_FAIL_DOWNLOAD:-}" ] || exit 22
 cp "$DUET_TEST_ASSETS/$name" "$destination""#,
@@ -201,27 +225,84 @@ cp "$DUET_TEST_ASSETS/$name" "$destination""#,
         );
         self.sign(&manifest);
     }
+    fn package_unsigned(&self) {
+        self.sign_payload();
+        std::fs::remove_file(self.payload.join("SHA256SUMS.sig")).unwrap();
+        self.repack_unsigned_outer();
+    }
+    fn repack_unsigned_outer(&self) {
+        let archive = self.assets.join(format!("{}-unsigned.tar.gz", self.stem));
+        checked(
+            Command::new("tar")
+                .env("COPYFILE_DISABLE", "1")
+                .arg("-czf")
+                .arg(&archive)
+                .arg("-C")
+                .arg(&self.payload)
+                .arg("."),
+        );
+        write(
+            &self
+                .assets
+                .join(format!("{}-unsigned.SHA256SUMS", self.stem)),
+            &format!(
+                "{:x}  {}-unsigned.tar.gz\n",
+                Sha256::digest(std::fs::read(archive).unwrap()),
+                self.stem
+            ),
+        );
+    }
     fn installer(&self, os: &str, arch: &str) -> Command {
         let bin = self.root.join("install/bin");
         write(&bin.join("duet"), "previous installation\n");
-        let mut command = Command::new(tools().join("install-release.sh"));
+        let mut command =
+            self.configured_command(Command::new(tools().join("install-release.sh")), os, arch);
+        command.args(["0.1.0", "--signers"]).arg(&self.signers);
+        command
+    }
+    fn configured_command(&self, mut command: Command, os: &str, arch: &str) -> Command {
         let path = std::env::join_paths(
             std::iter::once(self.root.join("transport"))
                 .chain(std::env::split_paths(&std::env::var_os("PATH").unwrap())),
         )
         .unwrap();
         command
-            .arg("0.1.0")
-            .arg("--signers")
-            .arg(&self.signers)
             .env("PATH", path)
             .env("DUET_TEST_OS", os)
             .env("DUET_TEST_ARCH", arch)
             .env("DUET_TEST_ASSETS", &self.assets)
-            .env("DUET_INSTALL_DIR", &bin)
+            .env("DUET_INSTALL_DIR", self.root.join("install/bin"))
             .env("DUET_DATA_DIR", self.root.join("install/share"))
-            .env("DUET_TEST_RUN_MARKER", self.root.join("executed"));
+            .env("DUET_TEST_RUN_MARKER", self.root.join("executed"))
+            .env("DUET_CONFIG_HOME", self.root.join("config"))
+            .env("HOME", self.root.join("home"))
+            .env("DUET_TEST_DOWNLOADS", self.root.join("downloads"))
+            .env("DUET_TEST_FORBIDDEN", self.root.join("forbidden"));
         command
+    }
+    fn bootstrap(&self, os: &str, arch: &str) -> Command {
+        write(
+            &self.root.join("install/bin/duet"),
+            "previous installation\n",
+        );
+        let mut command = self.configured_command(Command::new("bash"), os, arch);
+        command
+            .args(["-s", "--"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command
+    }
+    fn run_bootstrap(&self, mut command: Command) -> Output {
+        let source = std::fs::read(tools().join("../install.sh")).unwrap();
+        let mut child = command.spawn().unwrap();
+        child.stdin.take().unwrap().write_all(&source).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            !self.root.join("forbidden").exists(),
+            "bootstrap invoked Python/Rust"
+        );
+        output
     }
     fn assert_previous_retained(&self) {
         assert_eq!(
@@ -373,4 +454,192 @@ fn failure_retaining_source_keeps_old_binary_and_removes_staging_file() {
             .count(),
         1
     );
+}
+
+#[test]
+fn piped_bootstrap_resolves_latest_once_and_uses_default_trust() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    write(
+        &f.root.join("config/allowed_signers"),
+        &std::fs::read_to_string(&f.signers).unwrap(),
+    );
+    let result = f.run_bootstrap(f.bootstrap("Linux", "aarch64"));
+    assert!(result.status.success(), "{}", describe(&result));
+    let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+    let calls: Vec<_> = calls.lines().collect();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(calls[0], "https://github.com/maximpri/duet/releases/latest");
+    assert!(
+        calls[1..].iter().all(
+            |url| url.starts_with("https://github.com/maximpri/duet/releases/download/v0.1.0/")
+        )
+    );
+    assert!(f.root.join("executed").exists());
+    let records = std::fs::read_dir(f.root.join("install/share/releases"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert!(records.join("duet-0.1.0-source.tar.gz").is_file());
+    assert!(records.join("SHA256SUMS.sig").is_file());
+    assert!(!f.root.join("home/.profile").exists());
+    assert!(!f.root.join("home/.zshrc").exists());
+}
+
+#[test]
+fn piped_bootstrap_uses_native_arm64_under_rosetta_and_explicit_version() {
+    let f = Fixture::new("aarch64-apple-darwin", "0.1.0");
+    let mut command = f.bootstrap("Darwin", "x86_64");
+    command
+        .args(["--version", "0.1.0", "--signers"])
+        .arg(&f.signers)
+        .env("DUET_TEST_TRANSLATED", "1");
+    let result = f.run_bootstrap(command);
+    assert!(result.status.success(), "{}", describe(&result));
+    let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+    assert_eq!(calls.lines().count(), 3);
+    assert!(!calls.contains("/latest"));
+    assert!(!calls.contains("x86_64"));
+    assert!(calls.contains("aarch64-apple-darwin"));
+}
+
+#[test]
+fn bootstrap_without_independent_trust_makes_no_requests_or_install_changes() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    let result = f.run_bootstrap(f.bootstrap("Linux", "aarch64"));
+    assert!(!result.status.success());
+    assert!(describe(&result).contains("independent trusted channel"));
+    assert!(!f.root.join("downloads").exists());
+    f.assert_not_executed();
+    f.assert_previous_retained();
+}
+
+#[test]
+fn absent_or_invalid_latest_never_downloads_a_payload_or_changes_installation() {
+    for destination in [
+        "network-failure",
+        "https://github.com/maximpri/duet/releases",
+        "https://github.com/maximpri/duet/releases/tag/v0.1.0-rc.1",
+        "https://github.com/maximpri/duet/releases/tag/vnested/v0.1.0",
+        "https://other.example/releases/tag/v0.1.0",
+        "http://github.com/maximpri/duet/releases/tag/v0.1.0",
+    ] {
+        let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+        let mut command = f.bootstrap("Linux", "aarch64");
+        command.arg("--signers").arg(&f.signers);
+        if destination == "network-failure" {
+            command.env("DUET_TEST_LATEST_FAILURE", "true");
+        } else {
+            command.env("DUET_TEST_LATEST_URL", destination);
+        }
+        let result = f.run_bootstrap(command);
+        assert!(!result.status.success(), "accepted {destination}");
+        assert!(describe(&result).contains("release"));
+        let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+        assert_eq!(calls.lines().count(), 1);
+        f.assert_previous_retained();
+        f.assert_not_executed();
+    }
+}
+
+#[test]
+fn unsigned_preview_requires_explicit_opt_in_and_retains_source() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    f.package_unsigned();
+    let mut command = f.bootstrap("Linux", "aarch64");
+    command.arg("--allow-unsigned"); // No trusted key/config is provided.
+    let result = f.run_bootstrap(command);
+    assert!(result.status.success(), "{}", describe(&result));
+    assert!(describe(&result).contains("not publisher identity"));
+    let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+    assert_eq!(calls.lines().count(), 3); // One lookup, manifest, archive; no key/signature.
+    assert!(calls.lines().skip(1).all(|url| url.contains("-unsigned.")));
+    let records = std::fs::read_dir(f.root.join("install/share/releases"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert!(records.join("duet-0.1.0-source.tar.gz").is_file());
+    assert!(records.join("LICENSES.md").is_file());
+    assert!(!records.join("SHA256SUMS.sig").exists());
+}
+
+#[test]
+fn unsigned_corruption_extra_files_and_signatures_refuse_before_execution() {
+    for fault in ["archive", "inner", "extra", "link", "signature"] {
+        let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+        f.package_unsigned();
+        match fault {
+            "archive" => write(
+                &f.assets.join(format!("{}-unsigned.tar.gz", f.stem)),
+                "changed",
+            ),
+            "inner" => {
+                write(&f.payload.join(&f.stem), "changed binary");
+                f.repack_unsigned_outer();
+            }
+            "extra" => {
+                write(&f.payload.join("unlisted"), "extra");
+                f.repack_unsigned_outer();
+            }
+            "link" => {
+                std::fs::remove_file(f.payload.join(&f.stem)).unwrap();
+                std::os::unix::fs::symlink(f.root.join("outside"), f.payload.join(&f.stem))
+                    .unwrap();
+                f.repack_unsigned_outer();
+            }
+            "signature" => {
+                write(&f.payload.join("SHA256SUMS.sig"), "untrusted signature");
+                f.repack_unsigned_outer();
+            }
+            _ => unreachable!(),
+        }
+        let mut command = f.bootstrap("Linux", "aarch64");
+        command.args(["--allow-unsigned", "0.1.0"]);
+        let result = f.run_bootstrap(command);
+        assert!(!result.status.success(), "accepted {fault}");
+        f.assert_previous_retained();
+        f.assert_not_executed();
+        assert!(!f.root.join("outside").exists());
+    }
+}
+
+#[test]
+fn bad_signature_never_falls_back_to_available_unsigned_preview() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    f.package_unsigned();
+    write(
+        &f.assets.join(format!("{}.SHA256SUMS.sig", f.stem)),
+        "invalid signature",
+    );
+    let mut command = f.bootstrap("Linux", "aarch64");
+    command.args(["0.1.0", "--signers"]).arg(&f.signers);
+    let result = f.run_bootstrap(command);
+    assert!(!result.status.success());
+    let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+    assert!(!calls.contains("-unsigned"));
+    f.assert_previous_retained();
+    f.assert_not_executed();
+}
+
+#[test]
+fn incomplete_piped_bootstrap_cannot_begin_downloads_or_installation() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    let source = std::fs::read(tools().join("../install.sh")).unwrap();
+    let mut command = f.bootstrap("Linux", "aarch64");
+    command.arg("--allow-unsigned");
+    let mut child = command.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&source[..source.len() / 2])
+        .unwrap();
+    let result = child.wait_with_output().unwrap();
+    assert!(!result.status.success());
+    assert!(!f.root.join("downloads").exists());
+    f.assert_previous_retained();
+    f.assert_not_executed();
 }

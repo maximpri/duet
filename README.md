@@ -69,13 +69,17 @@ Every selected result counts, including one stopped Duet run that received zero.
 
 ## Install on macOS or Linux
 
-One-line source install. Requires **Rust 1.90+, Cargo, Git and a C/C++ toolchain** (Xcode Command Line Tools on macOS). Linux also needs **bubblewrap, user namespaces and seccomp support** for command isolation.
+Install the latest GitHub release for your Mac or Linux machine, on Apple Silicon/ARM64 or Intel/x86-64:
 
 ```sh
-git clone https://github.com/maximpri/duet.git && ./duet/tools/install.sh
+curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
 ```
 
-The installer builds Duet and puts it in `~/.local/bin`. Add that directory to your shell's `PATH`, then connect your frontier provider and local model:
+Preview releases are unsigned. `--allow-unsigned` checks file checksums but does not authenticate a release signer; the command trusts this repository over HTTPS. It becomes usable when the first release assets are published. [Optional signature verification and installation details](docs/INSTALLATION.md).
+
+The installer puts Duet in `~/.local/bin` and keeps its matching source and licenses. No Rust compiler or administrator access is needed. Linux needs glibc, **bubblewrap, user namespaces and seccomp support** for command isolation. macOS releases also have a **`.dmg`** with an installer for your user account.
+
+Add the install directory to your shell's `PATH`, then connect your frontier provider and local model:
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH"
@@ -84,9 +88,9 @@ duet doctor
 duet privacy
 ```
 
-[Model setup](docs/USAGE.md#models) · [Verified GitHub release installation](docs/INSTALLATION.md#install-a-verified-binary) · [Build release artifacts](docs/INSTALLATION.md#build-unsigned-release-candidates)
+[Model setup](docs/USAGE.md#models) · [Build from source](docs/INSTALLATION.md#build-from-source) · [Build release artifacts](docs/INSTALLATION.md#build-unsigned-release-candidates)
 
-Binary installation is ready for owner-published releases on macOS and Linux, on ARM64 and x86-64. It verifies the release against a signing identity you trust and retains the matching GPL source and notices.
+To build from source instead: `git clone https://github.com/maximpri/duet.git && ./duet/tools/install.sh` (Rust 1.90+, Cargo, Git and a C/C++ toolchain required).
 
 ## Use it
 

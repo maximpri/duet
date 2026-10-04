@@ -62,41 +62,9 @@ while IFS= read -r p; do
 done <<<"$principals"
 [ -n "$signer" ] || die "the signature over SHA256SUMS does not verify (namespace duet-release)"
 
-# 2. The checksums: every line must describe exactly one ordinary filename.
-# Hash tools can warn about malformed lines and still exit successfully; those
-# lines must never count as covering an otherwise unchecked release file.
-# Check raw bytes first: some Bash versions discard NUL bytes during `read`.
-if LC_ALL=C grep -aq '[[:cntrl:]]' "$sums"; then
-    die "SHA256SUMS contains a control character"
-fi
-sum_record='^[0-9a-fA-F]{64} [ *](.+)$'
-listed=""
-count=0
-while IFS= read -r line || [ -n "$line" ]; do
-    [[ "$line" =~ $sum_record ]] || die "SHA256SUMS contains a malformed checksum record"
-    name="${BASH_REMATCH[1]}"
-    case "$name" in
-    "" | */* | .* | *\\*) die "SHA256SUMS lists an unexpected name: $name" ;;
-    esac
-    if grep -qxF -- "$name" <<<"$listed"; then
-        die "SHA256SUMS lists a duplicate filename: $name"
-    fi
-    listed="${listed}${listed:+$'\n'}$name"
-    count=$((count + 1))
-done <"$sums"
-[ "$count" -gt 0 ] || die "SHA256SUMS contains no files"
-for f in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
-    [ -e "$f" ] || [ -L "$f" ] || continue
-    [ -f "$f" ] && [ ! -L "$f" ] || die "$f is not a regular release file"
-    name=$(basename "$f")
-    case "$name" in SHA256SUMS | SHA256SUMS.sig) continue ;; esac
-    grep -qxF -- "$name" <<<"$listed" || die "$name is in the release directory but not in SHA256SUMS"
-done
-if command -v shasum >/dev/null; then
-    check() { shasum -a 256 -c --quiet "$@"; }
-else
-    check() { sha256sum -c --quiet "$@"; }
-fi
-(cd "$dir" && check SHA256SUMS) || die "a file does not match SHA256SUMS"
+# Shared strict manifest parser; signature validation above is mandatory.
+checker="$(cd "$(dirname "$0")" && pwd -P)/verify-checksums.sh"
+[ -x "$checker" ] || die 'verify-checksums.sh must be beside this verifier'
+count=$("$checker" "$dir" --count) || die 'release checksum validation failed'
 
 echo "verified: SHA256SUMS signed by $signer; $count file(s) match"

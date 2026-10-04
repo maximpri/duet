@@ -35,8 +35,9 @@ an allowed dependency uses it.
 
 ## Binary releases
 
-Run `tools/release.sh` from a clean, committed checkout. Alongside the binary,
-SBOM, build information and signed checksums, the script packages:
+Run `./cicd.sh build` from a clean, committed checkout for unsigned candidates,
+or use `tools/release.sh` for optional SSH-signed builds. Alongside the binary,
+SBOM, build information and checksums, both paths package:
 
 - `LICENSE` and `NOTICE`;
 - `LICENSES.md`, the embedded rules' MIT license and provenance;

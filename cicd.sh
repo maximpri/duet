@@ -22,7 +22,8 @@ The version comes from Cargo.toml. The checkout must be clean.
 Targets: aarch64-apple-darwin, x86_64-apple-darwin,
          aarch64-unknown-linux-gnu, x86_64-unknown-linux-gnu.
 Default: host. On macOS, all means all four; on Linux, both Linux targets.
-macOS builds need the matching Rust target and Apple SDK. Linux builds use
+macOS builds need the matching Rust target, Apple SDK and hdiutil.
+macOS candidates include an unsigned DMG with an offline user-local installer. Linux builds use
 Docker (default image rust:1.90.0-bookworm). Cross-architecture smoke checks
 require Rosetta or Docker emulation. They do not qualify sandbox behavior.
 
@@ -84,6 +85,7 @@ for target in "${matrix[@]}"; do
     case "$target" in
         aarch64-apple-darwin|x86_64-apple-darwin)
             [[ "$host" == *-apple-darwin ]] || fail 'macOS targets require a macOS host'
+            command -v hdiutil >/dev/null || fail 'hdiutil is required for macOS DMGs'
             libdir=$(rustc --print target-libdir --target "$target")
             [ -d "$libdir" ] || fail "install the $target standard library for the active Rust toolchain" ;;
         aarch64-unknown-linux-gnu|x86_64-unknown-linux-gnu)
@@ -186,6 +188,11 @@ PY
     else
         (cd "$out/assets" && sha256sum "$stem.tar.gz" >"$stem.SHA256SUMS")
     fi
+    case "$target" in
+        *-apple-darwin)
+            "$source_dir/tools/package-dmg.sh" "$payload" --unsigned --out "$out/assets/$stem.dmg" \
+                >"$out/logs/$target-dmg.log" 2>&1 || fail "DMG packaging failed; see $out/logs/$target-dmg.log" ;;
+    esac
 done
 cat >"$out/README.txt" <<INFO
 Duet $version — unsigned release candidates
@@ -195,9 +202,12 @@ Full host gate passed on $host. Each binary passed --version and --help.
 Cross-architecture smoke checks may use Rosetta or Docker user-mode emulation;
 they do not establish native sandbox correctness. Logs are under logs/.
 No signature, notarization, release tag or publication was created.
-The verified binary installer rejects these unsigned candidates.
-Before publishing, complete platform qualification, sign each releases/TARGET/
-SHA256SUMS with the approved owner key, verify it, and use package-release.sh.
+macOS DMGs include an offline installer requiring unsigned confirmation.
+Unsigned checksums detect changed bytes but do not authenticate a publisher.
+Unsigned previews may be published with their unsigned status explicit.
+Complete the required platform qualification before release. Signing is optional:
+for publisher-authenticated artifacts, sign each releases/TARGET/SHA256SUMS with
+the approved owner key, verify it, and use package-release.sh or package-dmg.sh.
 See docs/INSTALLATION.md in the matching source archive for the procedure.
 INFO
 printf '\nUnsigned candidates built: %s\n' "$out"

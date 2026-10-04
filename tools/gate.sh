@@ -24,6 +24,9 @@ step "format"
 cargo fmt --all -- --check
 rustfmt --check --edition 2024 fuzz/fuzz_targets/*.rs
 
+step "standalone installer source agreement"
+python3 tools/build-bootstrap.py --check
+
 if ! $fast; then
     step "lints"
     cargo clippy --workspace --all-targets --locked -- -D warnings
