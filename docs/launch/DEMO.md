@@ -136,6 +136,17 @@ python3 -m unittest -v
 
 From the Duet checkout, run the canary checker against the new workspace's `.duet/audit/<run-id>.jsonl` and the original fixture. For a separate local-agent trial, start with a fresh fixture and set `duet config set --project clearance.required top`. Ask it to repair the bug using `billing.py` and `test_billing.py`, then confirm the recorded endpoints. Outputs and timing may differ.
 
+## Record a new demo
+
+[`tools/duet-recorder`](../../tools/duet-recorder/README.md) runs the real `duet` binary on a fresh copy of the billing fixture, types the task, and renders the recorded terminal bytes as a GIF, MP4 and stills. Each recording saves its cast, the tests before and after, and the planted-value check over every frontier request:
+
+```sh
+python3 tools/duet-recorder/record.py --install-deps
+python3 tools/duet-recorder/record.py --out /tmp/duet-demo
+```
+
+Sped-up playback is labelled in the window. Playback length is not task duration.
+
 ## Capture and rebuild
 
 Capture Duet's native Terminal window directly with `screencapture -x -o -l <window-id> screenshot.png`. Rebuild the earlier demo GIF from the four unchanged committed PNGs, from the repository root:
@@ -158,4 +169,4 @@ NODE_PATH=/path/to/capture/node_modules python3 tools/build-launch-reel.py \
   --output /tmp/duet-rebuilt-media
 ```
 
-The [builder](../../tools/build-launch-reel.py) applies the saved [edit map](../evidence/launch-refresh-2026-10-01/reel-edit.json) to the [compressed recording](../evidence/launch-refresh-2026-10-01/hybrid.cast.gz). [Capture tool](../../tools/capture-tui.py) · [Replay renderer](../../tools/render-tui-cast.cjs). Fonts, browsers and encoders can change pixel hashes. Capture only disposable synthetic workspaces for publication; real sessions can contain sensitive information.
+The [builder](../../tools/build-launch-reel.py) applies the saved [edit map](../evidence/launch-refresh-2026-10-01/reel-edit.json) to the [compressed recording](../evidence/launch-refresh-2026-10-01/hybrid.cast.gz). [Original capture tool](https://github.com/maximpri/duet/blob/657b8a40d537b64fd81e063d26f1bd93e8caaa31/tools/capture-tui.py) · [Replay renderer](../../tools/render-tui-cast.cjs). Fonts, browsers and encoders can change pixel hashes. Capture only disposable synthetic workspaces for publication; real sessions can contain sensitive information.

@@ -4,7 +4,7 @@ Run `20261004-152905-6020a9` used the unchanged [fictional billing fixture](../.
 
 ## Screenshots
 
-Actual Duet session using fictional customer data. These are screenshots of the running application's PTY displayed by the repository's [live xterm.js viewer](../../../tools/capture-tui.py), captured through the Codex in-app browser. They are not native Terminal.app captures. The JPEGs are unchanged browser screenshot output; no TUI text was reconstructed, substituted or retouched.
+Actual Duet session using fictional customer data. These are screenshots of the running application's PTY displayed by the repository's [live xterm.js viewer](https://github.com/maximpri/duet/blob/657b8a40d537b64fd81e063d26f1bd93e8caaa31/tools/capture-tui.py) (since replaced by [`tools/duet-recorder`](../../../tools/duet-recorder/README.md)), captured through the Codex in-app browser. They are not native Terminal.app captures. The JPEGs are unchanged browser screenshot output; no TUI text was reconstructed, substituted or retouched.
 
 | Screenshot | What it shows |
 | --- | --- |
