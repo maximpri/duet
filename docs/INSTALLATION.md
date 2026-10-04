@@ -22,9 +22,10 @@ macOS or GNU/Linux, on ARM64 or x86-64. Preview releases are unsigned:
 curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
 ```
 
-There are no published GitHub releases yet. This command is ready for the first
-release; until its assets are uploaded, use the source installer above or a local
-candidate. Re-running it installs the then-latest release. To pin a version, add
+The repository is currently private and there are no published GitHub releases.
+This public installer requires the repository to be public and the release assets
+to be uploaded; until then, use an authenticated checkout with the source installer
+above, or a local candidate. Re-running it installs the then-latest release. To pin a version, add
 `0.1.0` after `--allow-unsigned`.
 
 `--allow-unsigned` explicitly selects the `-unsigned` assets. The installer checks

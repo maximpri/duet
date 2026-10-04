@@ -75,7 +75,7 @@ Install the latest GitHub release for your Mac or Linux machine, on Apple Silico
 curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
 ```
 
-Preview releases are unsigned. `--allow-unsigned` checks file checksums but does not authenticate a release signer; the command trusts this repository over HTTPS. It becomes usable when the first release assets are published. [Optional signature verification and installation details](docs/INSTALLATION.md).
+Preview releases are unsigned. `--allow-unsigned` checks file checksums but does not authenticate a release signer; the command trusts this repository over HTTPS. It becomes usable once the repository is public and the first release assets are published. [Optional signature verification and installation details](docs/INSTALLATION.md).
 
 The installer puts Duet in `~/.local/bin` and keeps its matching source and licenses. No Rust compiler or administrator access is needed. Linux needs glibc, **bubblewrap, user namespaces and seccomp support** for command isolation. macOS releases also have a **`.dmg`** with an installer for your user account.
 
