@@ -463,7 +463,9 @@ fn piped_bootstrap_resolves_latest_once_and_uses_default_trust() {
         &f.root.join("config/allowed_signers"),
         &std::fs::read_to_string(&f.signers).unwrap(),
     );
-    let result = f.run_bootstrap(f.bootstrap("Linux", "aarch64"));
+    let mut command = f.bootstrap("Linux", "aarch64");
+    command.env("SHELL", "/bin/bash");
+    let result = f.run_bootstrap(command);
     assert!(result.status.success(), "{}", describe(&result));
     let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
     let calls: Vec<_> = calls.lines().collect();
@@ -483,8 +485,64 @@ fn piped_bootstrap_resolves_latest_once_and_uses_default_trust() {
         .path();
     assert!(records.join("duet-0.1.0-source.tar.gz").is_file());
     assert!(records.join("SHA256SUMS.sig").is_file());
+    let rc = std::fs::read_to_string(f.root.join("home/.bashrc")).unwrap();
+    assert!(rc.contains(&path_line(&f)), "{rc}");
     assert!(!f.root.join("home/.profile").exists());
     assert!(!f.root.join("home/.zshrc").exists());
+}
+
+fn path_line(f: &Fixture) -> String {
+    format!(
+        "export PATH=\"{}:$PATH\" # added by the duet installer",
+        f.root.join("install/bin").display()
+    )
+}
+
+#[test]
+fn path_is_added_to_the_shell_profile_once_and_never_when_declined() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    for _ in 0..2 {
+        let out = f
+            .installer("Linux", "aarch64")
+            .env("SHELL", "/usr/bin/zsh")
+            .env_remove("ZDOTDIR")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", describe(&out));
+        assert!(describe(&out).contains("Open a new terminal"));
+    }
+    let rc = std::fs::read_to_string(f.root.join("home/.zshrc")).unwrap();
+    assert_eq!(rc.matches(&path_line(&f)).count(), 1, "{rc}");
+
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    let out = f
+        .installer("Linux", "aarch64")
+        .env("SHELL", "/usr/bin/fish")
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", describe(&out));
+    let fish = std::fs::read_to_string(f.root.join("home/.config/fish/conf.d/duet.fish")).unwrap();
+    assert!(fish.contains("fish_add_path -g"), "{fish}");
+
+    for decline in [&["--no-modify-path"][..], &[]] {
+        let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+        let mut command = f.installer("Linux", "aarch64");
+        command.args(decline).env("SHELL", "/bin/bash");
+        if decline.is_empty() {
+            command.env("DUET_NO_MODIFY_PATH", "1");
+        }
+        let out = command.output().unwrap();
+        assert!(out.status.success(), "{}", describe(&out));
+        assert!(describe(&out).contains("no shell profile was changed"));
+        assert!(
+            !f.root.join("home").exists()
+                || std::fs::read_dir(f.root.join("home"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
+    }
 }
 
 #[test]
@@ -505,9 +563,24 @@ fn piped_bootstrap_uses_native_arm64_under_rosetta_and_explicit_version() {
 }
 
 #[test]
-fn bootstrap_without_independent_trust_makes_no_requests_or_install_changes() {
+fn bootstrap_without_a_trust_file_installs_the_unsigned_preview_with_a_notice() {
     let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    f.package_unsigned();
     let result = f.run_bootstrap(f.bootstrap("Linux", "aarch64"));
+    assert!(result.status.success(), "{}", describe(&result));
+    assert!(describe(&result).contains("not publisher identity"));
+    let calls = std::fs::read_to_string(f.root.join("downloads")).unwrap();
+    assert!(calls.lines().skip(1).all(|url| url.contains("-unsigned.")));
+    assert!(f.root.join("executed").exists());
+}
+
+#[test]
+fn bootstrap_with_a_named_but_missing_trust_file_makes_no_requests_or_install_changes() {
+    let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
+    f.package_unsigned();
+    let mut command = f.bootstrap("Linux", "aarch64");
+    command.arg("--signers").arg(f.root.join("missing_signers"));
+    let result = f.run_bootstrap(command);
     assert!(!result.status.success());
     assert!(describe(&result).contains("independent trusted channel"));
     assert!(!f.root.join("downloads").exists());
@@ -544,7 +617,7 @@ fn absent_or_invalid_latest_never_downloads_a_payload_or_changes_installation() 
 }
 
 #[test]
-fn unsigned_preview_requires_explicit_opt_in_and_retains_source() {
+fn unsigned_preview_with_allow_unsigned_retains_source() {
     let f = Fixture::new("aarch64-unknown-linux-gnu", "0.1.0");
     f.package_unsigned();
     let mut command = f.bootstrap("Linux", "aarch64");

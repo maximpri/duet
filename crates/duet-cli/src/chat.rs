@@ -945,7 +945,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
         }
         _ => {}
     }
-    let cfg = load_config(&ws, emb)?;
+    let mut cfg = load_config(&ws, emb)?;
     let frontier_override = args.frontier_url.is_some() || args.frontier_model.is_some();
     let mut mode = match args.resume {
         None => crate::overrides::resolve_mode(&cfg, args.mode, frontier_override)?,
@@ -953,6 +953,18 @@ Add --no-privacy to confirm, or use --mode hybrid."
         Some(_) => args.mode.unwrap_or(Mode::Hybrid),
     };
     let tty = std::io::stdin().is_terminal();
+    // A first session in a terminal sets up its models before the screen opens.
+    if args.resume.is_none() && !frontier_override && tty && std::io::stderr().is_terminal() {
+        let frontier = mode != Mode::TopClearance;
+        let local = mode != Mode::Passthrough && local_enabled(&cfg, mode)?;
+        if crate::setup::needs_first_run(&cfg, frontier, local)? {
+            let code = crate::setup::first_run(&mut cfg, frontier, local).await?;
+            if code != 0 {
+                return Ok(code);
+            }
+            cfg = load_config(&ws, emb)?;
+        }
+    }
     let interrupted = Arc::new(AtomicBool::new(false));
     let working = Arc::new(AtomicBool::new(false));
     let leave = Arc::new(AtomicBool::new(false));

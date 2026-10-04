@@ -19,15 +19,15 @@ The installer selects the latest published release and the correct asset for
 macOS or GNU/Linux, on ARM64 or x86-64. Preview releases are unsigned:
 
 ```sh
-curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash -s -- --allow-unsigned
+curl --proto '=https' --proto-redir '=https' -fsSL https://raw.githubusercontent.com/maximpri/duet/main/install.sh | bash
 ```
 
 The [GitHub downloads](https://github.com/maximpri/duet/releases/latest) include
 macOS and Linux archives plus macOS disk images. Re-running the command installs
-the then-latest release. To pin a version, add
-`0.1.0` after `--allow-unsigned`.
+the then-latest release. To pin a version, append `-s -- 0.1.0`.
 
-`--allow-unsigned` explicitly selects the `-unsigned` assets. The installer checks
+Without a trusted signer file (below), the installer selects the `-unsigned` assets
+and says so; `--allow-unsigned` selects them even when a signer file exists. It checks
 the archive and every payload file against SHA-256 checksums, checks the platform
 and reported version, and replaces the executable atomically. Checksums detect
 changed bytes; they do not establish who published them. This path trusts GitHub
@@ -37,11 +37,14 @@ falls back to unsigned installation after a failed signed installation.
 Duet is installed to `~/.local/bin/duet`; set `DUET_INSTALL_DIR` to another absolute
 path if needed. Matching GPL source, licenses, SBOM and build records are retained
 under `~/.local/share/duet/releases/` (`DUET_DATA_DIR` overrides this). Existing
-release records remain available. The installer does not use `sudo` or edit shell
-profiles. Add `~/.local/bin` to `PATH` if your shell does not already include it.
+release records remain available. The installer does not use `sudo`. When
+`~/.local/bin` is not on `PATH`, it appends one line marked `# added by the duet
+installer` to your shell's startup file (`~/.zshrc`, `~/.bashrc`, `~/.bash_profile`
+on macOS bash, fish `conf.d/duet.fish`, otherwise `~/.profile`). Pass
+`--no-modify-path` or set `DUET_NO_MODIFY_PATH=1` to leave shell files unchanged.
 
 For inspection before execution, download `install.sh`, read it, and run
-`bash install.sh --allow-unsigned`. The script contains its verification helpers;
+`bash install.sh`. The script contains its verification helpers;
 it does not download additional scripts. Maintainers regenerate it with
 `python3 tools/build-bootstrap.py` after changing the helpers.
 
@@ -52,8 +55,8 @@ bubblewrap, user namespaces and seccomp support. No Rust compiler is needed.
 
 ## Install a verified binary
 
-Signing is optional. To authenticate signed releases, omit `--allow-unsigned` and
-configure a trusted signer first. The installer then requires both the outer
+Signing is optional. To authenticate signed releases, configure a trusted signer
+first (or pass `--signers FILE`). The installer then requires both the outer
 archive signature and the complete inner release signature to pass before it
 runs downloaded code.
 
@@ -125,7 +128,7 @@ images. Build information records their unsigned status. Version/help smoke chec
 gate. They do not establish full sandbox compatibility on another architecture.
 
 These checksums detect changed bytes but do not authenticate a publisher. The
-installer requires `--allow-unsigned` to use candidates. Upload the files in
+installer uses candidates when no trusted signer is configured, or with `--allow-unsigned`. Upload the files in
 `assets/` to the matching GitHub release (`v0.1.0` for version `0.1.0`) to make
 them available to the remote installer. Keep the matching source and notices
 with those assets. Candidate builds neither create signing keys nor publish

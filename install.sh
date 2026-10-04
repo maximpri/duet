@@ -12,13 +12,15 @@ duet_bootstrap_main() {
     done
     duet_bootstrap_scratch=$(mktemp -d "${TMPDIR:-/tmp}/duet-bootstrap.XXXXXXXX")
     trap 'rm -rf "$duet_bootstrap_scratch"' EXIT
-    # tools/install-release.sh SHA256 caa957384a75b635cf87dd9396b6e42332e1467c832470787f289501d903ca89
-    cat >"$duet_bootstrap_scratch/install-release.sh" <<'DUET_EMBEDDED_CAA957384A75B635CF87DD9396B6E42332E1467C832470787F289501D903CA89'
+    # tools/install-release.sh SHA256 5193773d9f3910b19bf72eea7b571b81374ff37b9cb98dedbad51f03319e5898
+    cat >"$duet_bootstrap_scratch/install-release.sh" <<'DUET_EMBEDDED_5193773D9F3910B19BF72EEA7B571B81374FF37B9CB98DEDBAD51F03319E5898'
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Install signed releases by default; --allow-unsigned explicitly selects preview assets.
+# Install signed releases when a trusted signer is configured; otherwise
+# checksum-verified preview assets, with a notice.
 # Usage: tools/install-release.sh [VERSION | --version VERSION] [--signers FILE]
-#        [--url HTTPS_ASSET_DIRECTORY] (default version: latest stable release)
+#        [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned] [--no-modify-path]
+#        (default version: latest stable release)
 # DUET_INSTALL_DIR defaults to ~/.local/bin; DUET_DATA_DIR to ~/.local/share/duet.
 # Defaults to GitHub Releases (maximpri/duet, tag vVERSION). The corresponding
 # source, licenses and signed release records are retained locally.
@@ -30,29 +32,37 @@ usage() {
     cat <<'HELP'
 Usage: install.sh [VERSION | --version VERSION] [--signers FILE]
                   [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned]
+                  [--no-modify-path]
 Defaults to the latest stable maximpri/duet GitHub release for this OS/CPU.
 Trust file: $DUET_CONFIG_HOME/allowed_signers, or ~/.config/duet/allowed_signers.
 Obtain that file through an independently trusted channel before installing.
+With a trust file (or --signers), a valid signature is required: no fallback.
+Without one, checksum-only preview assets are installed; checksums do not
+authenticate the publisher. --allow-unsigned selects them even with a trust file.
 Installs in ~/.local/bin and retains matching source and notices under
 ~/.local/share/duet/releases. DUET_INSTALL_DIR / DUET_DATA_DIR override those paths.
---allow-unsigned selects checksum-only preview assets; no signer is required.
-Unsigned checksums do not authenticate the publisher. No automatic fallback.
-No sudo, profile edits or downloaded signing key.
+When ~/.local/bin is not on PATH, one marked line adding it is appended to your
+shell's startup file; --no-modify-path (or DUET_NO_MODIFY_PATH=1) leaves it alone.
+No sudo or downloaded signing key.
 HELP
 }
 version=""
 url=""
 allow_unsigned=false
+signers_given=false
+modify_path=true
+[ "${DUET_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
 signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help) usage; exit 0 ;;
     --allow-unsigned) allow_unsigned=true; shift ;;
+    --no-modify-path) modify_path=false; shift ;;
     --url | --signers | --version)
         [ $# -ge 2 ] && [ -n "$2" ] || fail "$1 requires a value"
         case "$1" in
             --url) url="$2" ;;
-            --signers) signers="$2" ;;
+            --signers) signers="$2"; signers_given=true ;;
             --version) [ -z "$version" ] || fail "specify one version"; version="$2" ;;
         esac
         shift 2
@@ -64,6 +74,11 @@ done
 [ -n "$version" ] || version=latest
 if [ "$version" != latest ]; then
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || fail "specify latest or a version as x.y.z[-pre]"
+fi
+# No trust file configured: nothing could authenticate a signature, so install
+# the preview assets. A configured trust file always requires a signature.
+if ! $allow_unsigned && ! $signers_given && [ ! -e "$signers" ]; then
+    allow_unsigned=true
 fi
 if ! $allow_unsigned; then
     [ -f "$signers" ] && [ -r "$signers" ] && [ -s "$signers" ] || fail "no nonempty readable allowed-signers file at $signers; obtain the release signer through an independent trusted channel, or pass --signers FILE"
@@ -220,10 +235,34 @@ else
     printf 'Verified source, licenses and release records: %s\n' "$installed_records"
 fi
 case ":$PATH:" in
-    *":$install_dir:"*) ;;
-    *) printf 'Add %s to PATH to run duet (no shell profile was changed).\n' "$install_dir" ;;
+    *":$install_dir:"*) printf '\nRun it in your project directory:  duet\n' ;;
+    *)
+        if ! $modify_path; then
+            printf '\nAdd %s to PATH to run duet (no shell profile was changed).\n' "$install_dir"
+        else
+            case "${SHELL##*/}" in
+                zsh) profile="${ZDOTDIR:-$HOME}/.zshrc" ;;
+                bash) if [ "$os" = Darwin ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
+                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/duet.fish" ;;
+                *) profile="$HOME/.profile" ;;
+            esac
+            if [ "${SHELL##*/}" = fish ]; then
+                line="fish_add_path -g '$install_dir' # added by the duet installer"
+            else
+                line="export PATH=\"$install_dir:\$PATH\" # added by the duet installer"
+            fi
+            if [ -f "$profile" ] && grep -qF -- "$line" "$profile"; then
+                printf '\n%s already adds %s to PATH.\n' "$profile" "$install_dir"
+            else
+                mkdir -p "$(dirname "$profile")"
+                printf '\n%s\n' "$line" >>"$profile"
+                printf '\nAdded %s to PATH in %s (remove the line marked "duet installer" to undo).\n' "$install_dir" "$profile"
+            fi
+            printf 'Open a new terminal, then run it in your project directory:  duet\n'
+        fi
+        ;;
 esac
-DUET_EMBEDDED_CAA957384A75B635CF87DD9396B6E42332E1467C832470787F289501D903CA89
+DUET_EMBEDDED_5193773D9F3910B19BF72EEA7B571B81374FF37B9CB98DEDBAD51F03319E5898
     # tools/verify-release.sh SHA256 c645a4e4838f5a1ddad89670583ea52ffb7959979ac05c03f0777f22b76d0c8b
     cat >"$duet_bootstrap_scratch/verify-release.sh" <<'DUET_EMBEDDED_C645A4E4838F5A1DDAD89670583EA52FFB7959979AC05C03F0777F22B76D0C8B'
 #!/usr/bin/env bash

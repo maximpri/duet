@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Install signed releases by default; --allow-unsigned explicitly selects preview assets.
+# Install signed releases when a trusted signer is configured; otherwise
+# checksum-verified preview assets, with a notice.
 # Usage: tools/install-release.sh [VERSION | --version VERSION] [--signers FILE]
-#        [--url HTTPS_ASSET_DIRECTORY] (default version: latest stable release)
+#        [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned] [--no-modify-path]
+#        (default version: latest stable release)
 # DUET_INSTALL_DIR defaults to ~/.local/bin; DUET_DATA_DIR to ~/.local/share/duet.
 # Defaults to GitHub Releases (maximpri/duet, tag vVERSION). The corresponding
 # source, licenses and signed release records are retained locally.
@@ -14,29 +16,37 @@ usage() {
     cat <<'HELP'
 Usage: install.sh [VERSION | --version VERSION] [--signers FILE]
                   [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned]
+                  [--no-modify-path]
 Defaults to the latest stable maximpri/duet GitHub release for this OS/CPU.
 Trust file: $DUET_CONFIG_HOME/allowed_signers, or ~/.config/duet/allowed_signers.
 Obtain that file through an independently trusted channel before installing.
+With a trust file (or --signers), a valid signature is required: no fallback.
+Without one, checksum-only preview assets are installed; checksums do not
+authenticate the publisher. --allow-unsigned selects them even with a trust file.
 Installs in ~/.local/bin and retains matching source and notices under
 ~/.local/share/duet/releases. DUET_INSTALL_DIR / DUET_DATA_DIR override those paths.
---allow-unsigned selects checksum-only preview assets; no signer is required.
-Unsigned checksums do not authenticate the publisher. No automatic fallback.
-No sudo, profile edits or downloaded signing key.
+When ~/.local/bin is not on PATH, one marked line adding it is appended to your
+shell's startup file; --no-modify-path (or DUET_NO_MODIFY_PATH=1) leaves it alone.
+No sudo or downloaded signing key.
 HELP
 }
 version=""
 url=""
 allow_unsigned=false
+signers_given=false
+modify_path=true
+[ "${DUET_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
 signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help) usage; exit 0 ;;
     --allow-unsigned) allow_unsigned=true; shift ;;
+    --no-modify-path) modify_path=false; shift ;;
     --url | --signers | --version)
         [ $# -ge 2 ] && [ -n "$2" ] || fail "$1 requires a value"
         case "$1" in
             --url) url="$2" ;;
-            --signers) signers="$2" ;;
+            --signers) signers="$2"; signers_given=true ;;
             --version) [ -z "$version" ] || fail "specify one version"; version="$2" ;;
         esac
         shift 2
@@ -48,6 +58,11 @@ done
 [ -n "$version" ] || version=latest
 if [ "$version" != latest ]; then
     [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || fail "specify latest or a version as x.y.z[-pre]"
+fi
+# No trust file configured: nothing could authenticate a signature, so install
+# the preview assets. A configured trust file always requires a signature.
+if ! $allow_unsigned && ! $signers_given && [ ! -e "$signers" ]; then
+    allow_unsigned=true
 fi
 if ! $allow_unsigned; then
     [ -f "$signers" ] && [ -r "$signers" ] && [ -s "$signers" ] || fail "no nonempty readable allowed-signers file at $signers; obtain the release signer through an independent trusted channel, or pass --signers FILE"
@@ -204,6 +219,30 @@ else
     printf 'Verified source, licenses and release records: %s\n' "$installed_records"
 fi
 case ":$PATH:" in
-    *":$install_dir:"*) ;;
-    *) printf 'Add %s to PATH to run duet (no shell profile was changed).\n' "$install_dir" ;;
+    *":$install_dir:"*) printf '\nRun it in your project directory:  duet\n' ;;
+    *)
+        if ! $modify_path; then
+            printf '\nAdd %s to PATH to run duet (no shell profile was changed).\n' "$install_dir"
+        else
+            case "${SHELL##*/}" in
+                zsh) profile="${ZDOTDIR:-$HOME}/.zshrc" ;;
+                bash) if [ "$os" = Darwin ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
+                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/duet.fish" ;;
+                *) profile="$HOME/.profile" ;;
+            esac
+            if [ "${SHELL##*/}" = fish ]; then
+                line="fish_add_path -g '$install_dir' # added by the duet installer"
+            else
+                line="export PATH=\"$install_dir:\$PATH\" # added by the duet installer"
+            fi
+            if [ -f "$profile" ] && grep -qF -- "$line" "$profile"; then
+                printf '\n%s already adds %s to PATH.\n' "$profile" "$install_dir"
+            else
+                mkdir -p "$(dirname "$profile")"
+                printf '\n%s\n' "$line" >>"$profile"
+                printf '\nAdded %s to PATH in %s (remove the line marked "duet installer" to undo).\n' "$install_dir" "$profile"
+            fi
+            printf 'Open a new terminal, then run it in your project directory:  duet\n'
+        fi
+        ;;
 esac

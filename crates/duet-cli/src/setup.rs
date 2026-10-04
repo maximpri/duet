@@ -616,6 +616,110 @@ pub async fn auto(cfg: &mut Config, options: AutoOptions) -> Result<i32> {
     Ok(code)
 }
 
+/// Frontier presets named first when no key is found; `duet config preset`
+/// lists the rest.
+const FIRST_RUN_PROVIDERS: &[&str] = &["anthropic", "openai", "gemini", "openrouter", "zai"];
+
+/// Whether a new interactive session would start without what its mode
+/// needs: the configured frontier's key (`frontier`), or a saved local model
+/// (`local`; without one every run probes loopback and stops when it finds
+/// none or several). `duet` then runs [`first_run`] before the session.
+pub fn needs_first_run(cfg: &Config, frontier: bool, local: bool) -> Result<bool> {
+    let key_env = cfg.str("frontier.api_key_env")?;
+    let no_key = frontier && !key_env.is_empty() && !key_present(&key_env);
+    let no_local = local && cfg.origin("local.base_url") == Some(Origin::Default);
+    Ok(no_key || no_local)
+}
+
+/// The first `duet` in a terminal without a usable setup: shows what is
+/// found and what is missing in one checklist, with the command that fixes
+/// each missing piece; when nothing is missing, runs the guided [`auto`]
+/// setup (which asks before saving). Returns 0 when the session can start.
+pub async fn first_run(cfg: &mut Config, frontier: bool, local: bool) -> Result<i32> {
+    eprintln!("Welcome to Duet. Let's connect your models (one time).\n");
+    let mut frontier_ready = true;
+    let local_saved = cfg.origin("local.base_url") != Some(Origin::Default);
+    let mut local_ready = !local || local_saved;
+    if frontier {
+        let key_env = cfg.str("frontier.api_key_env")?;
+        if cfg.origin("frontier.base_url") != Some(Origin::Default) {
+            // The owner chose this endpoint; only its key is missing.
+            if !key_present(&key_env) {
+                eprintln!("  ✗ cloud model: export {key_env}=<your key>");
+                frontier_ready = false;
+            }
+        } else {
+            let found: Vec<_> = FRONTIER_PRESETS
+                .iter()
+                .filter(|p| key_present(p.api_key_env))
+                .collect();
+            if found.is_empty() {
+                eprintln!("  ✗ cloud model: set an API key, for example");
+                for p in FIRST_RUN_PROVIDERS
+                    .iter()
+                    .filter_map(|name| backends::frontier_preset(name))
+                {
+                    eprintln!(
+                        "        export {:<22} # {}",
+                        format!("{}=…", p.api_key_env),
+                        p.label
+                    );
+                }
+                eprintln!("      (more providers: duet config preset)");
+                frontier_ready = false;
+            } else {
+                let names: Vec<_> = found.iter().map(|p| p.label).collect();
+                eprintln!("  ✓ cloud model: {}", names.join(", "));
+            }
+        }
+    }
+    if !local_ready {
+        let servers =
+            backends::discover_loopback(&bootstrap_ports(), Duration::from_millis(1500)).await;
+        match servers.iter().find(|s| !s.models.is_empty()) {
+            Some(server) => {
+                eprintln!("  ✓ local model server: {}", server.base_url);
+                local_ready = true;
+            }
+            None => {
+                eprintln!(
+                    "  ✗ local model (reads your private files): install Ollama from https://ollama.com, then\n        ollama pull qwen3:8b\n      (LM Studio, llama.cpp, vLLM and others work too: duet config preset)"
+                );
+            }
+        }
+    }
+    if let Err(e) = duet_sandbox::detect() {
+        eprintln!(
+            "  ! command sandbox unavailable ({e}); on Linux install bubblewrap. `duet doctor` has details."
+        );
+    }
+    if !(frontier_ready && local_ready) {
+        eprintln!("\nThen run `duet` again.");
+        if !frontier_ready && local && local_ready {
+            eprintln!(
+                "Or keep everything on this machine with your local model:  duet --mode local-only"
+            );
+        }
+        return Ok(2);
+    }
+    eprintln!();
+    let code = auto(
+        cfg,
+        AutoOptions {
+            provider: None,
+            model: None,
+            local_model: None,
+            local_url: None,
+            yes: false,
+        },
+    )
+    .await?;
+    if code == 0 {
+        eprintln!("\nReady. Describe what you want to build or fix.\n");
+    }
+    Ok(code)
+}
+
 /// The host port of the local SearXNG the `searxng` preset sets up.
 pub const SEARXNG_PORT: u16 = 8888;
 
@@ -785,6 +889,40 @@ mod tests {
             "gpt-6.1-sol"
         );
         assert!(choose_model("frontier", &ids, None, Some("gpt-6.1-s0l"), true).is_err());
+    }
+
+    #[test]
+    fn first_run_is_needed_until_the_key_and_a_local_model_are_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let owner = dir.path().join("owner.toml");
+        // A key variable no environment sets.
+        std::fs::write(
+            &owner,
+            "[frontier]\napi_key_env = \"DUET_FIRST_RUN_TEST_UNSET_KEY\"\n",
+        )
+        .unwrap();
+        let cfg = Config::load(&owner, None).unwrap();
+        assert!(needs_first_run(&cfg, true, false).unwrap());
+        assert!(needs_first_run(&cfg, false, true).unwrap());
+        // Top clearance needs no frontier key; passthrough no local model.
+        std::fs::write(
+            &owner,
+            "[frontier]\napi_key_env = \"DUET_FIRST_RUN_TEST_UNSET_KEY\"\n\
+             [local]\nbase_url = \"http://127.0.0.1:11434/v1\"\nmodel = \"m\"\n",
+        )
+        .unwrap();
+        let cfg = Config::load(&owner, None).unwrap();
+        assert!(!needs_first_run(&cfg, false, true).unwrap());
+        assert!(needs_first_run(&cfg, true, true).unwrap());
+        // `PATH` is set wherever tests run: a present key and a saved local model.
+        std::fs::write(
+            &owner,
+            "[frontier]\napi_key_env = \"PATH\"\n\
+             [local]\nbase_url = \"http://127.0.0.1:11434/v1\"\nmodel = \"m\"\n",
+        )
+        .unwrap();
+        let cfg = Config::load(&owner, None).unwrap();
+        assert!(!needs_first_run(&cfg, true, true).unwrap());
     }
 
     #[test]
