@@ -121,8 +121,8 @@ Corresponding Source for duet $version ($target)
 Commit: $commit
 Archive: duet-$version-source.tar.gz (distributed beside this binary)
 
-Extract the archive and enter duet-source/. It includes the locked Cargo
-workspace dependencies in vendor/, with their complete licenses and notices.
+Extract the archive and enter duet-source/. Locked Cargo workspace dependencies
+are in vendor/; license notices are in vendor/ and licenses/third-party/.
 Install the Rust toolchain recorded in BUILDINFO.txt and the platform's C/C++
 build tools, then build without downloading Cargo dependencies:
 

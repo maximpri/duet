@@ -162,8 +162,9 @@ Corresponding Source for duet $version ($target)
 Commit: $commit
 Archive: duet-$version-source.tar.gz
 
-Extract the archive and enter duet-source/. Locked Cargo dependencies and their
-licenses are included in vendor/. Install the Rust toolchain in BUILDINFO.txt,
+Extract the archive and enter duet-source/. Locked Cargo dependencies are in
+vendor/; license notices are in vendor/ and licenses/third-party/.
+Install the Rust toolchain in BUILDINFO.txt,
 the target standard library and platform C/C++ tools, then run offline:
   DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target $target
 The binary is target/$target/release/duet. Linux runtime also needs bubblewrap.

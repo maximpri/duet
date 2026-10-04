@@ -14,7 +14,15 @@ terms. Third-party material keeps its own terms.
 | sqlparser evaluation starter and reference overlay | [Apache-2.0](tasks/X1-sql-gateway/starter/LICENSE.TXT), [source and modifications](tasks/X1-sql-gateway/NOTES.md) |
 | log crate in the sqlparser fixture | [MIT](tasks/X1-sql-gateway/starter/vendor/log/LICENSE-MIT) or [Apache-2.0](tasks/X1-sql-gateway/starter/vendor/log/LICENSE-APACHE) |
 | JSONata evaluation starter and reference overlay | [MIT](tasks/X2-partner-exports/starter/LICENSE), [source and modifications](tasks/X2-partner-exports/NOTES.md) |
-| Cargo dependencies | License expressions in their manifests; complete source, license and notice files in the release source archive's `vendor/` directory |
+| Cargo dependencies | License expressions in their manifests; published source and notices retained in the release source archive's `vendor/` directory |
+| objc2-core-foundation 0.3.2 and objc2-io-kit 0.3.2 | [Supplementary upstream grant, Apache-2.0 text and provenance](licenses/third-party/README.md); upstream also offers Zlib or MIT and records an Apple SDK-derived bindings caveat |
+| tree-sitter-typescript 0.23.2 | [Supplementary pinned MIT license](licenses/third-party/tree-sitter-typescript-0.23.2/LICENSE), [source and checksum](licenses/third-party/README.md) |
+
+The corresponding-source archive also includes tracked `licenses/third-party/`
+supplements when a published Cargo package omits license texts. The supplements
+preserve exact upstream notices and identify their package versions, source
+revisions and hashes without altering vendored files or checksum manifests.
+The `r-efi` packages retain their MIT grant and copyrights in `AUTHORS`.
 
 Do not replace upstream notices with Duet's SPDX header. The evaluation fixtures
 are not linked into the Duet executable. Model weights, model services and
@@ -45,8 +53,9 @@ and test dependencies for all platforms. The separate optional `fuzz/` workspace
 is not part of the binary build and has its own dependency setup.
 
 The release SBOM records the binary's normal/build dependency closure. License
-texts are supplied in full in the accompanying source archive, not merely as
-SPDX identifiers in the SBOM. Any separate binary package or installer must keep
+texts are supplied in the accompanying source archive through `vendor/` and
+`licenses/third-party/`, not merely as SPDX identifiers in the SBOM. Any separate
+binary package or installer must keep
 the license/notices available and clearly identify where recipients can obtain
 the matching source archive at no further charge.
 
