@@ -183,6 +183,32 @@ impl WriteJournal {
         self.next
     }
 
+    /// Whether recovery would restore project files. Planning may inspect
+    /// this state, but must not perform the rollback itself.
+    pub(crate) fn has_pending(run_dir: &Path) -> Result<bool, FsError> {
+        let path = run_dir.join("writes.jsonl");
+        let records = duet_fs::private::read_lines_repairing(&path)?
+            .iter()
+            .map(|line| serde_json::from_str::<Record>(line))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| FsError::Io {
+                op: "read write journal",
+                path,
+                message: e.to_string(),
+                errno: None,
+            })?;
+        let applied: std::collections::HashSet<u64> = records
+            .iter()
+            .filter_map(|r| match r {
+                Record::Applied { n } => Some(*n),
+                Record::Pending { .. } => None,
+            })
+            .collect();
+        Ok(records
+            .iter()
+            .any(|r| matches!(r, Record::Pending { n, .. } if !applied.contains(n))))
+    }
+
     /// Rolls back writes that were started but not recorded as applied.
     /// Returns the paths restored.
     pub fn recover(run_dir: &Path, workspace: &Path) -> Result<Vec<PathBuf>, FsError> {

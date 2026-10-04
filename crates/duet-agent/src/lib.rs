@@ -18,6 +18,7 @@ pub mod journal;
 pub mod ledger;
 pub mod mcp;
 pub mod oversight;
+mod planning;
 pub mod prompt;
 pub mod protected;
 pub mod purge;

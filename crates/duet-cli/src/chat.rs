@@ -202,8 +202,18 @@ impl Inbox {
                 .iter()
                 .position(|(n, _)| n.is_some_and(|n| n >= mark))
             {
+                let (_, line) = q.lines.remove(i).expect("selected approval answer exists");
+                if let Command::Plan(raw) = parse(&line) {
+                    // Keep the approval barrier until both the execution stop
+                    // and the queued control are visible. Otherwise the turn
+                    // driver could steer following input ahead of this switch.
+                    if !matches!(plan_action(&raw), PlanAction::Status) {
+                        stop.store(true, Ordering::SeqCst);
+                    }
+                    q.lines.push_front((None, line.clone()));
+                }
                 q.answering = false;
-                return q.lines.remove(i).map(|(_, l)| l);
+                return Some(line);
             }
             if q.closed || stop.load(Ordering::SeqCst) {
                 q.answering = false;
@@ -232,6 +242,14 @@ impl AskInline {
         let mark = self.inbox.mark();
         self.screen.ask(&approve::describe(self.mode, action));
         let answer = self.inbox.answer_after(mark, &self.interrupted);
+        if let Some(line) = answer.as_ref()
+            && matches!(parse(line), Command::Plan(_))
+        {
+            // answer_after atomically preserved the command and stopped work
+            // when needed before releasing the approval-input barrier.
+            self.screen.line("denied; planning command queued");
+            return false;
+        }
         let yes = answer.as_deref().is_some_and(approve::is_yes);
         self.screen.line(if yes { "approved" } else { "denied" });
         yes
@@ -258,6 +276,7 @@ pub(crate) enum Command {
     Plugins,
     PluginPrompt(String),
     Goal(String),
+    Plan(String),
     History(Option<String>),
     /// End the running turn after its current step.
     Stop,
@@ -291,6 +310,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "/diff",
     "/exit",
     "/goal",
+    "/plan",
     "/help",
     "/history",
     "/image",
@@ -336,6 +356,7 @@ pub(crate) fn parse(line: &str) -> Command {
     for (prefix, kind) in [
         ("skill", Command::Skill as fn(String) -> Command),
         ("command", Command::PluginPrompt),
+        ("plan", Command::Plan),
     ] {
         if let Some(rest) = word.strip_prefix(prefix)
             && (rest.is_empty() || rest.starts_with(char::is_whitespace))
@@ -408,6 +429,8 @@ Workspace commands (task text and loaded guidance use the session privacy bounda
   /skill <name> [task]    use a workflow; instructions load only when needed
   /plugins               list installed extension packages
   /command plugin:name [arguments]  use a packaged command
+  /plan [task]           plan with read-only tools; pause automatic goals
+  /plan status|off       inspect mode or leave planning (does not execute the plan)
   /goal <objective>       work automatically; default 20 turns and session budgets
   /goal                  show progress and remaining turns
   /goal pause|resume     pause work or continue an unfinished goal
@@ -673,6 +696,7 @@ fn show_privacy(
 /// Waits for the first message of a new session, and the images attached to
 /// it (`/image`, checked against the rules as they are attached); `None`
 /// when the operator leaves first.
+#[allow(clippy::too_many_arguments)]
 async fn first_message(
     inbox: &Inbox,
     leave: &AtomicBool,
@@ -681,16 +705,19 @@ async fn first_message(
     cfg: &duet_config::Config,
     mode: Mode,
     frontier_url: Option<&str>,
+    initial_planning: bool,
 ) -> Option<(
     String,
     Vec<crate::images::AttachedImage>,
     Vec<crate::attachments::Attachment>,
+    bool,
     bool,
 )> {
     if !matches!(screen, Screen::Plain { tty: false }) {
         screen.line("a new session starts with your first message; /help lists the commands");
     }
     screen.prompt();
+    let mut planning = initial_planning;
     let mut images = Vec::new();
     let mut files = Vec::new();
     loop {
@@ -705,9 +732,9 @@ async fn first_message(
             continue;
         };
         match parse(&line) {
-            Command::Message(m) => return Some((if line.trim().starts_with("//") {line.trim().to_owned()}else{m}, images, files, false)),
+            Command::Message(m) => return Some((if line.trim().starts_with("//") {line.trim().to_owned()}else{m}, images, files, false, planning)),
             Command::Skill(_) | Command::PluginPrompt(_) => match preflight_extension(ws, cfg, &line) {
-                Ok(()) => return Some((line.trim().to_owned(), images, files, false)),
+                Ok(()) => return Some((line.trim().to_owned(), images, files, false, planning)),
                 Err(error) => screen.line(&duet_tui::term::safe(&format!("{error:#}"))),
             },
             Command::Skills => match crate::extensions::discover(ws,cfg) {
@@ -717,8 +744,22 @@ async fn first_message(
             Command::Plugins => match crate::plugins::list() {
                 Ok(text)=>screen.line(&text),Err(e)=>screen.line(&format!("Plugins: {e:#}")),
             },
+            Command::Plan(raw) => {
+                match plan_action(&raw) {
+                    PlanAction::Status => {},
+                    PlanAction::Off => planning = false,
+                    PlanAction::On | PlanAction::Task(_) => planning = true,
+                }
+                screen.line(plan_status(planning));
+                if let Some(w) = screen.workspace() { w.planning(planning); }
+                if let PlanAction::Task(task) = plan_action(&raw) {
+                    let message = if task.starts_with('/') { format!("/{task}") } else { task.to_owned() };
+                    return Some((message, images, files, false, planning));
+                }
+            },
             Command::Goal(raw) => match goal_action(&raw) {
-                GoalAction::Start(objective) => return Some((objective.to_owned(), images, files, true)),
+                GoalAction::Start(_) | GoalAction::Resume if planning => screen.line("Leave planning with /plan off before starting or resuming a goal."),
+                GoalAction::Start(objective) => return Some((objective.to_owned(), images, files, true, planning)),
                 _ => screen.line("Start a goal with /goal <objective>. It keeps working within your session budgets."),
             },
             Command::History(id) => show_history(ws, id, screen),
@@ -822,11 +863,14 @@ Add --no-privacy to confirm, or use --mode hybrid."
     let mut start_goal = args.goal.is_some();
     let mut message = args.goal.or(args.message);
     let mut resume = args.resume;
+    let mut start_planning = false;
+    let mut pending_attachments = PendingAttachments::default();
     // One session per pass; `/mode top-clearance` ends the pass with the
     // session left open and starts the next in top clearance.
     loop {
         if let Some(w) = screen.workspace() {
             w.status(Status {
+                planning: start_planning,
                 mode: mode_name(mode).to_owned(),
                 frontier: args
                     .frontier_model
@@ -858,8 +902,16 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     None,
                     false,
                 );
-                let (first, first_images, first_files, is_goal) = match message.take() {
-                    Some(m) => (m, Vec::new(), Vec::new(), start_goal),
+                if !start_goal
+                    && message
+                        .as_ref()
+                        .is_some_and(|text| matches!(parse(text), Command::Plan(_)))
+                {
+                    io.inbox
+                        .requeue(vec![message.take().expect("checked initial command")]);
+                }
+                let (first, first_images, first_files, is_goal, planning) = match message.take() {
+                    Some(m) => (m, Vec::new(), Vec::new(), start_goal, start_planning),
                     None => {
                         match first_message(
                             &io.inbox,
@@ -869,6 +921,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                             &cfg,
                             mode,
                             args.frontier_url.as_deref(),
+                            start_planning,
                         )
                         .await
                         {
@@ -878,6 +931,7 @@ Add --no-privacy to confirm, or use --mode hybrid."
                     }
                 };
                 start_goal = is_goal;
+                start_planning = planning;
                 if !is_goal && let Err(error) = preflight_extension(&ws, &cfg, &first) {
                     screen.line(&duet_tui::term::safe(&format!("{error:#}")));
                     continue;
@@ -943,6 +997,11 @@ Add --no-privacy to confirm, or use --mode hybrid."
         duet_fs::private::ensure_private_dir(&run_dir)?;
         duet_fs::private::ensure_private_dir(&ws.join(".duet/tmp"))?;
         if !resuming {
+            if start_planning {
+                // Publish the permission restriction before the resumable manifest.
+                duet_agent::transcript::Transcript::open(&run_dir)?
+                    .append(&Entry::PlanMode { enabled: true })?;
+            }
             duet_fs::private::write_private(
                 &run_dir.join("run.json"),
                 &serde_json::to_vec_pretty(&manifest)?,
@@ -971,6 +1030,8 @@ Add --no-privacy to confirm, or use --mode hybrid."
             &io,
             emb.hooks(),
             start_goal && !resuming,
+            start_planning && !resuming,
+            &mut pending_attachments,
             goal_turns,
         ))
         .catch_unwind()
@@ -1019,6 +1080,12 @@ Add --no-privacy to confirm, or use --mode hybrid."
         )?;
         drop(lock);
         let id = &manifest.run_id;
+        if matches!(switch, Some(SessionChange::Planning)) {
+            resume = Some(Some(id.clone()));
+            start_goal = false;
+            start_planning = Session::persisted_planning(&run_dir).map_err(anyhow::Error::msg)?;
+            continue;
+        }
         if let Some(next) = switch {
             screen.line(&format!(
                 "session {id} ({}) left open (${:.4} so far); continue it with: duet --resume {id}",
@@ -1031,7 +1098,13 @@ model works in it, and nothing leaves this machine but its requests to the local
 frontier, no web tools, no network for commands. It starts fresh, so nothing said here ever \
 reaches the frontier; leaving top clearance needs a new session.",
             );
-            mode = next;
+            mode = match next {
+                SessionChange::Privacy { mode, planning } => {
+                    start_planning = planning;
+                    mode
+                }
+                SessionChange::Planning => unreachable!(),
+            };
             start_goal = false;
             continue;
         }
@@ -1191,14 +1264,24 @@ async fn converse(
     io: &Io,
     hooks: &duet_agent::Hooks,
     start_goal: bool,
+    start_planning: bool,
+    pending_attachments: &mut PendingAttachments,
     goal_turns: u64,
-) -> Result<(Terminal, RunStats, Option<Mode>)> {
+) -> Result<(Terminal, RunStats, Option<SessionChange>)> {
+    let planning = if resume {
+        Session::persisted_planning(run_dir).map_err(anyhow::Error::msg)?
+    } else {
+        start_planning
+    };
     let Prepared {
         git,
         engine,
         frontier,
         run_cfg,
-    } = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit, hooks).await?;
+    } = prepare(
+        ws, manifest, cfg, oversight, run_dir, limits, audit, hooks, planning,
+    )
+    .await?;
     let passthrough = PassThrough { max_bytes: 60_000 };
     let presenter: &dyn Presenter = match &engine {
         Some(e) => e.as_ref(),
@@ -1218,6 +1301,9 @@ async fn converse(
         resume,
     )
     .map_err(anyhow::Error::msg)?;
+    if start_planning {
+        session.set_planning(true).map_err(anyhow::Error::msg)?;
+    }
     let shown: Arc<dyn Fn(&str) -> String + Send + Sync> = match &engine {
         Some(e) => {
             let e = e.clone();
@@ -1236,8 +1322,14 @@ async fn converse(
                 .collect(),
         );
     }
+    for image in std::mem::take(&mut pending_attachments.images) {
+        // A failed recheck must stop before delivering the dependent request.
+        session
+            .attach(image.path, image.public)
+            .map_err(anyhow::Error::msg)?;
+    }
     let files = Mutex::new(if resume {
-        Vec::new()
+        std::mem::take(&mut pending_attachments.files)
     } else {
         manifest.files.clone()
     });
@@ -1278,6 +1370,10 @@ async fn converse(
         goal_turns,
     )
     .await?;
+    if matches!(switch, Some(SessionChange::Planning)) {
+        pending_attachments.images = session.attached().to_vec();
+        pending_attachments.files = std::mem::take(&mut *files.lock().unwrap());
+    }
     let (terminal, mut stats) = session.end(closed);
     crate::mcp::stop(&run_cfg).await;
     // The session's language servers lived across its turns; stop them now.
@@ -1291,6 +1387,22 @@ async fn converse(
     Ok((terminal, stats, switch))
 }
 
+#[derive(Default)]
+struct PendingAttachments {
+    images: Vec<duet_agent::images::Attachment>,
+    files: Vec<crate::attachments::Attachment>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SessionChange {
+    Privacy {
+        mode: Mode,
+        planning: bool,
+    },
+    /// Reopen the same session after stopping its runtime services.
+    Planning,
+}
+
 /// Drives the operator controls and automatic goal turns. Provider construction
 /// stays outside so the same driver can be exercised with an in-process frontier.
 async fn conduct(
@@ -1301,7 +1413,7 @@ async fn conduct(
     goals: &mut crate::goals::Store,
     resume: bool,
     goal_turns: u64,
-) -> Result<(bool, Option<Mode>)> {
+) -> Result<(bool, Option<SessionChange>)> {
     let TurnCtx {
         io,
         ws,
@@ -1311,8 +1423,17 @@ async fn conduct(
         files,
         ..
     } = *ctx;
+    if session.is_planning() {
+        goals.pause(
+            "Planning mode pauses automatic goals. Use /plan off, then /goal resume to continue.",
+        )?;
+        io.screen.line(plan_status(true));
+    }
     show_status(io, session, manifest, cfg, goals);
     if resume {
+        if !session.is_planning() {
+            io.screen.line(plan_status(false));
+        }
         recap(session, &manifest.run_id, &io.screen);
         if goals.current().is_some() {
             io.screen.line(&goals.describe());
@@ -1362,7 +1483,7 @@ async fn conduct(
             match io.inbox.pop() {
                 Some(l) => break Some(l),
                 None if io.tty && io.inbox.drained() => break None,
-                None if goals.active() => {
+                None if goals.active() && !session.is_planning() => {
                     let next = goals.prompt().expect("active goal has a prompt");
                     turns(session, next, ctx, goals).await?;
                     show_status(io, session, manifest, cfg, goals);
@@ -1415,8 +1536,48 @@ async fn conduct(
                 manifest.local.as_ref().map(|l| l.base_url.as_str()),
                 true,
             ),
+            Command::Plan(raw) => {
+                let action = plan_action(&raw);
+                let was_planning = session.is_planning();
+                if !matches!(action, PlanAction::Status) {
+                    let planning = !matches!(action, PlanAction::Off);
+                    if planning {
+                        goals.pause("Planning mode pauses automatic goals. Use /plan off, then /goal resume to continue.")?;
+                    }
+                    if let Err(error) = session.set_planning(planning) {
+                        say(&format!("Plan: {error}"));
+                        continue;
+                    }
+                }
+                if was_planning != session.is_planning() {
+                    say(if session.is_planning() {
+                        "Switching to planning; stopping runtime services before continuing."
+                    } else {
+                        "Leaving planning; restoring runtime services without starting work."
+                    });
+                    if let PlanAction::Task(task) = action {
+                        io.inbox.requeue(vec![if task.starts_with('/') {
+                            format!("/{task}")
+                        } else {
+                            task.to_owned()
+                        }]);
+                    }
+                    break (false, Some(SessionChange::Planning));
+                }
+                say(plan_status(session.is_planning()));
+                show_status(io, session, manifest, cfg, goals);
+                if let PlanAction::Task(task) = action {
+                    turns(session, task.to_owned(), ctx, goals).await?;
+                    show_status(io, session, manifest, cfg, goals);
+                }
+            }
             Command::Goal(raw) => {
                 let result = match goal_action(&raw) {
+                    GoalAction::Start(_) | GoalAction::Resume if session.is_planning() => {
+                        Err(anyhow::anyhow!(
+                            "Leave planning with /plan off before starting or resuming a goal."
+                        ))
+                    }
                     GoalAction::Status => Ok(()),
                     GoalAction::Pause => {
                         goals.pause("Paused by you. Use /goal resume to continue.")
@@ -1485,7 +1646,15 @@ async fn conduct(
                 }
             }
             Command::Mode(asked) => match mode_change(manifest.mode, asked.as_deref()) {
-                ModeChange::Switch(to) => break (false, Some(to)),
+                ModeChange::Switch(to) => {
+                    break (
+                        false,
+                        Some(SessionChange::Privacy {
+                            mode: to,
+                            planning: session.is_planning(),
+                        }),
+                    );
+                }
                 ModeChange::Say(text) => say(&text),
             },
             Command::Image { path, .. } if path.is_empty() => say(&format!(
@@ -1513,9 +1682,10 @@ async fn conduct(
                 }
             }
             Command::Message(m) => {
-                if goals
-                    .current()
-                    .is_some_and(|g| g.state == crate::goals::State::Waiting)
+                if !session.is_planning()
+                    && goals
+                        .current()
+                        .is_some_and(|g| g.state == crate::goals::State::Waiting)
                     && let Err(e) = goals.resume()
                 {
                     say(&format!("Goal: {e:#}"));
@@ -1560,7 +1730,7 @@ async fn turns(
     t: &TurnCtx<'_>,
     goals: &mut crate::goals::Store,
 ) -> Result<()> {
-    let active = goals.active();
+    let active = goals.active() && !session.is_planning();
     if active {
         goals.begin_turn()?;
     }
@@ -1626,6 +1796,7 @@ async fn take_turn(
     let mut pending_images = Vec::new();
     let mut image_failed = false;
     let mut hold_messages = false;
+    let mut plan_switch_queued = false;
     let mut attachments_committed = false;
     let mut stopped = false;
     attachment_queue::publish(&io.screen, Vec::new());
@@ -1656,7 +1827,20 @@ async fn take_turn(
                         steering.stop();
                     }
                     while let Some(line) = io.inbox.pop_unless_answering() {
+                        if plan_switch_queued {
+                            held.push(line);
+                            continue;
+                        }
                         match parse(&line) {
+                            Command::Plan(raw) => {
+                                if !matches!(plan_action(&raw), PlanAction::Status) {
+                                    stopped = true;
+                                    steering.stop();
+                                    plan_switch_queued = true;
+                                    say("Planning change queued after the current step; following input will wait.");
+                                }
+                                held.push(line);
+                            }
                             Command::Message(m) => {
                                 if hold_messages {
                                     say("Message queued with your attachments for the next turn.");
@@ -1817,6 +2001,31 @@ async fn take_turn(
     (end, steering.take(), stopped)
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum PlanAction<'a> {
+    On,
+    Off,
+    Status,
+    Task(&'a str),
+}
+
+fn plan_action(raw: &str) -> PlanAction<'_> {
+    match raw.trim() {
+        "" | "on" => PlanAction::On,
+        "off" => PlanAction::Off,
+        "status" => PlanAction::Status,
+        task => PlanAction::Task(task),
+    }
+}
+
+fn plan_status(planning: bool) -> &'static str {
+    if planning {
+        "PLAN · read-only tools; automatic goals paused. /plan off leaves planning without executing."
+    } else {
+        "Planning off. Send an implementation request when ready; goals remain paused until /goal resume."
+    }
+}
+
 /// What `/mode` does.
 #[derive(Debug, PartialEq, Eq)]
 enum ModeChange {
@@ -1901,6 +2110,7 @@ fn show_status(
     let s = session.stats();
     w.status(Status {
         goal: goals.status_line(),
+        planning: session.is_planning(),
         session: manifest.run_id.clone(),
         mode: mode_name(manifest.mode).to_owned(),
         frontier: manifest.frontier_model.clone(),
@@ -1973,11 +2183,12 @@ fn status(session: &Session<'_>, id: &str, cfg: &duet_config::Config) -> String 
     let float = |k: &str| cfg.float(k).unwrap_or(0.0);
     let int = |k: &str| cfg.int(k).unwrap_or(0);
     format!(
-        "session {id}\n\
+        "session {id}\n{}\n\
 turns {} · frontier requests {} · tool calls {}\n\
 tokens {} in ({} cached), {} out\n\
 cost ${:.4} of ${:.2} for the session (each turn at most ${:.2})\n\
 agent working time {} of {}m (each turn at most {}m)",
+        plan_status(session.is_planning()),
         session.turns(),
         s.turns,
         s.tool_calls,
@@ -2147,6 +2358,54 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn planning_before_first_message_preserves_mode_and_rejects_goals() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = duet_config::Config::load(&dir.path().join("owner.toml"), None).unwrap();
+        for (lines, expected, planning) in [
+            (
+                vec![
+                    "/plan",
+                    "/goal do not start",
+                    "/plan status",
+                    "Inspect the design",
+                ],
+                "Inspect the design",
+                true,
+            ),
+            (
+                vec!["/plan on", "/plan off", "Implement it"],
+                "Implement it",
+                false,
+            ),
+            (vec!["/plan Inspect the design"], "Inspect the design", true),
+            (vec!["/plan /literal task"], "//literal task", true),
+        ] {
+            let inbox = Inbox::default();
+            for line in lines {
+                inbox.push(line.to_owned());
+            }
+            inbox.close();
+            let (message, _, _, goal, enabled) = first_message(
+                &inbox,
+                &AtomicBool::new(false),
+                &Screen::Plain { tty: false },
+                dir.path(),
+                &cfg,
+                Mode::Hybrid,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(message, expected);
+            assert!(!goal);
+            assert_eq!(enabled, planning);
+        }
+        assert_eq!(parse("/planet"), Command::Unknown("planet".into()));
+        assert_eq!(parse("//plan"), Command::Message("/plan".into()));
+    }
+
+    #[tokio::test]
     async fn invalid_initial_workflows_are_reported_before_a_session_starts() {
         let directory = tempfile::tempdir().unwrap();
         let ws = directory.path().canonicalize().unwrap();
@@ -2170,6 +2429,7 @@ mod tests {
             &cfg,
             Mode::Hybrid,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2197,7 +2457,7 @@ mod tests {
         inbox.push(crate::attachments::quoted(&image));
         inbox.push("Describe this screen".into());
         inbox.close();
-        let (message, images, files, _) = first_message(
+        let (message, images, files, _, _) = first_message(
             &inbox,
             &AtomicBool::new(false),
             &Screen::Plain { tty: false },
@@ -2205,6 +2465,7 @@ mod tests {
             &cfg,
             Mode::Passthrough,
             None,
+            false,
         )
         .await
         .unwrap();
@@ -2335,6 +2596,81 @@ mod tests {
         i.leave.store(false, Ordering::SeqCst);
         *i.idle_press.lock().unwrap() = Some(std::time::Instant::now() - Duration::from_secs(3));
         assert!(i.press().is_some() && !i.leave.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn approval_input_requeues_planning_before_releasing_the_input_barrier() {
+        for (line, interrupts) in [(" /plan inspect first ", true), ("/plan status", false)] {
+            let inbox = Inbox::default();
+            inbox.push("earlier queued message".to_owned());
+            let mark = inbox.mark();
+            inbox.push(line.to_owned());
+            inbox.push("following message".to_owned());
+            let stop = AtomicBool::new(false);
+            assert!(inbox.pop_unless_answering().is_none());
+            // No AskInline postprocessing runs: the inbox must already expose
+            // the interrupt and the control first when the barrier is released.
+            assert_eq!(inbox.answer_after(mark, &stop).as_deref(), Some(line));
+            let q = inbox.lock();
+            assert!(!q.answering);
+            assert_eq!(stop.load(Ordering::SeqCst), interrupts);
+            assert_eq!(q.lines.front(), Some(&(None, line.to_owned())));
+            drop(q);
+            assert_eq!(inbox.pop_unless_answering().as_deref(), Some(line));
+            assert_eq!(inbox.pop().as_deref(), Some("earlier queued message"));
+            assert_eq!(inbox.pop().as_deref(), Some("following message"));
+            assert!(inbox.pop().is_none());
+        }
+    }
+
+    #[test]
+    fn planning_at_an_approval_prompt_is_preserved_and_denies_the_action() {
+        for (answer, approved, interrupted, requeued) in [
+            ("/plan", false, true, true),
+            (" /plan on ", false, true, true),
+            ("/plan off", false, true, true),
+            ("/plan Inspect this first", false, true, true),
+            ("/plan status", false, false, true),
+            ("//plan", false, false, false),
+            ("y", true, false, false),
+        ] {
+            let inbox = Arc::new(Inbox::default());
+            let stop = Arc::new(AtomicBool::new(false));
+            let feed = inbox.clone();
+            let writer = std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                while !feed.answering() {
+                    assert!(started.elapsed() < Duration::from_secs(5));
+                    std::thread::yield_now();
+                }
+                feed.push(answer.to_owned());
+                feed.push("following message".to_owned());
+            });
+            let ask = AskInline {
+                mode: ApproveMode::All,
+                inbox: inbox.clone(),
+                interrupted: stop.clone(),
+                screen: Screen::Plain { tty: false },
+            };
+            assert_eq!(
+                ask.ask(&Action {
+                    tool: "write_file".to_owned(),
+                    risk: duet_agent::oversight::Risk::Write,
+                    path: Some("source.rs".to_owned()),
+                    command: None,
+                    bytes: Some(1),
+                }),
+                approved,
+                "{answer}"
+            );
+            writer.join().unwrap();
+            assert_eq!(stop.load(Ordering::SeqCst), interrupted, "{answer}");
+            if requeued {
+                assert_eq!(inbox.pop().as_deref(), Some(answer));
+            }
+            assert_eq!(inbox.pop().as_deref(), Some("following message"));
+            assert!(inbox.pop().is_none());
+        }
     }
 
     #[test]

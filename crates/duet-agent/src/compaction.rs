@@ -1021,6 +1021,7 @@ mod tests {
             items: Vec::new(),
             classes: HashMap::new(),
             interactive: false,
+            planning: false,
             steering: None,
             exchange: 0,
             child: None,

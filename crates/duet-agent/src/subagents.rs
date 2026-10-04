@@ -62,7 +62,7 @@ use serde_json::{Map, Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -719,6 +719,7 @@ async fn child_run(parent: &Parent<'_>, p: Planned<'_>) -> Ran {
         items: vec![first.clone()],
         classes: HashMap::new(),
         interactive: false,
+        planning: false,
         steering: None,
         exchange: 0,
         child: Some(Arc::new(child)),
@@ -1007,6 +1008,7 @@ pub(crate) fn replay(entries: &[Entry], cfg: &RunConfig, stats: &mut RunStats) {
             items: Vec::new(),
             classes: HashMap::new(),
             interactive: false,
+            planning: false,
             steering: None,
             exchange: 0,
             child: None,
@@ -1019,18 +1021,7 @@ pub(crate) fn replay(entries: &[Entry], cfg: &RunConfig, stats: &mut RunStats) {
     }
 }
 
-/// Ends the sub-agents whose `delegate` call has no result in `items` (the
-/// conversation the parent continues with): the run stopped (a crash, an
-/// interrupt) before the parent recorded it, so the parent re-decides that
-/// step. Each gets an end entry and audit event if it had none, and a
-/// writing one's writes are rolled back (files a later journaled write
-/// changed again are left alone). Returns the paths restored. Idempotent.
-pub(crate) fn recover(
-    cfg: &RunConfig,
-    audit: &AuditHandle,
-    items: &[Item],
-) -> Result<Vec<PathBuf>, FsError> {
-    let entries = Transcript::read(&cfg.run_dir)?;
+fn answered_calls<'a>(entries: &'a [Entry], items: &'a [Item]) -> HashSet<&'a str> {
     let mut answered: HashSet<&str> = items
         .iter()
         .filter_map(|i| match i {
@@ -1051,6 +1042,32 @@ pub(crate) fn recover(
             _ => None,
         }));
     }
+    answered
+}
+
+/// Checks for unfinished child work without rolling back project files.
+pub(crate) fn recovery_needed(run_dir: &Path, items: &[Item]) -> Result<bool, FsError> {
+    let entries = Transcript::read(run_dir)?;
+    let answered = answered_calls(&entries, items);
+    Ok(recorded(&entries).iter().any(|r| {
+        !answered.contains(r.call_id.as_str())
+            && (r.ended.is_none() || (r.mode == Mode::Write && !r.reverted))
+    }))
+}
+
+/// Ends the sub-agents whose `delegate` call has no result in `items` (the
+/// conversation the parent continues with): the run stopped (a crash, an
+/// interrupt) before the parent recorded it, so the parent re-decides that
+/// step. Each gets an end entry and audit event if it had none, and a
+/// writing one's writes are rolled back (files a later journaled write
+/// changed again are left alone). Returns the paths restored. Idempotent.
+pub(crate) fn recover(
+    cfg: &RunConfig,
+    audit: &AuditHandle,
+    items: &[Item],
+) -> Result<Vec<PathBuf>, FsError> {
+    let entries = Transcript::read(&cfg.run_dir)?;
+    let answered = answered_calls(&entries, items);
     let transcript = Transcript::open(&cfg.run_dir)?;
     let mut restored = Vec::new();
     for r in recorded(&entries) {

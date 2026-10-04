@@ -56,6 +56,9 @@ To use only your approved local model:
 duet --mode top-clearance
 ```
 
+Use `/plan <task>` in the workspace to review an approach with read-only tools.
+Then use `/plan off` and ask Duet to implement it. [Planning controls](docs/USAGE.md#plan-before-implementing).
+
 ## How the agent works
 
 The frontier model is the coding agent: it plans the work, requests tools and writes fixes. Your local model reads sensitive content when needed. Duet controls file access, tool execution and what reaches the frontier.

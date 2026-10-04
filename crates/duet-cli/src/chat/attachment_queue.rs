@@ -19,7 +19,8 @@ pub(super) fn requests_turn(command: &Command) -> bool {
     matches!(
         command,
         Command::Message(_) | Command::Skill(_) | Command::PluginPrompt(_)
-    ) || matches!(command, Command::Goal(raw) if matches!(super::goal_action(raw), GoalAction::Start(_) | GoalAction::Resume))
+    ) || matches!(command, Command::Plan(raw) if matches!(super::plan_action(raw), super::PlanAction::Task(_)))
+        || matches!(command, Command::Goal(raw) if matches!(super::goal_action(raw), GoalAction::Start(_) | GoalAction::Resume))
 }
 
 /// Keep a queued request for operator review if its preceding image failed.

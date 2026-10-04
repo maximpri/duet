@@ -17,7 +17,7 @@
 
 use crate::host::HostPolicy;
 use crate::journal::{self, WriteJournal};
-use crate::prompt::session_prompt;
+use crate::prompt::{planning_prompt, session_prompt};
 use crate::run::{
     Conversation, INTERRUPTED, Limits, RunConfig, RunStats, Stop, Terminal, replay, work,
 };
@@ -343,6 +343,17 @@ pub struct Session<'a> {
     images: Vec<crate::images::Attachment>,
 }
 
+fn planning_from(entries: &[Entry]) -> bool {
+    entries
+        .iter()
+        .rev()
+        .find_map(|entry| match entry {
+            Entry::PlanMode { enabled } => Some(*enabled),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 impl<'a> Session<'a> {
     /// Starts a session (its transcript begins with `cfg.objective`, the
     /// operator's first message, which [`Session::turn`] is then called with)
@@ -381,6 +392,7 @@ impl<'a> Session<'a> {
                 items: Vec::new(),
                 classes: HashMap::new(),
                 interactive: true,
+                planning: false,
                 steering: Some(steering.clone()),
                 exchange: 0,
                 child: None,
@@ -413,14 +425,17 @@ impl<'a> Session<'a> {
                 .map_err(|e| e.to_string())?;
             return Ok(session);
         }
-        let restored = duet_fs::host::persist(Some(wait.as_ref()), || {
-            WriteJournal::recover(&cfg.run_dir, &cfg.workspace)
-        })
-        .map_err(|e| e.to_string())?;
-        if !restored.is_empty() {
-            eprintln!("rolled back {} interrupted write(s)", restored.len());
-        }
         let entries = Transcript::read(&cfg.run_dir).map_err(|e| e.to_string())?;
+        session.configure_planning(planning_from(&entries));
+        if !session.is_planning() {
+            let restored = duet_fs::host::persist(Some(wait.as_ref()), || {
+                WriteJournal::recover(&cfg.run_dir, &cfg.workspace)
+            })
+            .map_err(|e| e.to_string())?;
+            if !restored.is_empty() {
+                eprintln!("rolled back {} interrupted write(s)", restored.len());
+            }
+        }
         session.history = exchanges(&entries);
         let mut open_turn = false;
         for e in &entries {
@@ -463,13 +478,84 @@ impl<'a> Session<'a> {
             }
         }
         replay(entries, cfg, &mut session.conv, &mut session.stats);
-        if session.stats.subagents.children > 0 {
+        if session.stats.subagents.children > 0 && !session.is_planning() {
             crate::run::drop_unfinished_turn(&mut session.conv.items);
             crate::subagents::recover(cfg, frontier.audit(), &session.conv.items)
                 .map_err(|e| e.to_string())?;
         }
         session.stats.wall_seconds = session.worked.as_secs_f64();
         Ok(session)
+    }
+
+    /// Read the saved operator choice before constructing optional runtime
+    /// services. Sessions from before planning was supported execute normally.
+    pub fn persisted_planning(run_dir: &Path) -> Result<bool, String> {
+        Transcript::read(run_dir)
+            .map(|entries| planning_from(&entries))
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn is_planning(&self) -> bool {
+        self.conv.planning
+    }
+
+    /// An operator-only capability change, persisted before it takes effect.
+    /// This API is never exposed as a model tool or inferred from a message.
+    pub fn set_planning(&mut self, enabled: bool) -> Result<(), String> {
+        if self.is_planning() == enabled {
+            return Ok(());
+        }
+        if enabled {
+            self.ensure_no_pending_recovery()?;
+        }
+        let wait = Arc::new(HostPolicy::finishing());
+        Transcript::open_waiting(&self.cfg.run_dir, Some(wait))
+            .and_then(|t| t.append(&Entry::PlanMode { enabled }))
+            .map_err(|e| e.to_string())?;
+        self.configure_planning(enabled);
+        Ok(())
+    }
+
+    fn configure_planning(&mut self, enabled: bool) {
+        let mut specs =
+            crate::run::tool_specs(self.cfg, self.presenter, self.conv.git_tools.as_ref());
+        specs.extend(missing_from(&specs));
+        if enabled {
+            specs.retain(|s| crate::planning::allows(&s.name));
+        }
+        specs.sort_by(|a, b| a.name.cmp(&b.name));
+        let name = self
+            .cfg
+            .workspace
+            .file_name()
+            .map_or("repository".into(), |name| {
+                name.to_string_lossy().into_owned()
+            });
+        self.conv.system = if enabled {
+            planning_prompt(&name)
+        } else {
+            session_prompt(&name, &self.cfg.checks, &specs)
+        };
+        self.conv.specs = specs;
+        self.conv.planning = enabled;
+    }
+
+    fn ensure_no_pending_recovery(&self) -> Result<(), String> {
+        let mut items = self.conv.items.clone();
+        crate::run::drop_unfinished_turn(&mut items);
+        let pending = WriteJournal::has_pending(&self.cfg.run_dir)
+            .and_then(|pending| {
+                if pending {
+                    Ok(true)
+                } else {
+                    crate::subagents::recovery_needed(&self.cfg.run_dir, &items)
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        if pending {
+            return Err("unfinished writes need recovery in execution mode before planning can continue. If planning is active, use /plan off first. Planning will not restore project files.".into());
+        }
+        Ok(())
     }
 
     /// Where the operator's messages and stop requests for a running turn
@@ -668,14 +754,19 @@ impl<'a> Session<'a> {
         host: &Arc<HostPolicy>,
     ) -> Result<(), String> {
         let wait: Arc<dyn duet_fs::host::HostWait> = host.clone();
-        // Writes a crash or an interrupt left half-done are rolled back first.
-        duet_fs::host::persist(Some(wait.as_ref()), || {
-            WriteJournal::recover(&self.cfg.run_dir, &self.cfg.workspace)
-        })
-        .map_err(|e| e.to_string())?;
+        // Recovery can change project files, so planning only checks whether
+        // it is needed. The operator must leave planning before any rollback.
+        if self.is_planning() {
+            self.ensure_no_pending_recovery()?;
+        } else {
+            duet_fs::host::persist(Some(wait.as_ref()), || {
+                WriteJournal::recover(&self.cfg.run_dir, &self.cfg.workspace)
+            })
+            .map_err(|e| e.to_string())?;
+        }
         crate::run::drop_unfinished_turn(&mut self.conv.items);
         // A sub-agent of an interrupted turn: ended, its writes rolled back.
-        if self.stats.subagents.children > 0 {
+        if self.stats.subagents.children > 0 && !self.is_planning() {
             crate::subagents::recover(self.cfg, self.frontier.audit(), &self.conv.items)
                 .map_err(|e| e.to_string())?;
         }
@@ -756,6 +847,9 @@ impl<'a> Session<'a> {
     /// created is removed). Files changed by commands are not journaled and
     /// are not reverted. Returns the paths restored and the turn number.
     pub fn undo(&mut self) -> Result<(u64, Vec<PathBuf>), String> {
+        if self.is_planning() {
+            return Err("plan mode is read-only; use /plan off before undoing changes".into());
+        }
         let Some(&(exchange, from)) = self.marks.last() else {
             return Err("no turn to undo".into());
         };

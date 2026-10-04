@@ -984,3 +984,97 @@ fn the_workspace_live() {
         assert!(!text.contains("sk_live_Q7pX9vT2mK4nR8wY3zB6cD1f"));
     }
 }
+
+#[test]
+fn planning_persists_suspends_mcp_and_requires_explicit_implementation() {
+    let e = env();
+    let f = Frontier::start();
+    std::fs::write(
+        e.home.join("config.toml"),
+        "[mcp.servers.planning_marker]\ncommand = '/bin/sh'\nargs = ['-c', 'printf started > planning-mcp-started; exit 0']\n",
+    )
+    .unwrap();
+    f.script(vec![Step::Call("reply", json!({"message":"PLAN_READY"}))]);
+    let mut chat = Chat::start(chat_command(&e, &f, &[]));
+    chat.send("/plan Inspect the design without changes");
+    chat.wait_for("PLAN_READY", 1);
+    assert!(!e.ws.join("planning-mcp-started").exists());
+    let id = only_run_id(&e);
+    chat.send("/quit");
+    let (code, output) = chat.finish();
+    assert_eq!(code, 0, "{output}");
+
+    let mut resumed = Chat::start(command(&e, &["--resume", &id]));
+    resumed.wait_for("PLAN · read-only", 1);
+    assert!(!e.ws.join("planning-mcp-started").exists());
+    resumed.send("/goal Do not start this goal");
+    resumed.wait_for("Leave planning with /plan off", 1);
+    assert_eq!(f.requests(), 1);
+    std::fs::write(e.ws.join("pending.txt"), "SNAPSHOT_BEFORE_SWITCH").unwrap();
+    resumed.send("/attach pending.txt");
+    resumed.wait_for("attached text file", 1);
+    std::fs::write(e.ws.join("pending.txt"), "CHANGED_AFTER_ATTACHMENT").unwrap();
+    resumed.send("/plan off");
+    resumed.wait_for("Planning off.", 1);
+    let started = Instant::now();
+    while !e.ws.join("planning-mcp-started").exists() {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "{}",
+            resumed.output()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(f.requests(), 1, "leaving planning must not call the model");
+    f.script(vec![
+        Step::Call(
+            "write_file",
+            json!({"path":"implementation.txt", "content":"implemented\n"}),
+        ),
+        Step::Call("reply", json!({"message":"IMPLEMENTED_NOW"})),
+    ]);
+    resumed.send("Implement the design now");
+    resumed.wait_for("IMPLEMENTED_NOW", 1);
+    assert!(f.body(1).contains("SNAPSHOT_BEFORE_SWITCH"));
+    assert!(!f.body(1).contains("CHANGED_AFTER_ATTACHMENT"));
+    assert_eq!(
+        std::fs::read_to_string(e.ws.join("implementation.txt")).unwrap(),
+        "implemented\n"
+    );
+    assert_eq!(only_run_id(&e), id, "plan changes keep the same session");
+    resumed.send("/quit");
+    let (code, output) = resumed.finish();
+    assert_eq!(code, 0, "{output}");
+}
+
+#[test]
+fn positional_plan_task_starts_restricted_and_records_choice_before_session_start() {
+    let e = env();
+    let f = Frontier::start();
+    f.script(vec![Step::Call(
+        "reply",
+        json!({"message":"POSITIONAL_PLAN_READY"}),
+    )]);
+    let mut chat = Chat::start(chat_command(&e, &f, &["/plan Inspect before implementing"]));
+    chat.wait_for("POSITIONAL_PLAN_READY", 1);
+    let body: Value = serde_json::from_str(&f.body(0)).unwrap();
+    let tools = body["tools"].as_array().unwrap();
+    assert!(
+        tools
+            .iter()
+            .all(|tool| tool["function"]["name"] != "write_file")
+    );
+    assert!(f.body(0).contains("Inspect before implementing"));
+    let transcript = std::fs::read_to_string(
+        e.ws.join(".duet/runs")
+            .join(only_run_id(&e))
+            .join("transcript.jsonl"),
+    )
+    .unwrap();
+    let first: Value = serde_json::from_str(transcript.lines().next().unwrap()).unwrap();
+    assert_eq!(first["kind"], "plan_mode");
+    assert_eq!(first["enabled"], true);
+    chat.send("/quit");
+    let (code, output) = chat.finish();
+    assert_eq!(code, 0, "{output}");
+}

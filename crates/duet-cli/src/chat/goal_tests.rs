@@ -203,7 +203,7 @@ impl Fixture {
         inbox: Arc<Inbox>,
         resume: bool,
         tty: bool,
-    ) -> (bool, Option<Mode>) {
+    ) -> (bool, Option<SessionChange>) {
         let io = Io {
             inbox,
             tty,
@@ -644,4 +644,62 @@ async fn a_failed_image_group_never_leaks_valid_siblings_into_the_next_request()
     assert!(!bodies[1].contains("FAILED_GROUP_TEXT_MARKER"));
     assert_eq!(bodies[1].matches("\"type\":\"image_url\"").count(), 1);
     assert!(session.attached().is_empty());
+}
+
+#[tokio::test]
+async fn planning_switch_holds_following_input_and_pauses_active_goal() {
+    let release = Arc::new(Notify::new());
+    let mut step = Step::reply("Current step done.");
+    step.release = Some(release.clone());
+    let fixture = Fixture::new("Work toward the objective", vec![step]);
+    let mut goals = fixture.goal(5);
+    let mut session = fixture.session(false, 10.0);
+    let inbox = Arc::new(Inbox::default());
+    let feed = inbox.clone();
+    let started = fixture.frontier.started.clone();
+    let controller = tokio::spawn(async move {
+        started.notified().await;
+        feed.push("/plan Review the approach".into());
+        feed.push("FOLLOWING_INPUT".into());
+        while !feed.lock().lines.is_empty() {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+        feed.close();
+        release.notify_one();
+    });
+    let (_, change) = fixture
+        .conduct(&mut session, &mut goals, inbox.clone(), false, false)
+        .await;
+    controller.await.unwrap();
+    assert_eq!(change, Some(SessionChange::Planning));
+    assert!(session.is_planning());
+    assert_eq!(fixture.requests(), 1);
+    assert_eq!(goals.current().unwrap().state, State::Paused);
+    assert_eq!(inbox.pop().as_deref(), Some("Review the approach"));
+    assert_eq!(inbox.pop().as_deref(), Some("FOLLOWING_INPUT"));
+    assert!(!fixture.frontier.bodies.lock().unwrap()[0].contains("FOLLOWING_INPUT"));
+}
+
+#[tokio::test]
+async fn planning_rejects_goal_start_and_resume_and_leaving_does_not_resume() {
+    let fixture = Fixture::new("Original objective", vec![]);
+    let mut goals = fixture.goal(5);
+    let mut session = fixture.session(false, 10.0);
+    session.set_planning(true).unwrap();
+    let inbox = closed_inbox(&[
+        "/goal replacement",
+        "/goal resume",
+        "/plan status",
+        "/plan off",
+        "implement",
+    ]);
+    let (_, change) = fixture
+        .conduct(&mut session, &mut goals, inbox.clone(), true, false)
+        .await;
+    assert_eq!(change, Some(SessionChange::Planning));
+    assert!(!session.is_planning());
+    assert_eq!(fixture.requests(), 0);
+    assert_eq!(goals.current().unwrap().objective, "Original objective");
+    assert_eq!(goals.current().unwrap().state, State::Paused);
+    assert_eq!(inbox.pop().as_deref(), Some("implement"));
 }

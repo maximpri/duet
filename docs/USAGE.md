@@ -57,6 +57,32 @@ duet purge                      # delete raw run data older than the retention p
 [Privacy preview](OPERATIONS.md#preview-privacy-before-starting) explains the offline report and its exit codes.
 [Operations](OPERATIONS.md) covers audit export, monitoring and retention.
 
+## Plan before implementing
+
+Use `/plan` or `/plan on` to inspect the workspace and discuss an approach with
+read-only tools. `/plan <task>` enters planning and sends the task in one step:
+
+```text
+/plan Review the billing export and propose a migration
+/plan status
+/plan off
+Implement the migration we discussed, then run the tests.
+```
+
+Planning works before the first message and survives `duet --resume`. During
+active work, the switch waits for the current step to finish and holds subsequent
+input for the new mode. `/plan off` leaves planning without executing the plan;
+send an implementation request when ready. Ordinary messages never exit planning.
+
+The `PLAN` indicator remains visible in the workspace and `/status`. Duet enforces
+an allowlist of planning tools: repository reads and searches, local analysis,
+and conversation tools. It blocks edits, shell commands, undo, browser/web tools,
+MCP/LSP services and delegated agents while planning. Session and audit records
+are still written locally, and model calls still follow the selected privacy mode
+and consume its budgets. Planning pauses automatic goals; `/goal` start and resume
+are refused until you leave planning. Leaving does not resume a paused goal:
+use `/goal resume` separately if that is what you want.
+
 ## Goals and history
 
 Start an ongoing goal with `duet --goal "what you want accomplished"`, or type

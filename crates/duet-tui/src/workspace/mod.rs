@@ -61,6 +61,8 @@ pub enum Mode {
 /// The session as the status bar shows it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Status {
+    /// The session permits only planning tools.
+    pub planning: bool,
     pub session: String,
     /// A short goal status supplied by the session (state, turns and task).
     pub goal: Option<String>,
@@ -141,6 +143,7 @@ enum Msg {
     End(TurnEnd),
     Mode(Mode),
     Status(Status),
+    Planning(bool),
     /// The session's workspace, run directory, audit log and policy, for
     /// the side panel.
     Attach {
@@ -271,6 +274,10 @@ impl Workspace {
         self.send(Msg::Mode(mode));
     }
 
+    pub fn planning(&self, enabled: bool) {
+        self.send(Msg::Planning(enabled));
+    }
+
     pub fn status(&self, status: Status) {
         self.send(Msg::Status(status));
     }
@@ -356,6 +363,10 @@ const TICK: Duration = Duration::from_millis(120);
 /// workspace's own).
 const DESCRIBED: &[(&str, &str)] = &[
     ("/help", "keys and commands"),
+    (
+        "/plan",
+        "plan with read-only tools; /plan off leaves without executing",
+    ),
     ("/goal", "goal status; Tab chooses start, pause or resume"),
     ("/history", "find earlier sessions and how to resume them"),
     (
@@ -401,6 +412,18 @@ const WITH_ARGUMENT: &[&str] = &[
     "/goal start",
     "/skill",
     "/command",
+];
+
+const PLAN_COMMANDS: &[(&str, &str)] = &[
+    (
+        "/plan on",
+        "enter read-only planning; pause automatic goals",
+    ),
+    (
+        "/plan off",
+        "leave planning; send an implementation request when ready",
+    ),
+    ("/plan status", "show whether planning is enabled"),
 ];
 
 const GOAL_COMMANDS: &[(&str, &str)] = &[
@@ -697,6 +720,13 @@ impl State {
         if self.answering || !typed.starts_with('/') || self.palette_off.as_deref() == Some(typed) {
             return Vec::new();
         }
+        if typed.starts_with("/plan ") {
+            return PLAN_COMMANDS
+                .iter()
+                .copied()
+                .filter(|(command, _)| command.starts_with(typed))
+                .collect();
+        }
         if typed.starts_with("/goal ") {
             return GOAL_COMMANDS
                 .iter()
@@ -861,6 +891,7 @@ impl State {
             }
             Msg::Mode(mode) => self.mode = mode,
             Msg::Status(s) => self.status = s,
+            Msg::Planning(enabled) => self.status.planning = enabled,
             Msg::Attach {
                 ws,
                 run_dir,
@@ -1458,6 +1489,23 @@ mod tests {
             message: "Declared **b** in lib.rs; one test still fails.".into(),
         }));
         s.message(Msg::Mode(Mode::Prompt));
+    }
+
+    #[test]
+    fn planning_is_visible_and_commands_are_discoverable() {
+        let (mut s, _, _) = state();
+        s.message(Msg::Planning(true));
+        let rendered = screen(&mut s, 110, 30);
+        assert!(rendered.contains("PLAN"), "{rendered}");
+        assert!(DESCRIBED.iter().any(|(command, _)| *command == "/plan"));
+        let mut tty = File::options().write(true).open("/dev/null").unwrap();
+        type_text(&mut s, "/plan ", &mut tty);
+        let commands: Vec<_> = s
+            .palette_items()
+            .into_iter()
+            .map(|(command, _)| command)
+            .collect();
+        assert_eq!(commands, vec!["/plan on", "/plan off", "/plan status"]);
     }
 
     #[test]

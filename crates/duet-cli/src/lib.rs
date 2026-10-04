@@ -772,7 +772,10 @@ async fn start(
     watch: Option<&Arc<term::watch::Watch>>,
     hooks: &duet_agent::Hooks,
 ) -> Result<(Terminal, duet_agent::RunStats)> {
-    let p = prepare(ws, manifest, cfg, oversight, run_dir, limits, audit, hooks).await?;
+    let p = prepare(
+        ws, manifest, cfg, oversight, run_dir, limits, audit, hooks, false,
+    )
+    .await?;
     if let Some(w) = watch {
         if let Some(e) = &p.engine {
             let e = e.clone();
@@ -816,7 +819,8 @@ struct Prepared {
 }
 
 /// Opens the engine, the providers and the audit log, records the start
-/// events, starts the MCP servers and builds the run configuration. `audit`
+/// events and builds the run configuration. Planning does not start tool
+/// servers or configure execution-only capabilities. `audit`
 /// receives the audit log as soon as it is open, with the embedding
 /// program's audit subscribers (`hooks`) attached.
 #[allow(clippy::too_many_arguments)]
@@ -829,11 +833,14 @@ async fn prepare(
     limits: &RunLimits,
     audit: &mut Option<AuditHandle>,
     hooks: &duet_agent::Hooks,
+    planning: bool,
 ) -> Result<Prepared> {
     // Checked again here, where every run and session is set up.
     overrides::check(cfg, manifest)?;
     let git = duet_git::Git::locate()?;
-    let _ = git.exclude_state_dir(ws);
+    if !planning {
+        let _ = git.exclude_state_dir(ws);
+    }
     let sandbox = duet_sandbox::detect()?;
     // Every command and server started from here on is held to these.
     duet_sandbox::governor::set_limits(duet_sandbox::governor::MemoryLimits {
@@ -927,8 +934,16 @@ async fn prepare(
     pricing::attach(run_dir, &limits.local_meter, price.clone(), price_source)?;
     let wall_minutes = cfg.int("limits.wall_clock_minutes")? as u64;
     let frontier_key_env = cfg.str("frontier.api_key_env")?;
-    let lsp = lsp::servers(cfg, ws, run_dir, sandbox)?;
-    let mut review = security_review::settings(cfg, ws, lsp.clone())?;
+    let lsp = if planning {
+        None
+    } else {
+        lsp::servers(cfg, ws, run_dir, sandbox)?
+    };
+    let mut review = if planning {
+        duet_agent::review::Settings::default()
+    } else {
+        security_review::settings(cfg, ws, lsp.clone())?
+    };
     if review.enabled {
         review.second = security_review::second(
             cfg,
@@ -947,7 +962,11 @@ async fn prepare(
         )?;
     }
     let extensions = extensions::discover(ws, cfg)?;
-    let plugin_servers = plugins::servers(&extensions.plugins, cfg)?;
+    let plugin_servers = if planning {
+        Vec::new()
+    } else {
+        plugins::servers(&extensions.plugins, cfg)?
+    };
     // Every field from the configuration, not `..RunConfig::new`: a new field
     // is a compile error here until the CLI sets it.
     let run_cfg = RunConfig {
@@ -991,7 +1010,7 @@ async fn prepare(
         oversight,
         // Top clearance offers no web tools: a query or a URL would leave
         // this machine.
-        web: if top_clearance {
+        web: if top_clearance || planning {
             None
         } else {
             web::access(
@@ -1004,22 +1023,34 @@ async fn prepare(
             )?
         },
         git_author: approve::git_author(cfg)?,
-        mcp: mcp::start(
-            cfg,
-            ws,
-            run_dir,
-            sandbox,
-            engine
-                .as_deref()
-                .map(|e| e as &dyn duet_boundary::view::Presenter),
-            frontier.audit(),
-            top_clearance,
-            plugin_servers,
-        )
-        .await?,
+        mcp: if planning {
+            None
+        } else {
+            mcp::start(
+                cfg,
+                ws,
+                run_dir,
+                sandbox,
+                engine
+                    .as_deref()
+                    .map(|e| e as &dyn duet_boundary::view::Presenter),
+                frontier.audit(),
+                top_clearance,
+                plugin_servers,
+            )
+            .await?
+        },
         lsp,
-        subagents: subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits, &catalog)?,
-        explore: explore::setup(cfg, manifest, frontier.audit(), limits)?,
+        subagents: if planning {
+            None
+        } else {
+            subagents::setup(cfg, manifest, &frontier, engine.as_ref(), limits, &catalog)?
+        },
+        explore: if planning {
+            None
+        } else {
+            explore::setup(cfg, manifest, frontier.audit(), limits)?
+        },
         images: images::config(cfg, manifest.mode, &manifest.images)?,
         owner_instructions: Some(duet_config::owner_instructions_path()),
     };

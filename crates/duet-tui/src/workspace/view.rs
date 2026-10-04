@@ -118,6 +118,9 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
     }
     let st = &s.status;
     let mut spans = Vec::new();
+    if st.planning {
+        spans.push(Span::styled("PLAN · read-only · ", palette::accent()));
+    }
     let dot = || Span::styled(" · ", palette::muted());
     match st.mode.as_str() {
         "" => spans.push(Span::styled("starting", palette::muted())),
@@ -480,6 +483,9 @@ fn status_line(f: &mut Frame<'_>, s: &State, area: Rect, now: Instant) {
     };
     let st = &s.status;
     let mut facts = Vec::new();
+    if st.planning {
+        facts.push("PLAN · read-only".to_owned());
+    }
     if st.session.is_empty() {
         facts.push("new session".to_owned());
     } else {
@@ -878,6 +884,14 @@ fn help(f: &mut Frame<'_>, s: &mut State, area: Rect) {
             "stop duet's turn now (twice while idle: leave)",
         ),
         row("/stop", "stop after the current step"),
+        row(
+            "/plan [task]",
+            "plan with read-only tools; pause automatic goals",
+        ),
+        row(
+            "/plan status · /plan off",
+            "inspect mode or leave; implementation needs a new request",
+        ),
         row(
             "/goal start TEXT",
             "work toward a goal; 20 turns by default",

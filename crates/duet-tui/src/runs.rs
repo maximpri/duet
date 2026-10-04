@@ -365,6 +365,11 @@ fn feeds_from(
                 "start ({mode}, {frontier_model}): {}",
                 first_line(objective)
             )),
+            Entry::PlanMode { enabled } => feed.push(if *enabled {
+                "plan mode: read-only inspection".to_owned()
+            } else {
+                "plan mode off: execution enabled by the operator".to_owned()
+            }),
             Entry::Item { item } => match item {
                 Item::User { text } => feed.push(format!("user: {}", first_line(text))),
                 Item::Assistant {

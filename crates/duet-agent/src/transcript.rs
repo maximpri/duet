@@ -105,6 +105,11 @@ pub enum Entry {
         seconds: f64,
         end: crate::session::TurnEnd,
     },
+    /// (Session) An explicit operator change to the planning capability
+    /// boundary. Replayed before any recovery or model work on resume.
+    PlanMode {
+        enabled: bool,
+    },
     /// (Session) The operator reverted the journaled writes of the turns from
     /// `exchange` on.
     Undone {

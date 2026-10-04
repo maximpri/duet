@@ -610,6 +610,8 @@ pub(crate) struct Conversation {
     /// A session: the frontier ends a turn by replying to the operator (a
     /// message without tool calls, `reply` or `ask_operator`).
     pub(crate) interactive: bool,
+    /// The operator selected read-only planning for this session.
+    pub(crate) planning: bool,
     /// (Session) The operator's messages and stop request during a turn.
     pub(crate) steering: Option<Arc<crate::session::Steering>>,
     /// (Session) The current operator turn.
@@ -782,6 +784,7 @@ async fn drive(
         items: Vec::new(),
         classes: HashMap::new(),
         interactive: false,
+        planning: false,
         steering: None,
         exchange: 0,
         child: None,
@@ -882,7 +885,8 @@ async fn drive(
 
 /// The run's tools: built-in, the presenter's, the configured web tools, the
 /// git tools, the MCP servers' tools and the language-server tools. Fixed
-/// for the run (or session) and sorted, so the request prefix never changes.
+/// for the run and sorted. A session rebuilds its advertised subset when
+/// the operator explicitly changes between planning and execution.
 pub(crate) fn tool_specs(
     cfg: &RunConfig,
     presenter: &dyn Presenter,
@@ -961,7 +965,10 @@ pub(crate) async fn work(
     if let Some(child) = &conv.child {
         journal.confine(child.scope());
     }
-    let review = if cfg.review.enabled && conv.child.is_none() {
+    if conv.planning {
+        journal.confine(crate::journal::WriteScope::default());
+    }
+    let review = if cfg.review.enabled && conv.child.is_none() && !conv.planning {
         let baseline = crate::review::Baseline::open(
             &cfg.workspace,
             &cfg.run_dir,
@@ -1263,6 +1270,8 @@ pub(crate) async fn work(
                 "not run: the task was already finished".to_owned()
             } else if replied.is_some() {
                 "not run: you already ended this turn with a message to the operator".to_owned()
+            } else if conv.planning && !crate::planning::allows(&call.name) {
+                format!("error: {}", crate::planning::REFUSAL)
             } else if call.arguments.is_empty() && call.raw_arguments.trim() != "{}" {
                 format!(
                     "error: arguments are not valid JSON: {}",
@@ -1682,6 +1691,7 @@ mod tests {
             items: vec![],
             classes: HashMap::new(),
             interactive: false,
+            planning: false,
             steering: None,
             exchange: 0,
             child: None,
