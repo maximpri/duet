@@ -137,8 +137,6 @@ Cloud: Anthropic, OpenAI, Google Gemini, OpenRouter, z.ai, DeepSeek, xAI, Mistra
 
 Local: Ollama, LM Studio, llama.cpp, vLLM, oMLX, MLX, Jan, GPT4All, KoboldCpp, LocalAI and LiteLLM. The local model needs a context window of about 40K tokens. In hybrid mode it only reads and answers questions, so it doesn't need to be good at coding.
 
-So far I've only run the full benchmark with z.ai's `glm-5.3-flash` and Qwen on oMLX. The other providers pass protocol tests. If you try one, [let me know how it went](https://github.com/maximpri/duet/issues).
-
 ## Status
 
 Duet is an early release. It has over 1,300 tests and fuzzing, and its Rust code forbids `unsafe`, but it hasn't had an outside security review and releases aren't signed. Read [the security design](docs/SECURE_BY_DESIGN.md) before using it with real regulated data.
