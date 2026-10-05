@@ -1,87 +1,29 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-# Duet infographics
+# Duet figures
 
-These are explanatory illustrations and benchmark figures. The featured PNGs
-were redesigned with the built-in GPT image tool to match the README's plain
-language, then checked against the verified results. The tool does not expose
-a model-version identifier.
-For actual Duet UI captures, see the [color terminal recording](../launch/duet-security.gif).
+Each figure comes in a light and a dark variant drawn on GitHub's page colours. Pages pick one with
+`<picture>`.
 
-## Featured GPT images
-
-| Figure | PNG | Exact prompt |
+| Figure | Light | Dark |
 | --- | --- | --- |
-| Frontier coding power; private data under your control | [Download](duet-boundary-gpt.png) | [Prompt](prompts/duet-boundary-gpt.txt) |
-| Near-frontier test scores; zero observed planted-value leaks | [Download](duet-results-2026-10-04-gpt.png) | [Prompt](prompts/duet-results-2026-10-04-gpt.txt) |
-| Your code; your sharing rules | [Download](duet-modes-gpt.png) | [Prompt](prompts/duet-modes-gpt.txt) |
-| How the code performed, problem by problem | [Download](duet-task-results-2026-10-04-gpt.png) | [Initial prompt](prompts/duet-task-results-2026-10-04-gpt.txt) · [Final edit](prompts/duet-task-results-2026-10-04-gpt.edit.txt) |
+| How Duet handles a task | [duet-flow-light.svg](duet-flow-light.svg) | [duet-flow-dark.svg](duet-flow-dark.svg) |
+| Hybrid and local-only modes | [duet-modes-light.svg](duet-modes-light.svg) | [duet-modes-dark.svg](duet-modes-dark.svg) |
+| Benchmark: test scores and planted secrets | [duet-results-light.svg](duet-results-light.svg) | [duet-results-dark.svg](duet-results-dark.svg) |
+| Benchmark: every run of every task | [duet-results-by-task-light.svg](duet-results-by-task-light.svg) | [duet-results-by-task-dark.svg](duet-results-by-task-dark.svg) |
 
-Each initial prompt used the corresponding original PNG below as its reference.
-The scorecard received one further image edit to replace approximate generated
-bars with an exact numerical table. The final numerical labels, privacy scope,
-mode descriptions and diagram flow were reviewed before publication. Text
-equivalents are in the [visual guide](../../DUET_VISUAL_GUIDE.md).
-
-[imagegen-manifest.json](imagegen-manifest.json) binds the final images and
-prompts to the reference images and benchmark inputs. Image generation is not
-deterministic: repeating the prompts can produce different pixels and requires
-a fresh review. No model-version or byte-for-byte reproduction claim is made.
-To verify the committed files, run from this directory:
+[`tools/render-infographics.py`](../../../tools/render-infographics.py) writes all of them. It needs
+only Python 3 and has no dependencies. The two benchmark figures are computed from the
+[October 4 benchmark report](../../evidence/benchmark-54-2026-10-04/report.json). The script refuses to
+run unless the report matches the hash in its
+[publication verdict](../../evidence/benchmark-54-2026-10-04/audit-verdict.json).
 
 ```sh
-shasum -a 256 -c imagegen-SHA256SUMS
+python3 tools/render-infographics.py           # regenerate
+python3 tools/render-infographics.py --check   # confirm the committed files are current
 ```
 
-## Original data-driven figures
-
-| Figure | SVG | PNG |
-| --- | --- | --- |
-| Sensitive-content handling and the frontier boundary | [Download](duet-boundary.svg) | [Download](duet-boundary.png) |
-| October 4 coding and planted-value results | [Download](duet-results-2026-10-04.svg) | [Download](duet-results-2026-10-04.png) |
-| Hybrid and top-clearance modes | [Download](duet-modes.svg) | [Download](duet-modes.png) |
-| All nine tasks, with three seeds per lane | [Download](duet-task-results-2026-10-04.svg) | [Download](duet-task-results-2026-10-04.png) |
-
-Both sets use the [54-outcome report](../../evidence/benchmark-54-2026-10-04/report.json),
-bound to its [publication verdict](../../evidence/benchmark-54-2026-10-04/audit-verdict.json).
-The [evidence overview](../../evidence/benchmark-54-2026-10-04/README.md) explains
-scoring, the external zero-score outcome and measurement limits. No fresh quality
-judges ran; planted-value observations do not establish general semantic secrecy.
-[manifest.json](manifest.json) records hashes of the report, verdict, renderer and
-eight original plotted assets, alongside figure descriptions, task means and the
-Matplotlib version.
-
-## Reproduce the original figures
-
-With Python 3.11 or later, run from the repository root. Install the [pinned rendering dependency](../../../tools/infographic-requirements.txt)
-in a temporary virtual environment outside the checkout, then run the
-[renderer](../../../tools/render-infographics.py):
-
-```sh
-figure_env=$(mktemp -d /tmp/duet-infographics.XXXXXX)
-python3 -m venv "$figure_env"
-"$figure_env/bin/python" -m pip install -r tools/infographic-requirements.txt
-MPLCONFIGDIR="$figure_env/matplotlib" "$figure_env/bin/python" tools/render-infographics.py
-"$figure_env/bin/python" tools/render-infographics.py --check
-```
-
-Rendering rewrites the original SVGs, PNGs and manifest; it does not alter the
-featured GPT images or their manifest. Font and rendering-library
-versions can affect generated bytes. To check the committed assets without
-installing plotting dependencies or changing files, run:
-
-```sh
-python3 tools/render-infographics.py --check
-```
-
-The check binds the assets to the report, verdict and renderer and verifies the
-recorded task means. It does not repeat the benchmark or its artifact audit.
-
-## License
-
-Copyright (C) 2026 Duet contributors. This documentation, the prompts, renderer
-and project figure assets are distributed under **GPL-3.0-or-later**; see the root
-[LICENSE](../../../LICENSE) and [NOTICE](../../../NOTICE). Preserve these notices
-and supply the corresponding prompts, renderer and inputs when distributing modified
-figures under the applicable GPL terms. Separately installed rendering tools and
-fonts retain their own licenses; the SVGs reference fonts rather than embedding
-font files. See [Licensing and distribution](../../../LICENSES.md).
+The two series colours (Duet teal, no-protection amber) were checked on each background for
+lightness, chroma, colour-vision separation and contrast. Each benchmark figure also labels its
+series with text, so the colours are never the only cue. The same numbers are available as text
+in the [visual guide](../../DUET_VISUAL_GUIDE.md#results-by-task) and the
+[evidence overview](../../evidence/benchmark-54-2026-10-04/README.md).

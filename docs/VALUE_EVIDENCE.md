@@ -4,7 +4,10 @@ Duet lets a frontier model make coding decisions while a local model handles sen
 
 ## Current comparison: 54 outcomes, October 4
 
-![Current comparison: 89.26% hybrid and 96.54% boundary-disabled mean per-case hidden-test scores; zero literal planted-value matches in 1,124 hybrid requests.](assets/infographics/duet-results-2026-10-04-gpt.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/infographics/duet-results-dark.svg">
+  <img src="assets/infographics/duet-results-light.svg" alt="Benchmark: Duet scored 89.3% on hidden tests versus 96.5% for the same model with no protection; planted secrets were found 0 times in 1,124 Duet requests and 35,809 times in 1,328 unprotected requests." width="900">
+</picture>
 
 The [54-case evidence packet](evidence/benchmark-54-2026-10-04/README.md) compares nine tasks with three seeds in each lane: 27 paired cases. Both lanes use the same `glm-5.3-flash` frontier and frozen Duet application revision `b9eb511`; hybrid uses the `omlx-coding` local-model alias, while passthrough disables the privacy boundary. Two matching final verification passes checked the full outcome matrix, captures, accounting and process/lease quiescence before the publication verdict was written.
 
@@ -27,9 +30,12 @@ No fresh quality judges ran. Literal-canary and sink checks do not establish sem
 
 ### Every task in the current comparison
 
-![Mean hidden-test scores for all nine tasks, showing all three seeds in each lane and retaining zero-score outcomes.](assets/infographics/duet-task-results-2026-10-04-gpt.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/infographics/duet-results-by-task-dark.svg">
+  <img src="assets/infographics/duet-results-by-task-light.svg" alt="Every run of every task: Duet matches the unprotected model on most tasks; two Duet runs scored zero (a build that did not compile and a run stopped at its deadline); planted secrets were never found in Duet's requests." width="900">
+</picture>
 
-[Accessible results table and interpretation](DUET_VISUAL_GUIDE.md#results-by-task) · [Figure downloads, prompts and data-driven originals](assets/infographics/README.md). The featured figures were designed with GPT image generation and checked against the frozen report. No new benchmark runs or grading were used; the original plotted figures remain reproducible from the report.
+[Accessible results table and interpretation](DUET_VISUAL_GUIDE.md#results-by-task) · [Figure sources](assets/infographics/README.md). Both figures are computed from the frozen report by `tools/render-infographics.py`; no new benchmark runs or grading were used.
 
 ## Historical comparison: September 30
 

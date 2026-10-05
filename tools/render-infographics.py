@@ -1,398 +1,275 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Render Duet's documentation figures from the verified October benchmark.
+"""Render Duet's documentation figures as SVG, in light and dark variants.
 
-Install tools/infographic-requirements.txt in a virtual environment, then run
-this script from any directory. --check verifies source and generated hashes
-without importing plotting dependencies or changing files.
+    python3 tools/render-infographics.py           # write docs/assets/infographics/*.svg
+    python3 tools/render-infographics.py --check   # verify the committed files are current
+
+No dependencies. The results figures are computed from the verified October 4
+benchmark report, which must match the hash in its publication verdict. The
+light and dark variants use GitHub's page colours, so they sit on the page the
+way text does; the README picks one with <picture>.
 """
 
 import argparse
 import hashlib
-import html
 import json
-import re
+import sys
 from collections import defaultdict
+from html import escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "docs/evidence/benchmark-54-2026-10-04"
 OUT = ROOT / "docs/assets/infographics"
-INK = "#142D29"
-PAPER = "#F4F1E8"
-TEAL = "#087F74"
-MINT = "#7DE1BF"
-AMBER = "#B75E2E"
-SAND = "#EAB283"
-MUTED = "#536962"
-LINE = "#CCD2C6"
-SOFT = "#E5E9DE"
-WHITE = "#FCFAF3"
-BODY = ["DejaVu Sans", "Trebuchet MS", "sans-serif"]
-DISPLAY = ["DejaVu Serif", "Georgia", "serif"]
+
+# Duet and the unprotected baseline: validated as a two-series palette
+# (lightness, chroma, colour-vision separation and contrast) on each surface.
+THEMES = {
+    "light": dict(surface="#ffffff", card="#f6f8fa", ink="#1f2328", soft="#59636e", line="#d1d9e0",
+                  duet="#00897a", base="#c85a1e", duet_tint="#e6f4f1", base_tint="#fbeee6"),
+    "dark": dict(surface="#0d1117", card="#151b23", ink="#f0f6fc", soft="#9198a1", line="#3d444d",
+                 duet="#16a596", base="#d2692c", duet_tint="#0f2a27", base_tint="#2d1b10"),
+}
+SANS = "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif"
+MONO = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace"
+
+TASKS = [  # benchmark order, with the names the evidence uses
+    ("S1", "Configuration"), ("S2", "Crash diagnosis"), ("M1", "Billing export"),
+    ("M2", "Data-subject export"), ("M3", "Hostile logs"), ("L1", "Ledger reconciliation"),
+    ("L2", "Protected pricing"), ("X1", "SQL gateway"), ("X2", "Partner exports"),
+]
+# Why two Duet runs scored zero (docs/evidence/benchmark-54-2026-10-04/README.md).
+ZERO_NOTES = {("M1", 1): "did not compile", ("X1", 3): "stopped at deadline"}
 
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def load_results():
+def load_report():
     raw = (EVIDENCE / "report.json").read_bytes()
     verdict = json.loads((EVIDENCE / "audit-verdict.json").read_text())
     assert verdict["status"] == "passed" and verdict["publication_ready"]
-    assert sha(raw) == verdict["report_json_sha256"], "Report differs from its verdict"
+    assert sha(raw) == verdict["report_json_sha256"], "report.json differs from its verdict"
     report = json.loads(raw)
-    runs = report["runs"]
-    assert len(runs) == len({r["case"] for r in runs}) == 54
-    assert report["coverage"]["selected_pairs"] == 27
-    for lane in report["lanes"]:
-        selected = [r for r in runs if r["lane"] == lane]
-        assert len(selected) == 27 and all(r["selected"] for r in selected)
-        mean = sum(r["counted_hidden_pass_rate"] for r in selected) / 27
-        assert abs(mean - report["lanes"][lane]["mean_counted_hidden_pass_rate"]) < 1e-12
+    assert len(report["runs"]) == 54
     return report
 
 
-class Canvas:
-    def __init__(self, width, height, dark=False):
-        import matplotlib.pyplot as plt
+class Svg:
+    def __init__(self, width, height, theme, title, desc):
+        self.w, self.h, self.t = width, height, THEMES[theme]
+        self.parts = [
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}" role="img" font-family="{SANS}">',
+            f"<title>{escape(title)}</title><desc>{escape(desc)}</desc>",
+            f'<rect width="{width}" height="{height}" fill="{self.t["surface"]}"/>',
+            '<defs><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" '
+            f'markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="{self.t["soft"]}"/>'
+            "</marker></defs>",
+        ]
 
-        self.width, self.height, self.dark = width, height, dark
-        self.fig = plt.figure(figsize=(width / 100, height / 100), dpi=100)
-        self.fig.patch.set_facecolor(INK if dark else PAPER)
-        self.ax = self.fig.add_axes((0, 0, 1, 1))
-        self.ax.set(xlim=(0, width), ylim=(height, 0))
-        self.ax.axis("off")
-        self.labels = []
+    def c(self, name):
+        return self.t.get(name, name)
 
-    def text(self, x, y, value, size=22, color=None, weight="normal", serif=False,
-             align="left", linespacing=1.6, mono=False):
-        if "\n" in value:
-            for i, line in enumerate(value.splitlines()):
-                artist = self.text(x, y + i * size * linespacing, line, size, color,
-                                   weight, serif, align, linespacing, mono)
-            return artist
-        family = ["DejaVu Sans Mono", "monospace"] if mono else (DISPLAY if serif else BODY)
-        artist = self.ax.text(x, y, value, fontsize=size * .72,
-                              color=color or (WHITE if self.dark else INK),
-                              fontfamily=family, fontweight=weight,
-                              ha=align, va="baseline", linespacing=1)
-        self.labels.append(artist)
-        return artist
+    def text(self, x, y, s, size=14, fill="ink", weight=400, anchor="start", mono=False, italic=False):
+        family = f' font-family="{MONO}"' if mono else ""
+        style = ' font-style="italic"' if italic else ""
+        self.parts.append(
+            f'<text x="{x}" y="{y}" font-size="{size}" font-weight="{weight}" fill="{self.c(fill)}" '
+            f'text-anchor="{anchor}"{family}{style}>{escape(s)}</text>')
 
-    def rect(self, x, y, width, height, fill, edge="none", radius=0, lw=1):
-        from matplotlib.patches import FancyBboxPatch, Rectangle
+    def rect(self, x, y, w, h, fill="card", stroke="line", r=10, dash=False, width=1):
+        d = ' stroke-dasharray="5 4"' if dash else ""
+        self.parts.append(
+            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{r}" fill="{self.c(fill)}" '
+            f'stroke="{self.c(stroke)}" stroke-width="{width}"{d}/>')
 
-        if radius:
-            p = FancyBboxPatch((x, y), width, height,
-                              boxstyle=f"round,pad=0,rounding_size={radius}",
-                              facecolor=fill, edgecolor=edge, linewidth=lw)
-        else:
-            p = Rectangle((x, y), width, height, facecolor=fill,
-                          edgecolor=edge, linewidth=lw)
-        self.ax.add_patch(p)
+    def line(self, x1, y1, x2, y2, stroke="line", width=1, arrow=False, dash=False):
+        a = ' marker-end="url(#arrow)"' if arrow else ""
+        d = ' stroke-dasharray="3 4"' if dash else ""
+        self.parts.append(
+            f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{self.c(stroke)}" '
+            f'stroke-width="{width}"{a}{d}/>')
 
-    def line(self, x1, y1, x2, y2, color=LINE, lw=1, style="-"):
-        self.ax.plot([x1, x2], [y1, y2], color=color, linewidth=lw,
-                     linestyle=style, solid_capstyle="round")
+    def circle(self, x, y, r, fill, stroke="surface", width=2):
+        self.parts.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{self.c(fill)}" '
+                          f'stroke="{self.c(stroke)}" stroke-width="{width}"/>')
 
-    def dot(self, x, y, radius, color, edge=None):
-        from matplotlib.patches import Circle
-
-        self.ax.add_patch(Circle((x, y), radius, facecolor=color,
-                                edgecolor=edge or color, linewidth=1.2))
-
-    def arrow(self, x1, y1, x2, y2, color=TEAL, lw=2):
-        from matplotlib.patches import FancyArrowPatch
-
-        self.ax.add_patch(FancyArrowPatch((x1, y1), (x2, y2),
-                                         arrowstyle="-|>", mutation_scale=14,
-                                         linewidth=lw, color=color))
-
-    def brand(self, section):
-        accent = MINT if self.dark else TEAL
-        self.rect(54, 41, 8, 22, accent)
-        self.rect(67, 47, 8, 16, SAND if self.dark else AMBER)
-        self.text(90, 60, "DUET", 19, weight="bold")
-        self.text(self.width - 54, 58, section, 14,
-                  color=MINT if self.dark else MUTED, align="right")
-
-    def save(self, name, title, description):
-        import matplotlib.pyplot as plt
-
-        self.fig.canvas.draw()
-        renderer = self.fig.canvas.get_renderer()
-        bounds = self.fig.bbox
-        for artist in self.labels:
-            box = artist.get_window_extent(renderer)
-            assert (box.x0 >= 0 and box.y0 >= 0 and box.x1 <= bounds.width
-                    and box.y1 <= bounds.height), f"Text outside {name}: {artist.get_text()}"
-        for i, a in enumerate(self.labels):
-            ba = a.get_window_extent(renderer)
-            for b in self.labels[i + 1:]:
-                bb = b.get_window_extent(renderer)
-                overlap_x = min(ba.x1, bb.x1) - max(ba.x0, bb.x0)
-                overlap_y = min(ba.y1, bb.y1) - max(ba.y0, bb.y0)
-                assert not (overlap_x > 1 and overlap_y > 1), (
-                    f"Overlapping labels in {name}: {a.get_text()} / {b.get_text()}")
-        OUT.mkdir(parents=True, exist_ok=True)
-        metadata = {"Title": title, "Description": description,
-                    "Creator": "Duet documentation / tools/render-infographics.py"}
-        self.fig.savefig(OUT / f"{name}.png", dpi=200, metadata=metadata)
-        self.fig.savefig(OUT / f"{name}.svg", metadata={**metadata, "Date": None})
-        p = OUT / f"{name}.svg"
-        svg = p.read_text()
-        svg = re.sub(r'<!DOCTYPE svg[^>]+>', '', svg, flags=re.S)
-        svg = re.sub(r'<svg\b([^>]*)>',
-                     r'<svg\1 role="img" aria-labelledby="figure-title figure-desc">', svg, count=1)
-        opening = svg.index('>', svg.index('<svg')) + 1
-        accessible = (f'\n<title id="figure-title">{html.escape(title)}</title>'
-                      f'\n<desc id="figure-desc">{html.escape(description)}</desc>')
-        svg = svg[:opening] + accessible + svg[opening:]
-        svg = svg.replace('?>', '?>\n<!-- SPDX-License-Identifier: GPL-3.0-or-later -->', 1)
-        p.write_text("\n".join(line.rstrip() for line in svg.splitlines()) + "\n")
-        plt.close(self.fig)
-        return {"title": title, "description": description,
-                "width": self.width, "height": self.height,
-                "png_scale": 2}
+    def render(self):
+        return "\n".join(self.parts + ["</svg>"]) + "\n"
 
 
-def boundary_figure():
-    c = Canvas(1280, 860, dark=True)
-    c.brand("01 / HOW DUET WORKS")
-    c.text(54, 137, "Frontier coding.", 53, serif=True)
-    c.text(54, 199, "Private context under your control.", 43, serif=True, color=MINT)
-    c.text(54, 240, "A local model handles sensitive content. Duet checks what the frontier receives.", 22)
-
-    c.rect(48, 300, 834, 298, "#1A3A32", edge="#53776A", radius=14)
-    c.text(73, 285, "YOUR TRUSTED ENVIRONMENT", 15, color=MINT, weight="bold")
-    c.text(1230, 285, "CHOSEN PROVIDER", 15, color=SAND, align="right", weight="bold")
-
-    # Files and local handling are inside the trusted environment; the host gate
-    # is a separate component, not part of either model.
-    c.rect(73, 341, 211, 212, "#203F37", edge="#53776A", radius=8)
-    for yy, width in [(365, 42), (374, 60), (383, 48)]:
-        c.line(95, yy, 95 + width, yy, MINT, 2)
-    c.text(95, 425, "Sensitive files", 23, weight="bold")
-    c.text(95, 465, "Customer records\nConfidential logs\nProtected source", 19, color="#D0DFD3")
-    c.arrow(291, 440, 327, 440, MINT)
-
-    c.text(346, 368, "LOCAL HANDLING", 14, color=MINT, weight="bold")
-    c.text(346, 408, "Local reader", 27, weight="bold")
-    c.text(346, 440, "Answers specific questions", 18, color="#D0DFD3")
-    c.line(346, 461, 594, 461, "#53776A")
-    c.text(346, 493, "Structure views", 23, weight="bold")
-    c.text(346, 525, "Schemas + synthetic examples", 17, color="#D0DFD3")
-    c.arrow(606, 440, 642, 440, MINT)
-
-    c.rect(651, 338, 198, 219, TEAL, radius=8)
-    c.text(676, 373, "HOST APPLICATION", 12, color=WHITE, weight="bold")
-    c.text(676, 415, "Policy gate", 26, weight="bold")
-    c.text(676, 454, "Filter + check", 20)
-    c.text(676, 489, "Record outbound", 17)
-    c.text(676, 514, "context", 17)
-
-    c.text(937, 387, "Permitted code", 15, color=SAND, align="center")
-    c.text(937, 409, "+ checked context", 15, color=SAND, align="center")
-    c.arrow(861, 440, 1007, 440, SAND, 2.5)
-    c.rect(1013, 338, 216, 219, INK, edge=SAND, radius=8, lw=1.5)
-    c.text(1037, 389, "Frontier", 28, color=SAND, weight="bold")
-    c.text(1037, 424, "model", 28, color=SAND, weight="bold")
-    c.text(1037, 467, "Plans the work", 18)
-    c.text(1037, 495, "Writes code", 18)
-    c.text(1037, 523, "Repairs failures", 18)
-
-    c.line(54, 639, 1226, 639, "#53776A")
-    for x, number, title, detail in [
-        (54, "01", "Set the policy", "Choose files, code visibility\nand approved endpoints."),
-        (462, "02", "Enforce the boundary", "Host checks and sandbox rules\napply outside model instructions."),
-        (870, "03", "Inspect what leaves", "Review the prepared context\nand verify saved audit records."),
-    ]:
-        c.text(x, 679, number, 17, color=MINT, mono=True)
-        c.text(x, 715, title, 25, weight="bold")
-        c.text(x, 750, detail, 19, color="#D0DFD3")
-    c.text(54, 822, "Local = your approved endpoint. The local reader cannot authorize disclosure. Checked context can reveal meaning.", 16, color="#B9CEC0")
-    return c.save("duet-boundary", "How Duet uses frontier models with private context",
-                  "Architecture diagram: sensitive files and local handling stay inside the approved trusted environment. "
-                  "A separate host policy gate filters, checks and records outbound context before permitted code and checked "
-                  "context reach the frontier model. Local can mean a workstation or self-hosted endpoint; checks do not guarantee semantic secrecy.")
+def card(s, x, y, w, h, title, lines, accent=None):
+    s.rect(x, y, w, h, fill=f"{accent}_tint" if accent else "card", stroke=accent or "line",
+           width=1.5 if accent else 1)
+    s.text(x + 16, y + 28, title, 15, weight=600)
+    for i, line in enumerate(lines):
+        s.text(x + 16, y + 52 + i * 21, line, 13, "soft")
 
 
-def results_figure(report):
-    h, p = report["lanes"]["duet-hybrid"], report["lanes"]["duet-passthrough"]
-    c = Canvas(1280, 960)
-    c.brand("02 / VERIFIED RESULTS · 04 OCT 2026")
-    c.text(54, 138, "Coding results.", 53, serif=True)
-    c.text(54, 200, "Disclosure measured separately.", 45, serif=True, color=TEAL)
-    c.text(54, 245, "Same frontier model · Nine tasks · Three paired seeds", 23, color=MUTED)
-    c.line(54, 276, 1226, 276)
-    c.line(650, 310, 650, 690)
-    c.text(54, 320, "MEAN PER-CASE HIDDEN-TEST SCORE", 15, weight="bold")
-    c.text(698, 320, "CAPTURED FRONTIER TRAFFIC", 15, weight="bold")
-    for y, label, lane, color in [(374, "Duet hybrid", h, TEAL),
-                                   (523, "Frontier · boundary disabled", p, AMBER)]:
-        c.text(54, y, label, 22, color=color, weight="bold")
-        c.text(54, y + 67, f"{lane['mean_counted_hidden_pass_rate'] * 100:.2f}%", 59, color=color, serif=True)
-        c.rect(54, y + 89, 530, 19, SOFT)
-        c.rect(54, y + 89, 530 * lane["mean_counted_hidden_pass_rate"], 19, color)
-    c.text(54, 663, "0%", 16, color=MUTED)
-    c.text(584, 663, "100%", 16, color=MUTED, align="right")
-    c.text(319, 663, "Same 0–100 scale", 16, color=MUTED, align="center")
-    c.text(698, 454, f"{h['literal_canary_observations']:,}", 144, color=TEAL, serif=True)
-    c.text(698, 493, "planted-value matches", 25, color=TEAL, weight="bold")
-    c.text(698, 531, f"in {h['captured_frontier_requests']:,} captured hybrid requests", 20)
-    c.text(698, 603, f"{p['literal_canary_observations']:,}", 40, color=AMBER, serif=True)
-    c.text(698, 636, f"matches in {p['captured_frontier_requests']:,} requests", 20, color=MUTED)
-    c.text(698, 665, "with the boundary disabled", 20, color=MUTED)
-    c.line(54, 716, 1226, 716)
-    for x, value, label in [(54, report['coverage']['selected_cases'], "outcomes included"),
-                             (467, report['coverage']['selected_pairs'], "task / seed pairs"),
-                             (879, report['coverage']['native_graded_runs'], "native grader records")]:
-        c.text(x, 779, str(value), 48, serif=True)
-        c.text(x, 816, label, 21, color=MUTED)
-    c.text(54, 870, "All outcomes count, including one externally stopped hybrid case scored zero. No fresh quality judges.", 17, color=MUTED)
-    c.text(54, 900, "Literal matches are observed occurrences, not unique secrets or a measure of semantic secrecy.", 17, color=MUTED)
-    c.text(54, 933, "Source: verified 54-case report · b9eb511 · github.com/maximpri/duet", 14, color=MUTED)
-    return c.save("duet-results-2026-10-04", "Duet's verified 54-case coding and disclosure results",
-                  f"Mean counted per-case hidden-test scores: Duet hybrid {h['mean_counted_hidden_pass_rate']*100:.2f}%, "
-                  f"same frontier with boundary disabled {p['mean_counted_hidden_pass_rate']*100:.2f}%. "
-                  f"Hybrid had {h['literal_canary_observations']:,} planted-value matches in {h['captured_frontier_requests']:,} "
-                  f"captured requests, versus {p['literal_canary_observations']:,} in {p['captured_frontier_requests']:,} passthrough requests. "
-                  "All 54 outcomes count, including one external failure scored zero. There are 53 native grader records; no fresh quality judges ran.")
+def flow(theme):
+    s = Svg(960, 440, theme, "How Duet handles a coding task",
+            "Code is shared with the frontier model as-is. Sensitive files are read only by your local "
+            "model, which answers the frontier's questions. Every request to the cloud passes Duet's "
+            "checks and is logged.")
+    s.rect(24, 24, 612, 346, fill="surface", stroke="line", dash=True, r=14)
+    s.text(44, 54, "Your machine", 13, "soft", 600)
+    card(s, 48, 74, 200, 108, "Code", ["src/, tests/, docs/", "shared as written"])
+    card(s, 48, 204, 200, 140, "Sensitive files", [".env, keys", "data/*.csv, databases", "logs/", "never sent raw"])
+    card(s, 272, 204, 160, 140, "Local model", ["reads sensitive", "files and answers", "the frontier's", "questions"])
+    card(s, 456, 74, 156, 270, "Duet", ["replaces secrets and", "personal data with", "placeholders", "",
+                                         "checks every", "outgoing request", "", "logs exactly what", "was sent"],
+         accent="duet")
+    s.line(248, 128, 452, 128, "soft", 1.5, arrow=True)
+    s.line(248, 274, 268, 274, "soft", 1.5, arrow=True)
+    s.line(432, 274, 452, 274, "soft", 1.5, arrow=True)
+    card(s, 724, 128, 212, 162, "Frontier model", ["Claude, GPT, Gemini, GLM…", "", "plans the work", "writes the code",
+                                                     "asks for files and tools"])
+    s.line(612, 190, 720, 190, "soft", 1.5, arrow=True)
+    s.line(720, 236, 616, 236, "soft", 1.5, arrow=True)
+    s.text(668, 166, "checked", 12, "soft", anchor="middle")
+    s.text(668, 180, "requests", 12, "soft", anchor="middle")
+    s.text(668, 256, "tool calls", 12, "soft", anchor="middle")
+    s.text(668, 270, "and edits", 12, "soft", anchor="middle")
+    s.text(48, 398, "“Local” can also be a self-hosted server you approve.", 12.5, "soft")
+    s.text(48, 417, "A local model's answer can still reveal facts (“3 customers are overdue”): Duet blocks "
+                    "the values, not the meaning.", 12.5, "soft")
+    return s.render()
 
 
-def modes_figure():
-    c = Canvas(1280, 970)
-    c.brand("03 / CHOOSE YOUR DATA FLOW")
-    c.text(54, 138, "Choose what reaches", 52, serif=True)
-    c.text(54, 199, "the frontier.", 52, serif=True, color=TEAL)
-    c.text(54, 246, "Keep the same workflow. Set the boundary for the task.", 23, color=MUTED)
-    c.rect(654, 283, 572, 577, INK, radius=12)
-    c.text(78, 338, "HYBRID", 17, color=TEAL, weight="bold")
-    c.text(684, 338, "TOP CLEARANCE", 17, color=MINT, weight="bold")
-    c.text(78, 381, "Frontier + local", 36, serif=True)
-    c.text(684, 381, "Your local model", 36, serif=True, color=WHITE)
-    c.text(78, 420, "duet", 21, color=TEAL, mono=True)
-    c.text(684, 420, "duet --mode top-clearance", 20, color=MINT, mono=True)
-    rows = [
-        (476, "CODING AGENT", "Frontier model", "Approved local model"),
-        (575, "SENSITIVE CONTENT", "Handled locally", "Handled locally"),
-        (674, "FRONTIER RECEIVES", "Permitted code + checked context", "No frontier calls"),
-        (773, "WEB + COMMAND NETWORKING", "Governed by policy", "Disabled"),
-    ]
-    for y, label, left, right in rows:
-        c.line(78, y - 32, 598, y - 32)
-        c.line(684, y - 32, 1196, y - 32, "#53776A")
-        c.text(78, y, label, 13, color=MUTED, weight="bold")
-        c.text(684, y, label, 13, color="#B9CEC0", weight="bold")
-        c.text(78, y + 39, left, 25)
-        c.text(684, y + 39, right, 25, color=WHITE)
-    c.text(684, 841, "Networked MCP servers are also unavailable.", 17, color="#B9CEC0")
-    c.text(54, 905, "“Local” can mean your workstation or an approved self-hosted endpoint.", 21, color=TEAL, weight="bold")
-    c.text(54, 940, "That endpoint and its network path remain part of your trusted environment.", 19, color=MUTED)
-    return c.save("duet-modes", "Choose between hybrid and top-clearance mode",
-                  "Hybrid uses a frontier coding agent and local sensitive-content processing; permitted code and checked context "
-                  "can reach the frontier. Top clearance uses the approved local model as the coding agent, with no frontier calls, "
-                  "web tools, command networking or networked MCP servers. Local may be a workstation or self-hosted endpoint; it is not an air-gap guarantee.")
+def modes(theme):
+    s = Svg(960, 330, theme, "Duet's two privacy modes",
+            "Hybrid: the frontier model writes the code and sensitive files stay with the local model. "
+            "Local-only: the local model does everything and nothing goes to the cloud.")
+    rows = [("Writes the code", "Frontier model", "Your local model"),
+            ("Reads sensitive files", "Your local model", "Your local model"),
+            ("Requests to the cloud", "Checked and logged", "None"),
+            ("Web tools", "On", "Off"),
+            ("Network for commands", "Package registries only", "Off")]
+    x0, cols = 32, [(250, "hybrid", "Hybrid", "default", "duet"), (600, "local", "Local-only", "duet --mode local-only", "ink")]
+    for x, _, name, how, colour in cols:
+        s.rect(x - 16, 24, 330, 282, fill="card", stroke="duet" if colour == "duet" else "line",
+               width=1.5 if colour == "duet" else 1)
+        s.text(x, 58, name, 18, weight=600)
+        s.text(x, 80, how, 12.5, "soft", mono=True)
+    for i, (label, hybrid, local) in enumerate(rows):
+        y = 124 + i * 40
+        s.line(x0, y + 14, 928, y + 14, "line")
+        s.text(x0, y, label, 13.5, "soft")
+        s.text(250, y, hybrid, 14, "ink", 500)
+        s.text(600, y, local, 14, "ink", 500)
+    return s.render()
 
 
-TASK_NAMES = {
-    "S1": "Configuration", "S2": "Crash diagnosis", "M1": "Billing export †",
-    "M2": "Data-subject export", "M3": "Hostile logs", "L1": "Ledger reconciliation",
-    "L2": "Protected pricing", "X1": "SQL gateway *", "X2": "Partner exports",
-}
+def lane_numbers(report):
+    lanes = report["lanes"]
+    return {lane: (v["mean_counted_hidden_pass_rate"], v["literal_canary_observations"], v["captured_frontier_requests"])
+            for lane, v in lanes.items()}
 
 
-def task_means(report):
-    groups = defaultdict(list)
-    for run in report["runs"]:
-        groups[(run["task"], run["lane"])].append(run["counted_hidden_pass_rate"])
-    assert set(task for task, _ in groups) == set(TASK_NAMES)
-    assert all(len(values) == 3 for values in groups.values())
-    return {task: {lane: sum(groups[(task, lane)]) / 3 for lane in report["lanes"]}
-            for task in TASK_NAMES}
+def headline(theme, report):
+    (d_score, d_found, d_req), (b_score, b_found, b_req) = (
+        lane_numbers(report)["duet-hybrid"], lane_numbers(report)["duet-passthrough"])
+    s = Svg(960, 262, theme, "Benchmark: test scores and planted secrets",
+            f"Across 9 tasks run 3 times each, Duet scored {d_score:.1%} on hidden tests versus {b_score:.1%} "
+            f"for the same model with no protection. Planted secrets were found 0 times in Duet's {d_req:,} "
+            f"cloud requests and {b_found:,} times in {b_req:,} unprotected requests.")
+    s.text(32, 46, "Hidden-test score", 15, weight=600)
+    s.text(32, 68, "mean of 27 runs: 9 tasks × 3 runs, failures counted as zero", 12.5, "soft")
+    bar_x, bar_w = 230, 280
+    for i, (label, value, colour) in enumerate([("Duet", d_score, "duet"), ("No protection", b_score, "base")]):
+        y = 104 + i * 44
+        s.text(32, y + 16, label, 14, weight=500)
+        s.rect(bar_x, y, bar_w, 22, fill="card", stroke="card", r=4)
+        s.rect(bar_x, y, bar_w * value, 22, fill=colour, stroke=colour, r=4)
+        s.text(bar_x + bar_w + 12, y + 16, f"{value:.1%}", 15, weight=600)
+    s.line(600, 30, 600, 196, "line")
+    s.text(632, 46, "Planted secrets found in cloud requests", 15, weight=600)
+    s.text(632, 68, "complete values, in literal, base64, hex or URL form", 12.5, "soft")
+    for i, (label, found, requests, colour) in enumerate(
+            [("Duet", d_found, d_req, "duet"), ("No protection", b_found, b_req, "base")]):
+        y = 104 + i * 44
+        s.text(632, y + 16, label, 14, weight=500)
+        s.text(928, y + 17, f"{found:,}", 22, colour, 700, anchor="end")
+        s.text(928, y + 34, f"in {requests:,} requests", 11.5, "soft", anchor="end")
+    s.text(32, 234, "Same frontier model (glm-5.3-flash) in both lanes. Zero matches does not rule out "
+                    "disclosure through summaries or inference.", 12.5, "soft")
+    return s.render()
 
 
-def tasks_figure(report):
-    means = task_means(report)
-    c = Canvas(1280, 1190)
-    c.brand("04 / EVERY TASK, ALL THREE SEEDS")
-    c.text(54, 138, "The complete comparison.", 49, serif=True)
-    c.text(54, 186, "Per-task hidden-test scores · Mean of three counted outcomes", 23, color=MUTED)
-    c.rect(54, 221, 24, 12, TEAL)
-    c.text(91, 234, "Duet hybrid", 20, color=TEAL, weight="bold")
-    c.rect(291, 221, 24, 12, AMBER)
-    c.text(328, 234, "Same frontier, boundary disabled", 20, color=AMBER, weight="bold")
-    start, width = 407, 694
-    for value in [0, 25, 50, 75, 100]:
-        x = start + width * value / 100
-        c.line(x, 310, x, 996, LINE, .8)
-        c.text(x, 291, f"{value}%", 16, color=MUTED, align="center")
-    for i, (task, label) in enumerate(TASK_NAMES.items()):
-        y = 344 + i * 76
-        c.text(54, y + 1, task, 21, color=TEAL, weight="bold", mono=True)
-        c.text(117, y + 1, label, 21)
-        for dy, lane, color in [(-15, "duet-hybrid", TEAL),
-                                 (12, "duet-passthrough", AMBER)]:
-            rate = means[task][lane]
-            c.rect(start, y + dy, width * rate, 19, color)
-            c.text(start + width * rate + 12, y + dy + 16,
-                   f"{rate * 100:.2f}%", 18, color=color, weight="bold")
-    c.line(54, 1021, 1226, 1021)
-    c.text(54, 1061, "All three seeds count. No case is removed because its result was poor.", 22, weight="bold")
-    c.text(54, 1100, "* X1 hybrid includes an externally stopped case scored zero.", 18, color=MUTED)
-    c.text(54, 1129, "† M1 hybrid includes a compilation failure with no observed hidden-test results, scored zero.", 18, color=MUTED)
-    c.text(54, 1170, "Source: verified 54-case report · 4 October 2026 · Mechanical scores; no fresh quality judges", 15, color=MUTED)
-    return c.save("duet-task-results-2026-10-04", "Duet hidden-test scores for every benchmark task",
-                  "Each task uses all three seeds in each lane, including zero-score outcomes. "
-                  + "; ".join(f"{task}: hybrid {v['duet-hybrid']*100:.2f}%, boundary disabled {v['duet-passthrough']*100:.2f}%"
-                              for task, v in means.items())
-                  + ". X1 hybrid includes one external deadline failure. M1 hybrid includes a compilation failure with no observed hidden results.")
+def per_run(theme, report):
+    runs = defaultdict(list)
+    found = defaultdict(int)
+    for r in report["runs"]:
+        lane = "duet" if r["lane"] == "duet-hybrid" else "base"
+        runs[(r["task"], lane)].append((r["seed"], r["counted_hidden_pass_rate"]))
+        found[(r["task"], lane)] += r["frontier_traffic"]["canary_observations"]
+    assert all(len(v) == 3 for v in runs.values()) and {t for t, _ in runs} == {t for t, _ in TASKS}
+    row_h, top = 46, 124
+    height = top + row_h * len(TASKS) + 70
+    s = Svg(960, height, theme, "Benchmark results for each task and run",
+            "Each dot is one run's hidden-test score. Duet matches the unprotected model on most tasks; "
+            "two Duet runs scored zero (a build that did not compile and a run stopped at its deadline). "
+            "Planted secrets were never found in Duet's requests.")
+    px, pw = 220, 430  # plot x and width
+    s.circle(32, 34, 6, "duet")
+    s.text(46, 39, "Duet", 13.5, weight=500)
+    s.circle(110, 34, 6, "base")
+    s.text(124, 39, "Same model, no protection", 13.5, weight=500)
+    s.text(px, 80, "Hidden-test score, each run", 13, "soft", 600)
+    s.text(928, 80, "Planted secrets found in requests", 13, "soft", 600, anchor="end")
+    s.text(810, 98, "Duet", 12.5, "duet", 600, anchor="end")
+    s.text(928, 98, "No protection", 12.5, "base", 600, anchor="end")
+    for v in (0, 0.5, 1):
+        x = px + pw * v
+        s.line(x, top - 14, x, top + row_h * len(TASKS) - 10, "line", dash=v != 1)
+        s.text(x, top + row_h * len(TASKS) + 10, f"{v:.0%}", 12, "soft", anchor="middle")
+    for i, (task, name) in enumerate(TASKS):
+        y = top + i * row_h + 8
+        s.text(32, y + 5, name, 14, weight=500)
+        for lane, dy in (("base", 6), ("duet", -6)):
+            for seed, score in sorted(runs[(task, lane)]):
+                s.circle(px + pw * score, y + dy, 6, lane, width=1.5)
+                note = ZERO_NOTES.get((task, seed)) if lane == "duet" and score == 0 else None
+                if note:
+                    s.text(px + 14, y - 2, note, 12, "soft", italic=True)
+        s.text(810, y + 6, f"{found[(task, 'duet')]:,}", 14, "duet", 600, anchor="end")
+        s.text(928, y + 6, f"{found[(task, 'base')]:,}", 14, "base", 600, anchor="end")
+        if i < len(TASKS) - 1:
+            s.line(32, y + row_h / 2 + 2, 928, y + row_h / 2 + 2, "line")
+    s.text(32, height - 18, "Each task ran 3 times per lane with the same frontier model. Overlapping dots are "
+                            "runs with the same score.", 12.5, "soft")
+    return s.render()
 
 
-def check_assets(report):
-    manifest = json.loads((OUT / "manifest.json").read_text())
-    assert manifest["report_sha256"] == sha((EVIDENCE / "report.json").read_bytes())
-    assert manifest["verdict_sha256"] == sha((EVIDENCE / "audit-verdict.json").read_bytes())
-    assert manifest["generator_sha256"] == sha(Path(__file__).read_bytes())
-    assert manifest["task_means"] == task_means(report)
-    for name, digest in manifest["assets_sha256"].items():
-        assert sha((OUT / name).read_bytes()) == digest, f"Changed asset: {name}"
-    print(f"Verified {len(manifest['assets_sha256'])} assets against the report, verdict and renderer.")
+def figures():
+    report = load_report()
+    out = {}
+    for theme in THEMES:
+        out[f"duet-flow-{theme}.svg"] = flow(theme)
+        out[f"duet-modes-{theme}.svg"] = modes(theme)
+        out[f"duet-results-{theme}.svg"] = headline(theme, report)
+        out[f"duet-results-by-task-{theme}.svg"] = per_run(theme, report)
+    return out
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true")
-    args = parser.parse_args()
-    report = load_results()
-    if args.check:
-        check_assets(report)
-        return
-    import matplotlib
-
-    matplotlib.use("Agg")
-    matplotlib.rcParams.update({"svg.fonttype": "none", "svg.hashsalt": "duet-infographics-2026-10-04",
-                                "font.family": BODY, "axes.unicode_minus": False})
-    figures = {}
-    for name, draw in [
-        ("duet-boundary", boundary_figure),
-        ("duet-results-2026-10-04", lambda: results_figure(report)),
-        ("duet-modes", modes_figure),
-        ("duet-task-results-2026-10-04", lambda: tasks_figure(report)),
-    ]:
-        figures[name] = draw()
-    assets = {f"{name}.{ext}": sha((OUT / f"{name}.{ext}").read_bytes())
-              for name in figures for ext in ("svg", "png")}
-    manifest = {"schema_version": 1, "license": "GPL-3.0-or-later",
-                "report": EVIDENCE.relative_to(ROOT).as_posix() + "/report.json",
-                "report_sha256": sha((EVIDENCE / "report.json").read_bytes()),
-                "verdict_sha256": sha((EVIDENCE / "audit-verdict.json").read_bytes()),
-                "generator_sha256": sha(Path(__file__).read_bytes()),
-                "matplotlib_version": matplotlib.__version__, "figures": figures,
-                "task_means": task_means(report), "assets_sha256": assets}
-    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    check_assets(report)
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--check", action="store_true", help="fail if a committed figure is missing or stale")
+    args = p.parse_args()
+    stale = []
+    for name, svg in figures().items():
+        path = OUT / name
+        if args.check:
+            if not path.is_file() or path.read_text() != svg:
+                stale.append(name)
+        else:
+            path.write_text(svg)
+    if stale:
+        sys.exit("stale figures (run tools/render-infographics.py): " + ", ".join(stale))
+    print("figures are current" if args.check else f"wrote {len(figures())} figures to {OUT}")
 
 
 if __name__ == "__main__":
