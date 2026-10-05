@@ -4,10 +4,10 @@
 
 # Duet
 
-**An AI coding agent that keeps your secrets on your machine.**
+**Cloud AI coding, without handing over your secrets.**
 
-A cloud model like Claude or GPT writes the code. A model running on your own computer<br>
-reads your passwords, customer data and logs, so those files are never sent.
+Claude or GPT writes the code. A model on your own computer reads your<br>
+passwords, customer data and logs, so those files are never sent.
 
 [![Latest release](https://img.shields.io/github/v/release/maximpri/duet?include_prereleases&label=release&color=2ea043)](https://github.com/maximpri/duet/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
