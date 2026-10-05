@@ -92,6 +92,54 @@ pub(super) fn draw(f: &mut Frame<'_>, s: &mut State, now: Instant) {
     }
 }
 
+/// What the session does with the next message: build (edit and run), plan
+/// (read-only investigation) or goal (keep working until the goal is met).
+/// Shown as a coloured badge in the header and on the input, and named on the
+/// status line, so the mode is never in doubt.
+struct WorkMode {
+    name: &'static str,
+    colour: Color,
+    /// What the mode does, in a few words.
+    gist: &'static str,
+    /// How to leave or change it.
+    switch: &'static str,
+}
+
+fn work_mode(st: &super::Status) -> WorkMode {
+    if st.planning {
+        WorkMode {
+            name: "PLAN",
+            colour: WARN,
+            gist: "read-only: investigates and saves a plan",
+            switch: "/plan implement rN runs it · /plan off",
+        }
+    } else if st.goal_running {
+        WorkMode {
+            name: "GOAL",
+            colour: GOOD,
+            gist: "keeps working until the goal is met",
+            switch: "/goal pause · /goal cancel",
+        }
+    } else {
+        WorkMode {
+            name: "BUILD",
+            colour: ACCENT,
+            gist: "edits files and runs commands",
+            switch: "/plan to plan first · /goal to work to a goal",
+        }
+    }
+}
+
+fn mode_badge(m: &WorkMode) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", m.name),
+        Style::new()
+            .fg(Color::Black)
+            .bg(m.colour)
+            .add_modifier(Modifier::BOLD),
+    )
+}
+
 fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
     let area = area.inner(Margin::new(2, 0));
     let place =
@@ -118,10 +166,7 @@ fn header(f: &mut Frame<'_>, s: &State, area: Rect) {
         return;
     }
     let st = &s.status;
-    let mut spans = Vec::new();
-    if st.planning {
-        spans.push(Span::styled("PLAN · read-only · ", palette::accent()));
-    }
+    let mut spans = vec![mode_badge(&work_mode(st)), Span::raw(" ")];
     let dot = || Span::styled(" · ", palette::muted());
     match st.mode.as_str() {
         "" => spans.push(Span::styled("starting", palette::muted())),
@@ -393,26 +438,36 @@ fn composer(
     rows: Vec<Line<'static>>,
     (row, col): (usize, usize),
 ) {
+    let work = work_mode(&s.status);
     let (title, hints, colour) = match s.mode {
         Mode::Working => (
             " Steer duet ",
-            " Enter steer · /stop after this step · Ctrl-C stop now ",
-            ACCENT,
+            " Enter steer · /stop after this step · Ctrl-C stop now ".to_owned(),
+            work.colour,
         ),
-        Mode::Hidden => (" duet is setting up ", " you can type your message ", MUTED),
+        Mode::Hidden => (
+            " duet is setting up ",
+            " you can type your message ".to_owned(),
+            MUTED,
+        ),
         Mode::Prompt => (
             " Message duet ",
-            " Enter send · Alt-Enter line · Ctrl-V paste · F4 commands ",
-            ACCENT,
+            format!(" Enter send · {} · F4 commands ", work.switch),
+            work.colour,
         ),
     };
+    let mut heading = vec![Span::styled(
+        title,
+        Style::new().fg(colour).add_modifier(Modifier::BOLD),
+    )];
+    if s.mode != Mode::Hidden {
+        heading.insert(0, mode_badge(&work));
+        heading.push(Span::styled(format!("· {} ", work.gist), palette::muted()));
+    }
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(colour))
-        .title(Span::styled(
-            title,
-            Style::new().fg(colour).add_modifier(Modifier::BOLD),
-        ))
+        .title(Line::from(heading))
         .title_bottom(Span::styled(hints, palette::muted()));
     let mut inner = block.inner(area).inner(Margin::new(1, 0));
     f.render_widget(Clear, area);
@@ -483,10 +538,11 @@ fn status_line(f: &mut Frame<'_>, s: &State, area: Rect, now: Instant) {
         }
     };
     let st = &s.status;
-    let mut facts = Vec::new();
-    if st.planning {
-        facts.push("PLAN · read-only".to_owned());
-    }
+    let work = work_mode(st);
+    let mut facts = vec![match work.name {
+        "PLAN" => "PLAN · read-only".to_owned(),
+        name => name.to_owned(),
+    }];
     if let Some(plan) = s.plan.summary() {
         facts.push(crate::term::safe(&plan));
     }

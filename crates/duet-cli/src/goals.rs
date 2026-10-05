@@ -149,6 +149,12 @@ impl Store {
         self.current().is_some_and(|g| g.state == State::Active)
     }
 
+    /// A goal is in progress: working, or waiting for the operator's answer.
+    pub(crate) fn running(&self) -> bool {
+        self.current()
+            .is_some_and(|g| matches!(g.state, State::Active | State::Waiting))
+    }
+
     /// Persist a recovery pause once the caller is ready to resume the session.
     /// Ordinary read-only loads do not change anything on disk.
     pub(crate) fn checkpoint(&mut self) -> Result<()> {

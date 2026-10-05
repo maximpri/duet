@@ -68,6 +68,9 @@ pub struct Status {
     pub session: String,
     /// A short goal status supplied by the session (state, turns and task).
     pub goal: Option<String>,
+    /// A goal is in progress (working, or waiting for the operator's answer):
+    /// the session is in goal mode. A paused or finished goal is not.
+    pub goal_running: bool,
     /// `hybrid`, `top clearance` or `passthrough`.
     pub mode: String,
     pub frontier: String,
@@ -1694,6 +1697,36 @@ mod tests {
             .map(|(command, _)| command)
             .collect();
         assert_eq!(commands, vec!["/plan on", "/plan off", "/plan status"]);
+    }
+
+    #[test]
+    fn the_work_mode_is_named_in_the_header_on_the_input_and_on_the_status_line() {
+        for (planning, goal_running, name, gist) in [
+            (false, false, " BUILD ", "edits files and runs commands"),
+            (
+                true,
+                false,
+                " PLAN ",
+                "read-only: investigates and saves a plan",
+            ),
+            (false, true, " GOAL ", "keeps working until the goal is met"),
+            // Planning pauses a goal: the mode is planning.
+            (true, true, " PLAN ", "read-only"),
+        ] {
+            let (mut s, _, _) = state();
+            s.message(Msg::Status(Status {
+                planning,
+                goal_running,
+                ..status()
+            }));
+            s.message(Msg::Mode(Mode::Prompt));
+            let out = screen(&mut s, 140, 24);
+            let rows: Vec<&str> = out.lines().collect();
+            assert!(rows[1].trim_start().starts_with(name.trim()), "{out}");
+            let input = rows.iter().find(|r| r.contains(" Message duet ")).unwrap();
+            assert!(input.contains(name) && input.contains(gist), "{out}");
+            assert!(rows[23].contains(name.trim()), "{out}");
+        }
     }
 
     #[test]

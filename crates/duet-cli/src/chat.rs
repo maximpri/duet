@@ -2421,6 +2421,7 @@ fn show_status(
     let s = session.stats();
     w.status(Status {
         goal: goals.status_line(),
+        goal_running: goals.running(),
         planning: session.is_planning(),
         session: manifest.run_id.clone(),
         mode: mode_name(manifest.mode).to_owned(),
