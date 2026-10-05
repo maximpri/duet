@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-  <rect width="64" height="64" rx="14" fill="#142d2a" />
-  <path d="M16 16h10v32H16zM38 16h10v32H38z" fill="#bbee7c" />
+  <!-- Duet: a split "D". The upright is your machine and its local model, the bowl is the
+       cloud model, and the gap between them is where Duet checks what crosses. -->
+  <rect x="0.5" y="0.5" width="63" height="63" rx="14" fill="#122624" stroke="#ffffff" stroke-opacity="0.12"/>
+  <rect x="15.0" y="15.0" width="9.0" height="34.0" rx="2.5" fill="#bbee7c"/>
+  <path d="M27.50 19.50 H33.00 A12.50 12.50 0 0 1 33.00 44.50 H27.50" fill="none" stroke="#2bc4b0" stroke-width="9.0"/>
 </svg>
