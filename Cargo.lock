@@ -505,7 +505,7 @@ dependencies = [
 
 [[package]]
 name = "duet-agent"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "duet-boundary",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "duet-boundary"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aho-corasick",
  "bytes",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "duet-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -601,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "duet-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-fs",
  "hex",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "duet-egress"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-boundary",
  "duet-sandbox",
@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "duet-evals"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "duet-extensions"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "duet-fs",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "duet-fs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hex",
  "rustix 0.38.44",
@@ -677,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "duet-git"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-fs",
  "ignore",
@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "duet-governor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libproc",
  "rustix 0.38.44",
@@ -698,7 +698,7 @@ dependencies = [
 
 [[package]]
 name = "duet-lsp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-sandbox",
  "serde",
@@ -710,7 +710,7 @@ dependencies = [
 
 [[package]]
 name = "duet-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-boundary",
  "duet-mcp",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "duet-net"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-boundary",
  "futures-util",
@@ -737,7 +737,7 @@ dependencies = [
 
 [[package]]
 name = "duet-provider"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "bytes",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "duet-release"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "hex",
@@ -770,7 +770,7 @@ dependencies = [
 
 [[package]]
 name = "duet-review"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "tree-sitter",
@@ -781,7 +781,7 @@ dependencies = [
 
 [[package]]
 name = "duet-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-governor",
  "rustix 0.38.44",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "duet-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "duet-agent",
@@ -813,7 +813,7 @@ dependencies = [
 
 [[package]]
 name = "duet-web"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "duet-boundary",
  "duet-mcp",
