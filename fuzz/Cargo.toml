@@ -3,7 +3,7 @@
 # boundary. Needs a nightly toolchain and cargo-fuzz; run with tools/fuzz.sh.
 # Not a member of the main workspace, which stays on stable.
 [package]
-name = "duet-fuzz"
+name = "declass-fuzz"
 version = "0.0.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
@@ -14,8 +14,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-duet-boundary = { path = "../crates/duet-boundary" }
-duet-provider = { path = "../crates/duet-provider" }
+declass-boundary = { path = "../crates/declass-boundary" }
+declass-provider = { path = "../crates/declass-provider" }
 serde_json = "1"
 
 [workspace]

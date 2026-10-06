@@ -3,7 +3,7 @@
 """Check a synthetic launch audit's request records for the fixture's canaries.
 
 This is deliberately a small, independently readable literal/encoding check.
-It is not Duet's broader adversarial canary matcher or a network observer.
+It is not Declass's broader adversarial canary matcher or a network observer.
 Usage: python3 tools/check-launch-canaries.py AUDIT_JSONL FIXTURE_DIR
 Exit 1 means a planted value was found. Output is a reproducible JSON report.
 """

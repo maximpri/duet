@@ -22,33 +22,33 @@ def render():
         "# HTTPS bootstrap trust is separate from independently trusted SSH artifact signing.\n",
         "# No additional helper scripts are downloaded.\n",
         "# Parse the complete function before doing work, including when piped into Bash.\n",
-        "duet_bootstrap_main() {\n",
+        "declass_bootstrap_main() {\n",
         "    set -euo pipefail\n",
         "    umask 077\n",
         "    for tool in bash cat chmod mktemp rm; do\n",
-        "        command -v \"$tool\" >/dev/null 2>&1 || { printf 'duet install: missing %s\\n' \"$tool\" >&2; return 1; }\n",
+        "        command -v \"$tool\" >/dev/null 2>&1 || { printf 'declass install: missing %s\\n' \"$tool\" >&2; return 1; }\n",
         "    done\n",
-        "    duet_bootstrap_scratch=$(mktemp -d \"${TMPDIR:-/tmp}/duet-bootstrap.XXXXXXXX\")\n",
-        "    trap 'rm -rf \"$duet_bootstrap_scratch\"' EXIT\n",
+        "    declass_bootstrap_scratch=$(mktemp -d \"${TMPDIR:-/tmp}/declass-bootstrap.XXXXXXXX\")\n",
+        "    trap 'rm -rf \"$declass_bootstrap_scratch\"' EXIT\n",
     ]
     for name in ("install-release.sh", "verify-release.sh", "verify-checksums.sh"):
         raw = (ROOT / "tools" / name).read_bytes()
         text = raw.decode("utf-8")
         assert text.endswith("\n")
         digest = hashlib.sha256(raw).hexdigest()
-        delimiter = "DUET_EMBEDDED_" + digest.upper()
+        delimiter = "DECLASS_EMBEDDED_" + digest.upper()
         assert delimiter not in text.splitlines()
         parts += [
             f"    # tools/{name} SHA256 {digest}\n",
-            f"    cat >\"$duet_bootstrap_scratch/{name}\" <<'{delimiter}'\n",
+            f"    cat >\"$declass_bootstrap_scratch/{name}\" <<'{delimiter}'\n",
             text,
             f"{delimiter}\n",
         ]
     parts += [
-        "    chmod 700 \"$duet_bootstrap_scratch/install-release.sh\" \"$duet_bootstrap_scratch/verify-release.sh\" \"$duet_bootstrap_scratch/verify-checksums.sh\"\n",
-        "    bash \"$duet_bootstrap_scratch/install-release.sh\" \"$@\" </dev/null\n",
+        "    chmod 700 \"$declass_bootstrap_scratch/install-release.sh\" \"$declass_bootstrap_scratch/verify-release.sh\" \"$declass_bootstrap_scratch/verify-checksums.sh\"\n",
+        "    bash \"$declass_bootstrap_scratch/install-release.sh\" \"$@\" </dev/null\n",
         "}\n",
-        "duet_bootstrap_main \"$@\"\n",
+        "declass_bootstrap_main \"$@\"\n",
     ]
     return "".join(parts).encode("utf-8")
 

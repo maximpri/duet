@@ -8,9 +8,9 @@ yanked = "deny"
 [licenses]
 # GPL-compatible licenses permitted for dependencies, including file-level
 # copyleft MPL-2.0 (not permissive). Preserve dependency source and notices.
-# This policy also supports dual licensing Duet Core for Duet Enterprise (a
+# This policy also supports dual licensing Declass Core for Declass Enterprise (a
 # third-party GPL/LGPL/AGPL-only crate would make that impossible, so none is
-# allowed). Duet's own crates are unpublished and exempt below.
+# allowed). Declass's own crates are unpublished and exempt below.
 allow = [
     "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
     "ISC", "Unicode-3.0", "Unicode-DFS-2016", "Zlib", "CC0-1.0", "MPL-2.0", "CDLA-Permissive-2.0",
@@ -19,7 +19,7 @@ confidence-threshold = 0.9
 unused-allowed-license = "allow"
 
 [licenses.private]
-# Duet Core's own crates (publish = false): GPL-3.0-or-later by the copyright holder.
+# Declass Core's own crates (publish = false): GPL-3.0-or-later by the copyright holder.
 ignore = true
 
 [bans]

@@ -4,7 +4,7 @@
 
 Usage: python3 tools/verify-launch-audit.py AUDIT_JSONL ANCHOR_JSON
 This checks the published fixture's serialization, not every possible JSON
-number representation. Duet's own audit verifier is authoritative for runs.
+number representation. Declass's own audit verifier is authoritative for runs.
 A bundled anchor checks consistency, not independent custody or authorship.
 """
 import hashlib

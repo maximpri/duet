@@ -3,7 +3,7 @@
   "duet_version": "duet 0.1.0",
   "duet_binary_sha256": "74c741d5132eed6e33ce211aec95b30933cfdcd2cb824aeeb1b0d905d086749b",
   "recorder_commit": "89213d4c1e421fea99c5c90c64135bcdb3e281e9",
-  "scene": "/Users/maximp/OpenCode/duet_v2/tools/duet-recorder/scenes/billing.json",
+  "scene": "/Users/maximp/OpenCode/duet_v2/tools/declass-recorder/scenes/billing.json",
   "scene_sha256": "cf781da71d1e34c23217c34f36d3c9088140e21c1b1c52de03ec6098f2e6e917",
   "terminal": {
     "cols": 120,

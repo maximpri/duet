@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Updates the imported detection rules: the gitleaks default rule set, vendored
-# as data in crates/duet-boundary/rules/ (MIT; see rules/NOTICE).
+# as data in crates/declass-boundary/rules/ (MIT; see rules/NOTICE).
 #
 #   tools/update-rules.sh <version>            fetch the rule file of a release tag,
 #                                              verify it, show the rule diff (changes nothing)
@@ -15,12 +15,12 @@
 # API; a pinned --sha256 must match; re-fetching the vendored version must give
 # the vendored hash. After --apply, run the detection corpus, which lists rules
 # that do not compile and fails if they, or false positives, grow:
-#   cargo test -p duet-boundary --test corpus -- --nocapture
+#   cargo test -p declass-boundary --test corpus -- --nocapture
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 repo=gitleaks/gitleaks
-dir=crates/duet-boundary/rules
+dir=crates/declass-boundary/rules
 notice="$dir/NOTICE"
 
 usage() {
@@ -153,11 +153,11 @@ license-sha256: $license_hash
 fetched: $(date -u +%Y-%m-%d)
 
 gitleaks.toml is the rule data of gitleaks, a secret scanner, vendored
-unmodified. Duet contains none of its code: duet's own detector reads this file
-(crates/duet-boundary/src/rules.rs). Update it only with
+unmodified. Declass contains none of its code: declass's own detector reads this file
+(crates/declass-boundary/src/rules.rs). Update it only with
 tools/update-rules.sh <version>, which fetches a release tag, checks the file
 against the tag's git blob, shows the rule diff, and rewrites this notice; the
 boundary's tests check that the file still has the sha256 above.
 EOF
 printf '\nvendored %s into %s. Next: run the detection corpus and review the rule diff above:\n' "$version" "$dir"
-echo "  cargo test -p duet-boundary --test corpus -- --nocapture"
+echo "  cargo test -p declass-boundary --test corpus -- --nocapture"

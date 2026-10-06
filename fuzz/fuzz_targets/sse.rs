@@ -2,7 +2,7 @@
 //! SSE decoder: never panics, and events do not depend on chunking.
 #![no_main]
 
-use duet_provider::sse::SseDecoder;
+use declass_provider::sse::SseDecoder;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

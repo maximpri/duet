@@ -21,23 +21,23 @@
     "loop": 0
   },
   "artifact_digests": {
-    "docs/assets/launch/duet-native-privacy.png": {
+    "docs/assets/launch/declass-native-privacy.png": {
       "sha256": "d9ff573c29602be5da84f323ba08713317b14bba7000ec663cc0736d94b8ca1c",
       "bytes": 95739
     },
-    "docs/assets/launch/duet-native-outbound.png": {
+    "docs/assets/launch/declass-native-outbound.png": {
       "sha256": "1da52d7021d08d1188b964b67ee7c4ec6459b4a9a31bf64eef450d10b79f12d2",
       "bytes": 100721
     },
-    "docs/assets/launch/duet-native-summary.png": {
+    "docs/assets/launch/declass-native-summary.png": {
       "sha256": "585b59c9be4e9f492a462e4acc377faf152d92aa33f2c1fe9bde7e058220f4c3",
       "bytes": 107016
     },
-    "docs/assets/launch/duet-native-changes.png": {
+    "docs/assets/launch/declass-native-changes.png": {
       "sha256": "f9caf27fb3c2d4f577b58336958357eba7aa6c0632c600149b3019d61a427c49",
       "bytes": 85786
     },
-    "docs/assets/launch/duet-security.gif": {
+    "docs/assets/launch/declass-security.gif": {
       "sha256": "5d04d4d9ba8bea0bf204d9cff2f104e605036b12baa14d334c371e53d79015a4",
       "bytes": 268613
     },

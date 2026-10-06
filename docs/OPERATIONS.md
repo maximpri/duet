@@ -1,6 +1,6 @@
-# Operating Duet with retained audit evidence
+# Operating Declass with retained audit evidence
 
-Duet keeps run data, audit logs and integrity anchors on the operator's machine.
+Declass keeps run data, audit logs and integrity anchors on the operator's machine.
 These commands support local retention review, content-free audit exports and
 health checks for an existing monitoring system. They do not contact a model or
 send telemetry.
@@ -10,9 +10,9 @@ send telemetry.
 From the project directory, run:
 
 ```sh
-duet privacy
-duet privacy --json
-duet privacy --mode top-clearance
+declass privacy
+declass privacy --json
+declass privacy --mode top-clearance
 ```
 
 The same preview appears before a new terminal session starts. `/privacy` shows
@@ -34,7 +34,7 @@ No run, audit or vault is created.
 
 Files can be sealed, limited to interfaces, classified as sensitive, or subject
 to runtime content checks. A file with no matching path rule is not a promise
-that it contains no secrets. Duet checks content when using it. Top clearance
+that it contains no secrets. Declass checks content when using it. Top clearance
 routes model work to the approved local endpoint; passthrough disables the
 privacy boundary.
 
@@ -55,7 +55,7 @@ Exit 1 means it completed with items to review. Exit 2 means the inventory is
 incomplete or an enabled model endpoint is refused. A preview describes the
 observed configuration and paths; runtime enforcement still checks each action.
 
-Review endpoints with `duet doctor`. See the [security model](../SECURITY.md)
+Review endpoints with `declass doctor`. See the [security model](../SECURITY.md)
 and [deployment evaluation](SECURE_BY_DESIGN.md#evaluate-your-deployment) for
 endpoint trust and permitted disclosure. Retention and audit commands follow.
 
@@ -63,10 +63,10 @@ endpoint trust and permitted disclosure. Retention and audit commands follow.
 
 | Data | Location | Control |
 |---|---|---|
-| Raw requests, transcripts, handles, vault and write journal | Workspace `.duet/runs/<run>` | `data.retention_days`, default 14; explicitly remove with `duet purge` |
-| Audit requests and security events | Workspace `.duet/audit/<run>.jsonl` | `data.audit_retention_days`, default 90; review with `duet audit retention` |
+| Raw requests, transcripts, handles, vault and write journal | Workspace `.declass/runs/<run>` | `data.retention_days`, default 14; explicitly remove with `declass purge` |
+| Audit requests and security events | Workspace `.declass/audit/<run>.jsonl` | `data.audit_retention_days`, default 90; review with `declass audit retention` |
 | Audit integrity anchors | Owner state directory `audit-anchors/` | Preserve separately from the workspace |
-| Persistent derived-file classifications | Workspace `.duet/derived.json` and `.duet/derived.pending` | Preserved by purge; classification must remain while derived files exist |
+| Persistent derived-file classifications | Workspace `.declass/derived.json` and `.declass/derived.pending` | Preserved by purge; classification must remain while derived files exist |
 
 Audit logs are sensitive storage. Hybrid requests contain what passed the
 boundary; top-clearance requests can contain raw private material. Event fields
@@ -76,11 +76,11 @@ local investigation command, not a safe telemetry export.
 Set the retention periods explicitly:
 
 ```sh
-duet config set data.retention_days 30 --confirm
-duet config set data.audit_retention_days 365 --confirm
-duet audit retention
-duet purge --dry-run
-duet purge
+declass config set data.retention_days 30 --confirm
+declass config set data.audit_retention_days 365 --confirm
+declass audit retention
+declass purge --dry-run
+declass purge
 ```
 
 The retention report uses both configured periods. It emits JSON and exits 1
@@ -93,8 +93,8 @@ export cannot replace the original evidence or verify its chain.
 Raw-run expiry uses the latest modification anywhere inside the run, including
 nested transcript files. An old directory timestamp alone does not make an
 active transcript eligible. Purge refuses an active workspace lock and refuses
-symlinked run directories. Close the session before purging. `duet purge RUN_ID`
-and `duet purge --all` intentionally remove selected raw data regardless of age;
+symlinked run directories. Close the session before purging. `declass purge RUN_ID`
+and `declass purge --all` intentionally remove selected raw data regardless of age;
 add `--dry-run` to preview either. A project may shorten the raw retention
 period, but only the owner controls audit retention.
 
@@ -103,8 +103,8 @@ classifications. It never turns deletion of raw history into declassification of
 private output files. Review access to backups and filesystem snapshots
 separately; removing a file is not a secure erase of those copies.
 
-The owner state directory is `$DUET_CONFIG_HOME/state` when configured,
-otherwise `$XDG_STATE_HOME/duet` or `~/.local/state/duet`. Keep its permissions and
+The owner state directory is `$DECLASS_CONFIG_HOME/state` when configured,
+otherwise `$XDG_STATE_HOME/declass` or `~/.local/state/declass`. Keep its permissions and
 backups separate from the workspace's. The anchors are local tamper evidence;
 they do not protect against an operator or administrator who can rewrite both
 the log and the owner state.
@@ -113,7 +113,7 @@ the log and the owner state.
 
 ```sh
 umask 077
-duet audit export RUN_ID > audit-metadata.json
+declass audit export RUN_ID > audit-metadata.json
 ```
 
 Export first verifies the exact snapshot against its hash chain and owner
@@ -123,7 +123,7 @@ Unknown or malformed records fail closed rather than being silently skipped.
 
 Schema version 1 contains:
 
-- `schema_version` and the fixed `kind` label `duet_audit_metadata`.
+- `schema_version` and the fixed `kind` label `declass_audit_metadata`.
 - `run`: a SHA-256 reference to the run ID, integrity status, record and byte
   counts, unanchored count and first/last timestamps.
 - `records`: sequence number, timestamp, fixed request/event kind and admitted
@@ -134,7 +134,7 @@ Schema version 1 contains:
 No stored string field is copied from a request or event. The allowlist omits
 prompts, bodies, tool arguments, commands, raw URLs, hostnames, model names,
 paths, configuration values, free-text reasons, user-supplied labels and content
-digests. Event kinds come from Duet's fixed enum; metrics accept only named
+digests. Event kinds come from Declass's fixed enum; metrics accept only named
 numeric/Boolean fields. New event fields are not automatically exported.
 
 Timestamps, costs, activity counts and stable run references can still be
@@ -145,8 +145,8 @@ correlated with the local history when investigating an alert.
 ## Check integrity for an external alert
 
 ```sh
-duet audit check
-duet audit check RUN_ID
+declass audit check
+declass audit check RUN_ID
 ```
 
 The workspace-wide command reads audit logs, raw-run directory names and the
@@ -164,7 +164,7 @@ content.
 An unanchored tail is reported even when its existing prefix matches the
 anchor. It can result from an interrupted append. Reports do not repair logs,
 re-anchor them, truncate partial records or overwrite evidence. Inspect locally
-with `duet audit verify RUN_ID` and preserve the original files before recovery.
+with `declass audit verify RUN_ID` and preserve the original files before recovery.
 Concurrent writes can produce a transient `changed_during_check` or unanchored
 status; repeat after the run has settled before treating it as tampering.
 
@@ -187,24 +187,24 @@ For a scheduler, save JSON privately and preserve the command's exit status:
 #!/bin/sh
 set -eu
 umask 077
-directory="$HOME/.local/state/duet-monitor"
+directory="$HOME/.local/state/declass-monitor"
 mkdir -p "$directory"
 temporary="$(mktemp "$directory/audit-health.XXXXXXXX")"
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 status=0
-/absolute/path/to/duet audit check --workspace /path/to/workspace > "$temporary" || status=$?
+/absolute/path/to/declass audit check --workspace /path/to/workspace > "$temporary" || status=$?
 mv "$temporary" "$directory/audit-health.json"
 exit "$status"
 ```
 
 Run this script from your scheduler and connect nonzero exit status to the
 alerting system you already operate. Schedule `audit retention` separately to
-track expiry review. Duet does not install a scheduler, transmit these reports,
+track expiry review. Declass does not install a scheduler, transmit these reports,
 manage organizational identities or replace a centralized evidence store.
 
-After a hard kill or failed classification write, `.duet/derived.pending` makes
+After a hard kill or failed classification write, `.declass/derived.pending` makes
 hybrid startup and preview refuse to continue. Review every potentially written
 file locally, classify affected paths in the sensitivity policy or move/remove
-the outputs, and preserve existing `.duet/derived.json` entries. Only after that
+the outputs, and preserve existing `.declass/derived.json` entries. Only after that
 owner review should you remove the pending marker. Deleting the classification
 manifest to unblock a run can declassify sensitive output.

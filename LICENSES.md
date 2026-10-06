@@ -1,16 +1,16 @@
 # Licensing and distribution
 
-Duet Core is licensed under **GPL-3.0-or-later**, as declared in the workspace
+Declass Core is licensed under **GPL-3.0-or-later**, as declared in the workspace
 manifest and source headers. [LICENSE](LICENSE) contains the full GPL version 3
 text; [NOTICE](NOTICE) states the grant and warranty disclaimer. This applies to
-Duet's original code and documentation unless a file or fixture specifies other
+Declass's original code and documentation unless a file or fixture specifies other
 terms. Third-party material keeps its own terms.
 
 ## Included third-party material
 
 | Material | License and provenance |
 | --- | --- |
-| Embedded gitleaks detection rules | [MIT license](crates/duet-boundary/rules/LICENSE.gitleaks), [pinned source and hash](crates/duet-boundary/rules/NOTICE) |
+| Embedded gitleaks detection rules | [MIT license](crates/declass-boundary/rules/LICENSE.gitleaks), [pinned source and hash](crates/declass-boundary/rules/NOTICE) |
 | sqlparser evaluation starter and reference overlay | [Apache-2.0](tasks/X1-sql-gateway/starter/LICENSE.TXT), [source and modifications](tasks/X1-sql-gateway/NOTES.md) |
 | log crate in the sqlparser fixture | [MIT](tasks/X1-sql-gateway/starter/vendor/log/LICENSE-MIT) or [Apache-2.0](tasks/X1-sql-gateway/starter/vendor/log/LICENSE-APACHE) |
 | JSONata evaluation starter and reference overlay | [MIT](tasks/X2-partner-exports/starter/LICENSE), [source and modifications](tasks/X2-partner-exports/NOTES.md) |
@@ -24,8 +24,8 @@ preserve exact upstream notices and identify their package versions, source
 revisions and hashes without altering vendored files or checksum manifests.
 The `r-efi` packages retain their MIT grant and copyrights in `AUTHORS`.
 
-Do not replace upstream notices with Duet's SPDX header. The evaluation fixtures
-are not linked into the Duet executable. Model weights, model services and
+Do not replace upstream notices with Declass's SPDX header. The evaluation fixtures
+are not linked into the Declass executable. Model weights, model services and
 external tools installed separately are governed by their respective terms.
 
 `cargo deny --locked check licenses` checks dependency license policy. This does
@@ -41,7 +41,7 @@ SBOM, build information and checksums, both paths package:
 
 - `LICENSE` and `NOTICE`;
 - `LICENSES.md`, the embedded rules' MIT license and provenance;
-- `duet-<version>-source.tar.gz`: the tracked source at the build commit,
+- `declass-<version>-source.tar.gz`: the tracked source at the build commit,
   build/install scripts and complete locked Cargo dependency sources, including
   their upstream license and notice files;
 - `SOURCE.txt`: the matching source archive, commit and offline build command.

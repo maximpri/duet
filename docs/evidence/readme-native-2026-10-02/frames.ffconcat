@@ -1,10 +1,10 @@
 ffconcat version 1.0
-file '../../assets/launch/duet-native-privacy.png'
+file '../../assets/launch/declass-native-privacy.png'
 duration 5
-file '../../assets/launch/duet-native-outbound.png'
+file '../../assets/launch/declass-native-outbound.png'
 duration 5
-file '../../assets/launch/duet-native-summary.png'
+file '../../assets/launch/declass-native-summary.png'
 duration 5
-file '../../assets/launch/duet-native-changes.png'
+file '../../assets/launch/declass-native-changes.png'
 duration 5
-file '../../assets/launch/duet-native-changes.png'
+file '../../assets/launch/declass-native-changes.png'

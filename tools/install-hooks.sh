@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Installs git hooks that run the gate (Duet has no hosted CI):
+# Installs git hooks that run the gate (Declass has no hosted CI):
 #   pre-push    tools/gate.sh          (full gate; always installed)
 #   pre-commit  tools/gate.sh --fast   (format, license, privacy, provenance;
 #                                       only with --pre-commit)

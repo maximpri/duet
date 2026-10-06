@@ -1,57 +1,57 @@
-# Using Duet
+# Using Declass
 
-How to run Duet, code with it in sessions, and configure its tools, models and settings. Why Duet
+How to run Declass, code with it in sessions, and configure its tools, models and settings. Why Declass
 exists and how it keeps sensitive information local: [README](../README.md). The threat model and
 every security rule in detail: [SECURITY.md](../SECURITY.md). For a shorter control
 overview and evaluation procedure, see [the security guide](SECURE_BY_DESIGN.md).
 
 [Commands](#commands) · [Goals](#goals-and-history) · [Modes](#modes-and-acceptance-checks) ·
-[Workspace](#coding-with-duet-the-workspace) · [Tools and privacy](#tools-and-privacy-controls) ·
+[Workspace](#coding-with-declass-the-workspace) · [Tools and privacy](#tools-and-privacy-controls) ·
 [Models](#models) · [Pricing](#costs-and-pricing) · [Configuration](#configuration)
 
 ## Commands
 
 ```sh
-duet                            # the workspace: code in a conversation (hybrid mode by default)
-duet "fix the failing export"   # the same, with the first message given
-duet --mode top-clearance       # configured local model only; no frontier
-duet --resume                   # continue the most recent open session (or --resume <id>)
-duet --goal "fix and verify the export" --check 'cargo test'  # keep working within budgets
-duet history                    # recent sessions and runs, with resume commands
-duet history --search export    # search saved titles and conversations
-duet history <id>               # read a conversation; --json for scripts
-duet skills list                # discover portable SKILL.md workflows and diagnostics
-duet skills show code-review    # read a skill locally, without calling a model
-duet plugins inspect examples/plugins/quality-kit  # inspect a native package; runs no code
-duet plugins install examples/plugins/quality-kit  # enable a private snapshot for the next session
-duet plugins list               # installed packages, capabilities and content digests
-duet run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
-duet run --check 'cargo test --offline' "fix the export"  # require a passing check at finish
-duet --check 'npm test' "build the page"  # the same contract for a session
-duet run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
-duet run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
-duet audit show <run>           # see exactly what was sent to the frontier, and the security events
-duet audit verify <run>         # check the hash chain and its anchor
-duet audit export <run>         # verified metadata-only JSON; no request or event text
-duet audit check [run]          # nonzero exit for missing, altered or unanchored logs
-duet audit retention            # review raw-data expiry and audit archival thresholds
-duet purge --dry-run            # preview expired raw runs without deleting them
-duet privacy                    # offline file rules, model destinations and exceptions
-duet audit disclosure <run>     # what was withheld from the frontier, by class (counts only)
-duet resume <run>               # continue an interrupted one-shot run
-duet config list                # every setting, its value and where it came from
-duet config set --project ip.interface_only '["src/pricing/**"]'
-duet setup                      # discover credentials and served models; review and save settings
-duet setup --provider openai --yes   # explicit cloud recipient; apply without a prompt
-duet setup --local-url http://127.0.0.1:9000/v1  # custom local server
-duet config preset              # show all local and frontier presets
-duet config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
-duet config preset anthropic --confirm                 # frontier endpoint, model, key variable, dialect
-duet doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
-duet local-eval                 # measure the configured local model in its reading roles
-duet scan --rules-only          # scan existing code without model opinions
-duet scan --background          # return a scan id; inspect with duet scan --status <id>
-duet purge                      # delete raw run data older than the retention period
+declass                            # the workspace: code in a conversation (hybrid mode by default)
+declass "fix the failing export"   # the same, with the first message given
+declass --mode top-clearance       # configured local model only; no frontier
+declass --resume                   # continue the most recent open session (or --resume <id>)
+declass --goal "fix and verify the export" --check 'cargo test'  # keep working within budgets
+declass history                    # recent sessions and runs, with resume commands
+declass history --search export    # search saved titles and conversations
+declass history <id>               # read a conversation; --json for scripts
+declass skills list                # discover portable SKILL.md workflows and diagnostics
+declass skills show code-review    # read a skill locally, without calling a model
+declass plugins inspect examples/plugins/quality-kit  # inspect a native package; runs no code
+declass plugins install examples/plugins/quality-kit  # enable a private snapshot for the next session
+declass plugins list               # installed packages, capabilities and content digests
+declass run "fix the failing billing export"      # one-shot: work to a terminal state, no conversation
+declass run --check 'cargo test --offline' "fix the export"  # require a passing check at finish
+declass --check 'npm test' "build the page"  # the same contract for a session
+declass run --quiet "..."          # the same without progress on standard error (the summary is unchanged)
+declass run --image shot.png "fix this layout bug"  # attach an image (repeatable; --image-public: see Images)
+declass audit show <run>           # see exactly what was sent to the frontier, and the security events
+declass audit verify <run>         # check the hash chain and its anchor
+declass audit export <run>         # verified metadata-only JSON; no request or event text
+declass audit check [run]          # nonzero exit for missing, altered or unanchored logs
+declass audit retention            # review raw-data expiry and audit archival thresholds
+declass purge --dry-run            # preview expired raw runs without deleting them
+declass privacy                    # offline file rules, model destinations and exceptions
+declass audit disclosure <run>     # what was withheld from the frontier, by class (counts only)
+declass resume <run>               # continue an interrupted one-shot run
+declass config list                # every setting, its value and where it came from
+declass config set --project ip.interface_only '["src/pricing/**"]'
+declass setup                      # discover credentials and served models; review and save settings
+declass setup --provider openai --yes   # explicit cloud recipient; apply without a prompt
+declass setup --local-url http://127.0.0.1:9000/v1  # custom local server
+declass config preset              # show all local and frontier presets
+declass config preset ollama --model qwen3:8b --confirm   # point the local role at one (audited)
+declass config preset anthropic --confirm                 # frontier endpoint, model, key variable, dialect
+declass doctor                     # pass/warn/fail with a fix per check; no network (--online, --json)
+declass local-eval                 # measure the configured local model in its reading roles
+declass scan --rules-only          # scan existing code without model opinions
+declass scan --background          # return a scan id; inspect with declass scan --status <id>
+declass purge                      # delete raw run data older than the retention period
 ```
 
 [Privacy preview](OPERATIONS.md#preview-privacy-before-starting) explains the offline report and its exit codes.
@@ -60,7 +60,7 @@ duet purge                      # delete raw run data older than the retention p
 ## Plan before implementing
 
 Use `/plan <task>` to inspect the repository, clarify decisions, and save an
-implementation plan before changing project files. Duet saves revisions with the
+implementation plan before changing project files. Declass saves revisions with the
 objective, assumptions, decisions, affected files, ordered steps, and checks.
 
 ```text
@@ -112,23 +112,23 @@ Use arrows or a number to select a choice, then Enter to submit it. Press F for 
 custom answer and Ctrl-S to submit; Esc defers the question. F6 reopens a deferred
 question in the terminal UI. Answering a question never approves implementation.
 Input queued before a new question is held until you answer it. If a revision
-supersedes that question, Duet shows the held text for you to send again.
+supersedes that question, Declass shows the held text for you to send again.
 
 Implementation continues after progress replies. It stops for your answer, an
 error, an interruption, or a limit. A plan receives 20 turns by default; set
-`duet --plan-turns 40` for a larger allowance for new plan executions. Revisions and
+`declass --plan-turns 40` for a larger allowance for new plan executions. Revisions and
 resume retain the allowance already used. Session cost and time limits apply
 across planning and implementation. An earlier goal stays paused; completing a
 plan does not complete or resume that goal.
 
 A step can be **Completed — unverified** when it has no automated check. **Checks
-passed** means Duet actually ran the saved checks and recorded their outcomes.
-Before completing a plan, Duet reruns required plan checks and the session's
+passed** means Declass actually ran the saved checks and recorded their outcomes.
+Before completing a plan, Declass reruns required plan checks and the session's
 configured acceptance checks, then applies its configured security-review gate.
 Failed, timed-out, or interrupted checks do not pass. Check history records when
 results were observed; later work can make earlier results stale.
 
-Planning survives `duet --resume`. Restarting an unfinished plan restores it for
+Planning survives `declass --resume`. Restarting an unfinished plan restores it for
 review without automatically continuing. Use `/plan resume rN` when ready.
 During active work, mode changes wait for the current safe step and preserve
 subsequent input and attachments.
@@ -141,8 +141,8 @@ network access, or privacy policy. Proposed check commands use ordinary command
 permissions; owner-configured acceptance checks retain their existing access.
 
 Plans and their check evidence stay in the private session directory under
-`.duet/runs/`. `plan.json` holds authoritative state; `plan.md` is a generated view.
-Edit through Duet rather than changing these files. Model-facing plan context,
+`.declass/runs/`. `plan.json` holds authoritative state; `plan.md` is a generated view.
+Edit through Declass rather than changing these files. Model-facing plan context,
 answers, and resumed work pass through the selected privacy boundary. Model calls
 still consume the session's budgets. Planning pauses automatic goals; leaving
 planning does not resume them. Use `/goal resume` separately to return to an
@@ -150,8 +150,8 @@ unfinished goal, which pauses any active plan execution.
 
 ## Goals and history
 
-Start an ongoing goal with `duet --goal "what you want accomplished"`, or type
-`/goal <objective>` in the workspace. Duet continues after progress replies without needing
+Start an ongoing goal with `declass --goal "what you want accomplished"`, or type
+`/goal <objective>` in the workspace. Declass continues after progress replies without needing
 another “go”. It stops for a question, failure, stop request, or budget limit. Completion means
 the agent called `finish` and every configured acceptance check passed; choose meaningful
 checks with `--check` or `checks.commands` for the quality you need.
@@ -161,7 +161,7 @@ checks with `--check` or `checks.commands` for the quality you need.
 | `/goal` | Show the objective, state, progress and remaining turns |
 | `/goal pause` or `/stop` | Pause after the current step; Ctrl-C interrupts immediately |
 | `/goal resume` | Explicitly continue a paused goal using its remaining allowance |
-| A reply to Duet's question | Answer and continue the waiting goal |
+| A reply to Declass's question | Answer and continue the waiting goal |
 | `/goal cancel` | End the goal without claiming success; a new goal can then start |
 | `/history` | List recent work with its status, cost and resume command |
 | `/history <id>` | Read a saved conversation without calling a model |
@@ -173,28 +173,28 @@ process restarts. Reserving a goal turn happens before its work starts, so inter
 not refund that turn. A used-up allowance cannot be reset by resuming.
 
 `/quit` leaves the session resumable and pauses active goal work. After reopening it with
-`duet --resume <id>`, inspect `/goal` and explicitly use `/goal resume`. Reopening never starts
+`declass --resume <id>`, inspect `/goal` and explicitly use `/goal resume`. Reopening never starts
 goal requests by itself. `/close` closes the session and cancels any unfinished goal. A crash
-also recovers to a paused goal. Duet must remain running for automatic work to continue.
+also recovers to a paused goal. Declass must remain running for automatic work to continue.
 
-History is local to the workspace. `duet history --search TEXT --limit 50` searches saved
+History is local to the workspace. `declass history --search TEXT --limit 50` searches saved
 objectives and messages; `--json` provides structured records. Large histories are read with
 limits, and partial records are labelled. History browsing never repairs or truncates a log
 that may still be receiving writes. Goal state and progress are private files beside the
-session transcript in `.duet/runs/<id>/`; `duet purge` retention applies to both. Goals enter
+session transcript in `.declass/runs/<id>/`; `declass purge` retention applies to both. Goals enter
 the same privacy boundary as ordinary messages.
 
 ## Modes and acceptance checks
 
-`duet run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
+`declass run --mode passthrough --no-privacy` runs the frontier alone with the boundary off (the
 evaluation baseline). A repository can forbid it, for new and resumed runs and sessions alike:
-`duet config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
+`declass config set --project frontier.allow_passthrough false` (turning it back on is the owner's,
 with `--confirm`).
 
 ### Acceptance checks
 
 **Acceptance checks.** Repeat `--check COMMAND` to add task-specific checks to the project's
-`checks.commands`. Duet runs them in its command sandbox when the agent calls `finish`; a failing
+`checks.commands`. Declass runs them in its command sandbox when the agent calls `finish`; a failing
 check returns its filtered output to the agent for repair, and the task cannot finish while a check
 fails. Checks are saved with the run or session, so resume uses the same commands even if project
 settings change. Use executable tests of the requested behavior: for a browser game, a project
@@ -214,25 +214,25 @@ There is no frontier; the web tools are not offered; commands get no network wha
 `sandbox.network` says (no egress proxy, no package registries: dependencies must already be on
 disk); MCP servers reached over HTTP or with `network = true` are not started; sub-agents use the
 local model. The header shows TOP CLEARANCE, and the audit log records every request to the local
-model, so what left can be checked (`duet audit show`). The work is only as good as the local
+model, so what left can be checked (`declass audit show`). The work is only as good as the local
 model. Evaluate the configured model on your tasks. In a session, `/mode top-clearance` leaves the
-current session open (`duet --resume` continues it) and starts a new one in top clearance, fresh:
+current session open (`declass --resume` continues it) and starts a new one in top clearance, fresh:
 nothing said in it ever reaches the frontier. It cannot be left again within that session, because
 its conversation holds what only the local model may see; `/close` it and start another session.
 `/mode` alone shows the session's mode. A repository can require it for every run and session:
-`duet config set --project clearance.required '"top"'`; `duet` and `duet run` then start in top
+`declass config set --project clearance.required '"top"'`; `declass` and `declass run` then start in top
 clearance without `--mode`, and every other mode is refused (lifting it is the owner's, confirmed).
 `--mode local-only` is the same mode under its old name. Details: [SECURITY.md](../SECURITY.md)
 (Top clearance).
 
 ## Repository instructions and extensions
 
-**Project instructions.** Duet reads `AGENTS.md` (or `AGENTS.override.md`), `CLAUDE.md`,
-`GEMINI.md`, root `.github/copilot-instructions.md`, then `DUET.md`. More specific directories
+**Project instructions.** Declass reads `AGENTS.md` (or `AGENTS.override.md`), `CLAUDE.md`,
+`GEMINI.md`, root `.github/copilot-instructions.md`, then `DECLASS.md`. More specific directories
 take precedence. The current user request outranks owner instructions, which outrank
-repository guidance; all remain within Duet's host rules. Owner equivalents beside
-`~/.config/duet/config.toml` are loaded first;
-`DUET_CONFIG_HOME` changes that directory. Root instructions enter the opening message once
+repository guidance; all remain within Declass's host rules. Owner equivalents beside
+`~/.config/declass/config.toml` are loaded first;
+`DECLASS_CONFIG_HOME` changes that directory. Root instructions enter the opening message once
 and are replayed on resume. Relevant descendant instructions load for the path named by
 `read_file`, `edit_file`, `write_file`, `edit_protected` or `rename`; a newly discovered block
 defers that operation until the model has seen it. The model is instructed to read files before
@@ -243,10 +243,10 @@ Project text passes the privacy boundary and cannot change policy or the sandbox
 [Ordering, scope, refresh and limits](EXTENSIONS.md#repository-instructions).
 
 **Skills and plugins.** Put a workflow in `.agents/skills/<name>/SKILL.md`, with YAML
-`name` and `description` fields followed by Markdown instructions. Duet also discovers familiar
+`name` and `description` fields followed by Markdown instructions. Declass also discovers familiar
 owner and project skill locations. It sends short metadata first and loads full instructions
-and referenced text only when needed. Install a native package with `duet plugins install PATH`;
-inspect it first with `duet plugins inspect PATH`. Installation takes a private content snapshot
+and referenced text only when needed. Install a native package with `declass plugins install PATH`;
+inspect it first with `declass plugins inspect PATH`. Installation takes a private content snapshot
 and executes no scripts. Enabled packages can contribute MCP servers at the next session start.
 
 | In the workspace | What it does |
@@ -256,29 +256,29 @@ and executes no scripts. Enabled packages can contribute MCP servers at the next
 | `/plugins` | Show installed packages and their capabilities |
 | `/command plugin:name [arguments]` | Use a packaged Markdown prompt command |
 
-Plugin skill names are qualified, for example `quality-kit:code-review`. Use `duet skills show
+Plugin skill names are qualified, for example `quality-kit:code-review`. Use `declass skills show
 quality-kit:code-review` to inspect one locally. Restart the session after installing or updating
 extensions to refresh its catalog and tool servers. Repository settings can disable discovery
 with `extensions.skills_enabled = false` or packages with `extensions.plugins_enabled = false`.
 Skill instructions grant no tools or permissions. [Example, lifecycle, privacy and compatibility](EXTENSIONS.md).
 
-**Without git.** Duet works in any folder. Outside a git repository, files are listed and searched
-by a walk that honours `.gitignore` and `.ignore` files and skips `.git`, `.duet` and dependency and
+**Without git.** Declass works in any folder. Outside a git repository, files are listed and searched
+by a walk that honours `.gitignore` and `.ignore` files and skips `.git`, `.declass` and dependency and
 build-output directories (`node_modules`, `target`, `dist`, `__pycache__`, `.venv`, ...); `diff`
-and `/diff` compare the files duet wrote with their content before the run (changes made only by
+and `/diff` compare the files declass wrote with their content before the run (changes made only by
 commands are not shown); `/undo`, resume and the audit work as in a repository; the git tools are
 not offered (`git init` adds them).
 
 ## Security review and repository scans
 
 ```sh
-duet scan                          # existing code, rules and eligible local opinions
-duet scan --rules-only --json       # no model or language-server requests
-duet scan --fail-on-high            # exit 2 for rule-confirmed high findings
-duet scan --background              # detached worker; prints the scan id
-duet scan --status scan-...         # state, commit, dirty flag and private report location
-duet config set review.enabled true
-duet config set review.block_high true  # optional finish enforcement; requires review.enabled
+declass scan                          # existing code, rules and eligible local opinions
+declass scan --rules-only --json       # no model or language-server requests
+declass scan --fail-on-high            # exit 2 for rule-confirmed high findings
+declass scan --background              # detached worker; prints the scan id
+declass scan --status scan-...         # state, commit, dirty flag and private report location
+declass config set review.enabled true
+declass config set review.block_high true  # optional finish enforcement; requires review.enabled
 ```
 
 Scanning does not require `review.enabled`; that setting adds review to `finish` after ordinary
@@ -286,7 +286,7 @@ checks pass. Findings compare against a private run-start snapshot, including pr
 files. Resume retains that baseline. A rule-confirmed high finding can enter the normal repair
 loop when enforcement is enabled. Model opinions cannot create a blocker or hide a finding.
 
-Reports live at `.duet/runs/<id>/security-review.json`. Repository scans also write
+Reports live at `.declass/runs/<id>/security-review.json`. Repository scans also write
 `scan-status.json`, recording the starting commit (or null outside git), dirty state, timing and
 model usage. `scan-usage.json` preserves metering even if a started review fails. A captured
 source or commit changing during review prevents completion. Incomplete
@@ -303,7 +303,7 @@ scanners without a separate local reviewer; a manual scan uses the configured lo
 An optional fresh-context frontier opinion has no working conversation or tools. It is offered
 only for high or locally uncertain findings on eligible open code. Protected paths, private
 values, recognized privacy flows and external-scanner candidates are excluded. Enable it with
-`duet config set review.frontier true --confirm` (owner only). The extra send requires the
+`declass config set review.frontier true --confirm` (owner only). The extra send requires the
 configuration command's existing privacy-loosening confirmation. Its default limits are four
 opinions per attempt and $0.50 per reviewer, also constrained by the remaining run budget.
 Usage, failed attempts and dollars survive resume. Top clearance never uses this frontier role.
@@ -323,7 +323,7 @@ Formats: SARIF, Bandit, gosec, cargo-audit, npm-audit and pip-audit JSON. At mos
 with no network or source writes, on a bounded UTF-8 snapshot. `{workspace}` in an argument is
 replaced with that snapshot's directory. Offline databases and configuration must already be
 available; tools requiring network access report unavailable. `--rules-only` still runs these
-configured tools. Duet bundles no third-party scanner rules and does not execute reviewed source.
+configured tools. Declass bundles no third-party scanner rules and does not execute reviewed source.
 Scanner failures and explicit analysis errors mark coverage incomplete. Exit 1 is accepted
 only with validated findings; other nonzero exits are failures. New cross-file findings are
 retained even when the scanner reports them in an unchanged file.
@@ -333,15 +333,15 @@ do not enter model prompts. Only locations inside the snapshot become advisory f
 Defaults remain off for finish review, blocking and frontier opinions. The
 [auditor report](evidence/reviews/security-auditor-2026-09-30.md) records coverage, measurements and known limits.
 
-## Coding with duet: the workspace
+## Coding with declass: the workspace
 
-`duet` opens the workspace: one session (one conversation in one workspace) in full screen. You
-give a task, duet works on it with its tools (each step shows as a progress line), and the turn ends
-with duet's reply, a question for you, or a finished task; your next message continues with
+`declass` opens the workspace: one session (one conversation in one workspace) in full screen. You
+give a task, declass works on it with its tools (each step shows as a progress line), and the turn ends
+with declass's reply, a question for you, or a finished task; your next message continues with
 everything said and done so far.
 
 ```text
-  DUET  /  billing                        F1 help · Ctrl-O details · Tab panel · F2 settings
+  DECLASS  /  billing                        F1 help · Ctrl-O details · Tab panel · F2 settings
   hybrid · frontier glm-5.3-flash · local omlx-coding · privacy boundary active
                                                         │  Changes  Privacy  Session   Tab / ⇧Tab
   › you                                                 │ 1 file(s)  +3 −1
@@ -357,7 +357,7 @@ everything said and done so far.
     + for i in 0..rows.len() {                          │
   ✓ done                                                │
     The loop stopped one row early; it reads to the end, with a test.
-╭ Message duet ──────────────────────────────────────────────────────────────────────────────╮
+╭ Message declass ──────────────────────────────────────────────────────────────────────────────╮
 │ Describe a task or ask a question · @ names a file · / for commands…                        │
 ╰ Enter send · Alt-Enter new line · @ file · / commands ─────────────────────────────────────╯
  DONE  │ turn 1 · $0.0184 of $20.00 · 42.1k in · 1.2k out                              F1 help
@@ -365,7 +365,7 @@ everything said and done so far.
 
 - **The screen.** The header: the workspace, the mode, the frontier and local models, and whether
   the privacy boundary is active (in passthrough, a red warning says it is off). The conversation,
-  as cells: your messages (`› you`), duet's replies as the frontier writes them (`◆ duet`, formatted
+  as cells: your messages (`› you`), declass's replies as the frontier writes them (`◆ declass`, formatted
   lightly: headings, lists, quotes, code blocks, inline code and bold), each tool call (`● read`,
   `● run`, `✗` when it failed) with an explicit running/done/failed/stopped status and its prepared
   result (placeholders kept), folded to its first lines (Ctrl-O expands; a failure is shown longer).
@@ -373,7 +373,7 @@ everything said and done so far.
   answer, with a redaction count. Reads show requested line ranges; long commands remain visible
   in full. The journal also shows every
   edit with its diff (a sensitive file is named, never shown), what the boundary withheld (`◦`), and
-  how each turn ended (`✓ done`, a question, a stop). While duet works a line under the conversation
+  how each turn ended (`✓ done`, a question, a stop). While declass works a line under the conversation
   shows the turn's time, its cost so far and what runs now. It follows new output; PgUp/PgDn or the
   mouse wheel scroll back (it stays put and shows how many rows are below; Ctrl-End on empty input returns).
   The status line's badge says READY, WORKING, DONE, YOUR ANSWER, STOPPED or FAILED, beside the
@@ -383,7 +383,7 @@ everything said and done so far.
   file's diff (Ctrl-↑ ↓ pick a file, Ctrl-PgUp/PgDn scroll the diff); files that are sensitive, or
   were produced by a command that read sensitive data, are named and never shown. **Privacy** shows
   individual reads, local questions, commands and filtering decisions, newest first. Its default
-  view explains what Duet did, whether a matching cloud send passed its checks, and how the result
+  view explains what Declass did, whether a matching cloud send passed its checks, and how the result
   was handled. Ctrl-↑/↓ selects an action; Ctrl-O opens or closes its full record, including the
   exact outbound text, audit number, time and model. Ctrl-PgUp/PgDn scrolls the selected view.
   Prepared results are distinct from records that passed the outbound checks; those records do
@@ -399,8 +399,8 @@ everything said and done so far.
   tool calls, tokens, frontier and local cost estimates, the model/rates/catalog source used,
   and working time against the budgets. Ctrl-PgUp/PgDn scrolls Session details too.
   Colour unless `NO_COLOR` is set.
-- **Talking to duet.** Every message is a turn. duet ends it with `duet:` (a reply), `duet asks:`
-  (a clarifying question: your next message is the answer) or `duet finished:` (it called `finish`
+- **Talking to declass.** Every message is a turn. declass ends it with `declass:` (a reply), `declass asks:`
+  (a clarifying question: your next message is the answer) or `declass finished:` (it called `finish`
   and `checks.commands` passed). `//text` sends a message that starts with `/`. `@path` names a
   file of the workspace (Tab completes it). The input box stays editable the whole time:
 
@@ -444,13 +444,13 @@ everything said and done so far.
   selection instead, use its mouse modifier (often Option on macOS or Shift on Linux).
 
   **Clipboard images.** On macOS, copy an image or screenshot, then press **Ctrl-V** or type
-  **`/paste`**. Native **Cmd-V** is handled by the terminal and ordinarily pastes text; Duet cannot
+  **`/paste`**. Native **Cmd-V** is handled by the terminal and ordinarily pastes text; Declass cannot
   force a terminal to forward an intercepted shortcut. Linux image paste uses system-installed
   `wl-clipboard` on Wayland or `xclip` on X11; `xsel` supports text only. Clipboard actions run in
   a worker with bounded input/output and a three-second helper deadline. There is no clipboard
   polling or clipboard read through OSC 52. Under SSH, use terminal text paste or `/image PATH`
   for an image already on the remote host. Copy can fall back to an OSC 52 write request; the
-  terminal decides whether to accept it, and Duet reports that as a request rather than a confirmed
+  terminal decides whether to accept it, and Declass reports that as a request rather than a confirmed
   clipboard change. Clipboard behavior on Linux is covered by mock helpers, not a live desktop test.
 
   Pasted images are validated and re-encoded as PNG, stored in a private temporary directory
@@ -472,27 +472,27 @@ everything said and done so far.
   Find searches rendered rows (unfold tool details with Ctrl-O to include their contents).
   Settings fields accept bracketed text paste without submitting or approving a change.
   Warnings and setup output appear in the conversation, never over the input.
-- **Steering while it works.** Type while duet is working: the message is delivered after the
+- **Steering while it works.** Type while declass is working: the message is delivered after the
   current step (its tool results are recorded first; a running command is never cut short), and
-  duet takes it into account from its next step. Several messages typed meanwhile arrive together,
+  declass takes it into account from its next step. Several messages typed meanwhile arrive together,
   in order. `/stop` ends the turn after the current step; **Ctrl-C** ends it at once and kills a
-  running command. Either way the session stays open and duet is told what happened.
+  running command. Either way the session stays open and declass is told what happened.
 - **Commands** (never sent to the model): `/status` (turns, tokens, cost and working time against
   the budgets), `/diff` (the workspace against the last commit, or outside a repository the files
-  duet wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts
+  declass wrote against their earlier content; sensitive files are named, not shown), `/undo` (reverts
   the files the last turn wrote through its tools; repeat to go back further; changes made by
   commands are not reverted), `/image <path>` and `/image --public <path>` (attach an image to your
   next message; see Images below), `/mode` (the session's mode) and `/mode top-clearance`
   (continue in top clearance, above), `/quit` (leave; the session stays open), `/close` (end it for
   good), `/help`; and the settings screens: `/settings`, `/models`, `/sensitivity`, `/ip`,
   `/limits`, `/data`, `/audit`, `/runs`.
-- **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `duet
+- **Resuming.** `/quit`, Ctrl-D or Ctrl-C twice at the prompt leaves the session open; `declass
   --resume` continues the latest open one (with a recap of its last turns), `--resume <id>` a given
   one, also after a crash. A normal exit records `open` in the summary and audit end event.
   History also recognizes older normal exits without rewriting their saved logs; actual failures
   and interrupted turns retain their own status.
 - **Text attachments.** Drag a Markdown or other UTF-8 text file into the input, or enter
-  `/attach /path/to/spec.md`, then send your instruction. Duet confirms the filename and size;
+  `/attach /path/to/spec.md`, then send your instruction. Declass confirms the filename and size;
   quoted paths and shell-escaped spaces/parentheses work. The file is snapshotted when attached,
   including files outside the workspace, and included with the next message or steering message.
   Sensitive files use local handles; detected private values are filtered. Large files use the
@@ -500,27 +500,27 @@ everything said and done so far.
   Attachments delivered in a session remain in its private transcript/handles when resumed.
 - **Privacy.** You see real values in your terminal; the frontier gets your messages the way it
   gets task text: detected secrets and personal data become placeholders, and values it has seen
-  as placeholders stay placeholders. duet's replies show the real values back to you. See
+  as placeholders stay placeholders. declass's replies show the real values back to you. See
   [SECURITY.md](../SECURITY.md) (Operator messages).
 - **Limits.** Each turn is held to `limits.frontier_usd` and `limits.wall_clock_minutes`; the
-  session to `session.frontier_usd` and `session.wall_clock_minutes` (time duet works; time
+  session to `session.frontier_usd` and `session.wall_clock_minutes` (time declass works; time
   waiting for you does not count). A turn stopped by a limit leaves the session open; a spent
   session budget ends it until the budget is raised. `oversight.approve` and commits ask in a
   dialog (No is the default; ↑↓ or y/n, Enter answers, Esc denies); with approval on, a session
   needs a terminal.
-- **Memory.** Every command, MCP server and language server Duet starts is held to
+- **Memory.** Every command, MCP server and language server Declass starts is held to
   `limits.process_memory_mb` per process and `limits.command_memory_mb` for all of a command's
   processes together (defaults: an eighth and a quarter of this machine's memory, counting
   compressed and swapped memory too). A process above them is stopped and the command's output
   says which and why; when the whole machine is critically short of memory, the command's largest
-  process is stopped. Duet never stops a process it did not start.
+  process is stopped. Declass never stops a process it did not start.
 - **Commits.** In a git repository, a session at a terminal offers `git_commit` with the defaults
   (`git.commit = "ask"`, approval off): before each commit it shows the files and the message and
   waits for your `y`. Nothing else is asked unless `oversight.approve` is on.
-- **Without a terminal** (a pipe, a script) `duet` is the same session line by line: your lines
-  are read from standard input and duet's output is plain lines.
+- **Without a terminal** (a pipe, a script) `declass` is the same session line by line: your lines
+  are read from standard input and declass's output is plain lines.
 
-`duet run` stays the one-shot path (scripts, evaluation): no conversation, and its requests are
+`declass run` stays the one-shot path (scripts, evaluation): no conversation, and its requests are
 unchanged. Its progress goes to standard error so it never looks stalled: on a terminal the steps,
 the frontier's text as it streams and a status line (time, cost, output received so far, what
 runs now); otherwise one plain line per step with placeholders kept as the frontier saw them, and
@@ -531,7 +531,7 @@ before; `--quiet` turns the progress off.
 
 **Settings, inside the workspace.** F2 or `/settings` (or `/models`, `/sensitivity`, `/ip`,
 `/limits`, `/data`, `/audit`, `/runs` for one screen) opens seven screens over the conversation;
-Esc (or `q`) comes back. Models (frontier and local settings, with `duet doctor` offline; `o` adds
+Esc (or `q`) comes back. Models (frontier and local settings, with `declass doctor` offline; `o` adds
 the online checks of connection and context window; `l` looks for local servers on loopback (the
 preset ports, as bootstrap does) and `[` `]` `u` point the local role at one; `c` runs the
 cache-reuse probe, two identical short requests to the local model, only when pressed), Sensitivity
@@ -545,7 +545,7 @@ kept), Audit (each run's records and outbound request summaries as stored, and `
 hash chain and its anchor) and Runs (the workspace's runs and sessions, read-only: each as it was
 written, beside the files it changed and their diffs; `[` `]` pick one, `←` `→` switch panels,
 `J` `K` scroll the diff). The settings screens are generated from the registry and show where each
-value comes from (default, owner or project). Edits take the same path as `duet config set`: a
+value comes from (default, owner or project). Edits take the same path as `declass config set`: a
 change that loosens privacy shows its diff and needs `y`, `p` switches edits to the project file
 (which only tightens and never takes owner-only keys), and every applied change is recorded in the
 owner's config audit log. Changes apply from the next session.
@@ -554,11 +554,11 @@ owner's config audit log. Changes apply from the next session.
 
 ### Sensitive-content detection
 
-**What the detectors find.** Duet's own secret and personal-data detectors, the gitleaks rule set
+**What the detectors find.** Declass's own secret and personal-data detectors, the gitleaks rule set
 (221 rules for specific services' credentials, used as data: pinned in
-`crates/duet-boundary/rules/`, updated with `tools/update-rules.sh <version>`), international
+`crates/declass-boundary/rules/`, updated with `tools/update-rules.sh <version>`), international
 phone numbers, IBANs, the main EU/UK national IDs with their check digits, IPv6 and labelled postal
-addresses. `duet doctor` shows the rule set in use; [SECURITY.md](../SECURITY.md) (Detection) lists
+addresses. `declass doctor` shows the rule set in use; [SECURITY.md](../SECURITY.md) (Detection) lists
 everything with measured recall, false positives and limits. A person's name in free text has no
 shape to detect: with `sensitivity.local_pii_pass = true` (off by default; it costs local model
 time on every public result with prose) the local model marks names and postal addresses in the
@@ -571,7 +571,7 @@ privacy and needs confirmation.
 
 ### Operator approval
 
-**Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Duet
+**Operator approval** (`oversight.approve`, owner config only; default `off`): with `risky`, Declass
 asks y/N on the terminal before a `sensitive_data` command, a protected edit, or a write to anything
 other than an ordinary source or test file; with `all`, before every command and write. A refusal
 is returned to the model as a tool error, and every decision is in the run's audit log. A run with
@@ -580,7 +580,7 @@ approval on and no terminal refuses to start. Details: [SECURITY.md](../SECURITY
 ### Command networking and troubleshooting
 
 **Network for commands** (`sandbox.network`; default `registries`): commands reach the package
-registries in `sandbox.registries` through Duet's egress proxy, so `npm install`, `cargo add`,
+registries in `sandbox.registries` through Declass's egress proxy, so `npm install`, `cargo add`,
 `pip install`, `go get` and the like work; the defaults are crates.io, npm (and yarn's mirror),
 PyPI, the Go module proxy and checksum database, Maven Central, the Gradle plugin portal, RubyGems
 and GitHub's download hosts (release assets and source archives; not github.com, which also takes
@@ -590,28 +590,28 @@ localhost is reachable from the same command (under bubblewrap on any port; on m
 development ports, 3000-3099, 4000-4099, 5000-5099, 5173-5199, 7000-7099, 8000-8099, 9000-9099
 and a few others, when nothing on your machine already listens there, so a test server on a
 random port needs `all` there). `"off"` gives commands no network; `"all"` gives them all of it
-(`duet config set sandbox.network '"all"' --confirm`). Whatever the mode, a `sensitive_data`
+(`declass config set sandbox.network '"all"' --confirm`). Whatever the mode, a `sensitive_data`
 command has no network, nor does a check that can read protected source. Add a registry (owner
 config only; adding asks for `--confirm`, removing does not):
-`duet config set sandbox.registries '["registry.npmjs.org", "npm.pkg.github.com"]' --confirm`
+`declass config set sandbox.registries '["registry.npmjs.org", "npm.pkg.github.com"]' --confirm`
 (host names, `*.domain`, optionally `:port`; without a port 443 and 80). A registry on a private
 address (an intranet mirror) is refused; use `all` for it. Package caches are kept per run in its
 scratch directory (npm, pip and the others download again in a new run; cargo reuses the crates
 your own `~/.cargo` holds, which commands can read but never write). Commands cannot read the
 credential stores in your home directory (`~/.npmrc`, `~/.cargo/credentials.toml`, `~/.ssh`,
 `~/.aws`, shell histories and startup files, browser profiles; the list is `HOME_SECRETS` in
-`crates/duet-sandbox`), so a token in `~/.npmrc` is not available to them. Each connection is an
+`crates/declass-sandbox`), so a token in `~/.npmrc` is not available to them. Each connection is an
 `egress` event in the run's audit log (host, port, bytes each way, allowed or refused; never a
 path). `cargo new` makes no `.git` in commands (they may not create one). An owner config from an
 earlier version with `sandbox.network = true` or `false` still works: it reads as `"all"` or
-`"off"` and Duet prints a note. Details: [SECURITY.md](../SECURITY.md) (Command network).
+`"off"` and Declass prints a note. Details: [SECURITY.md](../SECURITY.md) (Command network).
 
 **Command troubleshooting.** Temporary files belong in the command's private `$TMPDIR` or the
 workspace. A hard-coded `/tmp/file` or home-directory write can be denied. Use `list_files`,
-`search` and `read_file` for file discovery and reads; commands cannot inspect `.duet` or `.git`.
+`search` and `read_file` for file discovery and reads; commands cannot inspect `.declass` or `.git`.
 Skills cannot grant access to a browser daemon, its saved profile or host sockets.
 
-Start a preview server and run its client check inside the **same command**. Duet stops all
+Start a preview server and run its client check inside the **same command**. Declass stops all
 child processes when that command ends, including background processes started with `nohup`.
 On macOS with the default network policy, choose an unused loopback port such as 8000 or 5173;
 an arbitrary port may be blocked. Keep an occupied host service running and choose another port.
@@ -620,7 +620,7 @@ Check the actual test's exit status: a trailing `cat`, `head` or `tail` can hide
 
 **Visual verification.** Screenshots and visual claims require the actual application or browser
 renderer. A canvas mock can test logic, but its output does not prove that the real interface
-renders correctly. If the configured tools cannot launch a browser or inspect an image, Duet
+renders correctly. If the configured tools cannot launch a browser or inspect an image, Declass
 should report that limit. A refused image read creates no content handle: `ask_local` cannot
 inspect a filename or an invented ID. Configure a local vision model, or explicitly attach a
 non-sensitive image with `/image --public PATH` when the frontier supports vision. Sensitive
@@ -637,11 +637,11 @@ as text; HTML is converted with links kept; `start_line`/`end_line` read part of
 result pages of general search engines (Google, Bing, DuckDuckGo and the like): searching is
 `web_search`'s job.
 
-Search works without setup, and Duet runs it itself: with `web.search.backend = "auto"` (the
+Search works without setup, and Declass runs it itself: with `web.search.backend = "auto"` (the
 default, the `native` backend) the host asks public sources that publish an API for automated
 use, in parallel, with no search provider in between, and merges their answers (each source's
 first result, then each source's second, a page listed twice shown once). Every source asked
-receives the query and your address, so a search now reaches several parties; `duet doctor`
+receives the query and your address, so a search now reaches several parties; `declass doctor`
 ("web search") lists them.
 
 | Source | What it finds | Asked | Service and limit (without a key) |
@@ -662,7 +662,7 @@ every source did (its result count, "answered earlier" for an answer kept from e
 source gets 10 seconds (or `web.timeout_secs` when shorter), so a slow one never holds up the
 others. Stack Overflow and GitHub match every word: a few distinctive words (a name, an error
 message) find more than a sentence. Google, Bing and DuckDuckGo are never asked: they publish no
-API for this, and Duet does not scrape their result pages.
+API for this, and Declass does not scrape their result pages.
 
 `web.search.sources` chooses the sources (owner only, confirmed): `["auto"]` (the default: the
 table above), `auto` plus names to ask those by default too, or names alone to allow only those.
@@ -671,7 +671,7 @@ With a Z.ai frontier and its key, `auto` uses Z.ai's own search instead: its que
 provider that already receives the session, and it finds pages the native sources do not (set
 `web.search.backend = "native"` to keep searches off it). Other backends are used only when the
 owner names them in `web.search.backend`; a SearXNG URL or a Brave key alone does not select them
-(runs and `duet doctor` name those settings as unused):
+(runs and `declass doctor` name those settings as unused):
 
 | Backend | Who receives the queries | Cost |
 |---|---|---|
@@ -682,31 +682,31 @@ owner names them in `web.search.backend`; a SearXNG URL or a Brave key alone doe
 | `zai` (`auto` with a Z.ai frontier and its key) | Z.ai (with a Z.ai frontier, the provider that already receives the run) | coding plan: the plan's search server, counted in the plan's credits; otherwise the Web Search API, billed per search to the account balance (`web.search.zai_engine`) |
 
 ```sh
-duet doctor                                                               # "web search": the backend, its sources and their hosts
-duet config set web.search.sources '["auto", "github_issues"]' --confirm  # also ask GitHub's issue search by default
-duet config set web.search.sources '["wikipedia", "stackoverflow"]' --confirm  # only these two
-duet config preset searxng --confirm       # private search: settings for a local SearXNG + the docker command
-duet config set web.search.backend '"brave"' --confirm                    # Brave Search API; key in $BRAVE_API_KEY
-duet config set web.search.backend '"zai"' --confirm                      # Z.ai's search (the plan's server with a coding-plan frontier)
-duet config set web.search.backend '"none"'                               # no web_search
-duet config set web.allowlist_private '["wiki.corp", "10.20.0.0/16"]' --confirm   # intranet hosts for web_fetch
-duet config set --project web.enabled false                              # no web tools in this repository
+declass doctor                                                               # "web search": the backend, its sources and their hosts
+declass config set web.search.sources '["auto", "github_issues"]' --confirm  # also ask GitHub's issue search by default
+declass config set web.search.sources '["wikipedia", "stackoverflow"]' --confirm  # only these two
+declass config preset searxng --confirm       # private search: settings for a local SearXNG + the docker command
+declass config set web.search.backend '"brave"' --confirm                    # Brave Search API; key in $BRAVE_API_KEY
+declass config set web.search.backend '"zai"' --confirm                      # Z.ai's search (the plan's server with a coding-plan frontier)
+declass config set web.search.backend '"none"'                               # no web_search
+declass config set web.allowlist_private '["wiki.corp", "10.20.0.0/16"]' --confirm   # intranet hosts for web_fetch
+declass config set --project web.enabled false                              # no web tools in this repository
 ```
 
-**Private search.** `duet config preset searxng --confirm` sets `web.search.backend = "searxng"` and
+**Private search.** `declass config preset searxng --confirm` sets `web.search.backend = "searxng"` and
 `web.search.searxng_url = "http://127.0.0.1:8888"`, writes a SearXNG `settings.yml` with the JSON
-format enabled next to the owner config (`~/.config/duet/searxng/`, kept if it exists), and prints
+format enabled next to the owner config (`~/.config/declass/searxng/`, kept if it exists), and prints
 the command that starts it in Docker or OrbStack, listening on loopback only:
 
 ```sh
-docker run -d --name duet-searxng --restart unless-stopped \
+docker run -d --name declass-searxng --restart unless-stopped \
     -p 127.0.0.1:8888:8080 \
-    -v "$HOME/.config/duet/searxng:/etc/searxng" \
+    -v "$HOME/.config/declass/searxng:/etc/searxng" \
     docker.io/searxng/searxng:latest
-duet doctor --online        # the "web search" check sends it one test query
+declass doctor --online        # the "web search" check sends it one test query
 ```
 
-Duet never starts the container itself. Queries then leave your machine only as SearXNG's own
+Declass never starts the container itself. Queries then leave your machine only as SearXNG's own
 requests to the engines it is set up with: from your address, without an account or key.
 
 **Z.ai search** (`web.search.backend = "zai"`). With the default frontier (the GLM Coding
@@ -721,7 +721,7 @@ none.
 In hybrid mode a URL or query holding a placeholder or a known sensitive value, in any part of the
 request and in any spelling the check reads (encoded, spelled out, cut into parts, as digits of a
 withheld number), is refused before its name is resolved or anything is sent (for a native search,
-before any source is contacted; every request duet makes to a third party goes through one checked
+before any source is contacted; every request declass makes to a third party goes through one checked
 client), and fetched content and
 results are shown as untrusted data with your own sensitive values replaced (what a public page
 holds is public: nothing on it is withheld or blocks a later request). Every call is an audit event
@@ -746,22 +746,22 @@ sensitive value, runs no hook and never pushes, resets, checks out or switches b
 commit is an audit event (hash, paths). `/undo` in a session reverts files, never commits.
 
 ```sh
-duet config set git.author '"Ada Lovelace <ada@example.com>"'   # else user.name/user.email from git config
-duet config set oversight.approve '"risky"'                     # git.commit = "ask" (default): each commit asks, in duet run too
-duet config set git.commit '"allow"' --confirm                  # commit without asking (e.g. with approval off)
-duet config set --project git.commit '"off"'                    # no git_commit in this repository
+declass config set git.author '"Ada Lovelace <ada@example.com>"'   # else user.name/user.email from git config
+declass config set oversight.approve '"risky"'                     # git.commit = "ask" (default): each commit asks, in declass run too
+declass config set git.commit '"allow"' --confirm                  # commit without asking (e.g. with approval off)
+declass config set --project git.commit '"off"'                    # no git_commit in this repository
 ```
 
 With the default `git.commit = "ask"`, each commit waits for your approval. In an interactive
 session it is asked in the workspace (files and message, answer `y`) even with approval off;
-where nobody can be asked (`duet run` with approval off, a session without a terminal) `git_commit` is
+where nobody can be asked (`declass run` with approval off, a session without a terminal) `git_commit` is
 not offered. The read-only git tools always are. Details: [SECURITY.md](../SECURITY.md) (Git
 tools).
 
 ### MCP servers
 
 **MCP servers** (`[mcp.servers.<name>]` in the owner config, or declared by a
-[native plugin](EXTENSIONS.md#optional-mcp-tool-servers)): Duet's
+[native plugin](EXTENSIONS.md#optional-mcp-tool-servers)): Declass's
 own Model Context Protocol client (stdio and streamable HTTP) starts each enabled server at run
 start and offers its tools as `mcp__<server>__<tool>`. A stdio server runs in the command sandbox
 (same hidden paths as commands, the workspace as working directory, no network unless `network =
@@ -790,10 +790,10 @@ stdio server, placeholders in the arguments are resolved to their values (it is 
 tools the server does not declare read-only, every tool (`always`) or none (`auto`); with `all`,
 every call is asked. Tool descriptions and schemas are untrusted text: scanned and length-capped.
 A server that fails to start, stops or hangs costs its calls (tool errors), never the run. Every
-start and call is an audit event. `duet doctor` starts each stdio server (HTTP servers with
-`--online`) and reports how many tools it offers; `duet config list` shows every server's settings.
+start and call is an audit event. `declass doctor` starts each stdio server (HTTP servers with
+`--online`) and reports how many tools it offers; `declass config list` shows every server's settings.
 Settings are owner-only and changes that start programs or reach servers need `--confirm`, e.g.
-`duet config set mcp.servers.fs.command '"my-mcp-server"' --confirm`. Details:
+`declass config set mcp.servers.fs.command '"my-mcp-server"' --confirm`. Details:
 [SECURITY.md](../SECURITY.md) (MCP servers).
 
 ### Language servers
@@ -803,14 +803,14 @@ gets `code_nav` (`definition`, `references`, `hover`, `symbols`, `workspace_symb
 `diagnostics`; answers are `path:line:col  text` lines, lines and character columns counted from 1
 as `read_file` shows them) and `rename` (applied to every file at once, or to none). After
 `edit_file`, `write_file` or `rename` on a file whose server is running, the result ends with a
-short `diagnostics:` section (errors first). Duet looks for `rust-analyzer`,
+short `diagnostics:` section (errors first). Declass looks for `rust-analyzer`,
 `typescript-language-server`, `pyright-langserver` or `basedpyright-langserver`, `gopls` and
-`clangd` on `PATH` (`duet doctor` lists what it found); a server starts on first use, runs in the
+`clangd` on `PATH` (`declass doctor` lists what it found); a server starts on first use, runs in the
 command sandbox without network, and is restarted once if it crashes (then the tools report it
 unavailable and the run goes on). Other servers, or other commands for these languages:
 
 ```toml
-# ~/.config/duet/config.toml (owner only; `duet config set lsp.servers.zig.command '"zls"' --confirm` works too)
+# ~/.config/declass/config.toml (owner only; `declass config set lsp.servers.zig.command '"zls"' --confirm` works too)
 [lsp.servers.zig]
 command = "zls"
 extensions = ["zig"]
@@ -820,10 +820,10 @@ command = "/opt/ra/bin/rust-analyzer"
 env = ["RA_LOG"]                           # variables passed through by name
 ```
 
-`duet config set --project lsp.enabled false` turns the tools off for one repository.
+`declass config set --project lsp.enabled false` turns the tools off for one repository.
 
 Servers read the workspace like checks do: protected source yes, sensitive files, `.git` and
-`.duet` never. In hybrid mode an answer that points into a sensitive or sealed file shows only its
+`.declass` never. In hybrid mode an answer that points into a sensitive or sealed file shows only its
 location, an interface-only file shows declarations only, and `rename` refuses to touch any of
 them. Details: [SECURITY.md](../SECURITY.md) (Language servers).
 
@@ -854,10 +854,10 @@ a1 (read): ...`, `[a1]  · read_file ...`, `⇠ sub-agent a1 completed`); the Ru
 indented the same way, and `summary.json` reports their requests and cost under `stats.subagents`.
 
 ```sh
-duet config set --project subagents.max_parallel 2         # fewer at once
-duet config set --project subagents.max_usd 0.5            # lower the per-sub-agent spend
-duet config set subagents.model '"glm-5.3-flash"' --confirm # a cheaper model at the frontier endpoint
-duet config set --project subagents.enabled false          # no delegate in this repository
+declass config set --project subagents.max_parallel 2         # fewer at once
+declass config set --project subagents.max_usd 0.5            # lower the per-sub-agent spend
+declass config set subagents.model '"glm-5.3-flash"' --confirm # a cheaper model at the frontier endpoint
+declass config set --project subagents.enabled false          # no delegate in this repository
 ```
 
 In hybrid mode a sub-agent sees exactly what the main loop would (summaries, handles and
@@ -877,11 +877,11 @@ quoted from open source files. A frontier that would otherwise list, search and 
 turns (each resending the whole conversation) spends one.
 
 ```sh
-duet config set explore.enabled true              # offer explore (hybrid and pass-through)
-duet config set explore.quick_steps 12            # local model requests per quick call (default depth)
-duet config set explore.thorough_steps 30         # ... per thorough call
-duet config set explore.max_seconds 600           # time of a thorough call (a quick one: a third)
-duet config set explore.max_read_kb 96            # tool output a thorough call reads (a quick one: half)
+declass config set explore.enabled true              # offer explore (hybrid and pass-through)
+declass config set explore.quick_steps 12            # local model requests per quick call (default depth)
+declass config set explore.thorough_steps 30         # ... per thorough call
+declass config set explore.max_seconds 600           # time of a thorough call (a quick one: a third)
+declass config set explore.max_read_kb 96            # tool output a thorough call reads (a quick one: half)
 ```
 
 The explorer only reads: `read_file`, `list_files`, `search`, `code_nav` when language servers
@@ -900,7 +900,7 @@ outcome and counts. Details: [SECURITY.md](../SECURITY.md) (Local explorer).
 
 ### Images
 
-**Images** (PNG, JPEG, GIF, WebP): `read_file` on an image in the workspace, `duet run --image
+**Images** (PNG, JPEG, GIF, WebP): `read_file` on an image in the workspace, `declass run --image
 <path>` (repeatable), and `/image <path>` in a session (attached to your
 next message). Every image is decoded, scaled to `images.max_side` (1568 px) and encoded again,
 which drops its metadata (EXIF location, text chunks); files over 20 MB, or that stay over
@@ -909,7 +909,7 @@ which drops its metadata (EXIF location, text chunks); files over 20 MB, or that
 - by default the **local model describes** the image and the frontier gets the description,
   cleaned like any local output (values it recognizes become placeholders, names are withheld),
   plus a handle for `ask_local` follow-up questions. This needs a local model that reads images:
-  `local.vision = true` (`duet config set local.vision true --confirm`).
+  `local.vision = true` (`declass config set local.vision true --confirm`).
 - the frontier gets the **image itself** only when it is public: the operator attaches it with
   `--image-public <path>` or `/image --public <path>` (recorded in the audit log as the operator's
   decision), or `images.to_frontier = "public"` and it is a workspace file on a path that is
@@ -922,42 +922,42 @@ which drops its metadata (EXIF location, text chunks); files over 20 MB, or that
 
 In pass-through mode an image goes to the frontier when `frontier.vision` is on and is refused
 otherwise. Images the frontier sees are kept in the run directory by digest; transcripts and audit
-records hold the digest, never the image. `duet doctor --online` tells you whether your models
+records hold the digest, never the image. `declass doctor --online` tells you whether your models
 really read images (see below). Details: [SECURITY.md](../SECURITY.md) (Images).
 
 ```sh
-duet config set local.vision true --confirm            # a vision-language local model describes images
-duet config set frontier.vision true --confirm         # the frontier model accepts images
-duet config set --project images.to_frontier '"never"' # default; "public" also sends non-sensitive workspace images
+declass config set local.vision true --confirm            # a vision-language local model describes images
+declass config set frontier.vision true --confirm         # the frontier model accepts images
+declass config set --project images.to_frontier '"never"' # default; "public" also sends non-sensitive workspace images
 ```
 
 ### Local-model setup
 
-**Getting a local model.** `duet setup` probes the local preset ports on `127.0.0.1`, reads
+**Getting a local model.** `declass setup` probes the local preset ports on `127.0.0.1`, reads
 `/v1/models`, and offers the served text/chat models. Its defaults cover Ollama (11434), LM Studio
 (1234), llama.cpp, LocalAI and MLX (8080), vLLM and oMLX (8000), Jan Desktop (1337), Jan CLI
-(6767), GPT4All (4891), KoboldCpp (5001), and LiteLLM (4000). `DUET_LOCAL_PORTS` can replace
-that list, or `duet setup --local-url URL` can select a custom endpoint. A remote local endpoint
-must pass Duet's allowlist and transport checks before discovery contacts it. Jan and LiteLLM
+(6767), GPT4All (4891), KoboldCpp (5001), and LiteLLM (4000). `DECLASS_LOCAL_PORTS` can replace
+that list, or `declass setup --local-url URL` can select a custom endpoint. A remote local endpoint
+must pass Declass's allowlist and transport checks before discovery contacts it. Jan and LiteLLM
 can use `JAN_API_KEY` and `LITELLM_API_KEY`; only their variable names are saved. Model discovery
 does not download, load or test a model.
 
-With no `local.base_url` in your user config, `duet run` also looks for a server on this machine
+With no `local.base_url` in your user config, `declass run` also looks for a server on this machine
 only, lists what answered, and uses it for that run when exactly one model is on
 offer (saying so, and recording it in the run). With several, or none, it prints the exact
-`duet config set` commands and stops. It never writes configuration: `duet config preset <name>`
+`declass config set` commands and stops. It never writes configuration: `declass config preset <name>`
 does that, through the same `--confirm` and audit path as any endpoint change.
 
 ### Privacy without a local model
 
-**Privacy mode without a local model.** `duet config set local.enabled false` (a repository's own
+**Privacy mode without a local model.** `declass config set local.enabled false` (a repository's own
 config may set it too) runs hybrid mode with no local model: nothing is probed or contacted, no
 model reads sensitive content, and the frontier sees it only as handles (their error lines with
 values replaced, and line shapes or structure views) and synthetic samples. `ask_local` and `edit_protected` are refused, and the task tells
 the frontier so. Top clearance, and `sensitivity.local_pii_pass` (which would otherwise be skipped
 without a word), refuse to start. Turning it back on lets a local model read sensitive content
 again, so it needs `--confirm`. The work is harder for the frontier without answers about the
-data; the evaluation lane `duet-hybrid-nolocal` measures by how much.
+data; the evaluation lane `declass-hybrid-nolocal` measures by how much.
 
 ### Structure views and masked output
 
@@ -988,7 +988,7 @@ run) lasts, other numbers as `9`s. A short output (at most 200 characters: a cou
 or no) is a probe of the data: the run shows at most `sensitivity.output_probes` (12) of them, then
 withholds each (the view no longer depends on it; each probe is an `output_probe` audit event). A
 project may lower all of these; raising them, or turning views on again, needs `--confirm`.
-`cargo run -p duet-boundary --example structure_report -- <workspace> <task file> <state dir>`
+`cargo run -p declass-boundary --example structure_report -- <workspace> <task file> <state dir>`
 prints what the frontier would be shown of a workspace's sensitive files.
 
 ### Condensed command output
@@ -1015,7 +1015,7 @@ and X1/X2 runs the condensed outputs shrank by 48%, but only 43 of 1,635 command
 
 ### Diagnostics
 
-**`duet doctor`** checks the configuration and its origins, the config audit chain, settings looser
+**`declass doctor`** checks the configuration and its origins, the config audit chain, settings looser
 than their defaults, the frontier endpoint and whether its key variable is set (the value is never
 printed), local-endpoint trust (loopback, allowlist, the plain-HTTP rule), the sandbox, git (and,
 outside a repository, what works without one), supported instruction files and overrides, disk
@@ -1032,12 +1032,12 @@ servers accept image parts and silently drop them; the model then describes an i
 saw). Exit code: 0 pass, 1 warn, 2 fail.
 
 Live smoke tests, one per local backend, run with
-`DUET_LIVE_OLLAMA_URL=http://127.0.0.1:11434/v1 cargo test -p duet-boundary --test backend_smoke -- --ignored`
-(also `LMSTUDIO`, `LLAMACPP`, `VLLM`, `OMLX`, `MLX`; `DUET_LIVE_<BACKEND>_MODEL` picks the model).
+`DECLASS_LIVE_OLLAMA_URL=http://127.0.0.1:11434/v1 cargo test -p declass-boundary --test backend_smoke -- --ignored`
+(also `LMSTUDIO`, `LLAMACPP`, `VLLM`, `OMLX`, `MLX`; `DECLASS_LIVE_<BACKEND>_MODEL` picks the model).
 
 ## Models
 
-`duet setup` looks for provider keys by environment variable name. One key lets it select a cloud
+`declass setup` looks for provider keys by environment variable name. One key lets it select a cloud
 provider automatically; several prompt for the intended recipient. `--yes` does not guess among
 several cloud accounts. It fetches only that provider's model listing, chooses the existing or
 preset model if served, otherwise offers a short ranked list of candidate chat models. A listing
@@ -1045,7 +1045,7 @@ that explicitly says tools or chat are unsupported excludes that model. This is 
 not a tool-use benchmark. Authentication rejection stops setup. If a listing is unavailable for
 another reason, a preset model or `--model ID` can be used. Image input is enabled automatically
 only for the preset's known default or when the listing advertises image input. Run
-`duet doctor --online` to check the selected model's listing, context, cache and image behavior.
+`declass doctor --online` to check the selected model's listing, context, cache and image behavior.
 
 | Frontier preset | Key variable | API dialect |
 |---|---|---|
@@ -1069,10 +1069,10 @@ your account. Mistral, Together and Fireworks deliberately have no hardcoded mod
 live listing or `--model`. For Fireworks, setup also tries its public account-scoped model
 catalog when the inference endpoint has no listing; an account-specific deployment may still need
 `--model`. These presets are tested against scripted protocol streams; they are not
-a claim that every hosted model supports Duet's tool calls. The outbound gate filters, checks and
+a claim that every hosted model supports Declass's tool calls. The outbound gate filters, checks and
 audits the exact request body in each dialect.
 
-The default local model is `omlx-coding` (Qwen 3.8 27B on oMLX), chosen with `duet local-eval`.
+The default local model is `omlx-coding` (Qwen 3.8 27B on oMLX), chosen with `declass local-eval`.
 Only oMLX has served live runs so far; other local backends have preset/discovery tests and need
 a live smoke test on the operator's machine. `omlx-coding` does not read images, so
 `local.vision` stays off. Generic OpenAI-compatible local servers work on loopback or an
@@ -1083,7 +1083,7 @@ allowlisted host; plain HTTP away from loopback needs `local.allow_plaintext`.
 Frontier token estimates use OpenRouter's public catalog for the selected model, including cache
 reads/writes and conditional context/time rates. Exact model slugs are preferred; unqualified
 names resolve only when unique. The catalog is refreshed when its saved copy is at least 24 hours
-old. If unavailable, Duet uses the saved copy or the bundled 2026-09-30 snapshot, labeling its source
+old. If unavailable, Declass uses the saved copy or the bundled 2026-09-30 snapshot, labeling its source
 and age in **Session** and `/status`. This public request sends no prompts or API credentials.
 Top-clearance runs and loopback frontier endpoints never refresh the catalog. To disable the
 lookup elsewhere, set `pricing.offline true`.
@@ -1091,10 +1091,10 @@ lookup elsewhere, set `pricing.offline true`.
 If your endpoint uses a model alias, map its pricing to the exact OpenRouter slug:
 
 ```sh
-duet config set pricing.frontier_model '"z-ai/glm-5.3-flash"'
+declass config set pricing.frontier_model '"z-ai/glm-5.3-flash"'
 ```
 
-This changes the price lookup, not the model sent to the endpoint. Clear it with `duet config set
+This changes the price lookup, not the model sent to the endpoint. Clear it with `declass config set
 pricing.frontier_model '""'` when returning to automatic resolution. Unknown or ambiguous frontier
 prices stop the run before a model request instead of silently charging zero. A delegated frontier
 model uses its own catalog price; optional frontier security opinions use the main frontier quote.
@@ -1104,23 +1104,23 @@ provider. The override applies only to the exact model and endpoint; both input 
 must be positive:
 
 ```sh
-duet config set pricing.manual_model '"my-model-id"'
-duet config set pricing.manual_base_url '"https://api.example.com/v1"'
-duet config set pricing.manual_input_usd_per_million 2.00
-duet config set pricing.manual_output_usd_per_million 8.00
+declass config set pricing.manual_model '"my-model-id"'
+declass config set pricing.manual_base_url '"https://api.example.com/v1"'
+declass config set pricing.manual_input_usd_per_million 2.00
+declass config set pricing.manual_output_usd_per_million 8.00
 # optional: pricing.manual_cache_read_usd_per_million and pricing.manual_cache_write_usd_per_million
 ```
 
-Rates are USD per million tokens. If cache rates are left at zero, Duet uses the input rate for
-those tokens. A quote is a budget estimate, not the provider invoice. `duet doctor` shows its
+Rates are USD per million tokens. If cache rates are left at zero, Declass uses the input rate for
+those tokens. A quote is a budget estimate, not the provider invoice. `declass doctor` shows its
 source and warns when no enforceable price is available.
 
 Local input/output rates default to **$0**. Set your own USD-per-million-token estimates in F2
 settings, or for example:
 
 ```sh
-duet config set local.input_usd_per_million 0.20
-duet config set local.output_usd_per_million 0.80
+declass config set local.input_usd_per_million 0.20
+declass config set local.output_usd_per_million 0.80
 ```
 
 Rates apply after restarting/resuming the session. All local roles share the meter, including
@@ -1142,10 +1142,10 @@ fee is rejected. The frontier budget continues to use the recorded per-response 
 
 ## Configuration
 
-Every setting is defined in one registry and editable with `duet config` or in the workspace (`/settings`):
+Every setting is defined in one registry and editable with `declass config` or in the workspace (`/settings`):
 models, sensitivity rules and detectors, protected paths and IP levels, budgets, retention.
-Credentials and endpoints live only in your user config (`~/.config/duet/config.toml`); a
-repository's `.duet/config.toml` can make privacy stricter but never looser.
+Credentials and endpoints live only in your user config (`~/.config/declass/config.toml`); a
+repository's `.declass/config.toml` can make privacy stricter but never looser.
 
 ### Long conversations
 
@@ -1155,9 +1155,9 @@ tool results are replaced by short stubs that name the call, oldest turns first.
 condensed by the local model:
 
 ```sh
-duet config set context.compaction true
-duet config set context.compact_at 100000   # estimated request tokens that trigger it
-duet config set context.compact_to 0.4      # what it is brought down to, as a fraction of that
+declass config set context.compaction true
+declass config set context.compact_at 100000   # estimated request tokens that trigger it
+declass config set context.compact_to 0.4      # what it is brought down to, as a fraction of that
 ```
 
 Past `context.compact_at`, masking is tried first; if it cannot bring the conversation down to
@@ -1173,7 +1173,7 @@ To see what compaction would do to a recorded run, replay its transcript offline
 model:
 
 ```sh
-cargo run -p duet-cli --example compaction_replay -- .duet/runs/<run-id> --out /tmp/compaction
+cargo run -p declass-cli --example compaction_replay -- .declass/runs/<run-id> --out /tmp/compaction
 ```
 
 It reports each event (tokens before and after, local seconds), request tokens over the run with

@@ -446,6 +446,332 @@ dependencies = [
 ]
 
 [[package]]
+name = "declass-agent"
+version = "0.1.1"
+dependencies = [
+ "base64",
+ "declass-boundary",
+ "declass-config",
+ "declass-egress",
+ "declass-extensions",
+ "declass-fs",
+ "declass-git",
+ "declass-lsp",
+ "declass-mcp",
+ "declass-review",
+ "declass-sandbox",
+ "declass-web",
+ "futures-util",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "declass-boundary"
+version = "0.1.1"
+dependencies = [
+ "aho-corasick",
+ "bytes",
+ "declass-boundary",
+ "declass-config",
+ "declass-fs",
+ "declass-provider",
+ "declass-review",
+ "futures-util",
+ "hex",
+ "proptest",
+ "regex",
+ "regex-syntax",
+ "rustix 0.38.44",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "time",
+ "tokio",
+ "toml",
+ "tree-sitter",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+ "url",
+]
+
+[[package]]
+name = "declass-cli"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "crossterm",
+ "declass-agent",
+ "declass-boundary",
+ "declass-config",
+ "declass-egress",
+ "declass-extensions",
+ "declass-fs",
+ "declass-git",
+ "declass-lsp",
+ "declass-mcp",
+ "declass-provider",
+ "declass-sandbox",
+ "declass-tui",
+ "declass-web",
+ "futures-util",
+ "hex",
+ "rustix 0.38.44",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "tokio",
+ "toml",
+ "unicode-segmentation",
+ "unicode-width",
+ "url",
+ "uuid",
+ "vt100",
+]
+
+[[package]]
+name = "declass-config"
+version = "0.1.1"
+dependencies = [
+ "declass-fs",
+ "hex",
+ "regex",
+ "serde",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
+name = "declass-egress"
+version = "0.1.1"
+dependencies = [
+ "declass-boundary",
+ "declass-sandbox",
+ "declass-web",
+ "futures-util",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "declass-evals"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "declass-config",
+ "declass-governor",
+ "declass-provider",
+ "futures-util",
+ "hex",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "declass-extensions"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "declass-fs",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
+name = "declass-fs"
+version = "0.1.1"
+dependencies = [
+ "hex",
+ "rustix 0.38.44",
+ "sha2",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "declass-git"
+version = "0.1.1"
+dependencies = [
+ "declass-fs",
+ "ignore",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
+name = "declass-governor"
+version = "0.1.1"
+dependencies = [
+ "libproc",
+ "rustix 0.38.44",
+ "serde",
+ "sysinfo",
+ "tempfile",
+]
+
+[[package]]
+name = "declass-lsp"
+version = "0.1.1"
+dependencies = [
+ "declass-sandbox",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "declass-mcp"
+version = "0.1.1"
+dependencies = [
+ "declass-boundary",
+ "declass-mcp",
+ "declass-net",
+ "futures-util",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "declass-net"
+version = "0.1.1"
+dependencies = [
+ "declass-boundary",
+ "futures-util",
+ "reqwest",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "declass-provider"
+version = "0.1.1"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures-util",
+ "hex",
+ "image",
+ "proptest",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "declass-release"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "hex",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "toml",
+]
+
+[[package]]
+name = "declass-review"
+version = "0.1.1"
+dependencies = [
+ "serde",
+ "tree-sitter",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
+name = "declass-sandbox"
+version = "0.1.1"
+dependencies = [
+ "declass-governor",
+ "rustix 0.38.44",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "declass-tui"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "declass-agent",
+ "declass-boundary",
+ "declass-config",
+ "declass-fs",
+ "declass-git",
+ "image",
+ "ratatui",
+ "regex",
+ "rustix 0.38.44",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "declass-web"
+version = "0.1.1"
+dependencies = [
+ "declass-boundary",
+ "declass-mcp",
+ "declass-net",
+ "flate2",
+ "futures-util",
+ "ipnet",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -501,332 +827,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
 dependencies = [
  "litrs",
-]
-
-[[package]]
-name = "duet-agent"
-version = "0.1.1"
-dependencies = [
- "base64",
- "duet-boundary",
- "duet-config",
- "duet-egress",
- "duet-extensions",
- "duet-fs",
- "duet-git",
- "duet-lsp",
- "duet-mcp",
- "duet-review",
- "duet-sandbox",
- "duet-web",
- "futures-util",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "duet-boundary"
-version = "0.1.1"
-dependencies = [
- "aho-corasick",
- "bytes",
- "duet-boundary",
- "duet-config",
- "duet-fs",
- "duet-provider",
- "duet-review",
- "futures-util",
- "hex",
- "proptest",
- "regex",
- "regex-syntax",
- "rustix 0.38.44",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "time",
- "tokio",
- "toml",
- "tree-sitter",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "url",
-]
-
-[[package]]
-name = "duet-cli"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "crossterm",
- "duet-agent",
- "duet-boundary",
- "duet-config",
- "duet-egress",
- "duet-extensions",
- "duet-fs",
- "duet-git",
- "duet-lsp",
- "duet-mcp",
- "duet-provider",
- "duet-sandbox",
- "duet-tui",
- "duet-web",
- "futures-util",
- "hex",
- "rustix 0.38.44",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "time",
- "tokio",
- "toml",
- "unicode-segmentation",
- "unicode-width",
- "url",
- "uuid",
- "vt100",
-]
-
-[[package]]
-name = "duet-config"
-version = "0.1.1"
-dependencies = [
- "duet-fs",
- "hex",
- "regex",
- "serde",
- "sha2",
- "tempfile",
- "thiserror",
- "toml",
-]
-
-[[package]]
-name = "duet-egress"
-version = "0.1.1"
-dependencies = [
- "duet-boundary",
- "duet-sandbox",
- "duet-web",
- "futures-util",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "duet-evals"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "duet-config",
- "duet-governor",
- "duet-provider",
- "futures-util",
- "hex",
- "http-body-util",
- "hyper",
- "hyper-util",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "time",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "duet-extensions"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "duet-fs",
- "hex",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "toml",
-]
-
-[[package]]
-name = "duet-fs"
-version = "0.1.1"
-dependencies = [
- "hex",
- "rustix 0.38.44",
- "sha2",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "duet-git"
-version = "0.1.1"
-dependencies = [
- "duet-fs",
- "ignore",
- "tempfile",
- "thiserror",
-]
-
-[[package]]
-name = "duet-governor"
-version = "0.1.1"
-dependencies = [
- "libproc",
- "rustix 0.38.44",
- "serde",
- "sysinfo",
- "tempfile",
-]
-
-[[package]]
-name = "duet-lsp"
-version = "0.1.1"
-dependencies = [
- "duet-sandbox",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "duet-mcp"
-version = "0.1.1"
-dependencies = [
- "duet-boundary",
- "duet-mcp",
- "duet-net",
- "futures-util",
- "serde_json",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "duet-net"
-version = "0.1.1"
-dependencies = [
- "duet-boundary",
- "futures-util",
- "reqwest",
- "serde_json",
- "thiserror",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "duet-provider"
-version = "0.1.1"
-dependencies = [
- "base64",
- "bytes",
- "futures-util",
- "hex",
- "image",
- "proptest",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror",
- "time",
- "tokio",
-]
-
-[[package]]
-name = "duet-release"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "hex",
- "serde_json",
- "sha2",
- "tempfile",
- "time",
- "toml",
-]
-
-[[package]]
-name = "duet-review"
-version = "0.1.1"
-dependencies = [
- "serde",
- "tree-sitter",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
-]
-
-[[package]]
-name = "duet-sandbox"
-version = "0.1.1"
-dependencies = [
- "duet-governor",
- "rustix 0.38.44",
- "tempfile",
- "thiserror",
- "tokio",
-]
-
-[[package]]
-name = "duet-tui"
-version = "0.1.1"
-dependencies = [
- "anyhow",
- "duet-agent",
- "duet-boundary",
- "duet-config",
- "duet-fs",
- "duet-git",
- "image",
- "ratatui",
- "regex",
- "rustix 0.38.44",
- "serde_json",
- "tempfile",
- "toml",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "duet-web"
-version = "0.1.1"
-dependencies = [
- "duet-boundary",
- "duet-mcp",
- "duet-net",
- "flate2",
- "futures-util",
- "ipnet",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "url",
 ]
 
 [[package]]

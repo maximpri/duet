@@ -3,9 +3,9 @@
 //! output; a recovered call names a declared tool and its arguments round-trip.
 #![no_main]
 
-use duet_provider::chat::ChatAssembler;
-use duet_provider::recover::recover_text_tool_call;
-use duet_provider::types::ToolSpec;
+use declass_provider::chat::ChatAssembler;
+use declass_provider::recover::recover_text_tool_call;
+use declass_provider::types::ToolSpec;
 use libfuzzer_sys::fuzz_target;
 use serde_json::{Value, json};
 

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds a signed release of `duet` from a clean checkout.
+# Builds a signed release of `declass` from a clean checkout.
 #
 #   tools/release.sh <version> --key <ssh signing key> [--out DIR]
 #
 # <version> must equal the workspace version in Cargo.toml. The key is the
 # operator's SSH signing key (private key, or its public key while the private
-# key is loaded in ssh-agent); DUET_RELEASE_KEY may name it instead of --key.
+# key is loaded in ssh-agent); DECLASS_RELEASE_KEY may name it instead of --key.
 # No key is generated, and a key inside this repository is refused.
 #
 # Steps: the full gate (tools/gate.sh); `cargo build --release --locked` for the
 # host target; licenses and vendored source; SBOM; BUILDINFO.txt (version, commit,
 # toolchain); SHA256SUMS over every file; SHA256SUMS.sig, a detached SSH
-# signature (`ssh-keygen -Y sign`, namespace duet-release). Output:
-# dist/duet-<version>/ unless --out is given. Check with tools/verify-release.sh.
+# signature (`ssh-keygen -Y sign`, namespace declass-release). Output:
+# dist/declass-<version>/ unless --out is given. Check with tools/verify-release.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 repo=$(pwd -P)
@@ -27,7 +27,7 @@ usage() {
 }
 
 version=""
-key="${DUET_RELEASE_KEY:-}"
+key="${DECLASS_RELEASE_KEY:-}"
 out=""
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -64,7 +64,7 @@ workspace_version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/
     die "version $version does not match the workspace version $workspace_version in Cargo.toml"
 
 # The signing key is the operator's; the script never creates one.
-[ -n "$key" ] || die "a signing key is required: --key <path to your SSH signing key> (or DUET_RELEASE_KEY)"
+[ -n "$key" ] || die "a signing key is required: --key <path to your SSH signing key> (or DECLASS_RELEASE_KEY)"
 [ -f "$key" ] && [ -r "$key" ] || die "signing key $key is not a readable file"
 key_abs="$(cd "$(dirname "$key")" && pwd -P)/$(basename "$key")"
 case "$key_abs" in
@@ -76,7 +76,7 @@ command -v ssh-keygen >/dev/null || die "ssh-keygen is required for signing"
     die "the working tree has uncommitted changes; release from a clean commit"
 commit=$(git rev-parse HEAD)
 
-out="${out:-dist/duet-$version}"
+out="${out:-dist/declass-$version}"
 [ ! -e "$out" ] || die "$out already exists"
 
 echo "== gate"
@@ -84,9 +84,9 @@ tools/gate.sh
 
 target=$(rustc -vV | sed -n 's/^host: //p')
 echo "== build ($target)"
-# DUET_RELEASE_BUILD marks the binary as a release build (`duet doctor` then
+# DECLASS_RELEASE_BUILD marks the binary as a release build (`declass doctor` then
 # warns when no release signing keys are present).
-DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet --target "$target"
+DECLASS_RELEASE_BUILD=1 cargo build --release --locked -p declass-cli --bin declass --target "$target"
 target_dir=$(cargo metadata --format-version 1 --no-deps --offline |
     sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
 [ -n "$target_dir" ] || die "cannot find cargo's target directory"
@@ -95,40 +95,40 @@ export SOURCE_DATE_EPOCH
 SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
 mkdir -p "$out"
 echo "== corresponding source"
-tools/source-release.sh "$out/duet-$version-source.tar.gz"
-binary="duet-$version-$target"
-cp "$target_dir/$target/release/duet" "$out/$binary"
+tools/source-release.sh "$out/declass-$version-source.tar.gz"
+binary="declass-$version-$target"
+cp "$target_dir/$target/release/declass" "$out/$binary"
 
 echo "== SBOM"
-tools/sbom.sh --target "$target" --out "$out/duet-$version.cdx.json"
+tools/sbom.sh --target "$target" --out "$out/declass-$version.cdx.json"
 
 cat >"$out/BUILDINFO.txt" <<INFO
-duet $version
+declass $version
 commit $commit
 target $target
 $(rustc -V)
 $(cargo -V)
 source_date_epoch $SOURCE_DATE_EPOCH
-built with: DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet --target $target
+built with: DECLASS_RELEASE_BUILD=1 cargo build --release --locked -p declass-cli --bin declass --target $target
 INFO
 
 echo "== licenses"
 cp LICENSE NOTICE LICENSES.md "$out/"
-cp crates/duet-boundary/rules/LICENSE.gitleaks "$out/LICENSE.gitleaks"
-cp crates/duet-boundary/rules/NOTICE "$out/NOTICE.gitleaks"
+cp crates/declass-boundary/rules/LICENSE.gitleaks "$out/LICENSE.gitleaks"
+cp crates/declass-boundary/rules/NOTICE "$out/NOTICE.gitleaks"
 cat >"$out/SOURCE.txt" <<INFO
-Corresponding Source for duet $version ($target)
+Corresponding Source for declass $version ($target)
 Commit: $commit
-Archive: duet-$version-source.tar.gz (distributed beside this binary)
+Archive: declass-$version-source.tar.gz (distributed beside this binary)
 
-Extract the archive and enter duet-source/. Locked Cargo workspace dependencies
+Extract the archive and enter declass-source/. Locked Cargo workspace dependencies
 are in vendor/; license notices are in vendor/ and licenses/third-party/.
 Install the Rust toolchain recorded in BUILDINFO.txt and the platform's C/C++
 build tools, then build without downloading Cargo dependencies:
 
-  DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target $target
+  DECLASS_RELEASE_BUILD=1 cargo build --release --frozen -p declass-cli --bin declass --target $target
 
-The binary is target/$target/release/duet. See tools/install.sh for installation.
+The binary is target/$target/release/declass. See tools/install.sh for installation.
 Publish this source archive, LICENSE, NOTICE, LICENSES.md, LICENSE.gitleaks and
 NOTICE.gitleaks alongside the binary. Preserve their availability to recipients.
 INFO
@@ -141,10 +141,10 @@ else
 fi
 (
     cd "$out"
-    sha256 "$binary" "duet-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md \
-        LICENSE.gitleaks NOTICE.gitleaks "duet-$version-source.tar.gz" SOURCE.txt >SHA256SUMS
+    sha256 "$binary" "declass-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md \
+        LICENSE.gitleaks NOTICE.gitleaks "declass-$version-source.tar.gz" SOURCE.txt >SHA256SUMS
 )
-ssh-keygen -Y sign -f "$key" -n duet-release "$out/SHA256SUMS"
+ssh-keygen -Y sign -f "$key" -n declass-release "$out/SHA256SUMS"
 [ -s "$out/SHA256SUMS.sig" ] || die "signing produced no signature"
 
 echo
@@ -153,5 +153,5 @@ ls -1 "$out"
 echo
 echo "signed by: $(ssh-keygen -l -f "$key" 2>/dev/null || echo "(key fingerprint unavailable)")"
 echo "Publish SHA256SUMS.sig with the files, and your allowed-signers line"
-echo "  <identity> namespaces=\"duet-release\" <public key>"
+echo "  <identity> namespaces=\"declass-release\" <public key>"
 echo "through a channel users already trust. Verify: tools/verify-release.sh $out"

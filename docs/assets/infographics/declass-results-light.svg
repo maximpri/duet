@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="262" viewBox="0 0 960 262" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif">
+<title>Benchmark: test scores and planted secrets</title><desc>Across 9 tasks run 3 times each, Declass scored 89.3% on hidden tests versus 96.5% for the same model with no protection. Planted secrets were found 0 times in Declass&#x27;s 1,124 cloud requests and 35,809 times in 1,328 unprotected requests.</desc>
+<rect width="960" height="262" fill="#ffffff"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#59636e"/></marker></defs>
+<text x="32" y="46" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Hidden-test score</text>
+<text x="32" y="68" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">mean of 27 runs: 9 tasks × 3 runs, failures counted as zero</text>
+<text x="32" y="120" font-size="14" font-weight="500" fill="#1f2328" text-anchor="start">Declass</text>
+<rect x="230" y="104" width="280" height="22" rx="4" fill="#f6f8fa" stroke="#f6f8fa" stroke-width="1"/>
+<rect x="230" y="104" width="249.91649831649832" height="22" rx="4" fill="#00897a" stroke="#00897a" stroke-width="1"/>
+<text x="522" y="120" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">89.3%</text>
+<text x="32" y="164" font-size="14" font-weight="500" fill="#1f2328" text-anchor="start">No protection</text>
+<rect x="230" y="148" width="280" height="22" rx="4" fill="#f6f8fa" stroke="#f6f8fa" stroke-width="1"/>
+<rect x="230" y="148" width="270.30213243546575" height="22" rx="4" fill="#c85a1e" stroke="#c85a1e" stroke-width="1"/>
+<text x="522" y="164" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">96.5%</text>
+<line x1="600" y1="30" x2="600" y2="196" stroke="#d1d9e0" stroke-width="1"/>
+<text x="632" y="46" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Planted secrets found in cloud requests</text>
+<text x="632" y="68" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">complete values, in literal, base64, hex or URL form</text>
+<text x="632" y="120" font-size="14" font-weight="500" fill="#1f2328" text-anchor="start">Declass</text>
+<text x="928" y="121" font-size="22" font-weight="700" fill="#00897a" text-anchor="end">0</text>
+<text x="928" y="138" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">in 1,124 requests</text>
+<text x="632" y="164" font-size="14" font-weight="500" fill="#1f2328" text-anchor="start">No protection</text>
+<text x="928" y="165" font-size="22" font-weight="700" fill="#c85a1e" text-anchor="end">35,809</text>
+<text x="928" y="182" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">in 1,328 requests</text>
+<text x="32" y="234" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">Same frontier model (glm-5.3-flash) in both lanes. Zero matches does not rule out disclosure through summaries or inference.</text>
+</svg>

@@ -278,47 +278,47 @@
       "sha256": "99d650f3f48e08fbae275a5ed643d51ee8fe07661a2845d054e7853ab2f6f8ba",
       "bytes": 7121
     },
-    "docs/assets/launch/duet-audit.gif": {
+    "docs/assets/launch/declass-audit.gif": {
       "sha256": "209957ad7bf81365790e993bd7db38dd22e0b307a102220c64e5029bef95ace8",
       "bytes": 238064
     },
-    "docs/assets/launch/duet-audit.mp4": {
+    "docs/assets/launch/declass-audit.mp4": {
       "sha256": "ad749b70e29fbdb0b1be26691a2e793090a8f4ab5f28ec6c3e71a103d50bfcd8",
       "bytes": 414096
     },
-    "docs/assets/launch/duet-audit.png": {
+    "docs/assets/launch/declass-audit.png": {
       "sha256": "00b6b0842603df3a55d373f6c09ffa6f4e44308c68c5ad147756eac1430dea16",
       "bytes": 177303
     },
-    "docs/assets/launch/duet-changes.png": {
+    "docs/assets/launch/declass-changes.png": {
       "sha256": "2896d9144144920269bf84992aa6214298a43a65581f4dfc488da96fed74d5d1",
       "bytes": 182868
     },
-    "docs/assets/launch/duet-outbound.png": {
+    "docs/assets/launch/declass-outbound.png": {
       "sha256": "0ef75d1c2046a78ff981def618946f5d0fef3c51e3c7fe3eab8c0b92b16a019a",
       "bytes": 219535
     },
-    "docs/assets/launch/duet-privacy.gif": {
+    "docs/assets/launch/declass-privacy.gif": {
       "sha256": "a75813cc96893e59d4b2ffa24249e32397d2592352b7b5bdd8623e28f9c60ef1",
       "bytes": 639566
     },
-    "docs/assets/launch/duet-privacy.mp4": {
+    "docs/assets/launch/declass-privacy.mp4": {
       "sha256": "ab6760b57bc300a9100629a436ccfff840ebd551f4ccb32c79f5e8b2a9312a3e",
       "bytes": 870274
     },
-    "docs/assets/launch/duet-privacy.png": {
+    "docs/assets/launch/declass-privacy.png": {
       "sha256": "3120d66bd70aa678639121ae44b6388150e930abc42d34cd3af69aec77bd391a",
       "bytes": 212832
     },
-    "docs/assets/launch/duet-top-clearance.gif": {
+    "docs/assets/launch/declass-top-clearance.gif": {
       "sha256": "8bee70e36630ac6115b3786b255954eab223be3b08fa02084c83bb82d531f0d9",
       "bytes": 511003
     },
-    "docs/assets/launch/duet-top-clearance.mp4": {
+    "docs/assets/launch/declass-top-clearance.mp4": {
       "sha256": "7e34c37d20ed65f00e03ffbb6a17b0b4c5b75b023d21fbfa0b2d016c0f112e8b",
       "bytes": 512248
     },
-    "docs/assets/launch/duet-top-clearance.png": {
+    "docs/assets/launch/declass-top-clearance.png": {
       "sha256": "94f022109b35ccc664031c96ee899d87129902ddc06c21a9dc90088648401853",
       "bytes": 149425
     },

@@ -1,0 +1,25 @@
+[package]
+name = "declass-egress"
+description = "Host-side egress proxy for sandboxed commands: package registries only, audited"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# Only HTTP proxying. Which hosts are allowed comes from the caller; what is
+# recorded goes to the caller's sink (the agent's audit log).
+[dependencies]
+declass-boundary.workspace = true
+declass-sandbox.workspace = true
+declass-web.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+url = "2"
+
+[dev-dependencies]
+tokio.workspace = true

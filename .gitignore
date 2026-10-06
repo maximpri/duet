@@ -1,7 +1,7 @@
 /target
 **/*.rs.bk
 .DS_Store
-.duet/
+.declass/
 .env
 .env.*
 # Keep local experiment directories and external-storage symlinks out of source.

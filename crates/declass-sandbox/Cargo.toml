@@ -1,0 +1,31 @@
+[package]
+name = "declass-sandbox"
+description = "Command sandbox (Seatbelt/bwrap), environment allowlist and process-tree control"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tokio.workspace = true
+thiserror.workspace = true
+# `net`: the egress bridge hands connections over with SCM_RIGHTS.
+rustix = { workspace = true, features = ["net"] }
+# Holds every command's and server's process tree to memory limits.
+declass-governor.workspace = true
+
+# The egress bridge helper for this crate's tests (declass itself is the helper
+# in a release: `declass __sandbox-bridge`). Never part of a release:
+# tools/release.sh builds only `declass`.
+[[bin]]
+name = "declass-sandbox-bridge"
+path = "src/bin/declass-sandbox-bridge.rs"
+test = false
+
+[dev-dependencies]
+tempfile = "3"

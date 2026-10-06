@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="440" viewBox="0 0 960 440" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif">
+<title>How Declass handles a coding task</title><desc>Code is shared with the frontier model as-is. Sensitive files are read only by your local model, which answers the frontier&#x27;s questions. Every request to the cloud passes Declass&#x27;s checks and is logged.</desc>
+<rect width="960" height="440" fill="#ffffff"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#59636e"/></marker></defs>
+<rect x="24" y="24" width="612" height="346" rx="14" fill="#ffffff" stroke="#d1d9e0" stroke-width="1" stroke-dasharray="5 4"/>
+<text x="44" y="54" font-size="13" font-weight="600" fill="#59636e" text-anchor="start">Your machine</text>
+<rect x="48" y="74" width="200" height="108" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="64" y="102" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Code</text>
+<text x="64" y="126" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">src/, tests/, docs/</text>
+<text x="64" y="147" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">shared as written</text>
+<rect x="48" y="204" width="200" height="140" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="64" y="232" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Sensitive files</text>
+<text x="64" y="256" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">.env, keys</text>
+<text x="64" y="277" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">data/*.csv, databases</text>
+<text x="64" y="298" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">logs/</text>
+<text x="64" y="319" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">never sent raw</text>
+<rect x="272" y="204" width="160" height="140" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="288" y="232" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Local model</text>
+<text x="288" y="256" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">reads sensitive</text>
+<text x="288" y="277" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">files and answers</text>
+<text x="288" y="298" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">the frontier&#x27;s</text>
+<text x="288" y="319" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">questions</text>
+<rect x="456" y="74" width="156" height="270" rx="10" fill="#e6f4f1" stroke="#00897a" stroke-width="1.5"/>
+<text x="472" y="102" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Declass</text>
+<text x="472" y="126" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">replaces secrets and</text>
+<text x="472" y="147" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">personal data with</text>
+<text x="472" y="168" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">placeholders</text>
+<text x="472" y="189" font-size="13" font-weight="400" fill="#59636e" text-anchor="start"></text>
+<text x="472" y="210" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">checks every</text>
+<text x="472" y="231" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">outgoing request</text>
+<text x="472" y="252" font-size="13" font-weight="400" fill="#59636e" text-anchor="start"></text>
+<text x="472" y="273" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">logs exactly what</text>
+<text x="472" y="294" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">was sent</text>
+<line x1="248" y1="128" x2="452" y2="128" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="248" y1="274" x2="268" y2="274" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="432" y1="274" x2="452" y2="274" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="724" y="128" width="212" height="162" rx="10" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="740" y="156" font-size="15" font-weight="600" fill="#1f2328" text-anchor="start">Frontier model</text>
+<text x="740" y="180" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">Claude, GPT, Gemini, GLM…</text>
+<text x="740" y="201" font-size="13" font-weight="400" fill="#59636e" text-anchor="start"></text>
+<text x="740" y="222" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">plans the work</text>
+<text x="740" y="243" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">writes the code</text>
+<text x="740" y="264" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">asks for files and tools</text>
+<line x1="612" y1="190" x2="720" y2="190" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<line x1="720" y1="236" x2="616" y2="236" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="668" y="166" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">checked</text>
+<text x="668" y="180" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">requests</text>
+<text x="668" y="256" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">tool calls</text>
+<text x="668" y="270" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">and edits</text>
+<text x="48" y="398" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">“Local” can also be a self-hosted server you approve.</text>
+<text x="48" y="417" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">A local model&#x27;s answer can still reveal facts (“3 customers are overdue”): Declass blocks the values, not the meaning.</text>
+</svg>

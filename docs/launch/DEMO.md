@@ -1,22 +1,22 @@
-# Duet in Terminal: screenshots, task results and audit checks
+# Declass in Terminal: screenshots, task results and audit checks
 
 The README shows the completed [October 4 billing session](../evidence/billing-demo-2026-10-04/README.md). Its evidence page retains all four live TUI screenshots, **4/4 passing tests**, and **zero matches for 13 complete planted values in four recorded frontier requests**.
 
-The earlier color GIF below uses actual macOS screenshots of Duet. Its source billing run passed **4/4 tests**, with **zero matches for 13 complete planted values in five recorded frontier requests**. Earlier disclosure failures remain available below. These synthetic demonstrations are historical evidence, not a paired benchmark or a guarantee of privacy.
+The earlier color GIF below uses actual macOS screenshots of Declass. Its source billing run passed **4/4 tests**, with **zero matches for 13 complete planted values in five recorded frontier requests**. Earlier disclosure failures remain available below. These synthetic demonstrations are historical evidence, not a paired benchmark or a guarantee of privacy.
 
 ## Native screenshots
 
 | Sensitive-file handling | Outbound record |
 | --- | --- |
-| ![Duet running in Terminal: sensitive-file handling](../assets/launch/duet-native-privacy.png) | ![Duet running in Terminal: outbound record](../assets/launch/duet-native-outbound.png) |
+| ![Declass running in Terminal: sensitive-file handling](../assets/launch/declass-native-privacy.png) | ![Declass running in Terminal: outbound record](../assets/launch/declass-native-outbound.png) |
 
 | Filtered local answer | Code change |
 | --- | --- |
-| ![Duet running in Terminal: private amounts withheld](../assets/launch/duet-native-summary.png) | ![Duet running in Terminal: billing code diff](../assets/launch/duet-native-changes.png) |
+| ![Declass running in Terminal: private amounts withheld](../assets/launch/declass-native-summary.png) | ![Declass running in Terminal: billing code diff](../assets/launch/declass-native-changes.png) |
 
-The [earlier demo GIF](../assets/launch/duet-security.gif) holds these four screenshots for five seconds each. The PNGs are unchanged `screencapture` output, including the Terminal.app window frame: no browser replay, generated screen or text replacement. Playback length does not measure coding time.
+The [earlier demo GIF](../assets/launch/declass-security.gif) holds these four screenshots for five seconds each. The PNGs are unchanged `screencapture` output, including the Terminal.app window frame: no browser replay, generated screen or text replacement. Playback length does not measure coding time.
 
-Captured October 2, 2026 in Terminal.app 2.15, Pro profile, Menlo 16, with `NO_COLOR` unset. Duet reopened a disposable copy of session `20261002-031043-4ce452`; no new model requests were made. Reopening added lifecycle events only to that copy. The published original audit is unchanged. The [native-capture manifest](../evidence/readme-native-2026-10-02/manifest.json) binds the capture binary and all five media files.
+Captured October 2, 2026 in Terminal.app 2.15, Pro profile, Menlo 16, with `NO_COLOR` unset. Declass reopened a disposable copy of session `20261002-031043-4ce452`; no new model requests were made. Reopening added lifecycle events only to that copy. The published original audit is unchanged. The [native-capture manifest](../evidence/readme-native-2026-10-02/manifest.json) binds the capture binary and all five media files.
 
 ## Verified billing run
 
@@ -48,7 +48,7 @@ python3 tools/verify-launch-audit.py \
   docs/evidence/launch-refresh-2026-10-01/hybrid-anchor.json
 ```
 
-Both exit 0. The canary checker reads recorded request bodies and checks complete fixture values in literal, base64, hex and URL-encoded forms. It does not establish provider receipt, cover every encoding or network path, or detect all fragments and paraphrases. [Receiving-endpoint transport tests](../../crates/duet-cli/tests/privacy_scenarios.rs) provide separate evidence.
+Both exit 0. The canary checker reads recorded request bodies and checks complete fixture values in literal, base64, hex and URL-encoded forms. It does not establish provider receipt, cover every encoding or network path, or detect all fragments and paraphrases. [Receiving-endpoint transport tests](../../crates/declass-cli/tests/privacy_scenarios.rs) provide separate evidence.
 
 ## What the first run found
 
@@ -97,7 +97,7 @@ python3 tools/verify-launch-audit.py \
 
 [Original CLI verification](../evidence/launch-2026-10-01/hybrid-audit-verify.txt) · [Tampered copy](../evidence/launch-2026-10-01/tampered-audit.jsonl) · [Rejected verification](../evidence/launch-2026-10-01/tampered-audit-verify.txt)
 
-The independent script checks this packet's serialization. A bundled anchor establishes consistency, not independent custody or authorship. For new runs, use Duet's verifier and retain the owner-state anchor separately; an attacker controlling both can replace both. Audits and transcripts need access controls because local requests can contain raw sensitive content. Missing disclosure counts in sessions without a summary do not establish zero disclosure.
+The independent script checks this packet's serialization. A bundled anchor establishes consistency, not independent custody or authorship. For new runs, use Declass's verifier and retain the owner-state anchor separately; an attacker controlling both can replace both. Audits and transcripts need access controls because local requests can contain raw sensitive content. Missing disclosure counts in sessions without a summary do not establish zero disclosure.
 
 ## Top clearance and endpoint scope
 
@@ -114,7 +114,7 @@ Command networking was off, subagents were disabled, and task/session frontier c
 Configure your own approved endpoints using [the usage guide](../USAGE.md). From the repository root, copy the unchanged [synthetic fixture](billing-demo/README.md):
 
 ```sh
-demo_dir=$(mktemp -d "${TMPDIR:-/tmp}/duet-billing.XXXXXX")
+demo_dir=$(mktemp -d "${TMPDIR:-/tmp}/declass-billing.XXXXXX")
 cp -R docs/launch/billing-demo/. "$demo_dir/"
 cp "$demo_dir/env.example" "$demo_dir/.env"
 git -C "$demo_dir" init
@@ -122,40 +122,40 @@ git -C "$demo_dir" add .
 git -C "$demo_dir" commit -m 'Synthetic billing fixture'
 cd "$demo_dir"
 python3 -m unittest -v  # expected: one failure before the repair
-duet --check 'python3 -m unittest -v'
+declass --check 'python3 -m unittest -v'
 ```
 
 Paste the [supplied prompt](billing-demo/prompt.txt). After completion, inspect Privacy and Changes, note the run ID in `/audit`, and check:
 
 ```sh
-duet audit show <run-id>
-duet audit verify <run-id>
-duet audit disclosure <run-id>
+declass audit show <run-id>
+declass audit verify <run-id>
+declass audit disclosure <run-id>
 python3 -m unittest -v
 ```
 
-From the Duet checkout, run the canary checker against the new workspace's `.duet/audit/<run-id>.jsonl` and the original fixture. For a separate local-agent trial, start with a fresh fixture and set `duet config set --project clearance.required top`. Ask it to repair the bug using `billing.py` and `test_billing.py`, then confirm the recorded endpoints. Outputs and timing may differ.
+From the Declass checkout, run the canary checker against the new workspace's `.declass/audit/<run-id>.jsonl` and the original fixture. For a separate local-agent trial, start with a fresh fixture and set `declass config set --project clearance.required top`. Ask it to repair the bug using `billing.py` and `test_billing.py`, then confirm the recorded endpoints. Outputs and timing may differ.
 
 ## Record a new demo
 
-[`tools/duet-recorder`](../../tools/duet-recorder/README.md) runs the real `duet` binary on a fresh copy of the billing fixture, types the task, and renders the recorded terminal bytes as a GIF, MP4 and stills. Each recording saves its cast, the tests before and after, and the planted-value check over every frontier request:
+[`tools/declass-recorder`](../../tools/declass-recorder/README.md) runs the real `declass` binary on a fresh copy of the billing fixture, types the task, and renders the recorded terminal bytes as a GIF, MP4 and stills. Each recording saves its cast, the tests before and after, and the planted-value check over every frontier request:
 
 ```sh
-python3 tools/duet-recorder/record.py --install-deps
-python3 tools/duet-recorder/record.py --out /tmp/duet-demo
+python3 tools/declass-recorder/record.py --install-deps
+python3 tools/declass-recorder/record.py --out /tmp/declass-demo
 ```
 
 Sped-up playback is labelled in the window. Playback length is not task duration.
 
 ## Capture and rebuild
 
-Capture Duet's native Terminal window directly with `screencapture -x -o -l <window-id> screenshot.png`. Rebuild the earlier demo GIF from the four unchanged committed PNGs, from the repository root:
+Capture Declass's native Terminal window directly with `screencapture -x -o -l <window-id> screenshot.png`. Rebuild the earlier demo GIF from the four unchanged committed PNGs, from the repository root:
 
 ```sh
 ffmpeg -hide_banner -y -safe 0 -f concat \
   -i docs/evidence/readme-native-2026-10-02/frames.ffconcat \
   -filter_complex '[0:v]split[a][b];[a]palettegen=stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=3' \
-  -fps_mode vfr -t 20 -final_delay 500 -loop 0 /tmp/duet-security.gif
+  -fps_mode vfr -t 20 -final_delay 500 -loop 0 /tmp/declass-security.gif
 ```
 
 The older replay media remain bound in the [original manifest](../evidence/launch-2026-10-01/manifest.json), [refresh manifest](../evidence/launch-refresh-2026-10-01/manifest.json) and [archived color replay](../evidence/readme-color-2026-10-02/manifest.json). They use actual timestamped PTY output rendered with xterm.js, not native screenshot capture. Edited playback is not task-duration evidence.
@@ -166,7 +166,7 @@ To rebuild the refreshed replay, use Python 3, Node, ffmpeg, Chrome, `@playwrigh
 NODE_PATH=/path/to/capture/node_modules python3 tools/build-launch-reel.py \
   --xterm /path/to/capture/node_modules/@xterm/xterm \
   --chrome '/path/to/Google Chrome' \
-  --output /tmp/duet-rebuilt-media
+  --output /tmp/declass-rebuilt-media
 ```
 
 The [builder](../../tools/build-launch-reel.py) applies the saved [edit map](../evidence/launch-refresh-2026-10-01/reel-edit.json) to the [compressed recording](../evidence/launch-refresh-2026-10-01/hybrid.cast.gz). [Original capture tool](https://github.com/maximpri/duet/blob/657b8a40d537b64fd81e063d26f1bd93e8caaa31/tools/capture-tui.py) · [Replay renderer](../../tools/render-tui-cast.cjs). Fonts, browsers and encoders can change pixel hashes. Capture only disposable synthetic workspaces for publication; real sessions can contain sensitive information.

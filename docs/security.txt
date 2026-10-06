@@ -1,4 +1,4 @@
-# security.txt template (RFC 9116) for Duet. Serve it at
+# security.txt template (RFC 9116) for Declass. Serve it at
 # https://duet.priezjev.com/.well-known/security.txt when website deployment is configured.
 # Refresh Expires before deployment; this template is not yet served by the website.
 Contact: https://github.com/maximpri/duet/security/advisories/new

@@ -53,31 +53,31 @@ fi
 
 step "privacy by construction"
 # The agent must never be able to construct an ungated provider.
-if grep -q "duet-provider" crates/duet-agent/Cargo.toml; then
-    echo "duet-agent must not depend on duet-provider (use the gate)" >&2
+if grep -q "declass-provider" crates/declass-agent/Cargo.toml; then
+    echo "declass-agent must not depend on declass-provider (use the gate)" >&2
     exit 1
 fi
 
 step "egress by construction"
 # Three places in the product open connections or resolve names (SECURITY.md,
-# Egress): duet-net, the one client for third parties (web pages, search
+# Egress): declass-net, the one client for third parties (web pages, search
 # sources, MCP servers over HTTP), which sends only requests the boundary
-# checked; duet-provider, the frontier and local-model client, which the agent
+# checked; declass-provider, the frontier and local-model client, which the agent
 # reaches only through the outbound gate (see above); and the egress proxy's
-# upstream connection in duet-egress (commands' listed registries). Allowlisted
-# as well: duet-evals, the evaluation harness (it drives duet as a black box and
+# upstream connection in declass-egress (commands' listed registries). Allowlisted
+# as well: declass-evals, the evaluation harness (it drives declass as a black box and
 # runs its own leak proxy), and test code (tests/, examples/, benches/, test
-# support modules). Anything else must go through duet-net.
+# support modules). Anything else must go through declass-net.
 net='\breqwest::|\buse reqwest\b|\bhyper(_util)?::|\bureq::|\bisahc::|\bsurf::|\battohttpc::|TcpStream::connect|\bUdpSocket\b|\blookup_host\b|\bto_socket_addrs\b|\bsocket2::|getaddrinfo'
 hits=$( { grep -rnE "$net" crates --include='*.rs' \
             | grep -vE '^crates/[^/]+/(tests|examples|benches)/' \
-            | grep -vE '^crates/(duet-net|duet-provider/src|duet-evals)/' \
-            | grep -vE '^crates/duet-egress/src/lib\.rs:' \
+            | grep -vE '^crates/(declass-net|declass-provider/src|declass-evals)/' \
+            | grep -vE '^crates/declass-egress/src/lib\.rs:' \
             | grep -vE '/src/(tests|mock|mock_http)\.rs:';
           grep -nE '^(reqwest|hyper|hyper-util|ureq|isahc|surf|attohttpc|socket2|trust-dns-resolver|hickory-resolver)\b' crates/*/Cargo.toml \
-            | grep -vE '^crates/(duet-net|duet-provider|duet-evals)/Cargo\.toml:'; } || true)
+            | grep -vE '^crates/(declass-net|declass-provider|declass-evals)/Cargo\.toml:'; } || true)
 if [ -n "$hits" ]; then
-    echo "networking outside duet-net, duet-provider and the egress proxy:" >&2
+    echo "networking outside declass-net, declass-provider and the egress proxy:" >&2
     echo "$hits" >&2
     exit 1
 fi
@@ -87,7 +87,7 @@ step "model HTTP policy by construction"
 # factory. It requires an ApprovedEndpoint and fixes proxies/redirects before
 # returning a Client (never a loosenable builder).
 model_http='(Client|ClientBuilder)::(builder|new|default)|reqwest::(get|blocking)|\.(proxy|no_proxy|redirect)\('
-hits=$( { grep -rnE "$model_http" crates/duet-provider/src --include='*.rs' \
+hits=$( { grep -rnE "$model_http" crates/declass-provider/src --include='*.rs' \
     | grep -vE '/(http|tests|mock_http)\.rs:'; } || true)
 if [ -n "$hits" ]; then
     echo "model HTTP construction/policy outside the approved factory:" >&2
@@ -96,7 +96,7 @@ if [ -n "$hits" ]; then
 fi
 
 step "provenance"
-# Duet's implementation is independent. Product names are permitted in the
+# Declass's implementation is independent. Product names are permitted in the
 # evaluation adapters, credential denylist, and portable-skill discovery
 # adapter (the user requested interoperability with standard agent files).
 # Distinctive names match case-insensitively; names that are also ordinary words
@@ -107,10 +107,10 @@ pattern='(\bcodex\b|claude[ -]code|\bopencode\b|\bpi-mono\b|\baider\b|openhands|
 products='\b(Cursor|Goose)\b'
 hits=$( { grep -rniE "$pattern" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml';
           grep -rnE "$products" crates fuzz/fuzz_targets fuzz/Cargo.toml --include='*.rs' --include='*.toml'; } \
-    | grep -v '^crates/duet-evals/src/lanes/' \
-    | grep -v '^crates/duet-cli/src/extensions.rs:' \
-    | grep -vE '^crates/duet-tui/src/clipboard\.rs:[0-9]+:.*(use std::io::\{Cursor, Read, Write\};|Cursor::new\()' \
-    | grep -v '^crates/duet-sandbox/src/home_secrets.rs:' || true)
+    | grep -v '^crates/declass-evals/src/lanes/' \
+    | grep -v '^crates/declass-cli/src/extensions.rs:' \
+    | grep -vE '^crates/declass-tui/src/clipboard\.rs:[0-9]+:.*(use std::io::\{Cursor, Read, Write\};|Cursor::new\()' \
+    | grep -v '^crates/declass-sandbox/src/home_secrets.rs:' || true)
 if [ -n "$hits" ]; then
     echo "provenance check failed:" >&2
     echo "$hits" >&2

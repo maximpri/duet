@@ -1,18 +1,18 @@
-# Contributing to Duet Core
+# Contributing to Declass Core
 
-Thank you for your interest. Duet Core is open source under the GNU General Public License v3.0 or
+Thank you for your interest. Declass Core is open source under the GNU General Public License v3.0 or
 later.
 
 ## Contributor licence agreement
 
-The copyright holder also licenses Duet Core under separate commercial terms for Duet Enterprise
-(dual licensing). That is only possible while the copyright holder can license all of Duet Core's
+The copyright holder also licenses Declass Core under separate commercial terms for Declass Enterprise
+(dual licensing). That is only possible while the copyright holder can license all of Declass Core's
 code, so **every contribution must be made under a contributor licence agreement (CLA)** that grants
 the copyright holder the right to relicense it. Pull requests without a signed CLA cannot be merged.
 
 > The CLA has not been published, so outside code contributions are currently closed.
 > A CLA will be linked here before we begin accepting outside code contributions.
-> You can use, study, modify and redistribute Duet under GPL-3.0-or-later.
+> You can use, study, modify and redistribute Declass under GPL-3.0-or-later.
 
 ## Rules for code
 

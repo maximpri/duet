@@ -4,7 +4,7 @@
 //! Input: sensitive text, `\0`, public text, `\0`, outbound text.
 #![no_main]
 
-use duet_boundary::overlap::OverlapIndex;
+use declass_boundary::overlap::OverlapIndex;
 use libfuzzer_sys::fuzz_target;
 
 /// Words of the redaction marker: sensitive text holding them can form a new

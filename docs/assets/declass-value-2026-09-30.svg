@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="700" viewBox="0 0 1000 700" role="img" aria-labelledby="title desc">
+  <title id="title">Declass development evidence: privacy, quality, price, and time</title>
+  <desc id="desc">In 18 paired small-to-large runs, Declass hybrid had zero canary occurrences versus 3,720 in Declass passthrough mode using the same frontier. Hidden test pass rates were 98.3 and 97.5 percent. Mean total cost was 2.565 versus 1.892 cents, and mean wall time was 539 versus 259 seconds.</desc>
+  <rect width="1000" height="700" rx="20" fill="#0d1724"/>
+  <text x="48" y="61" fill="#edf5ff" font-family="system-ui,sans-serif" font-size="30" font-weight="700">What Declass has measured</text>
+  <text x="48" y="91" fill="#a9bbce" font-family="system-ui,sans-serif" font-size="16">M5.2 development suite · 6 tasks × 3 paired seeds · same GLM frontier</text>
+  <rect x="48" y="122" width="904" height="116" rx="12" fill="#15263a"/>
+  <text x="70" y="150" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="18" font-weight="650">Known canary occurrences in outbound traffic</text>
+  <text x="70" y="184" fill="#6ce1b1" font-family="system-ui,sans-serif" font-size="15">Declass</text>
+  <circle cx="256" cy="179" r="5" fill="#6ce1b1"/>
+  <text x="810" y="184" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">0</text>
+  <text x="70" y="215" fill="#f8bc82" font-family="system-ui,sans-serif" font-size="15">Passthrough</text>
+  <rect x="251" y="201" width="540" height="19" rx="5" fill="#f8bc82"/>
+  <text x="810" y="216" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">3,720</text>
+  <rect x="48" y="252" width="904" height="116" rx="12" fill="#15263a"/>
+  <text x="70" y="280" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="18" font-weight="650">Hidden tests passed</text>
+  <text x="70" y="314" fill="#6ce1b1" font-family="system-ui,sans-serif" font-size="15">Declass</text>
+  <rect x="251" y="300" width="531" height="19" rx="5" fill="#6ce1b1"/>
+  <text x="810" y="315" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">98.3%</text>
+  <text x="70" y="345" fill="#f8bc82" font-family="system-ui,sans-serif" font-size="15">Passthrough</text>
+  <rect x="251" y="331" width="527" height="19" rx="5" fill="#f8bc82"/>
+  <text x="810" y="346" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">97.5%</text>
+  <rect x="48" y="382" width="904" height="116" rx="12" fill="#15263a"/>
+  <text x="70" y="410" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="18" font-weight="650">Mean total cost per run (USD)</text>
+  <text x="70" y="444" fill="#6ce1b1" font-family="system-ui,sans-serif" font-size="15">Declass</text>
+  <rect x="251" y="430" width="462" height="19" rx="5" fill="#6ce1b1"/>
+  <text x="810" y="445" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">$0.02565</text>
+  <text x="70" y="475" fill="#f8bc82" font-family="system-ui,sans-serif" font-size="15">Passthrough</text>
+  <rect x="251" y="461" width="341" height="19" rx="5" fill="#f8bc82"/>
+  <text x="810" y="476" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">$0.01892</text>
+  <rect x="48" y="512" width="904" height="116" rx="12" fill="#15263a"/>
+  <text x="70" y="540" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="18" font-weight="650">Mean wall time per run</text>
+  <text x="70" y="574" fill="#6ce1b1" font-family="system-ui,sans-serif" font-size="15">Declass</text>
+  <rect x="251" y="560" width="485" height="19" rx="5" fill="#6ce1b1"/>
+  <text x="810" y="575" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">539 s</text>
+  <text x="70" y="605" fill="#f8bc82" font-family="system-ui,sans-serif" font-size="15">Passthrough</text>
+  <rect x="251" y="591" width="233" height="19" rx="5" fill="#f8bc82"/>
+  <text x="810" y="606" fill="#e8f2ff" font-family="system-ui,sans-serif" font-size="16">259 s</text>
+  <text x="48" y="659" fill="#a9bbce" font-family="system-ui,sans-serif" font-size="14">Zero observed canaries is not a zero-risk guarantee. Total cost includes estimated local electricity.</text>
+  <text x="48" y="682" fill="#a9bbce" font-family="system-ui,sans-serif" font-size="14">Source: docs/evidence/benchmarks/m52-sl-report.md and the run records, 2026-09-26.</text>
+</svg>

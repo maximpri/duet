@@ -1,0 +1,25 @@
+[package]
+name = "declass-config"
+description = "Typed settings registry with owner/project scopes and tighten-only project rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+toml.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+declass-fs.workspace = true
+# The policy layer: its digest, and its description for programs that embed Declass.
+sha2.workspace = true
+hex.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

@@ -15,17 +15,17 @@ host=$(rustc -vV | sed -n 's/^host: //p')
 printf 'Build host: %s\nTarget: %s\n' "$host" "$target"
 rustc -V
 cargo -V
-DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target "$target"
-binary="duet-$version-$target"
-cp "$target_dir/$target/release/duet" "$out/$binary"
+DECLASS_RELEASE_BUILD=1 cargo build --release --frozen -p declass-cli --bin declass --target "$target"
+binary="declass-$version-$target"
+cp "$target_dir/$target/release/declass" "$out/$binary"
 actual=$("$out/$binary" --version)
-[ "$actual" = "duet $version" ] || { echo "unexpected binary version: $actual" >&2; exit 1; }
+[ "$actual" = "declass $version" ] || { echo "unexpected binary version: $actual" >&2; exit 1; }
 "$out/$binary" --help >/dev/null
 printf 'Smoke checks passed: %s --version; --help\n' "$binary"
-cargo run --quiet --frozen -p duet-release --bin duet-sbom -- \
-    --target "$target" --out "$out/duet-$version.cdx.json"
+cargo run --quiet --frozen -p declass-release --bin declass-sbom -- \
+    --target "$target" --out "$out/declass-$version.cdx.json"
 cat >"$out/BUILDINFO.txt" <<INFO
-duet $version
+declass $version
 commit $commit
 target $target
 $(rustc -V)
@@ -33,7 +33,7 @@ $(cargo -V)
 source_date_epoch $epoch
 status unsigned candidate
 build_host $host
-environment ${DUET_BUILD_ENVIRONMENT:-local host}
+environment ${DECLASS_BUILD_ENVIRONMENT:-local host}
 smoke_checks --version and --help passed; no cross-target sandbox qualification
-built with: DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target $target
+built with: DECLASS_RELEASE_BUILD=1 cargo build --release --frozen -p declass-cli --bin declass --target $target
 INFO

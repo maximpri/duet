@@ -1,0 +1,36 @@
+[package]
+name = "declass-web"
+description = "Host-side web access for the frontier's web tools: guarded fetch and search backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# HTTP only through `declass-net`, which sends only requests the boundary checked
+# (`declass-boundary`'s `third_party::Guard`); what reaches the frontier is decided
+# by the agent's presenter. `declass-mcp` is the client for the GLM Coding Plan's
+# search server.
+[dependencies]
+declass-boundary.workspace = true
+declass-mcp.workspace = true
+declass-net.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+url = "2"
+ipnet = "2"
+# Stack Exchange compresses every reply; already in the tree (through png).
+flate2 = "1"
+
+[dev-dependencies]
+tokio.workspace = true
+futures-util.workspace = true
+tempfile = "3"
+declass-mcp = { workspace = true, features = ["test-support"] }

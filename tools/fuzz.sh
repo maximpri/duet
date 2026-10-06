@@ -8,7 +8,7 @@
 #
 # With a nightly toolchain and cargo-fuzz it uses `cargo +nightly fuzz run`.
 # Without them it builds the targets on the stable toolchain with the same
-# coverage instrumentation and no sanitizer (Duet forbids unsafe code, so the
+# coverage instrumentation and no sanitizer (Declass forbids unsafe code, so the
 # findings that matter are panics and failed assertions, which need none).
 # Corpora grow in fuzz/corpus/<target>; crashing inputs land in
 # fuzz/artifacts/<target>/. Reproduce one by passing it to the target binary
@@ -35,7 +35,7 @@ if ! [[ "$seconds" =~ ^[0-9]+$ ]]; then
     echo "usage: tools/fuzz.sh [SECONDS] [TARGET...]" >&2
     exit 2
 fi
-all_targets=$(sed -n 's/^name = "\(.*\)"$/\1/p' fuzz/Cargo.toml | grep -v '^duet-fuzz$')
+all_targets=$(sed -n 's/^name = "\(.*\)"$/\1/p' fuzz/Cargo.toml | grep -v '^declass-fuzz$')
 targets="${*:-$all_targets}"
 
 if cargo +nightly fuzz --version >/dev/null 2>&1; then

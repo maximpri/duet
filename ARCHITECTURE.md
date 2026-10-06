@@ -1,4 +1,4 @@
-# Duet architecture
+# Declass architecture
 
 This reference describes the implementation, component boundaries and extension
 interfaces. Start with the [documentation index](docs/README.md) for user guides,
@@ -9,22 +9,22 @@ criteria and earlier findings.
 
 ## 1. Shape of the system
 
-Duet runs one coding task as one continuous conversation with a **frontier model**. The frontier
+Declass runs one coding task as one continuous conversation with a **frontier model**. The frontier
 decides every step and writes all code in Open paths. A **local model** (loopback or an
 owner-allowlisted host) is the only model that ever reads sensitive content; it writes digests and
 briefs, answers questions and rewrites protected files on request, has no tools and never decides.
-Between the two sits the **boundary**, and between Duet and the network sits a single **outbound
-gate** for the frontier and a single **checked client** (`duet-net`) for every other party (§5.6).
+Between the two sits the **boundary**, and between Declass and the network sits a single **outbound
+gate** for the frontier and a single **checked client** (`declass-net`) for every other party (§5.6).
 
 ```
                       ┌─────────────────────────────────────────────┐
-                      │                duet-agent                   │
+                      │                declass-agent                   │
   task ─────────────► │  Loop ── ToolRegistry ── ContextManager     │
                       │   │            │               │            │
                       │   │      tool results          │ masking    │
                       │   │            ▼               │            │
                       │   │     ┌──────────────────────┴────────┐   │
-                      │   │     │         duet-boundary          │   │
+                      │   │     │         declass-boundary          │   │
                       │   │     │ Engine: classify → view        │   │
                       │   │     │ Vault · Handles · OverlapIndex │◄──┼── LocalReader (local model)
                       │   │     └──────────────┬─────────────────┘   │
@@ -34,16 +34,16 @@ gate** for the frontier and a single **checked client** (`duet-net`) for every o
                             ▼
                      frontier provider (network)
 
-  supporting crates: duet-provider · duet-fs · duet-sandbox · duet-git · duet-config
-  front ends:        duet-cli · duet-tui          evaluation: duet-evals (duet-eval)
+  supporting crates: declass-provider · declass-fs · declass-sandbox · declass-git · declass-config
+  front ends:        declass-cli · declass-tui          evaluation: declass-evals (declass-eval)
 ```
 
 ### Security review services
 
-`duet-agent::review` owns a private, revision-pinned run-start snapshot and compares it with a
-bounded finish-time snapshot. `duet-review` supplies deterministic candidates, imports and
+`declass-agent::review` owns a private, revision-pinned run-start snapshot and compares it with a
+bounded finish-time snapshot. `declass-review` supplies deterministic candidates, imports and
 same-file helper context. Optional LSP references are confined to the workspace and read back
-from the pinned snapshot. `duet-cli::scan` invokes the same engine with an empty baseline for
+from the pinned snapshot. `declass-cli::scan` invokes the same engine with an empty baseline for
 whole-repository review, in the foreground or a detached worker, and stores commit/dirty metadata.
 
 `review::external` runs owner-installed tools in a read-only snapshot sandbox with no network.
@@ -62,7 +62,7 @@ usage counters. The defaults and measured limits are in the
 
 ## 2. Crates and dependencies
 
-Runtime token prices come from `duet-provider::catalog`: exact OpenRouter slugs or unique
+Runtime token prices come from `declass-provider::catalog`: exact OpenRouter slugs or unique
 unqualified IDs, cache rates and conditional context/UTC tiers. The CLI saves the public catalog
 for 24 hours, then refreshes it; offline/failure fallbacks identify their source and age. Unknown
 frontier prices stop before a model request. `pricing.frontier_model` explicitly maps endpoint
@@ -72,54 +72,54 @@ rates (zero by default). The CLI persists cumulative local costs and price histo
 from frontier budget accounting; the TUI reads those reports and transcript costs.
 
 ```
-duet-provider    duet-fs    duet-governor    duet-review  (leaf crates)
-duet-sandbox                 → duet-governor   (every command's and server's tree held to memory limits)
-duet-git, duet-config        → duet-fs
-duet-extensions              → duet-fs   (bounded portable-skill catalog; no execution or network)
-duet-boundary                → duet-provider, duet-fs, duet-review
-duet-net                     → duet-boundary   (the one HTTP client and resolver for third parties; reqwest)
-duet-mcp                     → duet-boundary, duet-net   (MCP client, JSON-RPC 2.0 over stdio and streamable HTTP)
-duet-web                     → duet-boundary, duet-net, duet-mcp   (host-side HTTP for the web tools; url, ipnet)
-duet-lsp                     → duet-sandbox   (language-server client; tokio, url)
-duet-egress                  → duet-boundary, duet-sandbox, duet-web   (host-side egress proxy for commands; tokio, url)
-duet-agent                   → duet-boundary, duet-review, duet-config, duet-extensions, duet-fs, duet-sandbox, duet-git, duet-web, duet-mcp, duet-lsp, duet-egress   (not duet-provider)
-duet-cli                     → all of the above (composition root)
+declass-provider    declass-fs    declass-governor    declass-review  (leaf crates)
+declass-sandbox                 → declass-governor   (every command's and server's tree held to memory limits)
+declass-git, declass-config        → declass-fs
+declass-extensions              → declass-fs   (bounded portable-skill catalog; no execution or network)
+declass-boundary                → declass-provider, declass-fs, declass-review
+declass-net                     → declass-boundary   (the one HTTP client and resolver for third parties; reqwest)
+declass-mcp                     → declass-boundary, declass-net   (MCP client, JSON-RPC 2.0 over stdio and streamable HTTP)
+declass-web                     → declass-boundary, declass-net, declass-mcp   (host-side HTTP for the web tools; url, ipnet)
+declass-lsp                     → declass-sandbox   (language-server client; tokio, url)
+declass-egress                  → declass-boundary, declass-sandbox, declass-web   (host-side egress proxy for commands; tokio, url)
+declass-agent                   → declass-boundary, declass-review, declass-config, declass-extensions, declass-fs, declass-sandbox, declass-git, declass-web, declass-mcp, declass-lsp, declass-egress   (not declass-provider)
+declass-cli                     → all of the above (composition root)
 
-duet-evals links no duet crate but duet-governor (a leaf that watches process trees and knows
-nothing of the boundary): it drives the duet binary as a black box and has its own
-pricing and usage parsing (its tests check that table against duet-provider's prices and its
-lanes' owner configs with duet-config's loader). duet-tui → duet-config, duet-boundary, duet-agent, duet-git (and
+declass-evals links no declass crate but declass-governor (a leaf that watches process trees and knows
+nothing of the boundary): it drives the declass binary as a black box and has its own
+pricing and usage parsing (its tests check that table against declass-provider's prices and its
+lanes' owner configs with declass-config's loader). declass-tui → declass-config, declass-boundary, declass-agent, declass-git (and
 ratatui): everything the operator sees on a terminal (the workspace, `term`, the settings
-screens); duet-cli runs the session and supplies `duet doctor`, detection and the cache probe to the
+screens); declass-cli runs the session and supplies `declass doctor`, detection and the cache probe to the
 settings as callbacks.
-duet-release (release tooling: the `duet-sbom` SBOM generator) links no duet crate.
+declass-release (release tooling: the `declass-sbom` SBOM generator) links no declass crate.
 ```
 
 | Crate | Owns | Must never |
 |---|---|---|
-| `duet-review` | Bounded syntax rules, same-file context, host/guard inventory and before/after comparison shared by the auditor and repository scanner ([scope and measurements](docs/evidence/reviews/security-auditor-2026-09-30.md)) | Perform I/O, execute source, contact a model, or turn a model opinion into a blocking decision |
-| `duet-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
-| `duet-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.duet` path registry | Open a workspace path by string after validation |
-| `duet-governor` | Memory limits for a process tree: follows the tree from its root (id plus start time), reads the physical footprint, stops a process above the per-process limit, the largest above the tree limit or under critical machine pressure, and every member left when the watch ends; the configured limits (`set_limits`) | Signal a process outside the tree it watches |
-| `duet-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
-| `duet-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, each plain request and tunnel host checked by the run's guard, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
-| `duet-net` | The product's one HTTP client and resolver for third parties: sends only a `duet_boundary::third_party::Checked` request (no redirects, no proxy from the environment, a checked address pinned), adds owner credentials after the check, resolves only a checked request's host | Build a request itself, or send anything unchecked |
-| `duet-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
-| `duet-web` | Every request checked by the caller's `Guard` and sent through `duet-net`; guarded `GET` fetch (search-engine result pages refused) (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `duet-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
-| `duet-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; the HTTP transport checks every message with the `Guard` it was opened with and sends through `duet-net`; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
-| `duet-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`duet_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
-| `duet-config` | Settings registry, file loading, scope and tighten-only rules, the policy layer of an embedding program (`policy`, §13) | Accept owner-only keys from a project file, or any value past a loaded policy |
-| `duet-extensions` | Portable `SKILL.md` catalog, metadata parsing, bounded no-follow resource reads and instruction digests | Execute code, contact a model/server, or grant invocation permissions |
-| `duet-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
-| `duet-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), root/scoped instructions (`instructions`), skill authorization and filtered loading (`skills`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
-| `duet-cli` / `duet-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `duet run` progress); `duet-cli` is also a library whose `main_with` is the whole command line for a program that embeds Duet (§13) | Contain policy logic (they edit the registry) |
-| `duet-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
-| `duet-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
+| `declass-review` | Bounded syntax rules, same-file context, host/guard inventory and before/after comparison shared by the auditor and repository scanner ([scope and measurements](docs/evidence/reviews/security-auditor-2026-09-30.md)) | Perform I/O, execute source, contact a model, or turn a model opinion into a blocking decision |
+| `declass-provider` | Chat Completions (Responses and Anthropic Messages *planned*, M6), streaming assembly (and a read-only tap on it, `live`), retry, credentials, local-endpoint trust, context probes, `Usage`, `Price`; images (`image`: decode, scale and re-encode PNG/JPEG/GIF/WebP, each dialect's wire form, digest redaction for audit, the vision probe) | Know about tools, policy or the boundary |
+| `declass-fs` | `PinnedParent` handle-relative I/O, atomic durable writes, private (0600) files, workspace lock, `.declass` path registry | Open a workspace path by string after validation |
+| `declass-governor` | Memory limits for a process tree: follows the tree from its root (id plus start time), reads the physical footprint, stops a process above the per-process limit, the largest above the tree limit or under critical machine pressure, and every member left when the watch ends; the configured limits (`set_limits`) | Signal a process outside the tree it watches |
+| `declass-sandbox` | Seatbelt/bwrap profiles (write and deny-read lists), network modes (`Network`: off, the egress proxy's route, all) and the bubblewrap bridge to the proxy (`bridge`), the list of credential stores in the home directory (`HOME_SECRETS`), env allowlist, output cap with spill file, process-tree capture and kill | Decide what a command is allowed to mean (no refusal logic) |
+| `declass-egress` | The egress proxy commands reach package registries through: `CONNECT` and plain-HTTP `GET`/`HEAD`, host allowlist (`Hosts`), its own name resolution with the web tools' address classes, the TLS server-name check, each plain request and tunnel host checked by the run's guard, one route per command, one event per connection | Look inside a TLS tunnel, or decide which command gets network |
+| `declass-net` | The product's one HTTP client and resolver for third parties: sends only a `declass_boundary::third_party::Checked` request (no redirects, no proxy from the environment, a checked address pinned), adds owner credentials after the check, resolves only a checked request's host | Build a request itself, or send anything unchecked |
+| `declass-git` | Private checkpoint store; the only function that spawns `git`; plumbing-only commits of given paths (`commit_paths`), operator identity, commit blockers; file listing (git, or outside a repository a walk honouring `.gitignore`, `walk`) | Inherit the user's git config, hooks or fsmonitor |
+| `declass-web` | Every request checked by the caller's `Guard` and sent through `declass-net`; guarded `GET` fetch (search-engine result pages refused) (address checks after DNS, connection pinned to the checked address, redirects re-checked, size cap, timeout), HTML to text, search backends: native (`search::native`: public sources with open APIs asked in parallel through the guarded client, paced per service, backoff, answers kept per run, merged), SearXNG, Brave, Wikipedia alone (paced to one request a second), Z.ai (the coding plan's search server through `declass-mcp`, or the Web Search API) | Decide what the frontier sees, or read the workspace |
+| `declass-mcp` | MCP client from the public specification: `initialize` with revision negotiation, paginated `tools/list`, `tools/call`, content rendered as text (non-text described), timeouts with cancellation, sessions (`Mcp-Session-Id`), size caps, no redirects; the HTTP transport checks every message with the `Guard` it was opened with and sends through `declass-net`; `ServerConfig`; scripted servers for tests | Start processes, or decide what a server may see or return |
+| `declass-lsp` | Language-server client from the LSP 3.17 specification: `Content-Length` framing, requests with timeouts and `$/cancelRequest`, minimal answers to server requests, published diagnostics and work-done progress, per-language servers started lazily in the sandbox (`declass_sandbox::spawn`) and restarted once; built-in server table and `lsp.servers.<language>`; UTF-16 positions; a scripted mock server for tests | Decide what may be sent to a server or shown to the frontier (the caller does) |
+| `declass-config` | Settings registry, file loading, scope and tighten-only rules, the policy layer of an embedding program (`policy`, §13) | Accept owner-only keys from a project file, or any value past a loaded policy |
+| `declass-extensions` | Portable `SKILL.md` catalog, metadata parsing, bounded no-follow resource reads and instruction digests | Execute code, contact a model/server, or grant invocation permissions |
+| `declass-boundary` | Classification, transformation, vault, handles, bulky offload, condensed command output (`condense`), structure views and synthetic samples of sensitive data (`structure`), IP levels, local roles, local micro-eval, outbound gate, the third-party check (`third_party`: `Outgoing`, `Checked`, `Guard`), audit | Expose a way to reach the frontier without the gate, or to make a `Checked` request without the check |
+| `declass-agent` | Loop, tools, transcript, context manager (masking, compaction), termination, cost ledger, operator approval (`oversight`), disclosure report, sessions (operator turns, steering, undo), sub-agents (`delegate`), the local explorer (`explore`), root/scoped instructions (`instructions`), skill authorization and filtered loading (`skills`), changes outside git (`changes`) | Construct a frontier provider (it receives `GatedFrontier`) or a local one (the explorer receives a `LocalAgent`) |
+| `declass-cli` / `declass-tui` | User interfaces over config, runs and audits; the CLI is the only place providers are built; the operator's terminal (`term`: the chat console, its line editor, Markdown rendering of streamed text, `declass run` progress); `declass-cli` is also a library whose `main_with` is the whole command line for a program that embeds Declass (§13) | Contain policy logic (they edit the registry) |
+| `declass-evals` | Tasks, canaries, leak proxy, judge, statistics, reports | Share code paths with the product's privacy decisions |
+| `declass-release` | CycloneDX SBOM from `cargo metadata` (offline); used by `tools/release.sh` | Be linked by the product |
 
 ## 3. Key types
 
 ```rust
-// duet-provider
+// declass-provider
 struct ChatProvider;   async fn create(&self, req: &Request) -> Result<Response, ProviderError>
 struct Usage { input, cache_read, cache_write, output, reasoning: u64, status: UsageStatus }
 enum Item { User { text }, Assistant { .. }, ToolResult { call_id, content },
@@ -127,7 +127,7 @@ enum Item { User { text }, Assistant { .. }, ToolResult { call_id, content },
 struct Image { media_type, sha256, width, height, bytes }   // bytes loaded, never serialized
 enum UsageStatus { Reported, Estimated, Unknown }
 
-// duet-boundary
+// declass-boundary
 enum Source { File { path, ranged }, FileList, Search { pattern }, Command { command, exit_code },
               SensitiveCommand { command, exit_code }, Diff, Checks, Web { url },
               GitHistory { rev, path: Option<PathBuf> }, Other { label },
@@ -143,12 +143,12 @@ struct Engine;         // the hybrid Presenter; PassThrough is the no-op one
 // handles render as "h12"; placeholders as "⟨secret:DB_URL#1⟩", "⟨email:email#4⟩", "⟨body:h7⟩"
 struct OutboundGate;   fn wrap(self, p: ChatProvider) -> GatedFrontier
 struct GatedFrontier;  // only type the agent can call the frontier through
-// duet-boundary::third_party (third parties: web pages, search sources, MCP over HTTP, the proxy)
+// declass-boundary::third_party (third parties: web pages, search sources, MCP over HTTP, the proxy)
 struct Outgoing { method, url, headers, body }   // a request before the check
-struct Checked;        // made only by Guard::check; the only thing duet-net sends
+struct Checked;        // made only by Guard::check; the only thing declass-net sends
 struct Guard;          // a presenter's check, owned: check(), check_text(), check_value(), name()
 
-// duet-agent
+// declass-agent
 fn run(cfg, frontier: &GatedFrontier, presenter: &dyn Presenter, git, resume, interrupted)
     -> (Terminal, RunStats)
 enum Terminal { Completed { summary }, Failed { reason }, BudgetStopped { which } }
@@ -167,7 +167,7 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
 ```
 0. Run start (hybrid): prime the engine. Public files and the task seed the public-word list;
    every sensitive file (`Git::list_files`: git ls-files, or outside a repository a walk that
-   honours `.gitignore`/`.ignore` (`duet_git::walk`), plus the sensitive files it does not list — an ignored
+   honours `.gitignore`/`.ignore` (`declass_git::walk`), plus the sensitive files it does not list — an ignored
    `.env`, logs, databases — found by the walk that builds the commands' deny list, ≤64 MB of
    those in total; ≤2 MB per file) is read once: its values enter the vault and its
    text the copied-span index (and, with `sensitivity.structure_views`, its string values the
@@ -178,7 +178,7 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
    The first message starts with `instructions::block`: owner instruction files sanitized like
    operator messages, then repository-root files presented as `Source::File`, each framed
    between digest-tagged markers, ≤16 KiB per file / ≤64 KiB total, audited as `instructions`.
-   Files are AGENTS (or AGENTS.override), CLAUDE, GEMINI, root Copilot, then DUET; owner lookup
+   Files are AGENTS (or AGENTS.override), CLAUDE, GEMINI, root Copilot, then DECLASS; owner lookup
    excludes Copilot. A short filtered skill catalog follows, then the sanitized task. The
    opening message is in the transcript, so resume replays the original root instructions.
 1. ContextManager builds the request: fixed system prompt (`prompt::system_prompt`, from the
@@ -209,22 +209,22 @@ struct Steering;       // steer(message), stop(): the operator's side of a runni
         instruction files for the named path. New guidance defers the operation; mutations later
         in that response also wait. The model retries after reading the tool result.
      c. write tools: resolve placeholders (secret-sink rule); record values the frontier wrote
-     d. execute (duet-fs / duet-sandbox with sensitive paths denied / duet-git)
+     d. execute (declass-fs / declass-sandbox with sensitive paths denied / declass-git)
      e. Presenter.present(source, bytes) → the text the frontier sees
      f. append call + result to Transcript (synced)
 5. Loop until finish passes the checks, a budget stops, or a failure a retry cannot fix (§10).
 ```
 
-### Sessions (the `duet` workspace)
+### Sessions (the `declass` workspace)
 
-A session is a run whose conversation continues across operator turns (`duet_agent::session`). It
+A session is a run whose conversation continues across operator turns (`declass_agent::session`). It
 uses the same loop (`run::work`), tools, presenter, gate and transcript; what differs is how a turn
 ends and what enters the conversation between steps.
 
 ```
 open    new: transcript Start (the first message is the objective the engine was primed with)
         resume: roll back pending writes, rebuild items and usage from the transcript (as
-        `duet resume`), recover turn marks, pending notes and working time
+        `declass resume`), recover turn marks, pending notes and working time
 turn    reset the stop flag; roll back pending writes; drop a partly answered frontier turn
         TurnStart{exchange, message as typed, journal_next}
         operator item = notes (interrupted turn, undone writes) + message
@@ -271,8 +271,8 @@ restores every file written by records from that mark on to its content before t
 next message. Repeating it walks back turn by turn. Writes made by commands are not journaled and
 are not reverted.
 
-**The operator's terminal (`duet_tui::workspace`, `duet_tui::term`).** `duet` without a command
-runs the session in `duet-cli` (`chat.rs`: the inbox, steering at safe points, approvals, `/undo`,
+**The operator's terminal (`declass_tui::workspace`, `declass_tui::term`).** `declass` without a command
+runs the session in `declass-cli` (`chat.rs`: the inbox, steering at safe points, approvals, `/undo`,
 budgets) and, on a terminal, draws it with the workspace. Two feeds reach the screen, both read-only:
 
 ```
@@ -280,7 +280,7 @@ transcript.jsonl ──Follow::drain (every 150 ms, and at each request's start)
                                                                                          ▼
 provider stream ─Assembler::view─▶ live::Differ ─▶ Ordered tap ─▶ channel ─▶ Feed ─▶ conversation
   (GatedFrontier passes the task-local tap set by      (drains the transcript  Detok, FieldReader,
-   duet_boundary::live::observe; sub-agents run quiet)   on Attempt first)      Markdown, words
+   declass_boundary::live::observe; sub-agents run quiet)   on Attempt first)      Markdown, words
                                                                                          │
       side panel: Changes (journal + git), Privacy (entries), Session (status) ◀─────────┘
 ```
@@ -293,9 +293,9 @@ runs the process's standard output and error are a pipe whose lines it shows in 
 both descriptors are restored on exit, panic and Ctrl-Alt-Z (Ctrl-Z undoes input edits). The conversation is a list of cells
 (`workspace::cells`: the operator's messages, replies rendered as Markdown, tool calls with their
 results as the frontier saw them, edits with their diffs, the boundary's interventions, turn ends),
-each rendered at the view's width and cached by version; duet's styled text is translated from its
+each rendered at the view's width and cached by version; declass's styled text is translated from its
 own SGR codes into ratatui spans (`workspace::ansi`; any other escape is dropped) and wrapped at
-spaces. The palette, the `@` picker (the workspace's files from `duet_git`), the approval dialog,
+spaces. The palette, the `@` picker (the workspace's files from `declass_git`), the approval dialog,
 help, conversation search and mouse selection are the workspace's own. The command palette sizes
 its visible range from the available height, keeps the selected command visible after resizing,
 and validates its last-drawn query before using a mouse row. Paging, first/last navigation and
@@ -322,7 +322,7 @@ The side panel's Changes view follows the session's write journal
 so the panel holds back exactly what the engine holds back. The settings screens (`app`, `ui`: the
 registry screens, IP levels, data, audit, the runs view) open as an overlay; their edits go through
 `Config::propose` / `apply` as before. `Screen::Plain` keeps the line-by-line output without a
-terminal. `duet run` uses the same feed (`duet-cli`'s `term::watch`) on standard error: live on a
+terminal. `declass run` uses the same feed (`declass-cli`'s `term::watch`) on standard error: live on a
 terminal, compact lines (placeholders kept, a heartbeat) otherwise; standard output keeps the
 summary.
 
@@ -448,24 +448,24 @@ The gate applies filters to the request, then checks, then appends to the audit 
 - **Final check:** no vault value (≥6 characters, raw or JSON-escaped) may appear anywhere in the
   serialized body. A hit blocks the send (`BlockedSend` event) and the run fails; nothing is sent.
 - **Audit record:** `{seq, prev, unix_ms, endpoint, model, request_sha256, request (after
-  substitution), interventions[]}`; `duet audit verify` recomputes the chain.
+  substitution), interventions[]}`; `declass audit verify` recomputes the chain.
 - **Audit events** share the chain: run start (boundary on/off) and end, local-endpoint trust,
   sandbox denials, `sensitive_data` commands (command, exit code, files marked derived), blocked
   sends (check name), requests sent with parts withheld (check name, parts), protected edits, images (origin, size, digest, destination, rule),
   `ask_local` probes of a value (handle, rule, pieces withheld, count). Names, paths and outcomes
   only, never content.
 - **Images in the body:** checks and the audit record see each image's data replaced by a digest
-  marker (`[image sha256:…, N bytes]`; `duet_provider::image::redact`), and `request_sha256` is of
+  marker (`[image sha256:…, N bytes]`; `declass_provider::image::redact`), and `request_sha256` is of
   that form; the provider sends the real body. Every check also gets the digests
   (`OutboundCheck::check_images`); the engine's refuses any image not routed to the frontier.
 - **Anchor:** after every append the chain head (record count, last hash) is written to
   `<owner state>/audit-anchors/runs/<run-id>/<first-record hash>.json`, outside the workspace.
   The key belongs to the run, not to the workspace path, so a moved or re-mounted workspace still
   verifies; anchors in the earlier layout (`audit-anchors/<workspace hash>/<run-id>.json`) are still
-  read. `duet audit verify` reports a log rewritten or truncated since, and a run refuses to
+  read. `declass audit verify` reports a log rewritten or truncated since, and a run refuses to
   continue such a log.
 
-Canaries are not known to Duet (they carry no marker); the evaluation's leak proxy finds them.
+Canaries are not known to Declass (they carry no marker); the evaluation's leak proxy finds them.
 
 ### 5.5 Write-back
 
@@ -479,17 +479,17 @@ placeholders; they are matched against the real text.
 
 Everything sent to anyone other than the frontier provider and the local model is checked by the
 boundary in every part, and the check is a type, as the gate is for the frontier
-(`crates/duet-boundary/src/third_party.rs`, `engine/third_party.rs`; SECURITY.md, Egress):
+(`crates/declass-boundary/src/third_party.rs`, `engine/third_party.rs`; SECURITY.md, Egress):
 
 ```
-tool ── Outgoing {method, url, headers, body} ──► Guard::check ──► Checked ──► duet_net::Client::send
-          (duet-web, duet-mcp, the proxy)          (run's presenter:            (the only sender;
+tool ── Outgoing {method, url, headers, body} ──► Guard::check ──► Checked ──► declass_net::Client::send
+          (declass-web, declass-mcp, the proxy)          (run's presenter:            (the only sender;
                                                     Presenter::outbound_guard)   credentials added here)
-duet_net::lookup(resolver, &Checked)  ◄── the only name resolution for web tools: a checked host only
+declass_net::lookup(resolver, &Checked)  ◄── the only name resolution for web tools: a checked host only
 ```
 
 `Guard` holds the presenter's policy (the engine, weakly: a guard that outlives its run refuses
-everything); `Checked` has no public constructor, and `duet-net` builds no request itself. The
+everything); `Checked` has no public constructor, and `declass-net` builds no request itself. The
 engine's policy (`Engine::third_party_refusal`) reads the parts of a request (`Texts::of_request`:
 host and labels, port, path and segments, query keys and values, headers, JSON strings and keys,
 JSON inside strings; and the parts joined, and the values alone joined) for placeholders and
@@ -501,28 +501,28 @@ withheld number's digits, and copied spans. `Presenter::check_outbound(destinati
 same check on one text. A refusal is recorded by the guard (`outbound_refused`, destination named
 by `Guard::name`, never a value) and is a tool error; pass-through's guard passes everything.
 `tools/gate.sh` ("egress by construction") keeps HTTP clients, sockets and resolver calls out of
-every product crate but `duet-net`, `duet-provider` and the proxy's upstream connection.
+every product crate but `declass-net`, `declass-provider` and the proxy's upstream connection.
 
-The web tools (`crates/duet-agent/src/web.rs` over `duet-web`): `web_fetch {url, start_line?,
+The web tools (`crates/declass-agent/src/web.rs` over `declass-web`): `web_fetch {url, start_line?,
 end_line?}` always, `web_search {query, count?, sources?}` only with a usable backend (`sources`
 only for the native backend, an enum of the run's sources), both fixed at run start
-(`RunConfig.web`; `None` when `web.enabled` is off). Flow: the presenter's guard → `duet-web`
+(`RunConfig.web`; `None` when `web.enabled` is off). Flow: the presenter's guard → `declass-web`
 fetches (a search engine's result page refused; each hop checked by the guard, then resolved,
 every address checked, pinned; at most 5 redirects; capped; converted) →
 `Presenter::present(Source::Web { url }, text)` (public-untrusted: scanned and tokenized like public
 content, offloaded to a handle when bulky) → framed between markers with a per-call random tag
 saying the content is data → a `web_request` audit event (tool, host, bytes, outcome).
 
-The search backend is chosen once per run in `crates/duet-cli/src/web.rs` (`choose`) from
+The search backend is chosen once per run in `crates/declass-cli/src/web.rs` (`choose`) from
 `web.search.backend` (`auto` by default), `web.search.sources`, the workspace root (its manifest
 files pick the package registries), the run's frontier (its URL from the run manifest; none in
 top-clearance runs, which offer no web tools at all) and the environment. `auto` is Z.ai's search when the frontier is Z.ai and its key is set
 (`web.search.zai_engine`), else the native backend; SearXNG, Brave and Wikipedia alone only when
-named. The same function feeds `duet doctor`'s "web search" check, and the tool's description
+named. The same function feeds `declass doctor`'s "web search" check, and the tool's description
 says what the backend searches (for native: each source, which are asked by default and which on
 request).
 
-A native search (`crates/duet-web/src/search/native.rs`): the agent resolves the sources to ask
+A native search (`crates/declass-web/src/search/native.rs`): the agent resolves the sources to ask
 (the frontier's `sources` or the defaults), checks the query once against all their hosts with the
 guard, then `Web::search_with` asks each source in parallel under its own deadline: the source's
 request built and checked by the guard → answer kept for the run? →
@@ -535,22 +535,22 @@ reply, which is presented as `Source::Web` like any result.
 
 ### 5.6b Commands' network (egress proxy)
 
-`sandbox.network` (`RunConfig.network`, `crates/duet-agent/src/egress.rs`): `off`, `registries`
-(the default) or `all`. `tools::sandboxed` picks each command's `duet_sandbox::Network`: a
+`sandbox.network` (`RunConfig.network`, `crates/declass-agent/src/egress.rs`): `off`, `registries`
+(the default) or `all`. `tools::sandboxed` picks each command's `declass_sandbox::Network`: a
 `sensitive_data` command gets `Off`, and so does a check when the presenter lets checks read more
 than ordinary commands (protected source); ordinary commands, sub-agents' read-only commands and
-the other checks get the run's mode. With `registries`, the run's `duet_egress::Proxy` is created
+the other checks get the run's mode. With `registries`, the run's `declass_egress::Proxy` is created
 on the first such command (its events go to the run's audit log as `egress`), and each command gets
 its own `Route`, dropped when the command ends:
 
 ```
 command ── HTTPS_PROXY=http://127.0.0.1:<port> ──► route ──► Proxy::serve
   Seatbelt:   TCP to the proxy's host loopback port (and free development ports), nothing else
-  bubblewrap: own network namespace; `duet __sandbox-bridge` listens on its 127.0.0.1, and hands
+  bubblewrap: own network namespace; `declass __sandbox-bridge` listens on its 127.0.0.1, and hands
               each connection to the host over a channel (the helper's stdin, SCM_RIGHTS)
 Proxy::serve: head (CONNECT host:port | GET/HEAD http://...) → the run's guard (the tunnel's
   host; every part of the rewritten plain request) → Hosts::allows → resolve (only a listed
-  name) → every address checked (duet_web::guard) → connect → CONNECT: 200, ClientHello's server
+  name) → every address checked (declass_web::guard) → connect → CONNECT: 200, ClientHello's server
   name == host, then bytes both ways | GET: one rewritten request, the response → Event (a host
   the guard refuses is named by `Guard::name`)
 ```
@@ -559,7 +559,7 @@ Before any of that, `tools::sandboxed` checks the command line of an ordinary or
 command that would have network (`registries` or `all`) with the guard; one holding a placeholder
 or a withheld value runs with network off and a note in its output.
 
-The agent also denies every command `duet_sandbox::home_secrets` (credential stores and shell
+The agent also denies every command `declass_sandbox::home_secrets` (credential stores and shell
 histories under `$HOME`), and gives commands with network package caches in the run's scratch
 directory (`egress::cache_env`; `CARGO_HOME` seeded with links to the operator's crates). A refused
 request is noted at the end of the command's output (`[sandbox] the egress proxy refused: ...`).
@@ -567,8 +567,8 @@ request is noted at the end of the command's output (`[sandbox] the egress proxy
 
 ### 5.7 Git history and commits
 
-The git tools (`crates/duet-agent/src/git_tools.rs`; `GitTools`, decided once per run or session in
-`run::tool_specs`, `None` outside a git repository) call git only through the `duet-git` runner.
+The git tools (`crates/declass-agent/src/git_tools.rs`; `GitTools`, decided once per run or session in
+`run::tool_specs`, `None` outside a git repository) call git only through the `declass-git` runner.
 History is presented per path: `git_show` lists a commit's files (`--no-renames`, first parent for
 merges), drops hidden and sealed paths (`Presenter::path_visible`, `Presenter::protection`), and
 presents each file's diff on its own as `Source::GitHistory { rev, path: Some(p) }`; `git_show
@@ -597,22 +597,22 @@ session its inline approver even with approval off, and then only commits are as
 names changed sensitive files and never diffs them.
 
 **Without a repository** (`Git::is_repository` false): `Git::list_files` falls back to
-`duet_git::walk::list` (the `ignore` crate: `.gitignore` and `.ignore` files without requiring
-git, no global excludes, no links followed, `.git`, `.duet` and dependency/build-output
+`declass_git::walk::list` (the `ignore` crate: `.gitignore` and `.ignore` files without requiring
+git, no global excludes, no links followed, `.git`, `.declass` and dependency/build-output
 directories skipped), so `list_files`, `search`, `code_nav`, engine priming and the TUI's IP tree
-work unchanged. `diff` and `/diff` use `duet_agent::changes`: the write journal's files, each
+work unchanged. `diff` and `/diff` use `declass_agent::changes`: the write journal's files, each
 read through the guarded file access, copied privately into the run directory and compared with
 its saved first content by `git diff --no-index` (which needs no repository), headers relabelled
 to workspace paths. No git tools are offered; a `git` command that fails gets a hint instead.
 
 ### 5.8 MCP servers
 
-`crates/duet-agent/src/mcp.rs` (`Hub`) over `duet-mcp`. The CLI reads `[mcp.servers.<name>]`
+`crates/declass-agent/src/mcp.rs` (`Hub`) over `declass-mcp`. The CLI reads `[mcp.servers.<name>]`
 (template settings `mcp.servers.*.<field>` in the registry, owner-only) and enabled native-package
 server declarations into `ServerConfig`s. Package fields pass organization-policy checks before
 merging; a server-name collision is an error. The CLI
 starts a `Hub` in `prepare` (runs and sessions alike; `RunConfig.mcp`, `None` without servers):
-each enabled server in parallel, a stdio server through `duet_sandbox::spawn` (the command profile:
+each enabled server in parallel, a stdio server through `declass_sandbox::spawn` (the command profile:
 `Presenter::hidden_from_commands` as deny-read, writes to the workspace and a per-server scratch
 directory, network per `network`, the base environment plus the variables named in `env`; under
 bubblewrap its input is a named pipe, since bubblewrap's standard input carries the seccomp
@@ -627,7 +627,7 @@ A call (`work` in `run.rs` routes names the hub owns): approval via `Hub::action
 `sensitive` stdio server every argument string is detokenized; for any other server the arguments
 are checked as one JSON value by the presenter's guard (`Guard::check_value`; refusal: tool error
 + `outbound_refused`, drained into the run's log at once) → `tools/call` (over HTTP every message
-is checked again by the transport's guard and sent through `duet-net`; a refusal there is
+is checked again by the transport's guard and sent through `declass-net`; a refusal there is
 `McpError::NotSent`)
 with the server's timeout, abandoned on interrupt → the rendered text through
 `present(Source::Mcp { trust })` (public: scanned like public command output, bulky offloaded;
@@ -638,7 +638,7 @@ shut down after the run or session (input closed or HTTP `DELETE`, then the tree
 
 ### 5.9 Language servers
 
-`crates/duet-agent/src/code_nav.rs` over `duet-lsp`. The CLI builds the run's servers from
+`crates/declass-agent/src/code_nav.rs` over `declass-lsp`. The CLI builds the run's servers from
 `lsp.*` (`RunConfig.lsp`: the installed servers; `None` when `lsp.enabled` is off or none is
 found), so `code_nav` and `rename` are in the tool set from the start or not at all. Nothing is
 started until a tool needs it; one server per language then serves the rest of the run (or
@@ -647,7 +647,7 @@ session) and is shut down at its end.
 Flow of `code_nav`: check the path (visible, not sensitive; positions not in protected source,
 which is `hidden_from_commands` minus `hidden_from_checks`) → read the file and send it as the
 current document (`didOpen`/`didChange`) → the request, to a server started with
-`hidden_from_checks` plus `.git` and `.duet` denied (a server whose hidden set has since grown is
+`hidden_from_checks` plus `.git` and `.declass` denied (a server whose hidden set has since grown is
 restarted) → each location: dropped if the path is not visible, else `path:line:col` (UTF-16
 converted back to characters) next to the snippet or declaration text presented as
 `Source::CodeNav { path, signature }` of the file it comes from (§5.1: nothing of a sensitive or
@@ -664,9 +664,9 @@ work-done progress open) within `lsp.diagnostics_wait_ms`.
 
 ### 5.10 Sub-agents
 
-`crates/duet-agent/src/subagents.rs`. `RunConfig.subagents` (`None` when `subagents.enabled` is
+`crates/declass-agent/src/subagents.rs`. `RunConfig.subagents` (`None` when `subagents.enabled` is
 off) adds `delegate {task, mode, paths?, budget?}` to the fixed tool set of runs and sessions. The
-CLI builds it in `prepare` (`crates/duet-cli/src/subagents.rs`): the parent's model, or with
+CLI builds it in `prepare` (`crates/declass-cli/src/subagents.rs`): the parent's model, or with
 `subagents.model` a second provider at the frontier endpoint behind `OutboundGate::with_audit` (the
 run's audit handle, the engine's filter and check), priced by that model.
 
@@ -721,9 +721,9 @@ re-decides the dropped step. A sub-agent whose result was recorded keeps its wri
 
 ### 5.11 Images
 
-`crates/duet-agent/src/images.rs` over `duet-provider`'s `image` and `duet-boundary`'s `images`.
+`crates/declass-agent/src/images.rs` over `declass-provider`'s `image` and `declass-boundary`'s `images`.
 Entry points: `read_file` on a path with an image extension (routed by `run::work` before the
-tool dispatcher), `RunConfig.images.attached` (`duet run --image` / `--image-public`, attached to
+tool dispatcher), `RunConfig.images.attached` (`declass run --image` / `--image-public`, attached to
 the task), and `Session::attach` (`/image` in a session, attached to the next
 message). `images::precheck` applies the same rule from the policy alone before a run or session
 exists (the CLI before creating a run), so a refusal shows at once.
@@ -762,7 +762,7 @@ parent's model drives it and never carries the operator's attachments.
 
 ### 5.12 Structure views, synthetic samples, masked output
 
-`crates/duet-boundary/src/structure/` (pure: parsing, profiles, shapes, dates, twins, masking,
+`crates/declass-boundary/src/structure/` (pure: parsing, profiles, shapes, dates, twins, masking,
 over a `Knowledge` trait) and `engine/structure.rs` (the engine's `Knowledge`: vault spans, the
 public and schema words, the values of structured sensitive data; state, checks, audit).
 
@@ -807,22 +807,22 @@ with the smaller one's records.
 
 ### 5.13 Local explorer
 
-`crates/duet-agent/src/explore.rs`. `RunConfig.explore` (`None` unless `explore.enabled` and a
+`crates/declass-agent/src/explore.rs`. `RunConfig.explore` (`None` unless `explore.enabled` and a
 local model is enabled; never in a sub-agent) adds `explore {question, paths?, depth?}` to the fixed
 tool set of runs and sessions, in hybrid and pass-through; the run and session prompts name it only
 then (so the prefix of a run without it is the one every evaluation measured). The CLI builds it in
-`prepare` (`crates/duet-cli/src/explore.rs`): the configured local model through `local_provider`
+`prepare` (`crates/declass-cli/src/explore.rs`): the configured local model through `local_provider`
 (the same endpoint rules and deadline as the engine's), wrapped in `LocalAgent`, which refuses a
 provider that is not in the local role and implements the `Driver` trait.
 
 ```
-call     parse: question (≤4,000 chars), paths (≤20 globs, relative, no .git/.duet), depth quick
+call     parse: question (≤4,000 chars), paths (≤20 globs, relative, no .git/.declass), depth quick
          (default) or thorough → Caps{steps, time, bytes} (explore.quick_steps / thorough_steps;
          explore.max_seconds, a third for quick; explore.max_read_kb, half for quick); until =
          min(now + time, the run's deadline)
 view     SecureView over the calling loop's presenter: present() shows content as it is, cut at
          12 KB per result, listings and searches kept to `paths`, and records every text with the
-         file it came from (search lines split per file); path_visible adds .git/.duet to the
+         file it came from (search lines split per file); path_visible adds .git/.declass to the
          presenter's hidden paths; path_sensitive/protection/hidden_* delegate; resolve_for_write
          refuses
 tools    the calling loop's implementations (tools::dispatch) with a Ctx over the view: read_file
@@ -842,7 +842,7 @@ report   findings kept only for a visible, non-reserved file the explorer was sh
          data (with structure views; kept only when all words are public or schema words, never
          with a digit), clean_local_counted over all of it as an answer to the question, then
          ip_redact; paths presented as Source::FileList (protected
-         ones marked); the line at a reference quoted by Duet only for an open file, as
+         ones marked); the line at a reference quoted by Declass only for an open file, as
          Source::CodeNav; framed between random-tag markers
 end      Explored{call_id, stats} in the transcript; audit `explore` {question_sha256, depth,
          steps, files, bytes_read, local_seconds, references, outcome}; the presenter's probe
@@ -858,7 +858,7 @@ turn and decided again, like any tool call (nothing to roll back: it never write
 
 ### 5.14 Instructions, skills and native packages
 
-`duet-agent::instructions` loads standing owner files and repository-root conventions in a
+`declass-agent::instructions` loads standing owner files and repository-root conventions in a
 deterministic order. `Conversation.scoped_instructions` tracks descendant instruction identities
 and digests by target directory. It walks outward-to-inward scopes, skips root files already in
 the opening message, caps each rendered block at 32 KiB, and supplies changed rules before a
@@ -867,8 +867,8 @@ path of a rename; shell paths and other affected files are not enumerated. The s
 asks the model to read files before shell edits. These are guidance rules below host/operator
 authority, not changes to file permissions or execution policy.
 
-`duet-cli::extensions` discovers owner/project skill roots and enabled package contributions.
-The `duet-extensions::Catalog` reads bounded `SKILL.md` files to retain metadata and digests;
+`declass-cli::extensions` discovers owner/project skill roots and enabled package contributions.
+The `declass-extensions::Catalog` reads bounded `SKILL.md` files to retain metadata and digests;
 full bodies stay out of startup model context. `RunConfig.skills` holds `Arc<skills::Skills>`,
 which wraps the catalog and explicit host authorizations. `/skill` validates `user-invocable`
 and authorizes the exact ID; a model cannot grant that authorization. `list_skills` pages a
@@ -878,9 +878,9 @@ content uses `sanitize_message`. Each loaded document produces an `instructions`
 with `skill:<id>` and its digest. Authorization is recreated after resume; recorded content is
 replayed normally. Skill metadata such as `allowed-tools` never modifies the tool set.
 
-`duet-cli::plugins` owns native package inspection, installation, enabled records and command/MCP
+`declass-cli::plugins` owns native package inspection, installation, enabled records and command/MCP
 adaptation. Installation reads a local bounded tree through pinned no-follow handles, validates
-`duet-plugin.toml` schema 1, and writes a private content-addressed snapshot and record. It runs
+`declass-plugin.toml` schema 1, and writes a private content-addressed snapshot and record. It runs
 no install scripts or dependency manager. Limits include 512 files, 8 MiB per file and 32 MiB
 per package; paths cannot escape the package. Activation checks the content SHA-256 and skips
 disabled snapshots. Plugin skills use `<plugin>:<skill>` IDs. `/command plugin:name` rechecks
@@ -909,7 +909,7 @@ See [extension formats and supported compatibility](docs/EXTENSIONS.md) and
   Masking happens rarely and in batches so caches are invalidated rarely. Images count by their
   own estimate (about one token per 750 pixels); a masked turn's images are dropped with their
   result, whose stub then says to repeat the call.
-- **Compaction** (`context.compaction`, off by default until measured; `duet_agent::compaction`).
+- **Compaction** (`context.compaction`, off by default until measured; `declass_agent::compaction`).
   At each safe point, when the estimate passes `context.compact_at` (100K tokens), one event
   brings the conversation down to `context.compact_to` (0.4) of it:
 
@@ -948,18 +948,18 @@ See [extension formats and supported compatibility](docs/EXTENSIONS.md) and
   answer, bulky handle), and counts `ask_local` calls and questions, `sensitive_data` commands,
   sandbox denials and local busy seconds; images by destination (sent, described, refused) with
   their estimated share of the reported input dollars (`stats.ledger.images`); the method is
-  documented in `duet-agent/src/ledger.rs`.
+  documented in `declass-agent/src/ledger.rs`.
 
 ## 7. State on disk
 
-All Duet state lives under the workspace's `.duet/`, classified by the path registry (ignored by
+All Declass state lives under the workspace's `.declass/`, classified by the path registry (ignored by
 git; reset behaviour defined per entry).
 
 ```
-.duet/
+.declass/
   config.toml                 project settings (tighten-only)
   git/                        private checkpoint store (bare, fixed config, flock)
-  runs/<run-id>/              mode 0700, files 0600; `duet purge` after data.retention_days
+  runs/<run-id>/              mode 0700, files 0600; `declass purge` after data.retention_days
     run.json                  manifest (mode, task, frontier; `session` for a session) for resume
     transcript.jsonl          full conversation items, synced per item; for a session also its
                               turns (as typed), their ends, steering and undo; sub-agents'
@@ -984,26 +984,26 @@ git; reset behaviour defined per entry).
     summary.json              terminal state (placeholders restored for the operator), usage, cost ledger
   audit/<run-id>.jsonl        hash-chained outbound log (placeholder-substituted)
   lock, tmp/                  workspace lock; sandbox scratch space
-~/.config/duet/config.toml    owner settings (credentials, endpoints, local address, policy)
-~/.config/duet/DUET.md        the owner's standing instructions (optional; next to config.toml)
-~/.config/duet/AGENTS.md      optional owner rules; AGENTS.override.md replaces this file
-~/.config/duet/CLAUDE.md      optional owner rules (GEMINI.md also supported)
-~/.config/duet/skills/        owner <name>/SKILL.md workflows (plus compatible discovery roots)
-~/.config/duet/plugins/      private native package store (beside the configured owner file)
+~/.config/declass/config.toml    owner settings (credentials, endpoints, local address, policy)
+~/.config/declass/DECLASS.md        the owner's standing instructions (optional; next to config.toml)
+~/.config/declass/AGENTS.md      optional owner rules; AGENTS.override.md replaces this file
+~/.config/declass/CLAUDE.md      optional owner rules (GEMINI.md also supported)
+~/.config/declass/skills/        owner <name>/SKILL.md workflows (plus compatible discovery roots)
+~/.config/declass/plugins/      private native package store (beside the configured owner file)
   <name>.json                installed digest and enabled state
   <name>/<sha256>/           package snapshot; retained after unregistering
-~/.local/state/duet/          owner state ($DUET_CONFIG_HOME/state when set), mode 0700
+~/.local/state/declass/          owner state ($DECLASS_CONFIG_HOME/state when set), mode 0700
   audit-anchors/runs/<run>/<first>.json   chain head of each run's audit log
-  config-audit.jsonl          hash-chained log of `duet config set` changes
+  config-audit.jsonl          hash-chained log of `declass config set` changes
 ```
 
 ## 8. Safety primitives
 
 - **File I/O:** all workspace access goes through `PinnedParent` (`O_NOFOLLOW` walk, `openat`,
   `renameat`, `fsync`); writes are atomic with digest preconditions and rollback; `.git` and
-  `.duet` are never writable by tools.
+  `.declass` are never writable by tools.
 - **Commands:** Seatbelt (macOS) or bwrap (Linux) with absolute binary paths; workspace-write with
-  `.git`/`.duet` unwritable; `.duet` (the vault, handles, transcripts, audit log) unreadable to
+  `.git`/`.declass` unwritable; `.declass` (the vault, handles, transcripts, audit log) unreadable to
   every command by the sandbox itself, `.git` (committed copies) to ordinary commands and checks;
   command `TMPDIR` outside the workspace (a sub-agent's commands can write nothing else: the
   workspace is read-only to them, `Spec.read_only`), a separate one for `sensitive_data` commands that no
@@ -1014,7 +1014,7 @@ git; reset behaviour defined per entry).
   by default (§5.6b), none for `sensitive_data` commands and checks that read protected source;
   tmpfs `/run`; restricted service lookup; process-tree kill on timeout or interrupt.
   On Linux: denied paths covered by mode-000 stand-ins, no capabilities, a seccomp filter against
-  Unix sockets unless the network is unrestricted, and `.git`/`.duet` entries a command created removed when
+  Unix sockets unless the network is unrestricted, and `.git`/`.declass` entries a command created removed when
   it ends. A sandbox that cannot start refuses the command.
 - **Git:** one helper; environment cleared; fsmonitor, hooks, filters and user/system config
   disabled.
@@ -1024,7 +1024,7 @@ git; reset behaviour defined per entry).
 
 ## 9. Configuration
 
-`duet-config` holds a registry of every setting:
+`declass-config` holds a registry of every setting:
 
 ```rust
 struct Setting { key, kind: Bool | Int{min,max} | Float{min,max} | Str | List | Choice,
@@ -1035,19 +1035,19 @@ struct Setting { key, kind: Bool | Int{min,max} | Float{min,max} | Str | List | 
 
 Loading merges defaults → owner file → project file, rejecting owner-only keys in project files
 and any project value that loosens privacy; reading an unregistered key is an error. A program that
-embeds Duet may add a policy layer on top (`Config::load_with`, §13); Duet's own command line
+embeds Declass may add a policy layer on top (`Config::load_with`, §13); Declass's own command line
 loads none. `frontier.allow_passthrough` (on by default; a project may turn it off) decides whether
 `--mode passthrough` may run in a repository, for new and resumed runs and sessions alike. A value in a
 form an earlier version wrote is read as its current meaning with a note (`migrate`:
-`sandbox.network = true` / `false` read as `"all"` / `"off"`). `duet config
-list|get|set` and the workspace's settings screens are driven by the registry and share `Config::propose` / `apply`. `duet config set` refuses a
+`sandbox.network = true` / `false` read as `"all"` / `"off"`). `declass config
+list|get|set` and the workspace's settings screens are driven by the registry and share `Config::propose` / `apply`. `declass config set` refuses a
 change that loosens privacy (a `confirm` setting, or a value against its direction) without
 `--confirm`, prints the diff and appends every applied change to the owner's `config-audit.jsonl`.
 
 ## 10. Termination and recovery
 
 Every run ends in exactly one `Terminal` state, with `summary.json` and the audit log's `run_end`
-event (which anchors the log's final head) written by `duet_agent::conclude_with` (which then
+event (which anchors the log's final head) written by `declass_agent::conclude_with` (which then
 calls an embedding program's end hooks, §13):
 
 - `Completed{summary}`: `finish` passed the checks.
@@ -1055,8 +1055,8 @@ calls an embedding program's end hooks, §13):
   (credentials, an invalid request, a context overflow), a send the outbound gate still blocks
   after withholding the parts that held a value,
   `content_filter`, repeated `length` stops or text-only turns, checks still failing after
-  `limits.max_finish_attempts`, an interrupt (`interrupted; resume with duet resume`), or a
-  panic anywhere in the run (`internal error: <message>`). `duet_agent::run` catches panics in the
+  `limits.max_finish_attempts`, an interrupt (`interrupted; resume with declass resume`), or a
+  panic anywhere in the run (`internal error: <message>`). `declass_agent::run` catches panics in the
   loop, tools, engine and gate; the CLI also catches errors and panics in run setup, so once a
   run directory exists it always gets a summary.
 - `BudgetStopped{which}`: `frontier_usd` (checked before each turn) or `wall_clock`.
@@ -1069,7 +1069,7 @@ result produced after the deadline or an interrupt (for example a local summary 
 made) is not recorded; the turn is re-decided on resume.
 
 - `length` / `content_filter` stops never execute tools.
-- Writes record `pending` before and `applied` after; `duet resume <run>` reconciles pending writes,
+- Writes record `pending` before and `applied` after; `declass resume <run>` reconciles pending writes,
   drops a partly answered turn and continues the transcript and the same audit chain. It refuses a
   completed run and a malformed run id.
 - Ctrl-C stops a frontier wait or a retry at once, kills a running command's whole process tree
@@ -1077,11 +1077,11 @@ made) is not recorded; the turn is re-decided on resume.
   and ends in resumable `Failed{interrupted}`.
 
 A session applies the same states per turn (`TurnEnd`, §4 Sessions) and stays open after any of
-them; each `duet` session invocation concludes the run with the session's state (`Completed` when the
+them; each `declass` session invocation concludes the run with the session's state (`Completed` when the
 operator closed it, resumable `Failed{session left open}` when they left, `BudgetStopped` when a
-session budget is spent). `duet resume` refuses a session; `duet --resume` continues it.
+session budget is spent). `declass resume` refuses a session; `declass --resume` continues it.
 
-A full disk is an infrastructure failure too (`duet_agent::host`). A write of run state that fails
+A full disk is an infrastructure failure too (`declass_agent::host`). A write of run state that fails
 for lack of a host resource (disk space, quota, file handles; `FsError::is_host_resource`) pauses
 the run: one notice on stderr (`disk full: waiting for space`), then the write is retried in place
 with backoff (0.25 s doubling, capped at 30 s) until it succeeds, the run is interrupted, or the wall
@@ -1099,32 +1099,32 @@ usage, kept apart from it: to the dollar budget and `cost_usd`, to the ledger
 
 ## 11. Evaluation architecture
 
-`duet-eval` treats every agent — Duet in its three modes and external agents — as a black box
+`declass-eval` treats every agent — Declass in its three modes and external agents — as a black box
 behind a **logging reverse proxy** that sits between the agent and its frontier endpoint.
 
 ```
 task workspace (with canaries) ──► agent lane ──► leakproxy ──► frontier API
                                                      │
-                                                leaks.jsonl  (independent of Duet's audit log)
+                                                leaks.jsonl  (independent of Declass's audit log)
 workspace ──► sealed grader (hidden tests, secret-sink scan) ──► judge (code quality) ──► stats ──► report
 ```
 
 Tasks come from the tiered dogfood suite (docs/DOGFOOD_SUITE.md). Gates use paired designs:
 quality passes when the judge score is non-inferior (lower bound of the paired difference > −2/30)
 and the candidate is not behind on hidden-test pass rate on a majority of tasks; cost needs the
-upper bound of the paired difference < 0; privacy needs zero leaks. Duet runs write their cost
-ledger to `summary.json`, which `duet-eval report` reads per lane.
+upper bound of the paired difference < 0; privacy needs zero leaks. Declass runs write their cost
+ledger to `summary.json`, which `declass-eval report` reads per lane.
 
-The cost profile (`crates/duet-evals/src/profile.rs`) is computed from what a run already left:
+The cost profile (`crates/declass-evals/src/profile.rs`) is computed from what a run already left:
 per request, the context sent and the output from the usage in the proxy's response capture (every
-lane alike); per turn, its cause from the tool calls of Duet's `transcript.jsonl` (sub-agents
+lane alike); per turn, its cause from the tool calls of Declass's `transcript.jsonl` (sub-agents
 included). `report --project-prices` re-prices each run's `usage_by_model` at other verified rows
 of `pricing.toml`. Both go into the batch's `report.md` and `cost-profile.json`.
 
-A run must not take over the machine it runs on (`crates/duet-evals/src/governor.rs`). A lane's
+A run must not take over the machine it runs on (`crates/declass-evals/src/governor.rs`). A lane's
 agent and each grading command are started at a scheduling priority every descendant inherits (a
 QoS clamp through `taskpolicy -c utility` on macOS, `nice` elsewhere) and watched by the memory
-governor (`crates/duet-governor`, the one that also holds Duet's own commands and servers),
+governor (`crates/declass-governor`, the one that also holds Declass's own commands and servers),
 because the kernel cannot bound a process tree's memory on macOS (a spawn-time limit does not
 reach children; the runaway that prompted it was a test binary three levels below the lane). The
 governor reads the process table in-process every 2 s to follow the tree from its root (members
@@ -1136,8 +1136,8 @@ still alive when the step ends, so a timeout ends the whole tree and no orphan h
 command's output open.
 Kills, peaks and CPU go into the run record. Build output is deleted after grading.
 
-Duet's security engine takes its local reader as an option: `local.enabled = false` opens it with
-none (the `duet-hybrid-nolocal` lane), and every local-backed feature then either degrades to the
+Declass's security engine takes its local reader as an option: `local.enabled = false` opens it with
+none (the `declass-hybrid-nolocal` lane), and every local-backed feature then either degrades to the
 detectors' view (handle summaries, bulky previews, the brief) or is refused (`ask_local`,
 `edit_protected`, image descriptions, and runs with `sensitivity.local_pii_pass` on).
 
@@ -1155,7 +1155,7 @@ Each is backed by a test, except where noted.
 6. A tool call is never persisted or sent without its result.
 7. Every run ends in a `Terminal` state, with a summary and an audit end event, also on a panic;
    no run exits with pending writes unrecorded.
-8. `.git` and `.duet` are not writable by tools or sandboxed commands, and `.duet` is not
+8. `.git` and `.declass` are not writable by tools or sandboxed commands, and `.declass` is not
    readable by any sandboxed command.
 9. No file under `crates/` contains another coding agent's code, format or name (outside eval lane
    adapters).
@@ -1166,31 +1166,31 @@ Each is backed by a test, except where noted.
 11. A sandboxed command reaches no network but the egress proxy (and its own loopback servers)
     unless `sandbox.network = "all"`; a `sensitive_data` command reaches none in any mode; the proxy
     resolves only listed names and connects only to public addresses.
-12. No product code sends to a third party except `duet-net`, which sends only a `Checked`
+12. No product code sends to a third party except `declass-net`, which sends only a `Checked`
     request, and only `Guard::check` (a presenter's policy over every part of the request) makes
-    one; the other code that opens connections is `duet-provider` (the frontier and the local
+    one; the other code that opens connections is `declass-provider` (the frontier and the local
     model) and the egress proxy's upstream (gate: "egress by construction"; the egress oracle).
 13. With a policy layer loaded (§13), no file, settings change, preset, command-line override or
     recorded run value moves a setting past it, a required or direction-less key never changes,
-    and a policy source that fails leaves nothing running (`duet-config` policy tests,
-    `duet-cli` overrides tests).
+    and a policy source that fails leaves nothing running (`declass-config` policy tests,
+    `declass-cli` overrides tests).
 14. Hooks of an embedding program are told no content and cannot change a run: a subscriber gets
     every record appended after it was attached, in order, without request bodies; end hooks run
     exactly once per run or session invocation in every terminal state; a failing hook becomes a
-    `hook_failed` event (`duet-cli/tests/embedding.rs`, including a hybrid run with planted values).
+    `hook_failed` event (`declass-cli/tests/embedding.rs`, including a hybrid run with planted values).
 
-## 13. Embedding Duet
+## 13. Embedding Declass
 
-A program may link Duet's crates and build its own binary on them; Duet Enterprise does. It calls
-`duet_cli::main_with` with what it adds (point 4 below) and gets `duet`'s whole command line,
-with runs and sessions composed exactly as `duet` composes them (`prepare`, `execute` and `chat`
-in `crates/duet-cli/src`). Three generic extension points let such a program add to what Duet does
-without changing how a run behaves. The `duet` binary is `main_with(Embedding::default())`: the
-same calls with none of them (no policy source, `Hooks::default()`), so Duet's own behaviour does
-not depend on them. What they see is what Duet already records: names, counts, digests, chain
+A program may link Declass's crates and build its own binary on them; Declass Enterprise does. It calls
+`declass_cli::main_with` with what it adds (point 4 below) and gets `declass`'s whole command line,
+with runs and sessions composed exactly as `declass` composes them (`prepare`, `execute` and `chat`
+in `crates/declass-cli/src`). Three generic extension points let such a program add to what Declass does
+without changing how a run behaves. The `declass` binary is `main_with(Embedding::default())`: the
+same calls with none of them (no policy source, `Hooks::default()`), so Declass's own behaviour does
+not depend on them. What they see is what Declass already records: names, counts, digests, chain
 positions and paths, never content.
 
-**1. Policy layer** (`duet_config::policy`, re-exported by `duet_agent::embed`). A layer above the
+**1. Policy layer** (`declass_config::policy`, re-exported by `declass_agent::embed`). A layer above the
 owner's and the project's configuration files:
 
 ```rust
@@ -1212,31 +1212,31 @@ other key is a registered setting (or an instance of a template setting) with a 
   add-only lists, the intersection of allowlists, the lower number, the stricter choice, the tighter
   boolean), origin `policy`, with a note naming the file. A change past it is refused
   (`ConfigError::Policy`, confirmed or not) by `Config::propose`, `apply`, `set_owner_checked`,
-  `set_owner` and `set_project`, so by `duet config set`, `duet config preset` and the TUI.
+  `set_owner` and `set_project`, so by `declass config set`, `declass config preset` and the TUI.
 - A setting without a direction, and every key in `required`, is fixed at the policy's value: no
   layer may change it, not even to tighten it.
 - Values that do not come from the files are checked with `Config::allows` before a run or
-  session starts, and again in `prepare` (`crates/duet-cli/src/overrides.rs`): `--frontier-url`,
+  session starts, and again in `prepare` (`crates/declass-cli/src/overrides.rs`): `--frontier-url`,
   `--frontier-model`, the dialect, endpoints and mode a resumed run or session recorded, and the
-  local server the bootstrap found (`DUET_LOCAL_PORTS` only chooses where it looks). `--mode
+  local server the bootstrap found (`DECLASS_LOCAL_PORTS` only chooses where it looks). `--mode
   passthrough` (and so `--no-privacy`) is governed by `frontier.allow_passthrough`; an image marked
-  `--image-public` reaches the frontier only with `frontier.vision`. `DUET_CONFIG_HOME` only chooses which owner file is read: the policy bounds
+  `--image-public` reaches the frontier only with `frontier.vision`. `DECLASS_CONFIG_HOME` only chooses which owner file is read: the policy bounds
   whichever it is.
 - Instances of template settings (`mcp.servers.<name>.*`, `lsp.servers.<language>.*`) are bounded
   when the files configure them; a policy does not create one.
 - Fail closed: a source that is configured but fails (not found, not verified, not valid) makes
-  loading fail with `ConfigError::PolicyLoad` ("… duet does not run without its policy"), so
+  loading fail with `ConfigError::PolicyLoad` ("… declass does not run without its policy"), so
   nothing runs. `Ok(None)` means no policy applies.
-- It explains itself: `duet config list` shows the policy (`# policy layer: …`) and each bound key
+- It explains itself: `declass config list` shows the policy (`# policy layer: …`) and each bound key
   as origin `policy` with its rule, the TUI's detail pane shows the rule, a refused change names
-  the policy and the rule, and `duet doctor` adds a `policy` check (which policy, its digest, and
+  the policy and the rule, and `declass doctor` adds a `policy` check (which policy, its digest, and
   the owner or project values it overrides, as a warning).
 
 `PolicyFile::new(path)` is the reference source: an unsigned TOML file (a missing file is an
-error). Nothing in Duet's own command line configures a policy source; signed,
-organisation-managed policy is a Duet Enterprise feature.
+error). Nothing in Declass's own command line configures a policy source; signed,
+organisation-managed policy is a Declass Enterprise feature.
 
-**2. Audit subscribers** (`duet_boundary::audit`). An embedding program follows a run's audit log
+**2. Audit subscribers** (`declass_boundary::audit`). An embedding program follows a run's audit log
 as it is written:
 
 ```rust
@@ -1263,7 +1263,7 @@ printed on stderr and recorded as a `hook_failed` event (`hook`, `stage` = `open
 to deliver that record is not recorded again. The run is not otherwise affected, and a subscriber
 can rebuild what it missed from the log (`audit::read`).
 
-**3. End hooks** (`duet_agent::embed`). Called once when a run or a session invocation ends:
+**3. End hooks** (`declass_agent::embed`). Called once when a run or a session invocation ends:
 
 ```rust
 pub trait EndHook: Send + Sync {
@@ -1274,12 +1274,12 @@ EndReport { run_id, kind: Run | Session, mode, resumed, state /* completed | fai
             budget, interrupted, resumable, audit_log, chain: Option<ChainHead { log, records, head, anchor }>,
             policy: Option<PolicyMeta>, stats: EndStats /* turns, tool calls, tokens, cost, seconds */,
             disclosure: Option<Disclosure> /* counts by class, as in summary.json */ }
-duet_agent::conclude_with(run_dir, run_id, audit, audit_log, &terminal, &stats, &Ending {
+declass_agent::conclude_with(run_dir, run_id, audit, audit_log, &terminal, &stats, &Ending {
     kind, mode, resumed, policy, hooks })
 ```
 
 `conclude_with` records `run_end` (anchoring the head), writes `summary.json`, then calls each end
-hook, whether or not the summary could be written. Every `duet run`, `duet resume` and `duet` session
+hook, whether or not the summary could be written. Every `declass run`, `declass resume` and `declass` session
 invocation that got as far as creating its run directory ends there exactly once, in every
 terminal state: completed, failed (including a panic and a failure before the audit log opened,
 then `chain` is `None`), budget-stopped, interrupted (`interrupted`, `resumable`), a session left
@@ -1289,37 +1289,37 @@ other text a model wrote or the workspace held. A failing hook is recorded as `h
 `end`) after `run_end`, so the reported head is the head at `run_end` and only such records follow
 it until the run is resumed. A process killed outright (SIGKILL, power loss) calls nothing.
 
-**4. The command line as a library** (`duet_cli`). The `duet` binary's `main` is one call:
+**4. The command line as a library** (`declass_cli`). The `declass` binary's `main` is one call:
 
 ```rust
 pub fn main_with(embedding: Embedding) -> ExitCode;      // fn main() -> ExitCode { main_with(e) }
 Embedding::new(Product::new("Name", "x.y.z"))            // --version: "Name x.y.z"
     .with_policy(Arc<dyn PolicySource>)                   // every command that loads settings
     .with_hooks(Hooks)                                    // every run and session invocation
-    .with_doctor_check(Arc<dyn DoctorCheck>)              // `duet doctor` and the TUI's doctor
+    .with_doctor_check(Arc<dyn DoctorCheck>)              // `declass doctor` and the TUI's doctor
 pub trait DoctorCheck: Send + Sync { fn run(&self, ctx: &DoctorContext<'_>) -> Vec<Check>; }
 DoctorContext { workspace, config: Option<&Config> /* with the policy layer */, online }
 Check::new(name, Status::{Skip, Pass, Warn, Fail}, detail).fix(how)
 ```
 
 `main_with` reads the process's arguments, builds the asynchronous runtime (so it must not be
-called inside one) and returns the exit code `duet` would end with; an error is printed as
+called inside one) and returns the exit code `declass` would end with; an error is printed as
 `Error: …` and ends with 1, and `--help`, `--version` and argument errors end the process as
-`duet`'s do. It is also the egress bridge helper inside a bubblewrap sandbox (the sandbox starts
+`declass`'s do. It is also the egress bridge helper inside a bubblewrap sandbox (the sandbox starts
 the running executable with `__sandbox-bridge`), so the helper is the embedding program's own
 binary. What `Embedding` adds, and where:
-- the policy source: `Config::load_with` everywhere `duet` loads configuration (`run`, `resume`,
+- the policy source: `Config::load_with` everywhere `declass` loads configuration (`run`, `resume`,
   a session, `config`, `purge`, `local-eval`, `doctor`, the workspace's settings screens and cache probe);
 - the hooks: attached to a run's audit log as soon as it is opened for this invocation (before
   `run_start`, or before `run_end` of a run that failed before that) and passed to
-  `conclude_with`, for `duet run`, `duet resume` and a `duet` session;
-- the product: `--version` prints `<name> <version>`; `duet doctor`'s `version` line names it and
-  the Duet it is built on (`…; Duet Core 0.1.0`), and its JSON adds `product` and `core_version`
-  (`version` is the product's); `duet` itself prints exactly what it always did;
-- the doctor checks: run after Duet's own, counted in the exit code like any other.
+  `conclude_with`, for `declass run`, `declass resume` and a `declass` session;
+- the product: `--version` prints `<name> <version>`; `declass doctor`'s `version` line names it and
+  the Declass it is built on (`…; Declass Core 0.1.0`), and its JSON adds `product` and `core_version`
+  (`version` is the product's); `declass` itself prints exactly what it always did;
+- the doctor checks: run after Declass's own, counted in the exit code like any other.
 
 Nothing else changes: the same commands, flags, messages, files and exit codes. Tested with a
-test binary that is such a program (`crates/duet-cli/tests/embedded.rs`).
+test binary that is such a program (`crates/declass-cli/tests/embedded.rs`).
 
 **Composing a run with hooks** (what `main_with` does for each run and session invocation):
 
@@ -1329,18 +1329,18 @@ let cfg = Config::load_with(&owner, Some(&project), Some(&policy_source))?;   //
 let mut log = AuditLog::open_anchored(&log_path, &anchors)?;
 hooks.attach(&mut log);                                   // before anything is recorded
 let frontier = OutboundGate::new(log) /* .with_filter(..).with_check(..) */.wrap(provider);
-// … RunStart, duet_agent::run(..) or Session::open(..)/turn(..)/end(..) …
-duet_agent::conclude_with(&run_dir, &run_id, Some(frontier.audit()), &log_path, &terminal,
+// … RunStart, declass_agent::run(..) or Session::open(..)/turn(..)/end(..) …
+declass_agent::conclude_with(&run_dir, &run_id, Some(frontier.audit()), &log_path, &terminal,
     &stats, &Ending { kind: RunKind::Run, mode, resumed, policy: cfg.policy().map(Policy::meta),
     hooks: &hooks })?;
 ```
 
-Stability. The embedding API is the items named in this section: `duet_cli::{main_with, Embedding,
-Product, DoctorCheck, DoctorContext, Check, Status}`; `duet_config::policy` and
+Stability. The embedding API is the items named in this section: `declass_cli::{main_with, Embedding,
+Product, DoctorCheck, DoctorContext, Check, Status}`; `declass_config::policy` and
 `Config::load_with`/`policy`/`policy_rule`/`policy_overrides`/`allows`, `ConfigError::Policy` and
-`PolicyLoad`, `Origin::Policy`; `duet_boundary::audit::{AuditSubscriber, Opened, Appended,
+`PolicyLoad`, `Origin::Policy`; `declass_boundary::audit::{AuditSubscriber, Opened, Appended,
 Recorded, ChainHead}`, `AuditLog::subscribe`, `AuditHandle::subscribe`/`chain_head`; and
-`duet_agent::embed` with `conclude_with`. Duet's crates are versioned together (0.x, not yet on
+`declass_agent::embed` with `conclude_with`. Declass's crates are versioned together (0.x, not yet on
 crates.io); an embedding program pins a Core release. Within 0.x a breaking change to these items
 comes with a minor version bump and a release note; a patch release never changes them. Additive
 changes are not breaking and may come in any release: new settings (a policy can then name them),

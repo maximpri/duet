@@ -1,17 +1,17 @@
-# Installing Duet
+# Installing Declass
 
 ## Build from source
 
-The source installer builds the locked dependencies and installs `duet` in
+The source installer builds the locked dependencies and installs `declass` in
 `~/.local/bin`:
 
 ```sh
-git clone https://github.com/maximpri/duet.git && cd duet && tools/install.sh
+git clone https://github.com/maximpri/duet.git && cd declass && tools/install.sh
 ```
 
 Rust 1.90 or newer and a C/C++ compiler are required. macOS uses Apple's command
 line tools; Linux also needs `bubblewrap` for sandboxed commands. Set
-`DUET_INSTALL_DIR` to an absolute path to choose another destination.
+`DECLASS_INSTALL_DIR` to an absolute path to choose another destination.
 
 ## Install the latest GitHub release
 
@@ -34,14 +34,14 @@ changed bytes; they do not establish who published them. This path trusts GitHub
 and its HTTPS connection for the downloaded script and release files. It never
 falls back to unsigned installation after a failed signed installation.
 
-Duet is installed to `~/.local/bin/duet`; set `DUET_INSTALL_DIR` to another absolute
+Declass is installed to `~/.local/bin/declass`; set `DECLASS_INSTALL_DIR` to another absolute
 path if needed. Matching GPL source, licenses, SBOM and build records are retained
-under `~/.local/share/duet/releases/` (`DUET_DATA_DIR` overrides this). Existing
+under `~/.local/share/declass/releases/` (`DECLASS_DATA_DIR` overrides this). Existing
 release records remain available. The installer does not use `sudo`. When
-`~/.local/bin` is not on `PATH`, it appends one line marked `# added by the duet
+`~/.local/bin` is not on `PATH`, it appends one line marked `# added by the declass
 installer` to your shell's startup file (`~/.zshrc`, `~/.bashrc`, `~/.bash_profile`
-on macOS bash, fish `conf.d/duet.fish`, otherwise `~/.profile`). Pass
-`--no-modify-path` or set `DUET_NO_MODIFY_PATH=1` to leave shell files unchanged.
+on macOS bash, fish `conf.d/declass.fish`, otherwise `~/.profile`). Pass
+`--no-modify-path` or set `DECLASS_NO_MODIFY_PATH=1` to leave shell files unchanged.
 
 For inspection before execution, download `install.sh`, read it, and run
 `bash install.sh`. The script contains its verification helpers;
@@ -64,11 +64,11 @@ Obtain the release signer's public key and identity through an independent
 trusted channel. Put the approved line in an allowed-signers file:
 
 ```text
-<approved-identity> namespaces="duet-release" <approved-SSH-public-key>
+<approved-identity> namespaces="declass-release" <approved-SSH-public-key>
 ```
 
 The placeholders above are not a signing identity. Save the approved line to
-`~/.config/duet/allowed_signers` (or `$DUET_CONFIG_HOME/allowed_signers`). The
+`~/.config/declass/allowed_signers` (or `$DECLASS_CONFIG_HOME/allowed_signers`). The
 installer never downloads the trusted key with the release. For the latest
 signed release:
 
@@ -81,7 +81,7 @@ authenticate the release payload against your separately trusted key. From a
 trusted checkout, pin a version and select a signers file with:
 
 ```sh
-tools/install-release.sh 0.1.0 --signers "$HOME/.config/duet/allowed_signers"
+tools/install-release.sh 0.1.0 --signers "$HOME/.config/declass/allowed_signers"
 ```
 
 This downloads the asset for the current operating system and architecture from
@@ -104,8 +104,8 @@ To build macOS and GNU/Linux candidates for ARM64 and x86-64 from one clean,
 committed source revision:
 
 ```sh
-./cicd.sh build --targets all --out /absolute/path/duet-candidates \
-  --cache-dir /absolute/path/duet-build-cache
+./cicd.sh build --targets all --out /absolute/path/declass-candidates \
+  --cache-dir /absolute/path/declass-build-cache
 ```
 
 `--targets host` is the default when `--targets` is omitted. Keep the output and
@@ -136,8 +136,8 @@ releases. Signing can be added later using the procedure below.
 
 ## macOS disk images
 
-The macOS build also produces an architecture-specific `.dmg`. Duet is a terminal
-application: open the image and run `Install Duet.command` to install it for your
+The macOS build also produces an architecture-specific `.dmg`. Declass is a terminal
+application: open the image and run `Install Declass.command` to install it for your
 user account. The unsigned preview installer asks you to confirm that choice.
 It checks the bundled files, retains the source and notices, and installs to
 `~/.local/bin` without administrator access. It does not change Gatekeeper settings.
@@ -147,7 +147,7 @@ To package an existing candidate on a Mac:
 
 ```sh
 tools/package-dmg.sh /absolute/path/candidates/releases/aarch64-apple-darwin \
-  --unsigned --out /absolute/path/duet-0.1.0-aarch64-apple-darwin-unsigned.dmg
+  --unsigned --out /absolute/path/declass-0.1.0-aarch64-apple-darwin-unsigned.dmg
 ```
 
 Use `x86_64-apple-darwin` for Intel Macs. Keep the generated checksum beside the
@@ -167,8 +167,8 @@ A dedicated Ed25519 release key can be generated locally; it does not require an
 Apple account or certificate. Keep the private key outside the repository. Only
 the public key, fingerprint and allowed-signers identity should be distributed.
 
-The [Duet release public key](duet-release.pub) is available for future signed
-releases. Its identity is `duet-release` and its fingerprint is:
+The [Declass release public key](declass-release.pub) is available for future signed
+releases. Its identity is `declass-release` and its fingerprint is:
 
 ```text
 SHA256:sNU36mHF7ZWVl1UKd0nS1PnY07hDy/mRNC0U/aaMEqU
@@ -195,9 +195,9 @@ tools/package-release.sh dist/macos-arm64 \
 produces three uniquely named assets, for example:
 
 ```text
-duet-0.1.0-aarch64-apple-darwin.tar.gz
-duet-0.1.0-aarch64-apple-darwin.SHA256SUMS
-duet-0.1.0-aarch64-apple-darwin.SHA256SUMS.sig
+declass-0.1.0-aarch64-apple-darwin.tar.gz
+declass-0.1.0-aarch64-apple-darwin.SHA256SUMS
+declass-0.1.0-aarch64-apple-darwin.SHA256SUMS.sig
 ```
 
 The same naming scheme applies to `x86_64-apple-darwin`,
@@ -211,7 +211,7 @@ locally, create the version tag from that build commit. The owner can then creat
 a draft release and upload the assets:
 
 ```sh
-gh release create v0.1.0 --repo maximpri/duet --verify-tag --draft --title "Duet 0.1.0" \
+gh release create v0.1.0 --repo maximpri/duet --verify-tag --draft --title "Declass 0.1.0" \
   --notes-file /path/to/release-notes.md
 gh release upload v0.1.0 --repo maximpri/duet \
   dist/github-macos-arm64/* dist/github-macos-x86_64/* \
@@ -224,13 +224,13 @@ production signing keys.
 
 ### Optional Apple signing and notarization
 
-SSH signatures authenticate Duet releases on both macOS and Linux. Apple signing
+SSH signatures authenticate Declass releases on both macOS and Linux. Apple signing
 is a separate step for macOS distribution. It needs:
 
 - An Apple Developer Program membership and a **Developer ID Application**
   certificate with its private key in the signing Mac's keychain. An Apple
   Development certificate is not the distribution identity. Developer ID
-  Installer is only needed for a `.pkg`; Duet currently ships a `.dmg`.
+  Installer is only needed for a `.pkg`; Declass currently ships a `.dmg`.
 - Xcode or its command-line tools, including `codesign`, `notarytool` and `stapler`.
 - Notarization credentials: an Apple account, team ID and app-specific password,
   or an App Store Connect API key. Store credentials in Keychain, not this repo.
@@ -242,7 +242,7 @@ describes signing binaries and disk images. Save notarization credentials using
 an interactive prompt so the password is not written into shell history:
 
 ```sh
-xcrun notarytool store-credentials duet-notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
+xcrun notarytool store-credentials declass-notary --apple-id YOUR_APPLE_ID --team-id YOUR_TEAM_ID
 ```
 
 The [notarytool guide](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool)
@@ -251,13 +251,13 @@ covers both credential types. The release order matters:
 1. Start from a fresh copy of the matching unsigned candidate. Sign its executable
    with the Developer ID Application identity, hardened runtime and secure
    timestamp (`codesign --force --options runtime --timestamp --sign IDENTITY BINARY`).
-   Verify its signature and test Duet's command sandbox with that signed binary.
+   Verify its signature and test Declass's command sandbox with that signed binary.
 2. Record the signing step in `BUILDINFO.txt`, regenerate the inner `SHA256SUMS`
    over the final payload, and optionally sign that manifest with the SSH release
    key. Apple signing changes the binary bytes, so its earlier checksum is stale.
 3. Package the final payload. Sign the `.dmg` with the Developer ID Application
    identity and a timestamp. Submit it with
-   `xcrun notarytool submit IMAGE.dmg --keychain-profile duet-notary --wait`.
+   `xcrun notarytool submit IMAGE.dmg --keychain-profile declass-notary --wait`.
 4. After an **Accepted** result, run `xcrun stapler staple IMAGE.dmg` and
    `xcrun stapler validate IMAGE.dmg`, then test installation on a separate Mac.
 5. Generate the outer image checksum and optional SSH signature **last**, after
@@ -276,7 +276,7 @@ and Linux x86-64, using an external directory for downloaded crates and builds:
 
 ```sh
 tools/release-platform-check.sh --platform linux/amd64 --rust 1.90.0 \
-  --target-dir /absolute/path/duet-linux-amd64-rust190
+  --target-dir /absolute/path/declass-linux-amd64-rust190
 ```
 
 Use `linux/arm64` for the ARM64 check. Docker may emulate the selected architecture

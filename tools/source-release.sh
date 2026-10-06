@@ -17,18 +17,18 @@ cd "$(dirname "$0")/.."
 [ ! -e "$1" ] || { echo "source-release: output already exists: $1" >&2; exit 1; }
 # Resolve before entering the temporary source directory.
 output="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
-staging=$(mktemp -d "${TMPDIR:-/tmp}/duet-source.XXXXXXXX")
+staging=$(mktemp -d "${TMPDIR:-/tmp}/declass-source.XXXXXXXX")
 trap 'rm -rf "$staging"' EXIT
-mkdir "$staging/duet-source"
-git archive HEAD | tar -xf - -C "$staging/duet-source"
+mkdir "$staging/declass-source"
+git archive HEAD | tar -xf - -C "$staging/declass-source"
 (
-    cd "$staging/duet-source"
+    cd "$staging/declass-source"
     mkdir -p .cargo
     # Cargo preserves the complete published crate contents, including nested
     # third-party licenses (e.g. cryptographic C/assembly source notices).
     cargo vendor --locked --offline --versioned-dirs vendor >"$staging/vendor-config.toml"
     cat "$staging/vendor-config.toml" >>.cargo/config.toml
 )
-tar -czf "$staging/source.tar.gz" -C "$staging" duet-source
+tar -czf "$staging/source.tar.gz" -C "$staging" declass-source
 mv "$staging/source.tar.gz" "$output"
 printf 'Corresponding source: %s\n' "$output"

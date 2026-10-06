@@ -27,7 +27,7 @@ macOS candidates include an unsigned DMG with an offline user-local installer. L
 Docker (default image rust:1.90.0-bookworm). Cross-architecture smoke checks
 require Rosetta or Docker emulation. They do not qualify sandbox behavior.
 
-Default output: dist/duet-VERSION-unsigned-COMMIT
+Default output: dist/declass-VERSION-unsigned-COMMIT
 Default cache:  ${CARGO_TARGET_DIR:-target}/cicd
 Output must not exist. Use external cache/output directories for large builds.
 No tag, GitHub release, signature or upload is created.
@@ -95,7 +95,7 @@ for target in "${matrix[@]}"; do
     [[ "$seen" != *",$target,"* ]] || fail "duplicate target: $target"
     seen=$seen$target,
 done
-out=${out:-$repo/dist/duet-$version-unsigned-${commit:0:12}}
+out=${out:-$repo/dist/declass-$version-unsigned-${commit:0:12}}
 [ ! -e "$out" ] && [ ! -L "$out" ] || fail "output already exists: $out"
 # Resolve paths before creating anything; reject aliases and Docker mount syntax.
 read_path() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
@@ -125,20 +125,20 @@ tools/gate.sh >"$out/logs/gate.log" 2>&1 || fail "gate failed; see $out/logs/gat
 [ "$(git rev-parse HEAD)" = "$commit" ] && [ -z "$(git status --porcelain)" ] || fail 'checkout changed during the gate'
 printf '== corresponding source\n'
 cargo fetch --locked >"$out/logs/fetch.log" 2>&1
-source_archive="$out/duet-$version-source.tar.gz"
+source_archive="$out/declass-$version-source.tar.gz"
 tools/source-release.sh "$source_archive" >"$out/logs/source.log" 2>&1
 [ "$(git rev-parse HEAD)" = "$commit" ] && [ -z "$(git status --porcelain)" ] || fail 'checkout changed during source packaging'
 scratch=$(mktemp -d "$cache/source.XXXXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 tar -xzf "$source_archive" -C "$scratch"
-source_dir="$scratch/duet-source"
+source_dir="$scratch/declass-source"
 for target in "${matrix[@]}"; do
     payload="$out/releases/$target"
     mkdir "$payload"
     printf '== build and smoke check %s; log: %s/logs/%s.log\n' "$target" "$out" "$target"
     case "$target" in
         *-apple-darwin)
-            DUET_BUILD_ENVIRONMENT="macOS host $host; cross-architecture execution may use Rosetta" \
+            DECLASS_BUILD_ENVIRONMENT="macOS host $host; cross-architecture execution may use Rosetta" \
                 "$source_dir/tools/build-candidate.sh" "$source_dir" "$target" "$version" "$commit" "$epoch" "$payload" \
                 >"$out/logs/$target.log" 2>&1 || fail "build failed; see $out/logs/$target.log" ;;
         *-unknown-linux-gnu)
@@ -151,25 +151,25 @@ for target in "${matrix[@]}"; do
                 --mount "type=bind,source=$cache/$target,target=/cache" \
                 --mount "type=bind,source=$payload,target=/out" \
                 --env CARGO_HOME=/cache/cargo-home --env CARGO_TARGET_DIR=/cache/build \
-                --env CARGO_BUILD_JOBS --env "DUET_BUILD_ENVIRONMENT=Docker $platform image $image_id; cross-architecture execution may use emulation" \
+                --env CARGO_BUILD_JOBS --env "DECLASS_BUILD_ENVIRONMENT=Docker $platform image $image_id; cross-architecture execution may use emulation" \
                 --workdir /src "$image_id" bash tools/build-candidate.sh /src "$target" "$version" "$commit" "$epoch" /out \
                 >"$out/logs/$target.log" 2>&1 || fail "build failed; see $out/logs/$target.log" ;;
     esac
     cp "$source_archive" "$payload/"
     cp "$source_dir/LICENSE" "$source_dir/NOTICE" "$source_dir/LICENSES.md" "$payload/"
-    cp "$source_dir/crates/duet-boundary/rules/LICENSE.gitleaks" "$payload/"
-    cp "$source_dir/crates/duet-boundary/rules/NOTICE" "$payload/NOTICE.gitleaks"
+    cp "$source_dir/crates/declass-boundary/rules/LICENSE.gitleaks" "$payload/"
+    cp "$source_dir/crates/declass-boundary/rules/NOTICE" "$payload/NOTICE.gitleaks"
     cat >"$payload/SOURCE.txt" <<SOURCE
-Corresponding Source for duet $version ($target)
+Corresponding Source for declass $version ($target)
 Commit: $commit
-Archive: duet-$version-source.tar.gz
+Archive: declass-$version-source.tar.gz
 
-Extract the archive and enter duet-source/. Locked Cargo dependencies are in
+Extract the archive and enter declass-source/. Locked Cargo dependencies are in
 vendor/; license notices are in vendor/ and licenses/third-party/.
 Install the Rust toolchain in BUILDINFO.txt,
 the target standard library and platform C/C++ tools, then run offline:
-  DUET_RELEASE_BUILD=1 cargo build --release --frozen -p duet-cli --bin duet --target $target
-The binary is target/$target/release/duet. Linux runtime also needs bubblewrap.
+  DECLASS_RELEASE_BUILD=1 cargo build --release --frozen -p declass-cli --bin declass --target $target
+The binary is target/$target/release/declass. Linux runtime also needs bubblewrap.
 Distribute this source archive and all license/notice files with the binary.
 SOURCE
     python3 - "$payload" <<'PY'
@@ -181,7 +181,7 @@ with (p / 'SHA256SUMS').open('w') as out:
         with item.open('rb') as f: digest = hashlib.file_digest(f, 'sha256').hexdigest() if hasattr(hashlib, 'file_digest') else hashlib.sha256(f.read()).hexdigest()
         out.write(f'{digest}  {item.name}\n')
 PY
-    stem="duet-$version-$target-unsigned"
+    stem="declass-$version-$target-unsigned"
     tar -czf "$out/assets/$stem.tar.gz" -C "$payload" .
     if command -v shasum >/dev/null; then
         (cd "$out/assets" && shasum -a 256 "$stem.tar.gz" >"$stem.SHA256SUMS")
@@ -195,7 +195,7 @@ PY
     esac
 done
 cat >"$out/README.txt" <<INFO
-Duet $version — unsigned release candidates
+Declass $version — unsigned release candidates
 Commit: $commit
 Targets: $targets
 Full host gate passed on $host. Each binary passed --version and --help.

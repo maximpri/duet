@@ -32,23 +32,23 @@ repo="$(cd "$tools_dir/.." && pwd -P)"
 key_abs="$(cd "$(dirname "$key")" && pwd -P)/$(basename "$key")"
 case "$key_abs" in "$repo"/*) fail 'keep signing keys outside the repository' ;; esac
 "$tools_dir/verify-release.sh" "$release_dir" --signers "$signers"
-version=$(sed -n 's/^duet //p' "$release_dir/BUILDINFO.txt")
+version=$(sed -n 's/^declass //p' "$release_dir/BUILDINFO.txt")
 target=$(sed -n 's/^target //p' "$release_dir/BUILDINFO.txt")
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || fail 'invalid signed release version'
 case "$target" in aarch64-apple-darwin | x86_64-apple-darwin | aarch64-unknown-linux-gnu | x86_64-unknown-linux-gnu) ;; *) fail 'unsupported signed release target' ;; esac
-stem="duet-$version-$target"
+stem="declass-$version-$target"
 archive="$stem.tar.gz"
 manifest="$stem.SHA256SUMS"
 mkdir -p "$out"
 # Names are explicit and flat. Installers extract only these names to stdout;
 # archive-supplied paths, links and permissions never reach their filesystem.
-tar -czf "$out/$archive" -C "$release_dir" "$stem" "duet-$version.cdx.json" \
+tar -czf "$out/$archive" -C "$release_dir" "$stem" "declass-$version.cdx.json" \
     BUILDINFO.txt LICENSE NOTICE LICENSES.md LICENSE.gitleaks NOTICE.gitleaks \
-    "duet-$version-source.tar.gz" SOURCE.txt SHA256SUMS SHA256SUMS.sig
+    "declass-$version-source.tar.gz" SOURCE.txt SHA256SUMS SHA256SUMS.sig
 if command -v shasum >/dev/null; then
     (cd "$out" && shasum -a 256 "$archive" >"$manifest")
 else
     (cd "$out" && sha256sum "$archive" >"$manifest")
 fi
-ssh-keygen -Y sign -f "$key" -n duet-release "$out/$manifest"
+ssh-keygen -Y sign -f "$key" -n declass-release "$out/$manifest"
 printf 'GitHub release assets: %s/%s{.tar.gz,.SHA256SUMS,.SHA256SUMS.sig}\n' "$out" "$stem"

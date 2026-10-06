@@ -3,7 +3,7 @@
 //! (merged) disjoint, and every unmerged finding lies inside a merged one.
 #![no_main]
 
-use duet_boundary::detect::{Detectors, scan, scan_each};
+use declass_boundary::detect::{Detectors, scan, scan_each};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

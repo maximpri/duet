@@ -4,7 +4,7 @@
 These files supplement license texts omitted from three published Cargo packages.
 The package identities and upstream revisions come from their `Cargo.toml` and
 `.cargo_vcs_info.json` files in the locked, vendored source. Retrieved October 4,
-2026; the upstream texts are copied without changes or Duet license headers.
+2026; the upstream texts are copied without changes or Declass license headers.
 They retain their upstream terms. This README is GPL-3.0-or-later.
 
 | Package and version | Upstream revision | Retained notice |

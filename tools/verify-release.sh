@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Verifies a release directory made by tools/release.sh: SHA256SUMS carries a
-# valid SSH signature (namespace duet-release) by a key in the allowed-signers
+# valid SSH signature (namespace declass-release) by a key in the allowed-signers
 # file, and every file in the directory is listed there and matches.
 #
 #   tools/verify-release.sh <release dir> [--signers FILE]
 #
 # The signers file defaults to allowed_signers next to the owner config
-# ($DUET_CONFIG_HOME/allowed_signers, else ~/.config/duet/allowed_signers),
-# the file `duet doctor` checks. Each line: <identity> namespaces="duet-release" <public key>.
+# ($DECLASS_CONFIG_HOME/allowed_signers, else ~/.config/declass/allowed_signers),
+# the file `declass doctor` checks. Each line: <identity> namespaces="declass-release" <public key>.
 # Offline; needs ssh-keygen and shasum (or sha256sum). Exit 0 only when all holds.
 set -euo pipefail
 
@@ -18,7 +18,7 @@ die() {
 }
 
 dir=""
-signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
+signers="${DECLASS_CONFIG_HOME:-$HOME/.config/declass}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help)
@@ -55,12 +55,12 @@ principals=$(ssh-keygen -Y find-principals -s "$sig" -f "$signers" 2>/dev/null) 
     die "SHA256SUMS is not signed by any key in $signers"
 signer=""
 while IFS= read -r p; do
-    if ssh-keygen -Y verify -f "$signers" -I "$p" -n duet-release -s "$sig" <"$sums" >/dev/null 2>&1; then
+    if ssh-keygen -Y verify -f "$signers" -I "$p" -n declass-release -s "$sig" <"$sums" >/dev/null 2>&1; then
         signer="$p"
         break
     fi
 done <<<"$principals"
-[ -n "$signer" ] || die "the signature over SHA256SUMS does not verify (namespace duet-release)"
+[ -n "$signer" ] || die "the signature over SHA256SUMS does not verify (namespace declass-release)"
 
 # Shared strict manifest parser; signature validation above is mandatory.
 checker="$(cd "$(dirname "$0")" && pwd -P)/verify-checksums.sh"

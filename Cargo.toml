@@ -42,22 +42,22 @@ base64 = "0.22"
 # Property tests (dev only).
 proptest = { version = "1", default-features = false, features = ["std"] }
 
-duet-provider = { path = "crates/duet-provider" }
-duet-fs = { path = "crates/duet-fs" }
-duet-sandbox = { path = "crates/duet-sandbox" }
-duet-governor = { path = "crates/duet-governor" }
-duet-lsp = { path = "crates/duet-lsp" }
-duet-git = { path = "crates/duet-git" }
-duet-config = { path = "crates/duet-config" }
-duet-boundary = { path = "crates/duet-boundary" }
-duet-review = { path = "crates/duet-review" }
-duet-agent = { path = "crates/duet-agent" }
-duet-tui = { path = "crates/duet-tui" }
-duet-web = { path = "crates/duet-web" }
-duet-net = { path = "crates/duet-net" }
-duet-egress = { path = "crates/duet-egress" }
-duet-mcp = { path = "crates/duet-mcp" }
-duet-extensions = { path = "crates/duet-extensions" }
+declass-provider = { path = "crates/declass-provider" }
+declass-fs = { path = "crates/declass-fs" }
+declass-sandbox = { path = "crates/declass-sandbox" }
+declass-governor = { path = "crates/declass-governor" }
+declass-lsp = { path = "crates/declass-lsp" }
+declass-git = { path = "crates/declass-git" }
+declass-config = { path = "crates/declass-config" }
+declass-boundary = { path = "crates/declass-boundary" }
+declass-review = { path = "crates/declass-review" }
+declass-agent = { path = "crates/declass-agent" }
+declass-tui = { path = "crates/declass-tui" }
+declass-web = { path = "crates/declass-web" }
+declass-net = { path = "crates/declass-net" }
+declass-egress = { path = "crates/declass-egress" }
+declass-mcp = { path = "crates/declass-mcp" }
+declass-extensions = { path = "crates/declass-extensions" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

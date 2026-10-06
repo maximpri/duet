@@ -5,8 +5,8 @@
 //! Input: values separated by `\n`, then `\0`, then the text.
 #![no_main]
 
-use duet_boundary::detect::Kind;
-use duet_boundary::vault::{CLOSE, MIN_VALUE_BYTES, OPEN, Vault};
+use declass_boundary::detect::Kind;
+use declass_boundary::vault::{CLOSE, MIN_VALUE_BYTES, OPEN, Vault};
 use libfuzzer_sys::fuzz_target;
 
 const KINDS: [Kind; 4] = [Kind::Secret, Kind::Email, Kind::Name, Kind::Data];

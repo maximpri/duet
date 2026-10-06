@@ -31,7 +31,7 @@ git ls-files --cached --others --exclude-standard -z | while IFS= read -r -d '' 
     if [ -f "$name" ] || [ -L "$name" ]; then printf '%s\0' "$name"; fi
 done | tar --null -T - -cf - | tar -xf - -C "$snapshot"
 arch=${platform#linux/}
-image="duet-release-check:$rust_version-$arch"
+image="declass-release-check:$rust_version-$arch"
 base="rust:$rust_version-bookworm"
 docker build --platform "$platform" -t "$image" - <<DOCKER
 FROM $base
@@ -45,7 +45,7 @@ docker run --rm --platform "$platform" --privileged \
     --mount "type=bind,source=$snapshot,target=/src,readonly" \
     --mount "type=bind,source=$target_dir,target=/cache" \
     --env CARGO_HOME=/cache/cargo-home --env CARGO_TARGET_DIR=/cache/build \
-    --env CARGO_BUILD_JOBS=2 --env DUET_SANDBOX_BRIDGE=/cache/build/debug/duet-sandbox-bridge \
+    --env CARGO_BUILD_JOBS=2 --env DECLASS_SANDBOX_BRIDGE=/cache/build/debug/declass-sandbox-bridge \
     --workdir /src "$image" bash -eu -c '
         printf "platform: "; uname -sm
         rustc --version
@@ -55,11 +55,11 @@ docker run --rm --platform "$platform" --privileged \
         # SBOM metadata resolves all platforms offline, not only the host
         # compiled dependencies. Populate that closure before the offline test.
         cargo fetch --locked
-        DUET_RELEASE_BUILD=1 cargo build --release --locked -p duet-cli --bin duet
-        /cache/build/release/duet --version
-        /cache/build/release/duet --help >/dev/null
-        cargo test --locked -p duet-release
-        cargo test --locked -p duet-cli --test setup_doctor --test provider_proxy
-        cargo test --locked -p duet-sandbox
+        DECLASS_RELEASE_BUILD=1 cargo build --release --locked -p declass-cli --bin declass
+        /cache/build/release/declass --version
+        /cache/build/release/declass --help >/dev/null
+        cargo test --locked -p declass-release
+        cargo test --locked -p declass-cli --test setup_doctor --test provider_proxy
+        cargo test --locked -p declass-sandbox
     '
 printf 'release-platform-check: %s Rust %s passed\n' "$platform" "$rust_version"

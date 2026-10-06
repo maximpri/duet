@@ -1,6 +1,6 @@
 # Publication readiness — October 4, 2026
 
-Duet is being prepared for publication as a **GPL-3.0-or-later development
+Declass is being prepared for publication as a **GPL-3.0-or-later development
 preview**. Its code, tests and recorded tasks support evaluation of frontier
 coding with local handling of sensitive content. They do not establish that all
 product goals are met or approve a deployment for confidential institutional data.
@@ -46,7 +46,7 @@ formatting, Clippy, dependency/license policy and architecture checks. Its
 [retained record](evidence/release-hardening-2026-10-03/README.md) identifies the
 checked source. A full x86-64 Linux guest passes 29 sandbox tests, six network
 tests and 17 setup/doctor tests. This check reproduced and fixed a cancellation
-race (DUET-2026-039); the original failing regression passes unchanged. The
+race (DECLASS-2026-039); the original failing regression passes unchanged. The
 guest uses an emulated complete x86 machine and kernel, not user-mode container
 translation. Physical x86 hardware has not been tested in this review.
 
@@ -56,9 +56,9 @@ translation. Physical x86 hardware has not been tested in this review.
 | --- | --- | --- |
 | Frontier-level coding results | [Frozen nine-task comparison](evidence/benchmark-54-2026-10-04/README.md): 54 outcomes/27 pairs; mean counted per-case hidden-test scores of 89.26% hybrid and 96.54% passthrough. Mechanical successes: 14/27 and 15/27. [Earlier judged results](VALUE_EVIDENCE.md) remain historical. | Fresh quality judging, broader representative tasks and deployment-specific acceptance. These mechanical results do not establish general frontier parity. Hosted and local model weights were not immutably pinned. |
 | Sensitive content handled locally | Classified files use local processing, placeholders and structure views; outbound requests are filtered and checked. Recorded synthetic tasks include zero-canary outcomes and retained failures. [Security design](SECURE_BY_DESIGN.md), [launch evidence](launch/DEMO.md) | Independent adversarial assessment and validation of each deployment's data types. Classification limits, semantic inference and probing remain in the [threat model](../SECURITY.md). Hybrid intentionally sends permitted code and checked context to the frontier. |
-| Local-only operation | Top-clearance tests exercise a local endpoint, frontier trap, disabled web/command networking and restricted MCP startup. [Tests](../crates/duet-cli/tests/top_clearance.rs) | Validate the approved endpoint and its transport. An owner-allowlisted remote local model receives sensitive data; this mode alone does not establish an air gap. |
-| Tool isolation and policy enforcement | OS sandbox, owner/project policy separation, reserved-path protection and gated egress have automated coverage. The publication work fixed **DUET-2026-033–039**, including proxy routing, persistent derived classifications and cancellation. Offline diagnostics skip network-enabled MCP servers. Linux runtime evidence covers ARM64 and a complete emulated x86-64 kernel with seccomp enabled. | Reassess configured extensions and local endpoint trust in the deployment environment; validate its exact OS and hardware. |
-| Recoverable runs and inspectable audits | Tests cover termination, interruption, resume and hash-chain verification. Derived classifications survive new runs and purge; audit export, checks, retention reports and purge previews have CLI regressions. [Operations](OPERATIONS.md), [runtime tests](../crates/duet-cli/tests/termination.rs) | Operational retention, access control and independent custody of audit anchors. A valid chain verifies recorded integrity, not whether its contents were safe to disclose. |
+| Local-only operation | Top-clearance tests exercise a local endpoint, frontier trap, disabled web/command networking and restricted MCP startup. [Tests](../crates/declass-cli/tests/top_clearance.rs) | Validate the approved endpoint and its transport. An owner-allowlisted remote local model receives sensitive data; this mode alone does not establish an air gap. |
+| Tool isolation and policy enforcement | OS sandbox, owner/project policy separation, reserved-path protection and gated egress have automated coverage. The publication work fixed **DECLASS-2026-033–039**, including proxy routing, persistent derived classifications and cancellation. Offline diagnostics skip network-enabled MCP servers. Linux runtime evidence covers ARM64 and a complete emulated x86-64 kernel with seccomp enabled. | Reassess configured extensions and local endpoint trust in the deployment environment; validate its exact OS and hardware. |
+| Recoverable runs and inspectable audits | Tests cover termination, interruption, resume and hash-chain verification. Derived classifications survive new runs and purge; audit export, checks, retention reports and purge previews have CLI regressions. [Operations](OPERATIONS.md), [runtime tests](../crates/declass-cli/tests/termination.rs) | Operational retention, access control and independent custody of audit anchors. A valid chain verifies recorded integrity, not whether its contents were safe to disclose. |
 | GPL source and binary distribution | License grant, retained upstream notices, dependency policy and scripts for matching vendored source accompany the release procedure. An isolated source archive rebuilt successfully with Cargo's frozen mode. [Licensing and distribution](../LICENSES.md) | For a binary release, package from the final clean commit, verify checksums, and publish matching source and notices alongside the binary. Publisher signing is optional; identify unsigned previews clearly. |
 
 ## Current verification
@@ -109,9 +109,9 @@ Publication follow-up:
 - Retain source and notices alongside every binary release, following
   [LICENSES.md](../LICENSES.md).
 
-At the time of this review, the placeholder was deployed on [Cloudflare Pages](https://duet-site-9oe.pages.dev).
+At the time of this review, the placeholder was deployed on [Cloudflare Pages](https://declass-site-9oe.pages.dev).
 `duet.priezjev.com` was registered with Pages but still required a proxied CNAME:
-`duet` → `duet-site-9oe.pages.dev`. The reviewed deployment login had no DNS-write permission. See [site deployment](../site/README.md) for the maintained procedure; this dated record does not verify current DNS state.
+`declass` → `declass-site-9oe.pages.dev`. The reviewed deployment login had no DNS-write permission. See [site deployment](../site/README.md) for the maintained procedure; this dated record does not verify current DNS state.
 
 The October 2 baseline used Rust 1.97.1 on macOS and 1.99 on Linux. The current
 Linux check additionally builds with the declared Rust 1.90 minimum.

@@ -4,16 +4,16 @@
 # HTTPS bootstrap trust is separate from independently trusted SSH artifact signing.
 # No additional helper scripts are downloaded.
 # Parse the complete function before doing work, including when piped into Bash.
-duet_bootstrap_main() {
+declass_bootstrap_main() {
     set -euo pipefail
     umask 077
     for tool in bash cat chmod mktemp rm; do
-        command -v "$tool" >/dev/null 2>&1 || { printf 'duet install: missing %s\n' "$tool" >&2; return 1; }
+        command -v "$tool" >/dev/null 2>&1 || { printf 'declass install: missing %s\n' "$tool" >&2; return 1; }
     done
-    duet_bootstrap_scratch=$(mktemp -d "${TMPDIR:-/tmp}/duet-bootstrap.XXXXXXXX")
-    trap 'rm -rf "$duet_bootstrap_scratch"' EXIT
-    # tools/install-release.sh SHA256 5193773d9f3910b19bf72eea7b571b81374ff37b9cb98dedbad51f03319e5898
-    cat >"$duet_bootstrap_scratch/install-release.sh" <<'DUET_EMBEDDED_5193773D9F3910B19BF72EEA7B571B81374FF37B9CB98DEDBAD51F03319E5898'
+    declass_bootstrap_scratch=$(mktemp -d "${TMPDIR:-/tmp}/declass-bootstrap.XXXXXXXX")
+    trap 'rm -rf "$declass_bootstrap_scratch"' EXIT
+    # tools/install-release.sh SHA256 55fe4ab8ac0f464275e7ee1e1637e4034cedc12d8a48f09b2984c0e56f535fa9
+    cat >"$declass_bootstrap_scratch/install-release.sh" <<'DECLASS_EMBEDDED_55FE4AB8AC0F464275E7EE1E1637E4034CEDC12D8A48F09B2984C0E56F535FA9'
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Install signed releases when a trusted signer is configured; otherwise
@@ -21,28 +21,28 @@ duet_bootstrap_main() {
 # Usage: tools/install-release.sh [VERSION | --version VERSION] [--signers FILE]
 #        [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned] [--no-modify-path]
 #        (default version: latest stable release)
-# DUET_INSTALL_DIR defaults to ~/.local/bin; DUET_DATA_DIR to ~/.local/share/duet.
+# DECLASS_INSTALL_DIR defaults to ~/.local/bin; DECLASS_DATA_DIR to ~/.local/share/declass.
 # Defaults to GitHub Releases (maximpri/duet, tag vVERSION). The corresponding
 # source, licenses and signed release records are retained locally.
 set -euo pipefail
 umask 077
 
-fail() { printf 'duet install-release: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'declass install-release: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
 Usage: install.sh [VERSION | --version VERSION] [--signers FILE]
                   [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned]
                   [--no-modify-path]
 Defaults to the latest stable maximpri/duet GitHub release for this OS/CPU.
-Trust file: $DUET_CONFIG_HOME/allowed_signers, or ~/.config/duet/allowed_signers.
+Trust file: $DECLASS_CONFIG_HOME/allowed_signers, or ~/.config/declass/allowed_signers.
 Obtain that file through an independently trusted channel before installing.
 With a trust file (or --signers), a valid signature is required: no fallback.
 Without one, checksum-only preview assets are installed; checksums do not
 authenticate the publisher. --allow-unsigned selects them even with a trust file.
 Installs in ~/.local/bin and retains matching source and notices under
-~/.local/share/duet/releases. DUET_INSTALL_DIR / DUET_DATA_DIR override those paths.
+~/.local/share/declass/releases. DECLASS_INSTALL_DIR / DECLASS_DATA_DIR override those paths.
 When ~/.local/bin is not on PATH, one marked line adding it is appended to your
-shell's startup file; --no-modify-path (or DUET_NO_MODIFY_PATH=1) leaves it alone.
+shell's startup file; --no-modify-path (or DECLASS_NO_MODIFY_PATH=1) leaves it alone.
 No sudo or downloaded signing key.
 HELP
 }
@@ -51,8 +51,8 @@ url=""
 allow_unsigned=false
 signers_given=false
 modify_path=true
-[ "${DUET_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
-signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
+[ "${DECLASS_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
+signers="${DECLASS_CONFIG_HOME:-$HOME/.config/declass}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help) usage; exit 0 ;;
@@ -108,12 +108,12 @@ Linux:aarch64 | Linux:arm64) target=aarch64-unknown-linux-gnu ;;
 Linux:x86_64 | Linux:amd64) target=x86_64-unknown-linux-gnu ;;
 *) fail "supported platforms are macOS and GNU/Linux on ARM64 or x86-64" ;;
 esac
-install_dir="${DUET_INSTALL_DIR:-$HOME/.local/bin}"
-data_dir="${DUET_DATA_DIR:-$HOME/.local/share/duet}"
+install_dir="${DECLASS_INSTALL_DIR:-$HOME/.local/bin}"
+data_dir="${DECLASS_DATA_DIR:-$HOME/.local/share/declass}"
 for destination in "$install_dir" "$data_dir"; do
-    case "$destination" in /*) ;; *) fail "DUET_INSTALL_DIR and DUET_DATA_DIR must be absolute paths" ;; esac
+    case "$destination" in /*) ;; *) fail "DECLASS_INSTALL_DIR and DECLASS_DATA_DIR must be absolute paths" ;; esac
 done
-[ ! -d "$install_dir/duet" ] || fail "destination is a directory: $install_dir/duet"
+[ ! -d "$install_dir/declass" ] || fail "destination is a directory: $install_dir/declass"
 
 if [ "$version" = latest ]; then
     # Resolve once; every asset then uses the same pinned version directory.
@@ -134,12 +134,12 @@ fi
 [[ "$url" =~ ^https://[^/?#]+(/[^?#]*)?$ ]] || fail "--url must be an HTTPS release-directory URL without query or fragment"
 url=${url%/}
 if $allow_unsigned; then
-    printf 'Installing UNSIGNED Duet %s for %s: checksums verify integrity, not publisher identity.\n' "$version" "$target"
+    printf 'Installing UNSIGNED Declass %s for %s: checksums verify integrity, not publisher identity.\n' "$version" "$target"
 else
-    printf 'Installing signed Duet %s for %s\n' "$version" "$target"
+    printf 'Installing signed Declass %s for %s\n' "$version" "$target"
 fi
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/duet-install-release.XXXXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/declass-install-release.XXXXXXXX")
 staged_binary=""
 retained=""
 cleanup() {
@@ -148,7 +148,7 @@ cleanup() {
     [ -z "$retained" ] || rm -rf "$retained"
 }
 trap cleanup EXIT
-binary="duet-$version-$target"
+binary="declass-$version-$target"
 stem="$binary"
 $allow_unsigned && stem="$stem-unsigned"
 archive="$stem.tar.gz"
@@ -175,8 +175,8 @@ verify_payload "$scratch"
 # Inspect the authenticated/checksummed archive before extracting anything. Both
 # package-release.sh (name) and cicd.sh (./name) use flat regular payload files.
 # Reject extras, duplicates, links and nested paths even in an unsigned preview.
-names=("$binary" "duet-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md
-    LICENSE.gitleaks NOTICE.gitleaks "duet-$version-source.tar.gz" SOURCE.txt SHA256SUMS)
+names=("$binary" "declass-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md
+    LICENSE.gitleaks NOTICE.gitleaks "declass-$version-source.tar.gz" SOURCE.txt SHA256SUMS)
 $allow_unsigned || names+=(SHA256SUMS.sig)
 listing="$scratch/entries"
 details="$scratch/types"
@@ -208,74 +208,74 @@ for name in "${names[@]}"; do
     tar -xOf "$scratch/$archive" "$entry" >"$payload/$name" || fail "cannot extract expected file: $name"
 done
 verify_payload "$payload"
-grep -qxF -- "duet $version" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match version $version"
+grep -qxF -- "declass $version" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match version $version"
 grep -qxF -- "target $target" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match target $target"
 
 mkdir -p "$install_dir"
-staged_binary=$(mktemp "$install_dir/.duet.XXXXXXXX")
+staged_binary=$(mktemp "$install_dir/.declass.XXXXXXXX")
 cp "$payload/$binary" "$staged_binary"
 chmod 755 "$staged_binary"
 # Required authentication (unless explicitly unsigned) and all hashes passed
 # before any downloaded code runs.
 reported_version=$("$staged_binary" --version) || fail "verified binary cannot run on this host; existing installation retained"
-[ "$reported_version" = "duet $version" ] || fail "verified binary reports an unexpected version: $reported_version"
+[ "$reported_version" = "declass $version" ] || fail "verified binary reports an unexpected version: $reported_version"
 mkdir -p "$data_dir/releases"
 retained=$(mktemp -d "$data_dir/releases/$version-$target.XXXXXXXX")
 cp "$payload"/* "$retained/"
 # Same-directory rename is atomic: download/verification/copy failures above
 # never replace the existing executable. Existing release records are retained.
-mv -f "$staged_binary" "$install_dir/duet"
+mv -f "$staged_binary" "$install_dir/declass"
 staged_binary=""
 installed_records="$retained"
 retained=""
-printf 'Installed %s at %s/duet\n' "$reported_version" "$install_dir"
+printf 'Installed %s at %s/declass\n' "$reported_version" "$install_dir"
 if $allow_unsigned; then
     printf 'Checksum-verified source and records (unsigned): %s\n' "$installed_records"
 else
     printf 'Verified source, licenses and release records: %s\n' "$installed_records"
 fi
 case ":$PATH:" in
-    *":$install_dir:"*) printf '\nRun it in your project directory:  duet\n' ;;
+    *":$install_dir:"*) printf '\nRun it in your project directory:  declass\n' ;;
     *)
         if ! $modify_path; then
-            printf '\nAdd %s to PATH to run duet (no shell profile was changed).\n' "$install_dir"
+            printf '\nAdd %s to PATH to run declass (no shell profile was changed).\n' "$install_dir"
         else
             case "${SHELL##*/}" in
                 zsh) profile="${ZDOTDIR:-$HOME}/.zshrc" ;;
                 bash) if [ "$os" = Darwin ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
-                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/duet.fish" ;;
+                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/declass.fish" ;;
                 *) profile="$HOME/.profile" ;;
             esac
             if [ "${SHELL##*/}" = fish ]; then
-                line="fish_add_path -g '$install_dir' # added by the duet installer"
+                line="fish_add_path -g '$install_dir' # added by the declass installer"
             else
-                line="export PATH=\"$install_dir:\$PATH\" # added by the duet installer"
+                line="export PATH=\"$install_dir:\$PATH\" # added by the declass installer"
             fi
             if [ -f "$profile" ] && grep -qF -- "$line" "$profile"; then
                 printf '\n%s already adds %s to PATH.\n' "$profile" "$install_dir"
             else
                 mkdir -p "$(dirname "$profile")"
                 printf '\n%s\n' "$line" >>"$profile"
-                printf '\nAdded %s to PATH in %s (remove the line marked "duet installer" to undo).\n' "$install_dir" "$profile"
+                printf '\nAdded %s to PATH in %s (remove the line marked "declass installer" to undo).\n' "$install_dir" "$profile"
             fi
-            printf 'Open a new terminal, then run it in your project directory:  duet\n'
+            printf 'Open a new terminal, then run it in your project directory:  declass\n'
         fi
         ;;
 esac
-DUET_EMBEDDED_5193773D9F3910B19BF72EEA7B571B81374FF37B9CB98DEDBAD51F03319E5898
-    # tools/verify-release.sh SHA256 c645a4e4838f5a1ddad89670583ea52ffb7959979ac05c03f0777f22b76d0c8b
-    cat >"$duet_bootstrap_scratch/verify-release.sh" <<'DUET_EMBEDDED_C645A4E4838F5A1DDAD89670583EA52FFB7959979AC05C03F0777F22B76D0C8B'
+DECLASS_EMBEDDED_55FE4AB8AC0F464275E7EE1E1637E4034CEDC12D8A48F09B2984C0E56F535FA9
+    # tools/verify-release.sh SHA256 5501d4cd7a0321a1bd805d784833e24a4138df4b4ca550ceb7b9d09c193ee38b
+    cat >"$declass_bootstrap_scratch/verify-release.sh" <<'DECLASS_EMBEDDED_5501D4CD7A0321A1BD805D784833E24A4138DF4B4CA550CEB7B9D09C193EE38B'
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Verifies a release directory made by tools/release.sh: SHA256SUMS carries a
-# valid SSH signature (namespace duet-release) by a key in the allowed-signers
+# valid SSH signature (namespace declass-release) by a key in the allowed-signers
 # file, and every file in the directory is listed there and matches.
 #
 #   tools/verify-release.sh <release dir> [--signers FILE]
 #
 # The signers file defaults to allowed_signers next to the owner config
-# ($DUET_CONFIG_HOME/allowed_signers, else ~/.config/duet/allowed_signers),
-# the file `duet doctor` checks. Each line: <identity> namespaces="duet-release" <public key>.
+# ($DECLASS_CONFIG_HOME/allowed_signers, else ~/.config/declass/allowed_signers),
+# the file `declass doctor` checks. Each line: <identity> namespaces="declass-release" <public key>.
 # Offline; needs ssh-keygen and shasum (or sha256sum). Exit 0 only when all holds.
 set -euo pipefail
 
@@ -285,7 +285,7 @@ die() {
 }
 
 dir=""
-signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
+signers="${DECLASS_CONFIG_HOME:-$HOME/.config/declass}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help)
@@ -322,12 +322,12 @@ principals=$(ssh-keygen -Y find-principals -s "$sig" -f "$signers" 2>/dev/null) 
     die "SHA256SUMS is not signed by any key in $signers"
 signer=""
 while IFS= read -r p; do
-    if ssh-keygen -Y verify -f "$signers" -I "$p" -n duet-release -s "$sig" <"$sums" >/dev/null 2>&1; then
+    if ssh-keygen -Y verify -f "$signers" -I "$p" -n declass-release -s "$sig" <"$sums" >/dev/null 2>&1; then
         signer="$p"
         break
     fi
 done <<<"$principals"
-[ -n "$signer" ] || die "the signature over SHA256SUMS does not verify (namespace duet-release)"
+[ -n "$signer" ] || die "the signature over SHA256SUMS does not verify (namespace declass-release)"
 
 # Shared strict manifest parser; signature validation above is mandatory.
 checker="$(cd "$(dirname "$0")" && pwd -P)/verify-checksums.sh"
@@ -335,9 +335,9 @@ checker="$(cd "$(dirname "$0")" && pwd -P)/verify-checksums.sh"
 count=$("$checker" "$dir" --count) || die 'release checksum validation failed'
 
 echo "verified: SHA256SUMS signed by $signer; $count file(s) match"
-DUET_EMBEDDED_C645A4E4838F5A1DDAD89670583EA52FFB7959979AC05C03F0777F22B76D0C8B
+DECLASS_EMBEDDED_5501D4CD7A0321A1BD805D784833E24A4138DF4B4CA550CEB7B9D09C193EE38B
     # tools/verify-checksums.sh SHA256 bd4cdc5155678f9f2cee1b1422e603c87c60d8a3bd3efd5c1143ba9dbb0d8855
-    cat >"$duet_bootstrap_scratch/verify-checksums.sh" <<'DUET_EMBEDDED_BD4CDC5155678F9F2CEE1B1422E603C87C60D8A3BD3EFD5C1143BA9DBB0D8855'
+    cat >"$declass_bootstrap_scratch/verify-checksums.sh" <<'DECLASS_EMBEDDED_BD4CDC5155678F9F2CEE1B1422E603C87C60D8A3BD3EFD5C1143BA9DBB0D8855'
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Verify strict flat SHA256SUMS coverage and file integrity; no publisher authentication.
@@ -402,8 +402,8 @@ if $count_only; then
 else
     printf 'verified: %s file(s) match SHA256SUMS (integrity only; publisher not authenticated)\n' "$count"
 fi
-DUET_EMBEDDED_BD4CDC5155678F9F2CEE1B1422E603C87C60D8A3BD3EFD5C1143BA9DBB0D8855
-    chmod 700 "$duet_bootstrap_scratch/install-release.sh" "$duet_bootstrap_scratch/verify-release.sh" "$duet_bootstrap_scratch/verify-checksums.sh"
-    bash "$duet_bootstrap_scratch/install-release.sh" "$@" </dev/null
+DECLASS_EMBEDDED_BD4CDC5155678F9F2CEE1B1422E603C87C60D8A3BD3EFD5C1143BA9DBB0D8855
+    chmod 700 "$declass_bootstrap_scratch/install-release.sh" "$declass_bootstrap_scratch/verify-release.sh" "$declass_bootstrap_scratch/verify-checksums.sh"
+    bash "$declass_bootstrap_scratch/install-release.sh" "$@" </dev/null
 }
-duet_bootstrap_main "$@"
+declass_bootstrap_main "$@"

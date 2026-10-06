@@ -1,0 +1,31 @@
+[package]
+name = "declass-mcp"
+description = "Model Context Protocol client: JSON-RPC 2.0 over stdio and streamable HTTP"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# HTTP only through `declass-net`: every message is checked by the boundary's
+# guard (`third_party::Guard`) first.
+declass-boundary.workspace = true
+declass-net.workspace = true
+tokio.workspace = true
+url = "2"
+futures-util.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[features]
+# Scripted MCP servers (in-process and loopback HTTP) for tests in dependent crates.
+test-support = []
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+declass-mcp = { path = ".", features = ["test-support"] }

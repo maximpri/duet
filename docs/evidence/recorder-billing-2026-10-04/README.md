@@ -1,7 +1,7 @@
 # Recorded billing demo, October 4, 2026
 
-The README's demo GIF. Recorded with [`tools/duet-recorder`](../../../tools/duet-recorder/README.md)
-from [`scenes/billing.json`](../../../tools/duet-recorder/scenes/billing.json): the real `duet`
+The README's demo GIF. Recorded with [`tools/declass-recorder`](../../../tools/declass-recorder/README.md)
+from [`scenes/billing.json`](../../../tools/declass-recorder/scenes/billing.json): the real `duet`
 binary ran in a pseudo-terminal on a fresh copy of the [synthetic billing fixture](../../launch/billing-demo/README.md),
 with `glm-5.3-flash` as the frontier model and `omlx-coding` as the local model.
 
@@ -34,5 +34,5 @@ Re-render from the cast:
 
 ```sh
 gunzip -k docs/evidence/recorder-billing-2026-10-04/session.cast.gz
-python3 tools/duet-recorder/record.py --render-only docs/evidence/recorder-billing-2026-10-04/session.cast --out /tmp/duet-rerender
+python3 tools/declass-recorder/record.py --render-only docs/evidence/recorder-billing-2026-10-04/session.cast --out /tmp/duet-rerender
 ```

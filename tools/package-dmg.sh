@@ -49,7 +49,7 @@ mkdir "$lock" 2>/dev/null || fail 'output is already reserved'
 scratch=""
 cleanup() { [ -z "$scratch" ] || rm -rf "$scratch"; rmdir "$lock" 2>/dev/null || true; }
 trap cleanup EXIT
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/duet-dmg.XXXXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/declass-dmg.XXXXXXXX")
 volume="$scratch/volume"
 mkdir "$volume" "$volume/payload"
 # Reject links/directories before copying; verification is repeated on the copy.
@@ -58,33 +58,33 @@ for file in "$release"/* "$release"/.[!.]* "$release"/..?*; do
     [ -f "$file" ] && [ ! -L "$file" ] || fail 'release contains a nonregular artifact'
     cp -p "$file" "$volume/payload/"
 done
-cp "$tools/dmg/Install Duet.command" "$volume/Install Duet.command"
+cp "$tools/dmg/Install Declass.command" "$volume/Install Declass.command"
 cp "$tools/verify-release.sh" "$volume/verify-release.sh"
 cp "$tools/verify-checksums.sh" "$volume/verify-checksums.sh"
 printf '%s\n' "$mode" >"$volume/INSTALL-MODE"
-chmod 755 "$volume/Install Duet.command" "$volume/verify-release.sh" "$volume/verify-checksums.sh"
+chmod 755 "$volume/Install Declass.command" "$volume/verify-release.sh" "$volume/verify-checksums.sh"
 if [ "$mode" = signed ]; then
-    /bin/bash "$volume/Install Duet.command" --verify-only --signers "$signers"
+    /bin/bash "$volume/Install Declass.command" --verify-only --signers "$signers"
 else
-    /bin/bash "$volume/Install Duet.command" --verify-only --unsigned
+    /bin/bash "$volume/Install Declass.command" --verify-only --unsigned
 fi
-version=$(sed -n 's/^duet //p' "$volume/payload/BUILDINFO.txt")
+version=$(sed -n 's/^declass //p' "$volume/payload/BUILDINFO.txt")
 target=$(sed -n 's/^target //p' "$volume/payload/BUILDINFO.txt")
 cat >"$volume/README.txt" <<INFO
-Duet $version ($target) — CLI/TUI installer
+Declass $version ($target) — CLI/TUI installer
 Release verification mode: $mode
 
-Open Install Duet.command to install to your own ~/.local/bin (no sudo).
+Open Install Declass.command to install to your own ~/.local/bin (no sudo).
 All payload files, including full corresponding source and licenses, are retained
-under ~/.local/share/duet/releases. No network access is needed by this installer.
+under ~/.local/share/declass/releases. No network access is needed by this installer.
 The payload/ directory contains the original release files and checksums.
 
 Unsigned mode requires explicit confirmation or --unsigned. Checksums do not
 identify a publisher. Signed mode verifies the payload's SSH release signature
-using your independently obtained ~/.config/duet/allowed_signers file (or
-DUET_CONFIG_HOME/allowed_signers); --signers FILE selects another trusted file.
+using your independently obtained ~/.config/declass/allowed_signers file (or
+DECLASS_CONFIG_HOME/allowed_signers); --signers FILE selects another trusted file.
 This image does not supply its own trusted keys. Before opening a signed image,
-verify the separate DMG.SHA256SUMS.sig (SSH namespace duet-release) with your
+verify the separate DMG.SHA256SUMS.sig (SSH namespace declass-release) with your
 independently trusted signer, then the DMG checksum. That authenticates the whole
 image including this installer. SSH signatures are not Apple authentication.
 
@@ -102,8 +102,8 @@ for file in "$volume/payload"/* "$volume/payload"/.[!.]* "$volume/payload"/..?*;
     chmod 644 "$file"
 done
 chmod 644 "$volume/README.txt" "$volume/INSTALL-MODE"
-chmod 755 "$volume/payload/duet-$version-$target"
-hdiutil create -quiet -srcfolder "$volume" -volname "Duet $version $mode" -fs HFS+ -format UDZO "$scratch/candidate.dmg"
+chmod 755 "$volume/payload/declass-$version-$target"
+hdiutil create -quiet -srcfolder "$volume" -volname "Declass $version $mode" -fs HFS+ -format UDZO "$scratch/candidate.dmg"
 # Hard-link publication is exclusive: a late competing file is never replaced.
 cp "$scratch/candidate.dmg" "$lock/candidate.dmg"
 ln "$lock/candidate.dmg" "$out" || fail 'output appeared while packaging'
@@ -114,11 +114,11 @@ else
     (cd "$(dirname "$out")" && sha256sum "$(basename "$out")") >"$lock/checksums"
 fi
 if [ "$mode" = signed ]; then
-    ssh-keygen -Y sign -f "$key" -n duet-release "$lock/checksums"
+    ssh-keygen -Y sign -f "$key" -n declass-release "$lock/checksums"
     principals=$(ssh-keygen -Y find-principals -s "$lock/checksums.sig" -f "$signers") || fail 'outer signature has no trusted signer'
     verified=false
     while IFS= read -r identity; do
-        if ssh-keygen -Y verify -f "$signers" -I "$identity" -n duet-release -s "$lock/checksums.sig" <"$lock/checksums" >/dev/null 2>&1; then verified=true; break; fi
+        if ssh-keygen -Y verify -f "$signers" -I "$identity" -n declass-release -s "$lock/checksums.sig" <"$lock/checksums" >/dev/null 2>&1; then verified=true; break; fi
     done <<<"$principals"
     $verified || fail 'outer signature did not verify'
 fi

@@ -24,7 +24,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--evidence', type=Path,
                         default=root / 'docs/evidence/launch-refresh-2026-10-01')
-    parser.add_argument('--name', default='duet-boundary', help='Output media basename')
+    parser.add_argument('--name', default='declass-boundary', help='Output media basename')
     args = parser.parse_args()
     if not args.name or Path(args.name).name != args.name or args.name in ('.', '..'):
         parser.error('--name must be a filename without directories')
@@ -42,7 +42,7 @@ def main():
     if any(not name or Path(name).name != name or name in ('.', '..') for name in edit['stills']):
         parser.error('reel still names must be filenames without directories')
     args.output.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='duet-reel-') as temp:
+    with tempfile.TemporaryDirectory(prefix='declass-reel-') as temp:
         temp = Path(temp)
         cast = temp / 'hybrid.cast'
         cast.write_bytes(gzip.decompress((evidence / edit['cast']).read_bytes()))

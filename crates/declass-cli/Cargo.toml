@@ -1,0 +1,69 @@
+[package]
+name = "declass-cli"
+description = "Declass command-line interface"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+declass-agent.workspace = true
+declass-extensions.workspace = true
+declass-boundary.workspace = true
+declass-provider.workspace = true
+declass-config.workspace = true
+declass-fs.workspace = true
+declass-git.workspace = true
+declass-mcp.workspace = true
+declass-sandbox.workspace = true
+declass-tui.workspace = true
+declass-web.workspace = true
+declass-egress.workspace = true
+declass-lsp.workspace = true
+url = "2"
+anyhow.workspace = true
+sha2.workspace = true
+hex.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+uuid.workspace = true
+time.workspace = true
+rustix = { workspace = true, features = ["termios"] }
+futures-util.workspace = true
+# The chat console and run progress (all three already in Cargo.lock through ratatui).
+crossterm = "0.29"
+unicode-width = "0.2"
+unicode-segmentation = "1"
+
+
+[dev-dependencies]
+# The workspace test reads a terminal's screen back (MIT).
+vt100 = "0.16"
+declass-boundary = { workspace = true, features = ["test-support"] }
+declass-mcp = { workspace = true, features = ["test-support"] }
+declass-provider = { workspace = true, features = ["test-support"] }
+declass-fs = { workspace = true, features = ["fault-injection"] }
+tempfile = "3"
+bytes = "1"
+futures-util.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "declass"
+path = "src/main.rs"
+
+# A program that embeds Declass through `main_with` (no test harness: the test
+# binary is itself that program; see the file).
+[[test]]
+name = "embedded"
+harness = false

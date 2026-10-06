@@ -1,0 +1,605 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//! The detection corpus (`tests/corpus/`): recall on synthetic positives and
+//! false positives on hard negatives, measured on every gate run.
+//!
+//! - Imported rules: every rule gets a positive generated from its own
+//!   expression ([`generate`]); a rule no generated text satisfies needs a
+//!   hand-written one in `positives.toml`. Each must be found by its rule and
+//!   withheld by the full detector.
+//! - Hand-written positives (`positives.toml`): declass's own formats and the
+//!   international personal-data formats; each value must be withheld as its kind.
+//! - Hard negatives (`negatives/`): hashes, UUIDs, lockfiles, base64 of public
+//!   data, identifiers, fixtures, minified code, logs, and real toolchain
+//!   output ([`TOOLCHAIN`]: bundler builds, stack traces, install logs, test
+//!   runners, docker builds). Lines with a finding are false positives; their
+//!   count per file may not rise above `baseline.toml` (lower the baseline
+//!   when it falls). The toolchain files also go through the engine as
+//!   command output, where no placeholder may appear.
+//! - Rules that do not compile are listed; their number may not rise either.
+//!
+//! `DECLASS_CORPUS_DUMP=<file>` writes the generated positives for review.
+//! Nothing in the corpus is a real credential or a real person's data.
+
+#[path = "corpus/generate.rs"]
+mod generate;
+
+use declass_boundary::detect::{Detectors, Finding, Kind, scan_each_in};
+use declass_boundary::rules::{Rule, imported};
+use generate::{Sampler, seed};
+use serde::Deserialize;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+/// Attempts at generating a positive for one rule.
+const ATTEMPTS: u32 = 200;
+
+/// Negatives recorded from real toolchain runs (2026-09-26), one command's
+/// output per `# title` section.
+const TOOLCHAIN: [&str; 5] = [
+    "build-output.txt",
+    "stack-traces.txt",
+    "install-logs.txt",
+    "test-output.txt",
+    "docker-build.txt",
+];
+
+fn corpus_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/corpus")
+}
+
+#[derive(Deserialize)]
+struct Positives {
+    case: Vec<Case>,
+}
+
+/// A hand-written positive: `rule` (an imported rule that must find a secret
+/// in `text`) or `kind` and `value` (a value the detector must withhold as that kind).
+#[derive(Deserialize)]
+struct Case {
+    rule: Option<String>,
+    /// A kind tag (`secret`, `id`, `iban`, ...).
+    kind: Option<String>,
+    value: Option<String>,
+    path: Option<String>,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct Baseline {
+    rules: RuleBaseline,
+    negatives: BTreeMap<String, FileBaseline>,
+}
+
+#[derive(Deserialize)]
+struct RuleBaseline {
+    failed: usize,
+    partial: usize,
+}
+
+/// Lines with a finding in one negative file, scanned as that file (its
+/// name as the path) and as text of unknown origin.
+#[derive(Deserialize, Clone, Copy, Default, PartialEq, Debug)]
+struct FileBaseline {
+    as_file: usize,
+    as_text: usize,
+}
+
+fn load<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    let path = corpus_dir().join(name);
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+/// Whether the findings together cover `start..end`.
+fn covered(findings: &[Finding], start: usize, end: usize) -> bool {
+    let mut spans: Vec<(usize, usize)> = findings.iter().map(|f| (f.start, f.end)).collect();
+    spans.sort_unstable();
+    let mut at = start;
+    for (s, e) in spans {
+        if s <= at && e > at {
+            at = e;
+        }
+        if at >= end {
+            return true;
+        }
+    }
+    false
+}
+
+/// A generated positive for `rule`: the document, its path, and the span the
+/// rule found in it.
+fn generated(rule: &Rule) -> Option<(String, Option<String>, usize, usize)> {
+    let path = rule
+        .path_pattern()
+        .and_then(|p| Sampler::new(seed(rule.id()), 0).sample(p))
+        .map(|p| format!("corpus/sample{p}"));
+    for attempt in 0..ATTEMPTS {
+        let sample = Sampler::new(seed(rule.id()), attempt).sample(rule.pattern())?;
+        // The rule runs only on text holding one of its keywords.
+        let lower = sample.to_ascii_lowercase();
+        let doc = match rule.keywords().first() {
+            Some(k) if !rule.keywords().iter().any(|k| lower.contains(k.as_str())) => {
+                format!("# {k}\n{sample}\n")
+            }
+            _ => format!("{sample}\n"),
+        };
+        let found = imported().find(&doc, path.as_deref());
+        if let Some(m) = found.iter().find(|m| m.rule.id() == rule.id()) {
+            return Some((doc.clone(), path.clone(), m.start, m.end));
+        }
+    }
+    None
+}
+
+#[test]
+fn imported_rules_compile_and_find_their_positives() {
+    let set = imported();
+    let baseline: Baseline = load("baseline.toml");
+    let positives: Positives = load("positives.toml");
+    for f in set.failed() {
+        println!("rule not compiled: {} ({})", f.rule, f.reason);
+    }
+    for f in set.partial() {
+        println!("rule partly supported: {} ({})", f.rule, f.reason);
+    }
+    let d = Detectors::default();
+    let mut dump = String::new();
+    let mut by_rule = 0;
+    let mut withheld = 0;
+    let mut missing = Vec::new();
+    let mut not_withheld = Vec::new();
+    let mut hand_written: BTreeMap<&str, Vec<&Case>> = BTreeMap::new();
+    for c in &positives.case {
+        if let Some(r) = &c.rule {
+            hand_written.entry(r.as_str()).or_default().push(c);
+        }
+    }
+    for rule in set.rules() {
+        let mut docs = Vec::new();
+        match generated(rule) {
+            Some((doc, path, start, end)) => docs.push((doc, path, Some((start, end)))),
+            None if hand_written.contains_key(rule.id()) => {}
+            None => missing.push(rule.id().to_owned()),
+        }
+        for c in hand_written.get(rule.id()).into_iter().flatten() {
+            docs.push((c.text.clone(), c.path.clone(), None));
+        }
+        for (doc, path, span) in docs {
+            let found = set.find(&doc, path.as_deref());
+            let Some(m) = found.iter().find(|m| m.rule.id() == rule.id()) else {
+                missing.push(format!("{} (hand-written)", rule.id()));
+                continue;
+            };
+            let (start, end) = span.unwrap_or((m.start, m.end));
+            by_rule += 1;
+            if covered(&scan_each_in(&doc, d, path.as_deref()), start, end) {
+                withheld += 1;
+            } else {
+                not_withheld.push(rule.id().to_owned());
+            }
+            dump.push_str(&format!(
+                "== {} {}\n{doc}\n",
+                rule.id(),
+                path.unwrap_or_default()
+            ));
+        }
+    }
+    if let Ok(out) = std::env::var("DECLASS_CORPUS_DUMP") {
+        std::fs::write(&out, dump).expect("write the corpus dump");
+    }
+    let total = set.rules().len();
+    println!(
+        "imported rules: gitleaks v{}: {total} compiled, {} not compiled, {} partly supported, {} path-only ({})",
+        declass_boundary::rules::notice_field("version")
+            .unwrap_or("?")
+            .trim_start_matches('v'),
+        set.failed().len(),
+        set.partial().len(),
+        set.path_only().len(),
+        set.path_only().join(", ")
+    );
+    println!(
+        "imported-rule positives: {by_rule} found by their rule, {withheld} withheld by the full detector; rules without a positive: {}",
+        missing.len()
+    );
+    assert!(total >= 200, "the vendored rule file lost rules: {total}");
+    assert!(
+        set.failed().len() <= baseline.rules.failed,
+        "more rules fail to compile than the baseline ({}): {:?}",
+        baseline.rules.failed,
+        set.failed()
+    );
+    assert!(
+        set.partial().len() <= baseline.rules.partial,
+        "more rules are only partly supported than the baseline ({}): {:?}",
+        baseline.rules.partial,
+        set.partial()
+    );
+    assert!(
+        missing.is_empty(),
+        "rules without a detected positive: {missing:?}"
+    );
+    assert!(
+        not_withheld.is_empty(),
+        "found by their rule but not withheld: {not_withheld:?}"
+    );
+}
+
+#[test]
+fn hand_written_positives_are_withheld_as_their_kind() {
+    let positives: Positives = load("positives.toml");
+    let d = Detectors::default();
+    let mut checked = 0;
+    let mut failures = Vec::new();
+    for c in &positives.case {
+        let (Some(tag), Some(value)) = (&c.kind, &c.value) else {
+            continue;
+        };
+        let kind = Kind::ALL
+            .into_iter()
+            .find(|k| k.tag() == tag)
+            .unwrap_or_else(|| panic!("unknown kind {tag}"));
+        let start = c
+            .text
+            .find(value.as_str())
+            .unwrap_or_else(|| panic!("{value:?} is not in its text"));
+        let end = start + value.len();
+        let found: Vec<Finding> = scan_each_in(&c.text, d, c.path.as_deref())
+            .into_iter()
+            .filter(|f| f.kind == kind)
+            .collect();
+        checked += 1;
+        if !covered(&found, start, end) {
+            failures.push(format!("{tag} {value:?} in {:?}", c.text));
+        }
+    }
+    println!(
+        "hand-written positives: {} of {checked} withheld as their kind",
+        checked - failures.len()
+    );
+    assert!(failures.is_empty(), "not withheld: {failures:#?}");
+}
+
+/// Lines of `text` holding part of a finding.
+fn flagged_lines(text: &str, path: Option<&str>) -> Vec<usize> {
+    let findings = scan_each_in(text, Detectors::default(), path);
+    let mut starts = vec![0];
+    starts.extend(text.match_indices('\n').map(|(i, _)| i + 1));
+    let mut lines: Vec<usize> = findings
+        .iter()
+        .flat_map(|f| {
+            let first = starts.partition_point(|&s| s <= f.start) - 1;
+            let last = starts.partition_point(|&s| s < f.end.max(f.start + 1)) - 1;
+            first..=last
+        })
+        .collect();
+    lines.dedup();
+    lines.sort_unstable();
+    lines.dedup();
+    lines
+}
+
+#[test]
+fn false_positives_stay_within_the_baseline() {
+    let baseline: Baseline = load("baseline.toml");
+    let dir = corpus_dir().join("negatives");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("negatives")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let (mut lines_total, mut file_total, mut text_total) = (0, 0, 0);
+    let mut regressions = Vec::new();
+    let mut improved = Vec::new();
+    println!("hard negatives: lines with a finding (as the file / as text of unknown origin)");
+    for name in &names {
+        let text = std::fs::read_to_string(dir.join(name)).expect("negative file");
+        let lines = text.lines().filter(|l| !l.trim().is_empty()).count();
+        let as_file = flagged_lines(&text, Some(name));
+        let as_text = flagged_lines(&text, None);
+        let now = FileBaseline {
+            as_file: as_file.len(),
+            as_text: as_text.len(),
+        };
+        let allowed = baseline.negatives.get(name).copied().unwrap_or_default();
+        println!(
+            "  {name:<20} {lines:>4} lines  {:>3} / {:>3}   (baseline {} / {})",
+            now.as_file, now.as_text, allowed.as_file, allowed.as_text
+        );
+        if std::env::var_os("DECLASS_CORPUS_VERBOSE").is_some() {
+            let all: Vec<&str> = text.lines().collect();
+            for i in &as_text {
+                println!(
+                    "      {}: {}",
+                    i + 1,
+                    all[*i].chars().take(160).collect::<String>()
+                );
+            }
+        }
+        if now.as_file > allowed.as_file || now.as_text > allowed.as_text {
+            regressions.push(format!("{name}: {now:?} > {allowed:?}"));
+        } else if now != allowed {
+            improved.push(format!("{name}: {now:?} < {allowed:?}"));
+        }
+        lines_total += lines;
+        file_total += now.as_file;
+        text_total += now.as_text;
+    }
+    let rate = |n: usize| 100.0 * n as f64 / lines_total.max(1) as f64;
+    println!(
+        "false positives: {file_total} of {lines_total} lines as files ({:.1}%), {text_total} as text ({:.1}%)",
+        rate(file_total),
+        rate(text_total)
+    );
+    if !improved.is_empty() {
+        println!(
+            "fewer false positives than the baseline; lower it in baseline.toml: {improved:?}"
+        );
+    }
+    for name in baseline.negatives.keys() {
+        assert!(
+            names.contains(name),
+            "baseline names a missing file: {name}"
+        );
+    }
+    assert!(
+        regressions.is_empty(),
+        "false positives rose: {regressions:#?}"
+    );
+}
+
+/// End to end in hybrid mode: every positive, in a public file the model
+/// reads and in text the frontier writes itself, reaches the frontier only as
+/// a placeholder. (Passthrough mode has no boundary: it shows content as it is.)
+#[test]
+fn positives_reach_the_frontier_only_as_placeholders() {
+    use declass_boundary::engine::Engine;
+    use declass_boundary::model::{Item, Request};
+    use declass_boundary::policy::Policy;
+    use declass_boundary::view::{Presenter, Source};
+
+    let positives: Positives = load("positives.toml");
+    let mut cases: Vec<(String, String, Option<String>)> = positives
+        .case
+        .iter()
+        .filter_map(|c| Some((c.text.clone(), c.value.clone()?, c.path.clone())))
+        .collect();
+    for rule in imported().rules() {
+        if let Some((doc, path, start, end)) = generated(rule) {
+            let value = doc[start..end].to_owned();
+            cases.push((doc, value, path));
+        }
+    }
+    let d = tempfile::tempdir().unwrap();
+    let policy = Policy {
+        detect_secrets: true,
+        detect_pii: true,
+        detect_entropy: true,
+        bulky_tokens: 1_000_000,
+        bulky_file_tokens: 1_000_000,
+        ..Policy::default()
+    };
+    let e = Engine::open(d.path(), policy, None).unwrap();
+    let mut leaked = Vec::new();
+    for (doc, value, path) in &cases {
+        let path = path.clone().unwrap_or_else(|| "notes.txt".into());
+        let source = Source::File {
+            path: PathBuf::from(&path),
+            ranged: false,
+        };
+        if e.present(&source, doc.as_bytes()).contains(value.as_str()) {
+            leaked.push(format!("read_file {path}: {value}"));
+        }
+    }
+    let (filter, check) = e.outbound();
+    let mut req = Request {
+        items: cases
+            .iter()
+            .map(|(_, v, _)| Item::User {
+                text: format!("see {v} there"),
+            })
+            .collect(),
+        ..Request::default()
+    };
+    filter.apply(&mut req);
+    let body = serde_json::to_value(&req.items).unwrap();
+    for (_, v, _) in &cases {
+        if body.to_string().contains(v.as_str()) {
+            leaked.push(format!("outbound: {v}"));
+        }
+    }
+    assert!(check.check(&body).is_ok());
+    println!(
+        "end to end: {} positives, {} reached the frontier",
+        cases.len(),
+        leaked.len()
+    );
+    assert!(leaked.is_empty(), "{leaked:#?}");
+}
+
+/// Real toolchain output (the `negatives/` files made of it) as the frontier
+/// sees it in hybrid mode with the shipped policy, each section as one
+/// command's output: nothing in it is a value, so nothing may become a
+/// placeholder, whether the output is shown inline or held locally (long
+/// output) with its error lines shown.
+#[test]
+fn toolchain_output_reaches_the_frontier_without_placeholders() {
+    use declass_boundary::engine::Engine;
+    use declass_boundary::policy::Policy;
+    use declass_boundary::view::{Presenter, Source};
+
+    let owner = tempfile::tempdir().unwrap();
+    let cfg = declass_config::Config::load(&owner.path().join("config.toml"), None).unwrap();
+    let list = |k: &str| cfg.list(k).unwrap();
+    let flag = |k: &str| cfg.bool(k).unwrap();
+    let policy = Policy {
+        sensitive_globs: list("sensitivity.globs"),
+        protected_paths: list("sensitivity.protected_paths"),
+        command_output_sensitive: flag("sensitivity.command_output_sensitive"),
+        raw_ok_commands: list("sensitivity.raw_ok_commands"),
+        secret_sinks: list("sensitivity.secret_sinks"),
+        detect_secrets: flag("sensitivity.detect_secrets"),
+        detect_pii: flag("sensitivity.detect_pii"),
+        detect_entropy: flag("sensitivity.detect_entropy"),
+        custom_patterns: list("sensitivity.custom_patterns"),
+        bulky_tokens: cfg.int("sensitivity.bulky_tokens").unwrap() as usize,
+        bulky_file_tokens: cfg.int("sensitivity.bulky_file_tokens").unwrap() as usize,
+        condense_output: flag("context.condense_output"),
+        ..Policy::default()
+    };
+    let (ws, run) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let e = Engine::open(run.path(), policy, None).unwrap();
+    e.prime(
+        ws.path(),
+        &[],
+        "Build a task manager in TypeScript: Express, SQLite, React with Vite, vitest.",
+    );
+    let placeholder = regex::Regex::new(r"⟨[a-z]+:[^⟩]*⟩").unwrap();
+    let mut found = Vec::new();
+    for name in TOOLCHAIN {
+        let text = std::fs::read_to_string(corpus_dir().join("negatives").join(name)).unwrap();
+        // `# title` starts a section: one command's output.
+        let mut sections: Vec<(&str, String)> = Vec::new();
+        for line in text.lines() {
+            match line.strip_prefix("# ") {
+                Some(title) => sections.push((title, String::new())),
+                None => {
+                    if let Some((_, body)) = sections.last_mut() {
+                        body.push_str(line);
+                        body.push('\n');
+                    }
+                }
+            }
+        }
+        for (title, body) in sections.iter().filter(|(_, b)| !b.is_empty()) {
+            let source = Source::Command {
+                command: (*title).to_owned(),
+                exit_code: Some(1),
+            };
+            let view = e.present(&source, body.as_bytes());
+            let held = view.contains("Raw content stays on this machine");
+            let values: Vec<&str> = placeholder.find_iter(&view).map(|m| m.as_str()).collect();
+            println!(
+                "  {name:<18} {title:<48} {:>6} bytes  {:<6}  {} placeholders",
+                body.len(),
+                if held { "held" } else { "inline" },
+                values.len()
+            );
+            if !values.is_empty() {
+                found.push(format!("{name}: {title}: {values:?}"));
+            }
+        }
+    }
+    assert!(found.is_empty(), "{found:#?}");
+}
+
+/// Lines of hard negatives the check of text for third parties refuses
+/// (`Presenter::check_outbound`: a web query, a URL, tool arguments), with an
+/// engine primed on a workspace of sensitive files like a real project's (a
+/// `.env` with keys and settings, a customer table with names, emails, cards
+/// and amounts). Every refusal is a false positive: nothing in the negatives
+/// comes from those files. Measured 2026-09-26 (6 of 1,513 lines; lower it
+/// when it falls): five lines holding `production`, a `.env` value that is an
+/// ordinary word (withheld wherever it appears, as in what the frontier
+/// sees), and one `bytes=3914`, a number standing alone whose digits all
+/// occur in a row in a withheld card. Before numbers inside hashes,
+/// identifiers and longer numbers stopped counting as a card's digits: 28.
+const OUTBOUND_FALSE_POSITIVES: usize = 6;
+
+#[test]
+fn the_third_party_check_refuses_no_hard_negative() {
+    use declass_boundary::engine::Engine;
+    use declass_boundary::policy::Policy;
+    use declass_boundary::third_party::Outgoing;
+    use declass_boundary::view::Presenter;
+
+    let d = tempfile::tempdir().unwrap();
+    let ws = d.path().join("ws");
+    std::fs::create_dir_all(ws.join("data")).unwrap();
+    std::fs::write(
+        ws.join(".env"),
+        "DATABASE_URL=postgres://ledger:quartz-otter-5519@db.internal:5432/ledger\n\
+         DB_PASSWORD=quartz-otter-5519\nSTRIPE_SECRET_KEY=sk_live_Qm7Tz2Lp9Xv4Rb8Nw3Kd\n\
+         SESSION_SECRET=9f2c7a1e4b8d3f6a0c5e7b9d2f4a6c8e\nAPP_ENV=production\nLOG_LEVEL=info\n\
+         SMTP_HOST=smtp.mailbox-311.net\nPORT=8080\n",
+    )
+    .unwrap();
+    let mut csv = String::from("id,name,email,phone,card,balance,signup\n");
+    for (i, (first, last)) in [
+        ("Vakdril", "Thorsko"),
+        ("Orla", "Brennvik"),
+        ("Ysolde", "Marrquin"),
+        ("Tamsin", "Okonkwo"),
+        ("Priya", "Tolvenrin"),
+    ]
+    .iter()
+    .enumerate()
+    {
+        csv.push_str(&format!(
+            "{},{first} {last},{}.{}@kestrelpost-mail.net,+44 7700 9{:05},{},{}.{:02},2025-0{}-1{}\n",
+            1000 + i,
+            first.to_lowercase(),
+            last.to_lowercase(),
+            31_000 + i * 17,
+            ["4539148803436467", "5293761582049377", "3762948510736285", "6011000990139424", "4917352680941621"][i],
+            18_000 + i * 731,
+            i * 13 % 100,
+            i + 1,
+            i
+        ));
+    }
+    std::fs::write(ws.join("data/customers.csv"), csv).unwrap();
+    let policy = Policy {
+        sensitive_globs: vec![".env*".into(), "data/**".into()],
+        detect_secrets: true,
+        detect_pii: true,
+        detect_entropy: true,
+        ..Policy::default()
+    };
+    let e = Engine::open(&d.path().join("run"), policy, None).unwrap();
+    e.prime(&ws, &[".env".into(), "data/customers.csv".into()], "");
+    let guard = e.outbound_guard();
+
+    let dir = corpus_dir().join("negatives");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .expect("negatives")
+        .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let (mut lines, mut refused) = (0, Vec::new());
+    println!("hard negatives refused by the third-party check (as text / in a URL query)");
+    for name in &names {
+        let text = std::fs::read_to_string(dir.join(name)).expect("negative file");
+        let (mut as_text, mut in_url) = (0, 0);
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            lines += 1;
+            let text_refused = e.check_outbound("search.test", line).err();
+            let mut url = url::Url::parse("https://search.test/q").unwrap();
+            url.query_pairs_mut().append_pair("q", line);
+            let url_refused = guard
+                .check("web_search", "search.test", Outgoing::get(url))
+                .err()
+                .map(|r| r.reason);
+            as_text += usize::from(text_refused.is_some());
+            in_url += usize::from(url_refused.is_some());
+            if let Some(why) = text_refused.or(url_refused) {
+                refused.push(format!(
+                    "{name}: {} ({why})",
+                    line.chars().take(100).collect::<String>()
+                ));
+            }
+        }
+        println!("  {name:<20} {as_text:>3} / {in_url:>3}");
+    }
+    println!(
+        "refused: {} of {lines} lines\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+    assert!(
+        refused.len() <= OUTBOUND_FALSE_POSITIVES,
+        "the third-party check refuses {} hard negatives (baseline {OUTBOUND_FALSE_POSITIVES}):\n{}",
+        refused.len(),
+        refused.join("\n")
+    );
+}

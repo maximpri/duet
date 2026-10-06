@@ -5,28 +5,28 @@
 # Usage: tools/install-release.sh [VERSION | --version VERSION] [--signers FILE]
 #        [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned] [--no-modify-path]
 #        (default version: latest stable release)
-# DUET_INSTALL_DIR defaults to ~/.local/bin; DUET_DATA_DIR to ~/.local/share/duet.
+# DECLASS_INSTALL_DIR defaults to ~/.local/bin; DECLASS_DATA_DIR to ~/.local/share/declass.
 # Defaults to GitHub Releases (maximpri/duet, tag vVERSION). The corresponding
 # source, licenses and signed release records are retained locally.
 set -euo pipefail
 umask 077
 
-fail() { printf 'duet install-release: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'declass install-release: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'HELP'
 Usage: install.sh [VERSION | --version VERSION] [--signers FILE]
                   [--url HTTPS_ASSET_DIRECTORY] [--allow-unsigned]
                   [--no-modify-path]
 Defaults to the latest stable maximpri/duet GitHub release for this OS/CPU.
-Trust file: $DUET_CONFIG_HOME/allowed_signers, or ~/.config/duet/allowed_signers.
+Trust file: $DECLASS_CONFIG_HOME/allowed_signers, or ~/.config/declass/allowed_signers.
 Obtain that file through an independently trusted channel before installing.
 With a trust file (or --signers), a valid signature is required: no fallback.
 Without one, checksum-only preview assets are installed; checksums do not
 authenticate the publisher. --allow-unsigned selects them even with a trust file.
 Installs in ~/.local/bin and retains matching source and notices under
-~/.local/share/duet/releases. DUET_INSTALL_DIR / DUET_DATA_DIR override those paths.
+~/.local/share/declass/releases. DECLASS_INSTALL_DIR / DECLASS_DATA_DIR override those paths.
 When ~/.local/bin is not on PATH, one marked line adding it is appended to your
-shell's startup file; --no-modify-path (or DUET_NO_MODIFY_PATH=1) leaves it alone.
+shell's startup file; --no-modify-path (or DECLASS_NO_MODIFY_PATH=1) leaves it alone.
 No sudo or downloaded signing key.
 HELP
 }
@@ -35,8 +35,8 @@ url=""
 allow_unsigned=false
 signers_given=false
 modify_path=true
-[ "${DUET_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
-signers="${DUET_CONFIG_HOME:-$HOME/.config/duet}/allowed_signers"
+[ "${DECLASS_NO_MODIFY_PATH:-}" != 1 ] || modify_path=false
+signers="${DECLASS_CONFIG_HOME:-$HOME/.config/declass}/allowed_signers"
 while [ $# -gt 0 ]; do
     case "$1" in
     -h | --help) usage; exit 0 ;;
@@ -92,12 +92,12 @@ Linux:aarch64 | Linux:arm64) target=aarch64-unknown-linux-gnu ;;
 Linux:x86_64 | Linux:amd64) target=x86_64-unknown-linux-gnu ;;
 *) fail "supported platforms are macOS and GNU/Linux on ARM64 or x86-64" ;;
 esac
-install_dir="${DUET_INSTALL_DIR:-$HOME/.local/bin}"
-data_dir="${DUET_DATA_DIR:-$HOME/.local/share/duet}"
+install_dir="${DECLASS_INSTALL_DIR:-$HOME/.local/bin}"
+data_dir="${DECLASS_DATA_DIR:-$HOME/.local/share/declass}"
 for destination in "$install_dir" "$data_dir"; do
-    case "$destination" in /*) ;; *) fail "DUET_INSTALL_DIR and DUET_DATA_DIR must be absolute paths" ;; esac
+    case "$destination" in /*) ;; *) fail "DECLASS_INSTALL_DIR and DECLASS_DATA_DIR must be absolute paths" ;; esac
 done
-[ ! -d "$install_dir/duet" ] || fail "destination is a directory: $install_dir/duet"
+[ ! -d "$install_dir/declass" ] || fail "destination is a directory: $install_dir/declass"
 
 if [ "$version" = latest ]; then
     # Resolve once; every asset then uses the same pinned version directory.
@@ -118,12 +118,12 @@ fi
 [[ "$url" =~ ^https://[^/?#]+(/[^?#]*)?$ ]] || fail "--url must be an HTTPS release-directory URL without query or fragment"
 url=${url%/}
 if $allow_unsigned; then
-    printf 'Installing UNSIGNED Duet %s for %s: checksums verify integrity, not publisher identity.\n' "$version" "$target"
+    printf 'Installing UNSIGNED Declass %s for %s: checksums verify integrity, not publisher identity.\n' "$version" "$target"
 else
-    printf 'Installing signed Duet %s for %s\n' "$version" "$target"
+    printf 'Installing signed Declass %s for %s\n' "$version" "$target"
 fi
 
-scratch=$(mktemp -d "${TMPDIR:-/tmp}/duet-install-release.XXXXXXXX")
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/declass-install-release.XXXXXXXX")
 staged_binary=""
 retained=""
 cleanup() {
@@ -132,7 +132,7 @@ cleanup() {
     [ -z "$retained" ] || rm -rf "$retained"
 }
 trap cleanup EXIT
-binary="duet-$version-$target"
+binary="declass-$version-$target"
 stem="$binary"
 $allow_unsigned && stem="$stem-unsigned"
 archive="$stem.tar.gz"
@@ -159,8 +159,8 @@ verify_payload "$scratch"
 # Inspect the authenticated/checksummed archive before extracting anything. Both
 # package-release.sh (name) and cicd.sh (./name) use flat regular payload files.
 # Reject extras, duplicates, links and nested paths even in an unsigned preview.
-names=("$binary" "duet-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md
-    LICENSE.gitleaks NOTICE.gitleaks "duet-$version-source.tar.gz" SOURCE.txt SHA256SUMS)
+names=("$binary" "declass-$version.cdx.json" BUILDINFO.txt LICENSE NOTICE LICENSES.md
+    LICENSE.gitleaks NOTICE.gitleaks "declass-$version-source.tar.gz" SOURCE.txt SHA256SUMS)
 $allow_unsigned || names+=(SHA256SUMS.sig)
 listing="$scratch/entries"
 details="$scratch/types"
@@ -192,57 +192,57 @@ for name in "${names[@]}"; do
     tar -xOf "$scratch/$archive" "$entry" >"$payload/$name" || fail "cannot extract expected file: $name"
 done
 verify_payload "$payload"
-grep -qxF -- "duet $version" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match version $version"
+grep -qxF -- "declass $version" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match version $version"
 grep -qxF -- "target $target" "$payload/BUILDINFO.txt" || fail "signed build metadata does not match target $target"
 
 mkdir -p "$install_dir"
-staged_binary=$(mktemp "$install_dir/.duet.XXXXXXXX")
+staged_binary=$(mktemp "$install_dir/.declass.XXXXXXXX")
 cp "$payload/$binary" "$staged_binary"
 chmod 755 "$staged_binary"
 # Required authentication (unless explicitly unsigned) and all hashes passed
 # before any downloaded code runs.
 reported_version=$("$staged_binary" --version) || fail "verified binary cannot run on this host; existing installation retained"
-[ "$reported_version" = "duet $version" ] || fail "verified binary reports an unexpected version: $reported_version"
+[ "$reported_version" = "declass $version" ] || fail "verified binary reports an unexpected version: $reported_version"
 mkdir -p "$data_dir/releases"
 retained=$(mktemp -d "$data_dir/releases/$version-$target.XXXXXXXX")
 cp "$payload"/* "$retained/"
 # Same-directory rename is atomic: download/verification/copy failures above
 # never replace the existing executable. Existing release records are retained.
-mv -f "$staged_binary" "$install_dir/duet"
+mv -f "$staged_binary" "$install_dir/declass"
 staged_binary=""
 installed_records="$retained"
 retained=""
-printf 'Installed %s at %s/duet\n' "$reported_version" "$install_dir"
+printf 'Installed %s at %s/declass\n' "$reported_version" "$install_dir"
 if $allow_unsigned; then
     printf 'Checksum-verified source and records (unsigned): %s\n' "$installed_records"
 else
     printf 'Verified source, licenses and release records: %s\n' "$installed_records"
 fi
 case ":$PATH:" in
-    *":$install_dir:"*) printf '\nRun it in your project directory:  duet\n' ;;
+    *":$install_dir:"*) printf '\nRun it in your project directory:  declass\n' ;;
     *)
         if ! $modify_path; then
-            printf '\nAdd %s to PATH to run duet (no shell profile was changed).\n' "$install_dir"
+            printf '\nAdd %s to PATH to run declass (no shell profile was changed).\n' "$install_dir"
         else
             case "${SHELL##*/}" in
                 zsh) profile="${ZDOTDIR:-$HOME}/.zshrc" ;;
                 bash) if [ "$os" = Darwin ]; then profile="$HOME/.bash_profile"; else profile="$HOME/.bashrc"; fi ;;
-                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/duet.fish" ;;
+                fish) profile="${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/declass.fish" ;;
                 *) profile="$HOME/.profile" ;;
             esac
             if [ "${SHELL##*/}" = fish ]; then
-                line="fish_add_path -g '$install_dir' # added by the duet installer"
+                line="fish_add_path -g '$install_dir' # added by the declass installer"
             else
-                line="export PATH=\"$install_dir:\$PATH\" # added by the duet installer"
+                line="export PATH=\"$install_dir:\$PATH\" # added by the declass installer"
             fi
             if [ -f "$profile" ] && grep -qF -- "$line" "$profile"; then
                 printf '\n%s already adds %s to PATH.\n' "$profile" "$install_dir"
             else
                 mkdir -p "$(dirname "$profile")"
                 printf '\n%s\n' "$line" >>"$profile"
-                printf '\nAdded %s to PATH in %s (remove the line marked "duet installer" to undo).\n' "$install_dir" "$profile"
+                printf '\nAdded %s to PATH in %s (remove the line marked "declass installer" to undo).\n' "$install_dir" "$profile"
             fi
-            printf 'Open a new terminal, then run it in your project directory:  duet\n'
+            printf 'Open a new terminal, then run it in your project directory:  declass\n'
         fi
         ;;
 esac

@@ -42,27 +42,27 @@
     "edited_highlights": true
   },
   "artifact_digests": {
-    "docs/assets/launch/duet-boundary.gif": {
+    "docs/assets/launch/declass-boundary.gif": {
       "sha256": "a423c497ebe279b8fb3e4588e5920e5e4ebec0e64983c29d4e06347d5257253d",
       "bytes": 861133
     },
-    "docs/assets/launch/duet-boundary.mp4": {
+    "docs/assets/launch/declass-boundary.mp4": {
       "sha256": "65c31c83e0f6c6dcbc2a9e16c4e499554488ca77e0fbc97bb21d6ce32935c8ec",
       "bytes": 907058
     },
-    "docs/assets/launch/duet-fresh-audit.png": {
+    "docs/assets/launch/declass-fresh-audit.png": {
       "sha256": "1c0753bece006df27a0ed06b9b4c02f7f4102628ef6bd9f3f0931360c5492b84",
       "bytes": 185819
     },
-    "docs/assets/launch/duet-fresh-changes.png": {
+    "docs/assets/launch/declass-fresh-changes.png": {
       "sha256": "3172f02bd26421348a0fdba5eba8c03a48c7fc45776fd268ccf84a45257b1295",
       "bytes": 182551
     },
-    "docs/assets/launch/duet-fresh-outbound.png": {
+    "docs/assets/launch/declass-fresh-outbound.png": {
       "sha256": "0ca5dbcc307ce3ab75fed79a48f83c1047809cd99c6a2bf4f4633d3e58809084",
       "bytes": 232983
     },
-    "docs/assets/launch/duet-fresh-privacy.png": {
+    "docs/assets/launch/declass-fresh-privacy.png": {
       "sha256": "add5c6c08c71130a0d165c043273fa5f558bbec3797101cd74816cd346e9cf1a",
       "bytes": 213084
     },

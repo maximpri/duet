@@ -13,9 +13,9 @@ case "$host" in
     -*|*[[:space:]]*|'') echo "invalid SSH destination" >&2; exit 2 ;;
 esac
 repo="$(cd "$(dirname "$0")/.." && pwd -P)"
-binary="${2:-$repo/target/release/duet}"
+binary="${2:-$repo/target/release/declass}"
 if [ ! -f "$binary" ] || [ ! -x "$binary" ]; then
-    echo "build first: cargo build --release --locked -p duet-cli --bin duet" >&2
+    echo "build first: cargo build --release --locked -p declass-cli --bin declass" >&2
     exit 1
 fi
 "$binary" --version
@@ -37,44 +37,44 @@ fi
 # The remote home directory is expanded by its own shell, never interpolated here.
 deploy_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 ssh "${ssh_options[@]}" "$host" \
-    "umask 077; mkdir -p \"\$HOME/.local/bin\" && mkdir \"\$HOME/.local/bin/.duet-deploy-$deploy_id\""
+    "umask 077; mkdir -p \"\$HOME/.local/bin\" && mkdir \"\$HOME/.local/bin/.declass-deploy-$deploy_id\""
 cleanup() {
     ssh "${ssh_options[@]}" "$host" \
-        "rm -f \"\$HOME/.local/bin/.duet-deploy-$deploy_id/duet\"; rmdir \"\$HOME/.local/bin/.duet-deploy-$deploy_id\" 2>/dev/null || true" \
+        "rm -f \"\$HOME/.local/bin/.declass-deploy-$deploy_id/declass\"; rmdir \"\$HOME/.local/bin/.declass-deploy-$deploy_id\" 2>/dev/null || true" \
         >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 ssh "${ssh_options[@]}" "$host" \
-    "umask 077; set -C; cat > \"\$HOME/.local/bin/.duet-deploy-$deploy_id/duet\"" < "$binary"
+    "umask 077; set -C; cat > \"\$HOME/.local/bin/.declass-deploy-$deploy_id/declass\"" < "$binary"
 
 ssh "${ssh_options[@]}" "$host" "sh -s -- '$deploy_id' '$digest'" <<'REMOTE'
 set -eu
 deploy_id="$1"
 expected="$2"
 bin="$HOME/.local/bin"
-stage="$bin/.duet-deploy-$deploy_id"
+stage="$bin/.declass-deploy-$deploy_id"
 if command -v shasum >/dev/null 2>&1; then
-    actual="$(shasum -a 256 "$stage/duet" | awk '{print $1}')"
+    actual="$(shasum -a 256 "$stage/declass" | awk '{print $1}')"
 else
-    actual="$(sha256sum "$stage/duet" | awk '{print $1}')"
+    actual="$(sha256sum "$stage/declass" | awk '{print $1}')"
 fi
 if [ "$actual" != "$expected" ]; then
     echo "transfer checksum mismatch; installation stopped" >&2
     exit 1
 fi
-chmod 755 "$stage/duet"
+chmod 755 "$stage/declass"
 # This also catches an incompatible OS version before replacing an installation.
-"$stage/duet" --version
-"$stage/duet" --help >/dev/null
-if [ -d "$bin/duet" ]; then
-    echo "$bin/duet is a directory; installation stopped" >&2
+"$stage/declass" --version
+"$stage/declass" --help >/dev/null
+if [ -d "$bin/declass" ]; then
+    echo "$bin/declass is a directory; installation stopped" >&2
     exit 1
 fi
-if [ -e "$bin/duet" ]; then
-    cp -p "$bin/duet" "$bin/duet.backup-$deploy_id"
-    printf 'Previous binary: %s\n' "$bin/duet.backup-$deploy_id"
+if [ -e "$bin/declass" ]; then
+    cp -p "$bin/declass" "$bin/declass.backup-$deploy_id"
+    printf 'Previous binary: %s\n' "$bin/declass.backup-$deploy_id"
 fi
-mv -f "$stage/duet" "$bin/duet"
+mv -f "$stage/declass" "$bin/declass"
 
 # Configure future interactive/login shells; preserve existing startup files.
 path_line='case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac'
@@ -96,12 +96,12 @@ for name do
     profile="$HOME/$name"
     if ! grep -Fqx "$path_line" "$profile" 2>/dev/null; then
         if [ -e "$profile" ]; then
-            cp -p "$profile" "$profile.duet-backup-$deploy_id"
+            cp -p "$profile" "$profile.declass-backup-$deploy_id"
         fi
-        printf '\n# Duet command\n%s\n' "$path_line" >> "$profile"
+        printf '\n# Declass command\n%s\n' "$path_line" >> "$profile"
     fi
 done
-"$bin/duet" --version
-printf 'Installed: %s\nSHA-256: %s\n' "$bin/duet" "$actual"
-printf 'Run now: %s\nNew zsh/bash sessions can use: duet\n' "$bin/duet"
+"$bin/declass" --version
+printf 'Installed: %s\nSHA-256: %s\n' "$bin/declass" "$actual"
+printf 'Run now: %s\nNew zsh/bash sessions can use: declass\n' "$bin/declass"
 REMOTE

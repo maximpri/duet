@@ -1,9 +1,9 @@
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 # Running a benchmark with a spending limit
 
-`duet-eval run --frontier-budget-usd 50` enforces a conservative aggregate
+`declass-eval run --frontier-budget-usd 50` enforces a conservative aggregate
 list-price allowance at the model proxy, before each outbound request. This mode
-currently supports the configured Duet lanes using GLM-5.3-Flash at the Z.ai
+currently supports the configured Declass lanes using GLM-5.3-Flash at the Z.ai
 coding endpoint. The cap cannot exceed $50. Local inference electricity is
 reported separately and is not part of the frontier allowance.
 
@@ -27,7 +27,7 @@ The proxy permits only text chat and function tools. It rejects WebSockets,
 multimodal requests, multiple completions and unpriced request options. Redirects,
 environment proxies and HTTP client retries are disabled. Bounded runs disable
 host web tools, automatic provider-availability probes and harness quota retries.
-Duet's ordinary command sandbox remains active. The allowance is enforced for
+Declass's ordinary command sandbox remains active. The allowance is enforced for
 model traffic routed through this proxy; it is not an account-wide provider cap
 or a protection against an owner modifying the harness or lane configuration.
 
@@ -48,15 +48,15 @@ quota.
 Example (put the batch and frozen binaries on a disk with enough room):
 
 ```sh
-/path/to/frozen/duet-eval run \
-  --lanes duet-hybrid,duet-passthrough \
+/path/to/frozen/declass-eval run \
+  --lanes declass-hybrid,declass-passthrough \
   --task S1,S2,M1,M2,M3,L1,L2,X1,X2 --seeds 1-3 \
   --out /path/to/new-batch/runs --frontier-budget-usd 50
 ```
 
-Freeze `duet` beside `duet-eval`, record both binary hashes, the source revision
+Freeze `declass` beside `declass-eval`, record both binary hashes, the source revision
 and uncommitted source snapshot, lane definitions, pricing file and task seals.
-The harness resolves the adjacent Duet binary. Preserve the planned task/seed/lane
+The harness resolves the adjacent Declass binary. Preserve the planned task/seed/lane
 matrix so omitted or interrupted runs cannot disappear from the reported sample.
 
 ## Recorded October 2026 continuation

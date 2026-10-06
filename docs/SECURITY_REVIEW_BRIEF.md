@@ -1,6 +1,6 @@
 # Security review brief
 
-Prepared 2026-10-03 for an independent review of Duet's development preview.
+Prepared 2026-10-03 for an independent review of Declass's development preview.
 This document defines proposed scope; no external review has been commissioned
 or completed. It is not approval for classified, regulated or production data.
 
@@ -25,11 +25,11 @@ startup. Inspection reads classification paths without reading file contents.
 Local-only/top-clearance operation has different controls and must be reviewed
 separately from hybrid mode.
 
-The owner, owner-controlled configuration, host OS and protected `.duet` state
+The owner, owner-controlled configuration, host OS and protected `.declass` state
 are trusted. Deleting classification state while keeping derived outputs can
-remove their classification. Duet does not defend against an owner or malware
+remove their classification. Declass does not defend against an owner or malware
 that can rewrite this state, the executable or the workspace lock. Private run
-files are permission-restricted, not encrypted by Duet. Sensitive information
+files are permission-restricted, not encrypted by Declass. Sensitive information
 can remain in local model infrastructure and local state until its configured
 retention or an explicit purge takes effect.
 
@@ -41,15 +41,15 @@ rate for arbitrary natural language.
 
 | Surface | Evidence | What the check observes |
 | --- | --- | --- |
-| Model redirects and recipient substitution | `duet-provider` unit tests `http_transport_does_not_forward_requests_to_redirect_recipients` and `approved_transport_refuses_an_adapter_switching_the_recipient` | Independent loopback recipients see no redirected or substituted request. |
-| Environment proxy routing | `crates/duet-cli/tests/provider_proxy.rs` | Isolated subprocesses set six HTTP/HTTPS/ALL proxy-variable spellings. A receiving proxy must see no model request, listing or context probe; direct HTTP receives the expected requests. |
+| Model redirects and recipient substitution | `declass-provider` unit tests `http_transport_does_not_forward_requests_to_redirect_recipients` and `approved_transport_refuses_an_adapter_switching_the_recipient` | Independent loopback recipients see no redirected or substituted request. |
+| Environment proxy routing | `crates/declass-cli/tests/provider_proxy.rs` | Isolated subprocesses set six HTTP/HTTPS/ALL proxy-variable spellings. A receiving proxy must see no model request, listing or context probe; direct HTTP receives the expected requests. |
 | Adapter construction | `tools/gate.sh`, model HTTP policy check | Additional client constructors and proxy/redirect overrides outside the private factory fail the repository gate. This source check supplements review; it is not a language-level proof. |
-| Rephrased questions, repeated requests and joins | `crates/duet-boundary/tests/adversarial_disclosure.rs` | A separate TCP receiver records actual serialized frontier request bodies, across repeated questions about two private sources. Known synthetic identifiers and credentials must be absent. |
+| Rephrased questions, repeated requests and joins | `crates/declass-boundary/tests/adversarial_disclosure.rs` | A separate TCP receiver records actual serialized frontier request bodies, across repeated questions about two private sources. Known synthetic identifiers and credentials must be absent. |
 | New run and sensitive output lineage | Same socket-observed suite; `engine::prime_tests::derived_files_remain_sensitive_in_a_new_workspace_run` | An ordinary-path export with sensitive prose remains hidden in a different run and absent from outbound request bytes. The unit regression failed before the workspace-wide store fix. |
 | Timestamp-preserving copies | `tools::tests::timestamp_preserving_sensitive_*` | Two regressions failed before the fix: restoring mtime on an equal-sized rewrite, and a new build export with an old source timestamp. Before/after inode metadata now catches both without classifying untouched recent build outputs. Failed tree inspection leaves the pending marker. |
 | Incomplete or invalid state | `derived::tests` | Pending commands, corrupt manifests, invalid relative paths and symlinks refuse startup/preview; an injected disk-full write leaves the pending marker. Read-only inspection creates no state and imports retained legacy classifications. |
-| Interrupted sensitive commands | `crates/duet-agent/src/tools.rs`, `interrupted_sensitive_commands_keep_their_written_files_private_on_resume` | Files written before command interruption remain private when the run resumes. |
-| Cancellation while a shell waits for a child | `duet-sandbox::tests::a_stop_kills_the_whole_tree_at_once` (unchanged) | The original full sandbox suite reproduced a post-cancellation marker on a complete x86-64 Linux kernel under QEMU. Freezing ancestors before child termination and bounded rescans fix the race; all 29 sandbox and six network tests pass with kernel seccomp enabled. See DUET-2026-039 and the platform evidence. |
+| Interrupted sensitive commands | `crates/declass-agent/src/tools.rs`, `interrupted_sensitive_commands_keep_their_written_files_private_on_resume` | Files written before command interruption remain private when the run resumes. |
+| Cancellation while a shell waits for a child | `declass-sandbox::tests::a_stop_kills_the_whole_tree_at_once` (unchanged) | The original full sandbox suite reproduced a post-cancellation marker on a complete x86-64 Linux kernel under QEMU. Freezing ancestors before child termination and bounded rescans fix the race; all 29 sandbox and six network tests pass with kernel seccomp enabled. See DECLASS-2026-039 and the platform evidence. |
 | Other disclosure forms | Existing privacy scenarios, canary matcher and boundary tests | Literal values, selected encodings, short number extraction, images, tool arguments, logs and operator text. Consult each test's assertions rather than extrapolating to all transformations. |
 
 Focused local checks passed during this change: provider unit tests (94 passed,
